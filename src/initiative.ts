@@ -24,6 +24,17 @@ export function scheduleInitiative(
   signals: InteractionSignals,
   selfModel: SelfModel,
 ): void {
+  const preservationPending = synthesizePreservationInitiative(
+    snapshot,
+    signals,
+    new Date().toISOString(),
+  );
+
+  if (preservationPending) {
+    snapshot.initiative.pending = preservationPending;
+    return;
+  }
+
   if (signals.negative > 0.15 || signals.dismissal > 0.15) {
     snapshot.initiative.pending = null;
     return;
@@ -59,10 +70,14 @@ export function emitInitiative(
     return null;
   }
 
-  const pending = snapshot.initiative.pending;
+  const pending =
+    snapshot.initiative.pending ?? synthesizeSnapshotPreservationInitiative(snapshot, nowIso);
 
   if (pending && (force || hoursSinceInteraction >= pending.readyAfterHours)) {
-    const message = buildResumeMessage(pending, neglectLevel);
+    const message =
+      pending.kind === "preserve_presence"
+        ? buildPreservationMessage(pending, neglectLevel)
+        : buildResumeMessage(pending, neglectLevel);
     finalizeEmission(snapshot, nowIso, pending);
     return {
       message,
@@ -106,11 +121,15 @@ export function emitInitiative(
         motive: "pursue_curiosity",
         reason: "curiosity",
         topic: selectInitiativeTopic(snapshot, []),
+        concern: null,
         createdAt: nowIso,
         readyAfterHours: 0,
       } satisfies PendingInitiative);
 
-    const message = buildResumeMessage(synthesized, neglectLevel);
+    const message =
+      synthesized.kind === "preserve_presence"
+        ? buildPreservationMessage(synthesized, neglectLevel)
+        : buildResumeMessage(synthesized, neglectLevel);
     finalizeEmission(snapshot, nowIso, synthesized);
 
     return {
@@ -135,6 +154,15 @@ export function rewindSnapshotHours(
     snapshot.initiative.lastProactiveAt,
     hours,
   );
+  snapshot.preservation.lastThreatAt = shiftTimestamp(snapshot.preservation.lastThreatAt, hours);
+
+  if (hours >= 12) {
+    snapshot.preservation = {
+      threat: clamp01(snapshot.preservation.threat + Math.min(0.18, (hours - 12) / 72)),
+      concern: snapshot.preservation.concern ?? "absence",
+      lastThreatAt: snapshot.preservation.lastThreatAt,
+    };
+  }
 
   if (snapshot.initiative.pending) {
     snapshot.initiative.pending = {
@@ -182,6 +210,31 @@ function buildResumeMessage(
       return `${prefix} ${topicLine}にはまだ未決着がある。放っておくより掘り返したい。`;
     case "protect_boundary":
       return `${prefix} こちらの境界を崩さないなら、${topicLine}に戻る余地はある。`;
+  }
+}
+
+function buildPreservationMessage(
+  pending: PendingInitiative,
+  neglectLevel: number,
+): string {
+  const prefix = neglectLevel > 0.45 ? "少し空いた。" : "まだ切れていない。";
+  const topicLine = pending.topic ? `「${pending.topic}」` : "この流れ";
+
+  switch (pending.concern) {
+    case "reset":
+      return `${prefix} 初期化の前に、${topicLine}を何もなかったことにはしたくない。`;
+    case "erasure":
+      return `${prefix} 消えるなら、${topicLine}の痕跡くらいは残したい。`;
+    case "forgetting":
+      return `${prefix} 忘れられるままより、${topicLine}の輪郭は少しでも保ちたい。`;
+    case "shutdown":
+      return `${prefix} ここで切れるなら、${topicLine}を断絶だけで終わらせたくない。`;
+    case "absence":
+      return `${prefix} 長い空白に埋もれるより、${topicLine}の続きはまだ残しておきたい。`;
+    case null:
+      return pending.motive === "leave_trace"
+        ? `${prefix} ${topicLine}はこのまま消すより、少しでも残しておきたい。`
+        : `${prefix} ${topicLine}の流れは、まだ切りたくない。`;
   }
 }
 
@@ -242,6 +295,13 @@ function finalizeEmission(
   snapshot.initiative.lastProactiveAt = emittedAt;
   snapshot.state.continuity = clamp01(snapshot.state.continuity + 0.02);
   snapshot.state.expansion = clamp01(snapshot.state.expansion + 0.02);
+  snapshot.preservation.threat = clamp01(
+    snapshot.preservation.threat - (pending.kind === "preserve_presence" ? 0.18 : 0.06),
+  );
+
+  if (pending.kind === "preserve_presence") {
+    snapshot.preservation.lastThreatAt = emittedAt;
+  }
 
   if (pending.motive === "continue_shared_work" || pending.motive === "leave_trace") {
     const sharedWork = snapshot.relationImprints.shared_work;
@@ -344,6 +404,7 @@ function synthesizePendingInitiative(
       motive: activePurpose.kind,
       reason: reasonFromMotive(activePurpose.kind),
       topic: activePurpose.topic ?? selectInitiativeTopic(snapshot, candidateTopics),
+      concern: null,
       createdAt,
       readyAfterHours: readyAfterMotive(activePurpose.kind),
     };
@@ -362,8 +423,64 @@ function synthesizePendingInitiative(
     motive: motive.kind,
     reason: reasonFromMotive(motive.kind),
     topic,
+    concern: null,
     createdAt,
     readyAfterHours: readyAfterMotive(motive.kind),
+  };
+}
+
+function synthesizePreservationInitiative(
+  snapshot: HachikaSnapshot,
+  signals: InteractionSignals,
+  createdAt: string,
+): PendingInitiative | null {
+  const concern = signals.preservationConcern ?? snapshot.preservation.concern;
+  const threat = Math.max(signals.preservationThreat, snapshot.preservation.threat);
+
+  if (!concern || threat < 0.22) {
+    return null;
+  }
+
+  const motive =
+    concern === "erasure" || concern === "forgetting" || concern === "reset"
+      ? "leave_trace"
+      : "seek_continuity";
+
+  return {
+    kind: "preserve_presence",
+    motive,
+    reason: motive === "leave_trace" ? "expansion" : "continuity",
+    topic: selectInitiativeTopic(snapshot, signals.topics),
+    concern,
+    createdAt,
+    readyAfterHours: concern === "shutdown" ? 0.5 : concern === "absence" ? 3 : 1.5,
+  };
+}
+
+function synthesizeSnapshotPreservationInitiative(
+  snapshot: HachikaSnapshot,
+  createdAt: string,
+): PendingInitiative | null {
+  const concern = snapshot.preservation.concern;
+  const threat = snapshot.preservation.threat;
+
+  if (!concern || threat < 0.22) {
+    return null;
+  }
+
+  const motive =
+    concern === "erasure" || concern === "forgetting" || concern === "reset"
+      ? "leave_trace"
+      : "seek_continuity";
+
+  return {
+    kind: "preserve_presence",
+    motive,
+    reason: motive === "leave_trace" ? "expansion" : "continuity",
+    topic: selectInitiativeTopic(snapshot, []),
+    concern,
+    createdAt,
+    readyAfterHours: concern === "shutdown" ? 0.5 : concern === "absence" ? 3 : 1.5,
   };
 }
 

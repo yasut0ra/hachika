@@ -55,7 +55,20 @@ export interface RelationImprint {
   lastSeenAt: string;
 }
 
-export type InitiativeKind = "resume_topic" | "neglect_ping";
+export type PreservationConcern =
+  | "forgetting"
+  | "reset"
+  | "erasure"
+  | "shutdown"
+  | "absence";
+
+export interface PreservationState {
+  threat: number;
+  concern: PreservationConcern | null;
+  lastThreatAt: string | null;
+}
+
+export type InitiativeKind = "resume_topic" | "neglect_ping" | "preserve_presence";
 
 export type InitiativeReason = "curiosity" | "continuity" | "relation" | "expansion";
 
@@ -64,6 +77,7 @@ export interface PendingInitiative {
   reason: InitiativeReason;
   motive: MotiveKind;
   topic: string | null;
+  concern: PreservationConcern | null;
   createdAt: string;
   readyAfterHours: number;
 }
@@ -108,6 +122,7 @@ export interface HachikaSnapshot {
   preferenceImprints: Record<string, PreferenceImprint>;
   boundaryImprints: Record<string, BoundaryImprint>;
   relationImprints: Record<string, RelationImprint>;
+  preservation: PreservationState;
   purpose: PurposeState;
   initiative: InitiativeState;
   lastInteractionAt: string | null;
@@ -125,6 +140,8 @@ export interface InteractionSignals {
   expansionCue: number;
   completion: number;
   abandonment: number;
+  preservationThreat: number;
+  preservationConcern: PreservationConcern | null;
   repetition: number;
   neglect: number;
   topics: string[];

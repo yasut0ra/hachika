@@ -11,6 +11,8 @@ import type {
   MemoryEntry,
   MotiveKind,
   PendingInitiative,
+  PreservationConcern,
+  PreservationState,
   PurposeState,
   PreferenceImprint,
   RelationImprint,
@@ -42,7 +44,7 @@ function hydrateSnapshot(raw: unknown): HachikaSnapshot {
   }
 
   return {
-    version: 7,
+    version: 8,
     state: hydrateState(raw.state),
     attachment:
       typeof raw.attachment === "number" ? clamp01(raw.attachment) : initial.attachment,
@@ -54,6 +56,7 @@ function hydrateSnapshot(raw: unknown): HachikaSnapshot {
     preferenceImprints: hydratePreferenceImprints(raw.preferenceImprints, raw.imprints),
     boundaryImprints: hydrateBoundaryImprints(raw.boundaryImprints),
     relationImprints: hydrateRelationImprints(raw.relationImprints),
+    preservation: hydratePreservation(raw.preservation),
     purpose: hydratePurpose(raw.purpose),
     initiative: hydrateInitiative(raw.initiative),
     lastInteractionAt: typeof raw.lastInteractionAt === "string" ? raw.lastInteractionAt : null,
@@ -310,6 +313,22 @@ function hydratePurpose(raw: unknown): PurposeState {
   };
 }
 
+function hydratePreservation(raw: unknown): PreservationState {
+  if (!isRecord(raw)) {
+    return {
+      threat: 0,
+      concern: null,
+      lastThreatAt: null,
+    };
+  }
+
+  return {
+    threat: typeof raw.threat === "number" ? clamp01(raw.threat) : 0,
+    concern: isPreservationConcern(raw.concern) ? raw.concern : null,
+    lastThreatAt: typeof raw.lastThreatAt === "string" ? raw.lastThreatAt : null,
+  };
+}
+
 function hydrateInitiative(raw: unknown): InitiativeState {
   if (!isRecord(raw)) {
     return {
@@ -383,7 +402,11 @@ function hydratePendingInitiative(raw: unknown): PendingInitiative | null {
   }
 
   const kind =
-    raw.kind === "resume_topic" || raw.kind === "neglect_ping" ? raw.kind : undefined;
+    raw.kind === "resume_topic" ||
+    raw.kind === "neglect_ping" ||
+    raw.kind === "preserve_presence"
+      ? raw.kind
+      : undefined;
   const reason =
     raw.reason === "curiosity" ||
     raw.reason === "continuity" ||
@@ -406,6 +429,7 @@ function hydratePendingInitiative(raw: unknown): PendingInitiative | null {
     reason,
     motive,
     topic: typeof raw.topic === "string" ? raw.topic : null,
+    concern: isPreservationConcern(raw.concern) ? raw.concern : null,
     createdAt:
       typeof raw.createdAt === "string" ? raw.createdAt : new Date().toISOString(),
     readyAfterHours:
@@ -432,6 +456,16 @@ function isMotiveKind(value: unknown): value is MotiveKind {
 
 function isPurposeOutcome(value: unknown): value is ResolvedPurpose["outcome"] {
   return value === "fulfilled" || value === "abandoned" || value === "superseded";
+}
+
+function isPreservationConcern(value: unknown): value is PreservationConcern {
+  return (
+    value === "forgetting" ||
+    value === "reset" ||
+    value === "erasure" ||
+    value === "shutdown" ||
+    value === "absence"
+  );
 }
 
 function inferLegacyMotive(reason: PendingInitiative["reason"]): MotiveKind {

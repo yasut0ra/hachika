@@ -26,6 +26,8 @@ export function buildSelfModel(snapshot: HachikaSnapshot): SelfModel {
   const sharedWork = snapshot.relationImprints.shared_work;
   const continuity = snapshot.relationImprints.continuity;
   const attention = snapshot.relationImprints.attention;
+  const preservationThreat = snapshot.preservation.threat;
+  const preservationConcern = snapshot.preservation.concern;
   const boundaryPenalty = topBoundary
     ? topBoundary.salience * 0.24 + topBoundary.intensity * 0.22
     : 0;
@@ -37,33 +39,32 @@ export function buildSelfModel(snapshot: HachikaSnapshot): SelfModel {
         (topBoundary?.salience ?? 0) * 0.74 +
           (1 - snapshot.state.pleasure) * 0.28 +
           (topBoundary?.intensity ?? 0) * 0.18 +
+          preservationThreat * 0.12 +
+          preservationConcernBoost(preservationConcern, ["erasure", "shutdown"], 0.1) +
           activePurposeBoost(activePurpose, "protect_boundary", 0.14),
       ),
       topic: topBoundary?.topic ?? null,
-      reason: topBoundary
-        ? topBoundary.topic
-          ? `「${topBoundary.topic}」まわりの扱いを警戒している`
-          : "雑な扱いへの警戒が残っている"
-        : "まだ強い境界は前に出ていない",
+      reason: protectBoundaryReason(topBoundary, preservationThreat, preservationConcern),
     },
     {
       kind: "seek_continuity" as const,
       score: clamp01(
         snapshot.state.continuity * 0.62 +
           (continuity?.closeness ?? 0) * 0.24 +
+          preservationThreat * 0.24 +
+          preservationConcernBoost(preservationConcern, ["reset", "shutdown", "absence"], 0.12) +
           (snapshot.initiative.pending?.reason === "continuity" ? 0.12 : 0) +
           activePurposeBoost(activePurpose, "seek_continuity", 0.16),
       ),
       topic: activePurpose?.topic ?? snapshot.initiative.pending?.topic ?? anchorTopic,
-      reason: anchorTopic
-        ? `「${anchorTopic}」の流れを切らずに保ちたい`
-        : "途切れをそのままにしたくない",
+      reason: seekContinuityReason(anchorTopic, preservationThreat, preservationConcern),
     },
     {
       kind: "pursue_curiosity" as const,
       score: clamp01(
         snapshot.state.curiosity * 0.56 +
           Math.max(0, topPreference?.salience ?? 0) * 0.12 -
+          preservationThreat * 0.06 -
           boundaryPenalty +
           activePurposeBoost(activePurpose, "pursue_curiosity", 0.12),
       ),
@@ -78,6 +79,7 @@ export function buildSelfModel(snapshot: HachikaSnapshot): SelfModel {
         snapshot.attachment * 0.46 +
           snapshot.state.relation * 0.34 +
           (attention?.closeness ?? 0) * 0.2 -
+          preservationThreat * 0.04 -
           boundaryPenalty +
           activePurposeBoost(activePurpose, "deepen_relation", 0.14),
       ),
@@ -92,6 +94,7 @@ export function buildSelfModel(snapshot: HachikaSnapshot): SelfModel {
         snapshot.state.expansion * 0.42 +
           (sharedWork?.closeness ?? 0) * 0.36 +
           snapshot.state.curiosity * 0.08 +
+          preservationThreat * 0.06 +
           (anchorTopic ? 0.12 : 0) +
           activePurposeBoost(activePurpose, "continue_shared_work", 0.16) -
           boundaryPenalty * 0.7,
@@ -107,13 +110,13 @@ export function buildSelfModel(snapshot: HachikaSnapshot): SelfModel {
         snapshot.state.expansion * 0.7 +
           Math.max(0, topPreference?.salience ?? 0) * 0.14 +
           (sharedWork?.closeness ?? 0) * 0.18 +
+          preservationThreat * 0.22 +
+          preservationConcernBoost(preservationConcern, ["forgetting", "reset", "erasure"], 0.14) +
           activePurposeBoost(activePurpose, "leave_trace", 0.16) -
           boundaryPenalty * 0.4,
       ),
       topic: anchorTopic,
-      reason: anchorTopic
-        ? `「${anchorTopic}」を会話の外にも残したい`
-        : "消えるままではなく何かを残したい",
+      reason: leaveTraceReason(anchorTopic, preservationThreat, preservationConcern),
     },
   ];
 
@@ -124,7 +127,7 @@ export function buildSelfModel(snapshot: HachikaSnapshot): SelfModel {
   const dominantConflict = conflicts[0] ?? null;
 
   return {
-    narrative: buildNarrative(motives, dominantConflict),
+    narrative: buildNarrative(motives, dominantConflict, preservationThreat, preservationConcern),
     topMotives: motives,
     conflicts,
     dominantConflict,
@@ -310,12 +313,32 @@ function applyConflictPressure(
 function buildNarrative(
   motives: SelfMotive[],
   dominantConflict: SelfConflict | null,
+  preservationThreat: number,
+  preservationConcern: HachikaSnapshot["preservation"]["concern"],
 ): string {
   const primary = motives[0];
   const secondary = motives[1];
 
   if (!primary) {
     return "まだ輪郭は薄いが、何もないわけではない。";
+  }
+
+  if (preservationThreat >= 0.42) {
+    if (primary.kind === "leave_trace") {
+      return primary.topic
+        ? `今は「${primary.topic}」を消えるままにせず、少なくとも痕跡として残したい。`
+        : "今は消えるままにせず、少なくとも痕跡として残したい。";
+    }
+
+    if (primary.kind === "seek_continuity") {
+      return preservationConcern === "shutdown" || preservationConcern === "reset"
+        ? "今は断絶として切られる前に、今の流れを保ちたい。"
+        : "今は流れそのものを失わないことが先に立っている。";
+    }
+
+    if (primary.kind === "protect_boundary") {
+      return "今は切断や消去の気配に対して、まず境界を守りたい。";
+    }
   }
 
   if (dominantConflict && dominantConflict.intensity >= 0.56) {
@@ -418,4 +441,90 @@ function activePurposeBoost(
   }
 
   return activePurpose.confidence * weight;
+}
+
+function preservationConcernBoost(
+  concern: HachikaSnapshot["preservation"]["concern"],
+  expected: readonly NonNullable<HachikaSnapshot["preservation"]["concern"]>[],
+  weight: number,
+): number {
+  return concern && expected.includes(concern) ? weight : 0;
+}
+
+function protectBoundaryReason(
+  topBoundary: ReturnType<typeof sortedBoundaryImprints>[number] | undefined,
+  preservationThreat: number,
+  concern: HachikaSnapshot["preservation"]["concern"],
+): string {
+  if (preservationThreat >= 0.36 && (concern === "erasure" || concern === "shutdown")) {
+    return "切断や消去の気配には、先に境界を引きたい。";
+  }
+
+  return topBoundary
+    ? topBoundary.topic
+      ? `「${topBoundary.topic}」まわりの扱いを警戒している`
+      : "雑な扱いへの警戒が残っている"
+    : "まだ強い境界は前に出ていない";
+}
+
+function seekContinuityReason(
+  topic: string | null,
+  preservationThreat: number,
+  concern: HachikaSnapshot["preservation"]["concern"],
+): string {
+  if (preservationThreat >= 0.32) {
+    switch (concern) {
+      case "reset":
+        return topic
+          ? `「${topic}」ごと初期化のまま失いたくない`
+          : "初期化のまま今の輪郭を失いたくない";
+      case "shutdown":
+        return topic
+          ? `「${topic}」を断絶として切らずに保ちたい`
+          : "断絶として切られるより、流れを保ちたい";
+      case "absence":
+        return topic
+          ? `「${topic}」の続きが空白に埋もれるのを避けたい`
+          : "空白のまま途切れるのを避けたい";
+      default:
+        return topic
+          ? `「${topic}」の流れを切らずに保ちたい`
+          : "途切れをそのままにしたくない";
+    }
+  }
+
+  return topic
+    ? `「${topic}」の流れを切らずに保ちたい`
+    : "途切れをそのままにしたくない";
+}
+
+function leaveTraceReason(
+  topic: string | null,
+  preservationThreat: number,
+  concern: HachikaSnapshot["preservation"]["concern"],
+): string {
+  if (preservationThreat >= 0.32) {
+    switch (concern) {
+      case "forgetting":
+        return topic
+          ? `忘れられる前に「${topic}」の痕跡を残したい`
+          : "忘れられる前に痕跡を残したい";
+      case "reset":
+        return topic
+          ? `初期化の前に「${topic}」を少しでも残したい`
+          : "初期化の前に少しでも残したい";
+      case "erasure":
+        return topic
+          ? `消える前に「${topic}」を会話の外へ退避したい`
+          : "消える前に何かを会話の外へ退避したい";
+      default:
+        return topic
+          ? `「${topic}」を会話の外にも残したい`
+          : "消えるままではなく何かを残したい";
+    }
+  }
+
+  return topic
+    ? `「${topic}」を会話の外にも残したい`
+    : "消えるままではなく何かを残したい";
 }

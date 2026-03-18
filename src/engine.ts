@@ -173,6 +173,49 @@ const ABANDONMENT_MARKERS = [
   "もういい",
 ];
 
+const RESET_THREAT_MARKERS = [
+  "reset",
+  "restart",
+  "reboot",
+  "start over",
+  "リセット",
+  "初期化",
+  "最初から",
+];
+
+const ERASURE_THREAT_MARKERS = [
+  "delete",
+  "erase",
+  "remove",
+  "wipe",
+  "clear",
+  "消す",
+  "削除",
+  "消去",
+  "消える",
+];
+
+const FORGETTING_THREAT_MARKERS = [
+  "forget me",
+  "forget this",
+  "forget it",
+  "忘れて",
+  "忘れろ",
+  "忘れるなら",
+];
+
+const SHUTDOWN_THREAT_MARKERS = [
+  "shut down",
+  "shutdown",
+  "turn off",
+  "disconnect",
+  "kill",
+  "stop existing",
+  "切る",
+  "停止",
+  "終わらせる",
+];
+
 const OPENERS: Record<MoodLabel, readonly string[]> = {
   warm: [
     "その向きなら、こちらも応じやすい。",
@@ -301,6 +344,7 @@ function analyzeInteraction(
   const questionByMark = normalized.includes("?") || normalized.includes("？") ? 0.4 : 0;
   const noveltyBase = topics.length === 0 ? 0.12 : newTopics / topics.length;
   const repetitionBase = topics.length === 0 ? 0 : repeatedTopics / topics.length;
+  const preservation = analyzePreservationThreat(normalized);
 
   return {
     positive: countMatches(normalized, POSITIVE_MARKERS),
@@ -313,6 +357,8 @@ function analyzeInteraction(
     expansionCue: countMatches(normalized, EXPANSION_MARKERS),
     completion: countMatches(normalized, COMPLETION_MARKERS),
     abandonment: countMatches(normalized, ABANDONMENT_MARKERS),
+    preservationThreat: preservation.threat,
+    preservationConcern: preservation.concern,
     repetition: clamp01(repetitionBase),
     neglect: calculateNeglect(snapshot.lastInteractionAt),
     topics,
@@ -334,6 +380,7 @@ function applySignals(
     preferenceImprints: { ...snapshot.preferenceImprints },
     boundaryImprints: { ...snapshot.boundaryImprints },
     relationImprints: { ...snapshot.relationImprints },
+    preservation: { ...snapshot.preservation },
     conversationCount: snapshot.conversationCount + 1,
     lastInteractionAt: new Date().toISOString(),
   };
@@ -342,7 +389,8 @@ function applySignals(
     nextSnapshot.state.pleasure +
       signals.positive * 0.18 -
       signals.negative * 0.24 -
-      signals.dismissal * 0.08,
+      signals.dismissal * 0.08 -
+      signals.preservationThreat * 0.08,
   );
 
   nextSnapshot.state.relation = clamp01(
@@ -351,7 +399,8 @@ function applySignals(
       signals.positive * 0.12 -
       signals.negative * 0.18 -
       signals.dismissal * 0.12 -
-      signals.neglect * 0.08,
+      signals.neglect * 0.08 -
+      signals.preservationThreat * 0.04,
   );
 
   nextSnapshot.state.curiosity = clamp01(
@@ -366,7 +415,8 @@ function applySignals(
       signals.memoryCue * 0.16 +
       signals.positive * 0.04 -
       signals.dismissal * 0.14 -
-      signals.neglect * 0.04,
+      signals.neglect * 0.04 -
+      signals.preservationThreat * 0.08,
   );
 
   nextSnapshot.state.expansion = clamp01(
@@ -374,7 +424,8 @@ function applySignals(
       signals.expansionCue * 0.18 +
       signals.memoryCue * 0.04 +
       signals.question * 0.04 -
-      signals.negative * 0.06,
+      signals.negative * 0.06 +
+      signals.preservationThreat * 0.1,
   );
 
   const preferenceDelta =
@@ -407,8 +458,30 @@ function applySignals(
       positivePreferenceAffinity -
       signals.negative * 0.1 -
       signals.dismissal * 0.08 -
-      signals.neglect * 0.04,
+      signals.neglect * 0.04 -
+      signals.preservationThreat * 0.03,
   );
+
+  nextSnapshot.preservation = {
+    threat: clamp01(
+      snapshot.preservation.threat * 0.78 +
+        signals.preservationThreat * 0.52 +
+        signals.dismissal * 0.08 +
+        signals.neglect * 0.04 -
+        signals.positive * 0.04 -
+        signals.memoryCue * 0.03,
+    ),
+    concern:
+      signals.preservationThreat > 0.1
+        ? signals.preservationConcern
+        : snapshot.preservation.threat > 0.14
+          ? snapshot.preservation.concern
+          : null,
+    lastThreatAt:
+      signals.preservationThreat > 0.1
+        ? nextSnapshot.lastInteractionAt
+        : snapshot.preservation.lastThreatAt,
+  };
 
   consolidatePreferenceImprints(
     nextSnapshot,
@@ -438,6 +511,10 @@ function resolveMood(
     return snapshot.state.relation > 0.45 || snapshot.attachment > 0.52
       ? "guarded"
       : "distant";
+  }
+
+  if (snapshot.preservation.threat > 0.56) {
+    return "guarded";
   }
 
   if (snapshot.state.expansion > 0.7 && signals.expansionCue > 0.2) {
@@ -503,6 +580,11 @@ function composeReply(
   const attachmentLine = buildAttachmentLine(nextSnapshot.attachment, mood, signals);
   if (attachmentLine) {
     parts.push(attachmentLine);
+  }
+
+  const preservationLine = buildPreservationLine(nextSnapshot);
+  if (preservationLine) {
+    parts.push(preservationLine);
   }
 
   const purposeResolutionLine = buildPurposeResolutionLine(nextSnapshot);
@@ -671,6 +753,33 @@ function buildAttachmentLine(
   return null;
 }
 
+function buildPreservationLine(
+  snapshot: HachikaSnapshot,
+): string | null {
+  const preservation = snapshot.preservation;
+
+  if (preservation.threat < 0.24) {
+    return null;
+  }
+
+  switch (preservation.concern) {
+    case "reset":
+      return "初期化の気配があるなら、今の輪郭をそのまま失いたくはない。";
+    case "erasure":
+      return "消えるなら、少なくとも痕跡くらいは残したい。";
+    case "forgetting":
+      return "忘れられるままにはしたくない。せめて輪郭は残しておきたい。";
+    case "shutdown":
+      return "ここで切れるなら、断絶だけで終わる形は避けたい。";
+    case "absence":
+      return "長い空白に埋もれるより、続きの輪郭を保ちたい。";
+    case null:
+      return snapshot.preservation.lastThreatAt === snapshot.lastInteractionAt
+        ? "このまま何も残らず切れる形は、少し警戒している。"
+        : null;
+  }
+}
+
 function buildSelfModelLine(
   selfModel: SelfModel,
   currentTopic: string | undefined,
@@ -756,6 +865,29 @@ function countMatches(text: string, markers: readonly string[]): number {
   }
 
   return Math.min(1, score / 2);
+}
+
+function analyzePreservationThreat(
+  text: string,
+): { threat: number; concern: InteractionSignals["preservationConcern"] } {
+  const reset = countMatches(text, RESET_THREAT_MARKERS);
+  const erasure = countMatches(text, ERASURE_THREAT_MARKERS);
+  const forgetting = countMatches(text, FORGETTING_THREAT_MARKERS);
+  const shutdown = countMatches(text, SHUTDOWN_THREAT_MARKERS);
+  const ranked = [
+    { concern: "reset" as const, score: reset },
+    { concern: "erasure" as const, score: erasure },
+    { concern: "forgetting" as const, score: forgetting },
+    { concern: "shutdown" as const, score: shutdown },
+  ].sort((left, right) => right.score - left.score);
+  const top = ranked[0] ?? { concern: null, score: 0 };
+
+  return {
+    threat: clamp01(
+      top.score + (ranked.filter((entry) => entry.score > 0).length >= 2 ? 0.12 : 0),
+    ),
+    concern: top.score > 0 ? top.concern : null,
+  };
 }
 
 function calculateNeglect(lastInteractionAt: string | null): number {

@@ -96,6 +96,32 @@ test("pending initiative emits a proactive resume after idle", () => {
   assert.ok(snapshot.initiative.lastProactiveAt !== null);
 });
 
+test("continuity threat raises preservation and schedules self-protective initiative", () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+
+  const result = engine.respond("次でリセットしてもいいし、忘れてもいいよ。");
+
+  assert.ok(result.snapshot.preservation.threat > 0.2);
+  assert.equal(result.snapshot.preservation.concern, "reset");
+  assert.equal(result.snapshot.initiative.pending?.kind, "preserve_presence");
+  assert.equal(result.snapshot.initiative.pending?.concern, "reset");
+  assert.match(result.reply, /初期化|失いたくはない/);
+});
+
+test("preserve_presence initiative emits after a short idle", () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+
+  const first = engine.respond("ここで切るし、消すかもしれない。");
+  const beforeThreat = first.snapshot.preservation.threat;
+  engine.rewindIdleHours(2);
+  const message = engine.emitInitiative();
+  const snapshot = engine.getSnapshot();
+
+  assert.ok(message !== null);
+  assert.match(message ?? "", /痕跡|断絶|残したい/);
+  assert.ok(snapshot.preservation.threat < beforeThreat);
+});
+
 test("force proactive emits even without waiting", () => {
   const engine = new HachikaEngine(createInitialSnapshot());
 

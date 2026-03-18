@@ -198,6 +198,9 @@ function printDebug(currentEngine: HachikaEngine): void {
   console.log(formatDriveState(snapshot.state));
   console.log(`attachment: ${snapshot.attachment.toFixed(2)}`);
   console.log(
+    `preservation: ${snapshot.preservation.threat.toFixed(2)}${snapshot.preservation.concern ? `/${snapshot.preservation.concern}` : ""}`,
+  );
+  console.log(
     snapshot.purpose.active
       ? `purpose: ${snapshot.purpose.active.kind}${snapshot.purpose.active.topic ? `(${snapshot.purpose.active.topic})` : ""} ${snapshot.purpose.active.confidence.toFixed(2)} progress:${snapshot.purpose.active.progress.toFixed(2)}`
       : "purpose: none",
@@ -275,6 +278,7 @@ function printSelfModel(currentEngine: HachikaEngine): void {
   const selfModel = currentEngine.getSelfModel();
   const activePurpose = currentEngine.getSnapshot().purpose.active;
   const resolvedPurpose = currentEngine.getSnapshot().purpose.lastResolved;
+  const preservation = currentEngine.getSnapshot().preservation;
 
   if (activePurpose) {
     console.log(
@@ -287,6 +291,10 @@ function printSelfModel(currentEngine: HachikaEngine): void {
   if (resolvedPurpose) {
     console.log(`last resolved: ${formatResolvedPurpose(resolvedPurpose)}`);
   }
+
+  console.log(
+    `preservation: ${preservation.threat.toFixed(2)}${preservation.concern ? `/${preservation.concern}` : ""}`,
+  );
 
   console.log(selfModel.narrative);
 
