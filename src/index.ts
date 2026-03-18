@@ -2,6 +2,7 @@ import { createInterface } from "node:readline/promises";
 import { resolve } from "node:path";
 import { stdin as input, stdout as output } from "node:process";
 
+import { describeArtifactFiles, syncArtifacts } from "./artifacts.js";
 import { HachikaEngine } from "./engine.js";
 import {
   sortedBoundaryImprints,
@@ -14,11 +15,13 @@ import { sortedTraces } from "./traces.js";
 import type { ResolvedPurpose } from "./types.js";
 
 const snapshotPath = resolve(process.cwd(), "data/hachika-state.json");
+const artifactsDir = resolve(process.cwd(), "data/artifacts");
 const snapshot = await loadSnapshot(snapshotPath);
 const engine = new HachikaEngine(snapshot);
 
 const rl = createInterface({ input, output });
 
+await persistState(engine);
 await printIntro(engine);
 await emitStartupInitiative(engine);
 
@@ -80,6 +83,11 @@ try {
       continue;
     }
 
+    if (text === "/artifacts") {
+      printArtifacts(engine);
+      continue;
+    }
+
     if (text === "/memory") {
       printMemories(engine);
       continue;
@@ -97,13 +105,13 @@ try {
 
     if (text === "/reset") {
       engine.reset(createInitialSnapshot());
-      await saveSnapshot(snapshotPath, engine.getSnapshot());
+      await persistState(engine);
       console.log("state reset");
       continue;
     }
 
     const result = engine.respond(text);
-    await saveSnapshot(snapshotPath, result.snapshot);
+    await persistState(engine);
 
     console.log(`hachika> ${result.reply}`);
   }
@@ -117,6 +125,7 @@ async function printIntro(currentEngine: HachikaEngine): Promise<void> {
   console.log(formatDriveState(currentEngine.getSnapshot().state));
   console.log(`attachment:${currentEngine.getSnapshot().attachment.toFixed(2)}`);
   console.log(`identity:${currentEngine.getIdentity().summary}`);
+  console.log(`artifacts:${describeArtifactFiles(currentEngine.getSnapshot(), artifactsDir).length}`);
 }
 
 function printHelp(): void {
@@ -128,6 +137,7 @@ function printHelp(): void {
   console.log("/self   print current self-model");
   console.log("/identity print current identity");
   console.log("/traces print stored traces");
+  console.log("/artifacts print materialized artifact files");
   console.log("/memory print recent memory");
   console.log("/imprints print long-term topic memory");
   console.log("/debug  print preference and memory summary");
@@ -166,6 +176,19 @@ function printTraces(currentEngine: HachikaEngine): void {
     printTraceArtifactGroup("fragments", trace.artifact.fragments);
     printTraceArtifactGroup("decisions", trace.artifact.decisions);
     printTraceArtifactGroup("next", trace.artifact.nextSteps);
+  }
+}
+
+function printArtifacts(currentEngine: HachikaEngine): void {
+  const files = describeArtifactFiles(currentEngine.getSnapshot(), artifactsDir);
+
+  if (files.length === 0) {
+    console.log("no artifacts");
+    return;
+  }
+
+  for (const file of files) {
+    console.log(`${file.topic} ${file.kind} ${file.relativePath}`);
   }
 }
 
@@ -442,7 +465,7 @@ async function emitStartupInitiative(currentEngine: HachikaEngine): Promise<void
     return;
   }
 
-  await saveSnapshot(snapshotPath, currentEngine.getSnapshot());
+  await persistState(currentEngine);
   console.log(`hachika* ${message}`);
 }
 
@@ -457,7 +480,7 @@ async function emitProactive(
     return;
   }
 
-  await saveSnapshot(snapshotPath, currentEngine.getSnapshot());
+  await persistState(currentEngine);
   console.log(`hachika* ${message}`);
 }
 
@@ -474,9 +497,15 @@ async function handleIdleCommand(
   }
 
   currentEngine.rewindIdleHours(hours);
-  await saveSnapshot(snapshotPath, currentEngine.getSnapshot());
+  await persistState(currentEngine);
   console.log(`idled ${hours}h`);
   await emitProactive(currentEngine, false);
+}
+
+async function persistState(currentEngine: HachikaEngine): Promise<void> {
+  const snapshot = currentEngine.getSnapshot();
+  await saveSnapshot(snapshotPath, snapshot);
+  await syncArtifacts(snapshot, artifactsDir);
 }
 
 function formatResolvedPurpose(
