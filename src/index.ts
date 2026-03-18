@@ -10,6 +10,7 @@ import {
 } from "./memory.js";
 import { loadSnapshot, saveSnapshot } from "./persistence.js";
 import { createInitialSnapshot, formatDriveState } from "./state.js";
+import { sortedTraces } from "./traces.js";
 import type { ResolvedPurpose } from "./types.js";
 
 const snapshotPath = resolve(process.cwd(), "data/hachika-state.json");
@@ -74,6 +75,11 @@ try {
       continue;
     }
 
+    if (text === "/traces") {
+      printTraces(engine);
+      continue;
+    }
+
     if (text === "/memory") {
       printMemories(engine);
       continue;
@@ -121,6 +127,7 @@ function printHelp(): void {
   console.log("/purpose print active purpose");
   console.log("/self   print current self-model");
   console.log("/identity print current identity");
+  console.log("/traces print stored traces");
   console.log("/memory print recent memory");
   console.log("/imprints print long-term topic memory");
   console.log("/debug  print preference and memory summary");
@@ -139,6 +146,21 @@ function printMemories(currentEngine: HachikaEngine): void {
   for (const memory of memories) {
     console.log(
       `[${memory.role}] ${memory.text}${memory.topics.length > 0 ? ` [${memory.topics.join(", ")}]` : ""}`,
+    );
+  }
+}
+
+function printTraces(currentEngine: HachikaEngine): void {
+  const traces = sortedTraces(currentEngine.getSnapshot(), 8);
+
+  if (traces.length === 0) {
+    console.log("no traces");
+    return;
+  }
+
+  for (const trace of traces) {
+    console.log(
+      `${trace.topic} ${trace.kind} salience:${trace.salience.toFixed(2)} mentions:${trace.mentions} motive:${trace.sourceMotive} ${trace.summary}`,
     );
   }
 }
@@ -201,6 +223,7 @@ function printDebug(currentEngine: HachikaEngine): void {
   const preferenceImprints = sortedPreferenceImprints(snapshot, 6);
   const boundaryImprints = sortedBoundaryImprints(snapshot, 6);
   const relationImprints = sortedRelationImprints(snapshot, 6);
+  const traces = sortedTraces(snapshot, 6);
 
   console.log(formatDriveState(snapshot.state));
   console.log(`attachment: ${snapshot.attachment.toFixed(2)}`);
@@ -236,6 +259,16 @@ function printDebug(currentEngine: HachikaEngine): void {
     selfModel.dominantConflict
       ? `conflict: ${formatConflict(selfModel.dominantConflict)}`
       : "conflict: none",
+  );
+  console.log(
+    traces.length === 0
+      ? "traces: none"
+      : `traces: ${traces
+          .map(
+            (trace) =>
+              `${trace.topic}:${trace.kind}/${trace.salience.toFixed(2)}/${trace.sourceMotive}`,
+          )
+          .join(" | ")}`,
   );
 
   if (preferredTopics.length === 0) {

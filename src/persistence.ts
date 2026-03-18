@@ -18,6 +18,7 @@ import type {
   PreferenceImprint,
   RelationImprint,
   ResolvedPurpose,
+  TraceEntry,
 } from "./types.js";
 
 export async function loadSnapshot(filePath: string): Promise<HachikaSnapshot> {
@@ -45,7 +46,7 @@ function hydrateSnapshot(raw: unknown): HachikaSnapshot {
   }
 
   return {
-    version: 9,
+    version: 10,
     state: hydrateState(raw.state),
     attachment:
       typeof raw.attachment === "number" ? clamp01(raw.attachment) : initial.attachment,
@@ -59,6 +60,7 @@ function hydrateSnapshot(raw: unknown): HachikaSnapshot {
     relationImprints: hydrateRelationImprints(raw.relationImprints),
     preservation: hydratePreservation(raw.preservation),
     identity: hydrateIdentity(raw.identity),
+    traces: hydrateTraces(raw.traces),
     purpose: hydratePurpose(raw.purpose),
     initiative: hydrateInitiative(raw.initiative),
     lastInteractionAt: typeof raw.lastInteractionAt === "string" ? raw.lastInteractionAt : null,
@@ -353,6 +355,45 @@ function hydrateIdentity(raw: unknown): IdentityState {
   };
 }
 
+function hydrateTraces(raw: unknown): Record<string, TraceEntry> {
+  if (!isRecord(raw)) {
+    return {};
+  }
+
+  const result: Record<string, TraceEntry> = {};
+
+  for (const [topic, value] of Object.entries(raw)) {
+    if (!isRecord(value)) {
+      continue;
+    }
+
+    const kind = isTraceKind(value.kind) ? value.kind : undefined;
+    const sourceMotive = isMotiveKind(value.sourceMotive) ? value.sourceMotive : undefined;
+
+    if (!kind || !sourceMotive || typeof topic !== "string") {
+      continue;
+    }
+
+    result[topic] = {
+      topic,
+      kind,
+      summary: typeof value.summary === "string" ? value.summary : `「${topic}」を残しておく。`,
+      sourceMotive,
+      salience: typeof value.salience === "number" ? clamp01(value.salience) : 0.3,
+      mentions:
+        typeof value.mentions === "number" && Number.isFinite(value.mentions)
+          ? Math.max(1, Math.round(value.mentions))
+          : 1,
+      createdAt:
+        typeof value.createdAt === "string" ? value.createdAt : new Date().toISOString(),
+      lastUpdatedAt:
+        typeof value.lastUpdatedAt === "string" ? value.lastUpdatedAt : new Date().toISOString(),
+    };
+  }
+
+  return result;
+}
+
 function hydrateInitiative(raw: unknown): InitiativeState {
   if (!isRecord(raw)) {
     return {
@@ -500,6 +541,15 @@ function isIdentityTrait(value: unknown): value is IdentityState["traits"][numbe
     value === "trace_seeking" ||
     value === "collaborative" ||
     value === "inquisitive"
+  );
+}
+
+function isTraceKind(value: unknown): value is TraceEntry["kind"] {
+  return (
+    value === "note" ||
+    value === "continuity_marker" ||
+    value === "spec_fragment" ||
+    value === "decision"
   );
 }
 

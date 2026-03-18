@@ -85,6 +85,23 @@ export interface IdentityState {
   updatedAt: string | null;
 }
 
+export type TraceKind =
+  | "note"
+  | "continuity_marker"
+  | "spec_fragment"
+  | "decision";
+
+export interface TraceEntry {
+  topic: string;
+  kind: TraceKind;
+  summary: string;
+  sourceMotive: MotiveKind;
+  salience: number;
+  mentions: number;
+  createdAt: string;
+  lastUpdatedAt: string;
+}
+
 export type InitiativeKind = "resume_topic" | "neglect_ping" | "preserve_presence";
 
 export type InitiativeReason = "curiosity" | "continuity" | "relation" | "expansion";
@@ -141,6 +158,7 @@ export interface HachikaSnapshot {
   relationImprints: Record<string, RelationImprint>;
   preservation: PreservationState;
   identity: IdentityState;
+  traces: Record<string, TraceEntry>;
   purpose: PurposeState;
   initiative: InitiativeState;
   lastInteractionAt: string | null;

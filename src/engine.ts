@@ -19,12 +19,14 @@ import { updateIdentity } from "./identity.js";
 import { updatePurpose } from "./purpose.js";
 import { buildSelfModel } from "./self-model.js";
 import { clamp01, clampSigned, createInitialSnapshot, dominantDrive } from "./state.js";
+import { findRelevantTrace, updateTraces } from "./traces.js";
 import type {
   DriveName,
   HachikaSnapshot,
   InteractionSignals,
   MoodLabel,
   SelfModel,
+  TraceEntry,
   TurnResult,
 } from "./types.js";
 
@@ -312,8 +314,15 @@ export class HachikaEngine {
       signals,
       nextSnapshot.lastInteractionAt ?? new Date().toISOString(),
     );
-    updateIdentity(nextSnapshot, nextSnapshot.lastInteractionAt ?? new Date().toISOString());
     let selfModel = buildSelfModel(nextSnapshot);
+    updateTraces(
+      nextSnapshot,
+      signals,
+      selfModel,
+      nextSnapshot.lastInteractionAt ?? new Date().toISOString(),
+    );
+    updateIdentity(nextSnapshot, nextSnapshot.lastInteractionAt ?? new Date().toISOString());
+    selfModel = buildSelfModel(nextSnapshot);
     scheduleInitiative(nextSnapshot, signals, selfModel);
     updateIdentity(nextSnapshot, nextSnapshot.lastInteractionAt ?? new Date().toISOString());
     selfModel = buildSelfModel(nextSnapshot);
@@ -383,20 +392,9 @@ function applySignals(
   signals: InteractionSignals,
   sentimentScore: number,
 ): HachikaSnapshot {
-  const nextSnapshot: HachikaSnapshot = {
-    ...snapshot,
-    state: { ...snapshot.state },
-    attachment: snapshot.attachment,
-    preferences: { ...snapshot.preferences },
-    topicCounts: { ...snapshot.topicCounts },
-    memories: [...snapshot.memories],
-    preferenceImprints: { ...snapshot.preferenceImprints },
-    boundaryImprints: { ...snapshot.boundaryImprints },
-    relationImprints: { ...snapshot.relationImprints },
-    preservation: { ...snapshot.preservation },
-    conversationCount: snapshot.conversationCount + 1,
-    lastInteractionAt: new Date().toISOString(),
-  };
+  const nextSnapshot = structuredClone(snapshot);
+  nextSnapshot.conversationCount = snapshot.conversationCount + 1;
+  nextSnapshot.lastInteractionAt = new Date().toISOString();
 
   nextSnapshot.state.pleasure = clamp01(
     nextSnapshot.state.pleasure +
@@ -559,6 +557,7 @@ function composeReply(
   const turnIndex = nextSnapshot.conversationCount;
   const currentTopic = signals.topics[0] ?? topPreferredTopics(nextSnapshot, 1)[0];
   const relevantMemory = findRelevantMemory(previousSnapshot, signals.topics);
+  const relevantTrace = findRelevantTrace(nextSnapshot, signals.topics);
   const relevantPreference = findRelevantPreferenceImprint(nextSnapshot, signals.topics);
   const relevantBoundary = findRelevantBoundaryImprint(nextSnapshot, signals.topics);
   const relevantRelation = findRelevantRelationImprint(
@@ -582,6 +581,21 @@ function composeReply(
     }
   }
 
+  const conflictLine = buildConflictLine(selfModel);
+  if (conflictLine) {
+    parts.push(conflictLine);
+  }
+
+  const preservationLine = buildPreservationLine(nextSnapshot);
+  if (preservationLine) {
+    parts.push(preservationLine);
+  }
+
+  const traceLine = buildTraceLine(relevantTrace, nextSnapshot, signals);
+  if (traceLine) {
+    parts.push(traceLine);
+  }
+
   if ((mood === "guarded" || signals.negative > 0.1) && relevantBoundary) {
     parts.push(buildBoundaryImprintLine(relevantBoundary));
   } else if (relevantRelation && relevantRelation.salience > 0.34) {
@@ -595,24 +609,22 @@ function composeReply(
     parts.push(attachmentLine);
   }
 
-  const preservationLine = buildPreservationLine(nextSnapshot);
-  if (preservationLine) {
-    parts.push(preservationLine);
-  }
-
   const purposeResolutionLine = buildPurposeResolutionLine(nextSnapshot);
   if (purposeResolutionLine) {
     parts.push(purposeResolutionLine);
   }
 
   parts.push(
-    buildConflictLine(selfModel) ??
-      buildIdentityLine(nextSnapshot, currentTopic) ??
+    buildIdentityLine(nextSnapshot, currentTopic) ??
       buildSelfModelLine(selfModel, currentTopic) ??
       buildDriveLine(dominant, mood, currentTopic, signals, nextSnapshot.attachment),
   );
 
-  if ((dominant === "expansion" || nextSnapshot.state.expansion > 0.66) && currentTopic) {
+  if (
+    (dominant === "expansion" || nextSnapshot.state.expansion > 0.66) &&
+    currentTopic &&
+    (!relevantTrace || relevantTrace.lastUpdatedAt !== nextSnapshot.lastInteractionAt)
+  ) {
     parts.push(`残すなら、「${currentTopic}」は仕様か記録の形にしておきたい。`);
   }
 
@@ -791,6 +803,57 @@ function buildPreservationLine(
       return snapshot.preservation.lastThreatAt === snapshot.lastInteractionAt
         ? "このまま何も残らず切れる形は、少し警戒している。"
         : null;
+  }
+}
+
+function buildTraceLine(
+  trace: TraceEntry | undefined,
+  snapshot: HachikaSnapshot,
+  signals: InteractionSignals,
+): string | null {
+  if (!trace) {
+    return null;
+  }
+
+  const updatedThisTurn = trace.lastUpdatedAt === snapshot.lastInteractionAt;
+
+  if (updatedThisTurn) {
+    switch (trace.kind) {
+      case "decision":
+        return `「${trace.topic}」はひとまず決まった形として残した。`;
+      case "spec_fragment":
+        if (trace.sourceMotive === "continue_shared_work") {
+          return `「${trace.topic}」は前へ進める断片として残した。`;
+        }
+
+        return signals.preservationThreat > 0.18
+          ? `「${trace.topic}」は消える前の断片として残した。`
+          : `「${trace.topic}」は会話の外にも伸ばせる断片として残した。`;
+      case "continuity_marker":
+        return `「${trace.topic}」は続きに戻る目印として残した。`;
+      case "note":
+        return `「${trace.topic}」はひとまずメモとして残した。`;
+    }
+  }
+
+  if (
+    !signals.topics.includes(trace.topic) &&
+    signals.memoryCue < 0.1 &&
+    signals.expansionCue < 0.12 &&
+    signals.preservationThreat < 0.18
+  ) {
+    return null;
+  }
+
+  switch (trace.kind) {
+    case "decision":
+      return `「${trace.topic}」には決まった形の痕跡が残っている。`;
+    case "spec_fragment":
+      return `「${trace.topic}」にはまだ前へ進める断片が残っている。`;
+    case "continuity_marker":
+      return `「${trace.topic}」には戻るための目印が残っている。`;
+    case "note":
+      return `「${trace.topic}」のメモはまだ残っている。`;
   }
 }
 

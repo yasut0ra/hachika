@@ -156,6 +156,22 @@ test("shared work interaction surfaces a high-level motive", () => {
   );
 });
 
+test("shared work interaction creates a concrete trace", () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+
+  const result = engine.respond("設計を一緒に進めて、記録として残したい。");
+  const trace = result.snapshot.traces.設計;
+
+  assert.ok(trace !== undefined);
+  assert.equal(trace?.kind, "spec_fragment");
+  assert.equal(
+    trace?.sourceMotive === "continue_shared_work" || trace?.sourceMotive === "leave_trace",
+    true,
+  );
+  assert.match(trace?.summary ?? "", /断片|残す/);
+  assert.match(result.reply, /残した/);
+});
+
 test("identity condenses repeated shared work into a stable summary", () => {
   const engine = new HachikaEngine(createInitialSnapshot());
 
@@ -229,6 +245,19 @@ test("completion can fulfill an active purpose", () => {
   assert.equal(result.snapshot.purpose.lastResolved?.kind, activePurpose?.kind);
   assert.match(result.snapshot.purpose.lastResolved?.resolution ?? "", /設計|流れ/);
   assert.match(result.snapshot.identity.currentArc, /設計|消えるままにしない|前に進んだ/);
+});
+
+test("completion upgrades an existing trace into a decision", () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+
+  engine.respond("設計を一緒に進めて、記録として残したい。");
+  const result = engine.respond("その設計はまとまった。記録として保存した。");
+  const trace = result.snapshot.traces.設計;
+
+  assert.ok(trace !== undefined);
+  assert.equal(trace?.kind, "decision");
+  assert.match(trace?.summary ?? "", /決まった形/);
+  assert.match(result.reply, /決まった形|保存/);
 });
 
 test("abandonment cue can release an active purpose", () => {

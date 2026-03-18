@@ -4,6 +4,7 @@ import {
   topPreferredTopics,
 } from "./memory.js";
 import { clamp01 } from "./state.js";
+import { sortedTraces } from "./traces.js";
 import type {
   HachikaSnapshot,
   IdentityState,
@@ -17,6 +18,7 @@ export function updateIdentity(
 ): void {
   const previous = snapshot.identity;
   const topPreference = sortedPreferenceImprints(snapshot, 2);
+  const topTrace = sortedTraces(snapshot, 2);
   const topBoundary = sortedBoundaryImprints(snapshot, 1)[0];
   const continuity = snapshot.relationImprints.continuity;
   const attention = snapshot.relationImprints.attention;
@@ -56,8 +58,9 @@ export function updateIdentity(
     {
       trait: "trace_seeking" as const,
       score: clamp01(
-        snapshot.state.expansion * 0.32 +
-          (topPreference[0]?.salience ?? 0) * 0.08 +
+        snapshot.state.expansion * 0.28 +
+          (topTrace[0]?.salience ?? 0) * 0.16 +
+          (topPreference[0]?.salience ?? 0) * 0.04 +
           snapshot.preservation.threat * 0.22 +
           purposeTraitBoost(activePurpose?.kind, lastResolved?.kind, "leave_trace", 0.14, 0.08) +
           concernBoost(snapshot.preservation.concern, ["forgetting", "reset", "erasure"], 0.1) +
@@ -118,6 +121,13 @@ export function updateIdentity(
 }
 
 function deriveIdentityAnchors(snapshot: HachikaSnapshot): string[] {
+  const stableTraces = sortedTraces(snapshot, 4)
+    .filter(
+      (trace) =>
+        (trace.mentions >= 2 || trace.salience >= 0.42) &&
+        qualifiesIdentityAnchor(snapshot, trace.topic),
+    )
+    .map((trace) => trace.topic);
   const stablePreferred = topPreferredTopics(snapshot, 4).filter((topic) =>
     qualifiesIdentityAnchor(snapshot, topic),
   );
@@ -133,6 +143,7 @@ function deriveIdentityAnchors(snapshot: HachikaSnapshot): string[] {
     snapshot.purpose.active?.topic ?? null,
     snapshot.purpose.lastResolved?.topic ?? null,
     snapshot.initiative.pending?.topic ?? null,
+    ...stableTraces,
     ...stablePreferred,
     ...stableImprints,
     sortedBoundaryImprints(snapshot, 1)[0]?.topic ?? null,
@@ -159,7 +170,11 @@ function qualifiesIdentityAnchor(
   snapshot: HachikaSnapshot,
   topic: string,
 ): boolean {
-  return (snapshot.topicCounts[topic] ?? 0) >= 2 || (snapshot.preferenceImprints[topic]?.salience ?? 0) >= 0.38;
+  return (
+    (snapshot.topicCounts[topic] ?? 0) >= 2 ||
+    (snapshot.preferenceImprints[topic]?.salience ?? 0) >= 0.38 ||
+    (snapshot.traces[topic]?.salience ?? 0) >= 0.42
+  );
 }
 
 function buildCurrentArc(
