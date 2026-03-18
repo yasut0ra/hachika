@@ -156,6 +156,29 @@ test("shared work interaction surfaces a high-level motive", () => {
   );
 });
 
+test("identity condenses repeated shared work into a stable summary", () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+
+  engine.respond("設計を一緒に進めて、記録として残したい。");
+  const result = engine.respond("その設計の流れは残しながら、もう少し前に進めたい。");
+
+  assert.ok(result.snapshot.identity.coherence > createInitialSnapshot().identity.coherence);
+  assert.ok(result.snapshot.identity.anchors.includes("設計"));
+  assert.ok(result.snapshot.identity.traits.includes("collaborative"));
+  assert.match(result.snapshot.identity.summary, /設計|前へ進める/);
+});
+
+test("identity can surface in a generic follow-up reply", () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+
+  engine.respond("設計を一緒に進めて、記録として残したい。");
+  engine.respond("その設計の流れは残しながら、もう少し前に進めたい。");
+  const result = engine.respond("どうする？");
+
+  assert.match(result.reply, /自分の流れ/);
+  assert.ok(result.snapshot.identity.anchors.includes("設計"));
+});
+
 test("self-model surfaces curiosity and relation conflict", () => {
   const engine = new HachikaEngine(createInitialSnapshot());
 
@@ -205,6 +228,7 @@ test("completion can fulfill an active purpose", () => {
   assert.equal(result.snapshot.purpose.lastResolved?.outcome, "fulfilled");
   assert.equal(result.snapshot.purpose.lastResolved?.kind, activePurpose?.kind);
   assert.match(result.snapshot.purpose.lastResolved?.resolution ?? "", /設計|流れ/);
+  assert.match(result.snapshot.identity.currentArc, /設計|消えるままにしない|前に進んだ/);
 });
 
 test("abandonment cue can release an active purpose", () => {

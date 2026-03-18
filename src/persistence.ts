@@ -7,6 +7,7 @@ import type {
   BoundaryImprint,
   DriveState,
   HachikaSnapshot,
+  IdentityState,
   InitiativeState,
   MemoryEntry,
   MotiveKind,
@@ -44,7 +45,7 @@ function hydrateSnapshot(raw: unknown): HachikaSnapshot {
   }
 
   return {
-    version: 8,
+    version: 9,
     state: hydrateState(raw.state),
     attachment:
       typeof raw.attachment === "number" ? clamp01(raw.attachment) : initial.attachment,
@@ -57,6 +58,7 @@ function hydrateSnapshot(raw: unknown): HachikaSnapshot {
     boundaryImprints: hydrateBoundaryImprints(raw.boundaryImprints),
     relationImprints: hydrateRelationImprints(raw.relationImprints),
     preservation: hydratePreservation(raw.preservation),
+    identity: hydrateIdentity(raw.identity),
     purpose: hydratePurpose(raw.purpose),
     initiative: hydrateInitiative(raw.initiative),
     lastInteractionAt: typeof raw.lastInteractionAt === "string" ? raw.lastInteractionAt : null,
@@ -329,6 +331,28 @@ function hydratePreservation(raw: unknown): PreservationState {
   };
 }
 
+function hydrateIdentity(raw: unknown): IdentityState {
+  const initial = createInitialSnapshot().identity;
+
+  if (!isRecord(raw)) {
+    return initial;
+  }
+
+  return {
+    summary: typeof raw.summary === "string" ? raw.summary : initial.summary,
+    currentArc: typeof raw.currentArc === "string" ? raw.currentArc : initial.currentArc,
+    traits: Array.isArray(raw.traits)
+      ? raw.traits.filter(isIdentityTrait).slice(0, 4)
+      : initial.traits,
+    anchors: Array.isArray(raw.anchors)
+      ? raw.anchors.filter((value): value is string => typeof value === "string").slice(0, 4)
+      : initial.anchors,
+    coherence:
+      typeof raw.coherence === "number" ? clamp01(raw.coherence) : initial.coherence,
+    updatedAt: typeof raw.updatedAt === "string" ? raw.updatedAt : initial.updatedAt,
+  };
+}
+
 function hydrateInitiative(raw: unknown): InitiativeState {
   if (!isRecord(raw)) {
     return {
@@ -465,6 +489,17 @@ function isPreservationConcern(value: unknown): value is PreservationConcern {
     value === "erasure" ||
     value === "shutdown" ||
     value === "absence"
+  );
+}
+
+function isIdentityTrait(value: unknown): value is IdentityState["traits"][number] {
+  return (
+    value === "guarded" ||
+    value === "attached" ||
+    value === "persistent" ||
+    value === "trace_seeking" ||
+    value === "collaborative" ||
+    value === "inquisitive"
   );
 }
 

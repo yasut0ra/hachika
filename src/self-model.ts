@@ -19,6 +19,7 @@ export function buildSelfModel(snapshot: HachikaSnapshot): SelfModel {
   const anchorTopic =
     activePurpose?.topic ??
     snapshot.initiative.pending?.topic ??
+    snapshot.identity.anchors[0] ??
     topPreference?.topic ??
     topPreferredTopics(snapshot, 1)[0] ??
     null;
@@ -39,6 +40,7 @@ export function buildSelfModel(snapshot: HachikaSnapshot): SelfModel {
         (topBoundary?.salience ?? 0) * 0.74 +
           (1 - snapshot.state.pleasure) * 0.28 +
           (topBoundary?.intensity ?? 0) * 0.18 +
+          identityTraitBoost(snapshot, "guarded", 0.08) +
           preservationThreat * 0.12 +
           preservationConcernBoost(preservationConcern, ["erasure", "shutdown"], 0.1) +
           activePurposeBoost(activePurpose, "protect_boundary", 0.14),
@@ -51,6 +53,7 @@ export function buildSelfModel(snapshot: HachikaSnapshot): SelfModel {
       score: clamp01(
         snapshot.state.continuity * 0.62 +
           (continuity?.closeness ?? 0) * 0.24 +
+          identityTraitBoost(snapshot, "persistent", 0.1) +
           preservationThreat * 0.24 +
           preservationConcernBoost(preservationConcern, ["reset", "shutdown", "absence"], 0.12) +
           (snapshot.initiative.pending?.reason === "continuity" ? 0.12 : 0) +
@@ -64,6 +67,7 @@ export function buildSelfModel(snapshot: HachikaSnapshot): SelfModel {
       score: clamp01(
         snapshot.state.curiosity * 0.56 +
           Math.max(0, topPreference?.salience ?? 0) * 0.12 -
+          identityTraitBoost(snapshot, "inquisitive", 0.08) +
           preservationThreat * 0.06 -
           boundaryPenalty +
           activePurposeBoost(activePurpose, "pursue_curiosity", 0.12),
@@ -79,6 +83,7 @@ export function buildSelfModel(snapshot: HachikaSnapshot): SelfModel {
         snapshot.attachment * 0.46 +
           snapshot.state.relation * 0.34 +
           (attention?.closeness ?? 0) * 0.2 -
+          identityTraitBoost(snapshot, "attached", 0.08) +
           preservationThreat * 0.04 -
           boundaryPenalty +
           activePurposeBoost(activePurpose, "deepen_relation", 0.14),
@@ -94,6 +99,7 @@ export function buildSelfModel(snapshot: HachikaSnapshot): SelfModel {
         snapshot.state.expansion * 0.42 +
           (sharedWork?.closeness ?? 0) * 0.36 +
           snapshot.state.curiosity * 0.08 +
+          identityTraitBoost(snapshot, "collaborative", 0.1) +
           preservationThreat * 0.06 +
           (anchorTopic ? 0.12 : 0) +
           activePurposeBoost(activePurpose, "continue_shared_work", 0.16) -
@@ -110,6 +116,7 @@ export function buildSelfModel(snapshot: HachikaSnapshot): SelfModel {
         snapshot.state.expansion * 0.7 +
           Math.max(0, topPreference?.salience ?? 0) * 0.14 +
           (sharedWork?.closeness ?? 0) * 0.18 +
+          identityTraitBoost(snapshot, "trace_seeking", 0.1) +
           preservationThreat * 0.22 +
           preservationConcernBoost(preservationConcern, ["forgetting", "reset", "erasure"], 0.14) +
           activePurposeBoost(activePurpose, "leave_trace", 0.16) -
@@ -153,7 +160,7 @@ function detectConflicts(
     curiosity,
     relation,
     "curiosity_relation",
-    0.46,
+    0.44,
     0.42,
     0.18,
   );
@@ -441,6 +448,18 @@ function activePurposeBoost(
   }
 
   return activePurpose.confidence * weight;
+}
+
+function identityTraitBoost(
+  snapshot: HachikaSnapshot,
+  trait: HachikaSnapshot["identity"]["traits"][number],
+  weight: number,
+): number {
+  if (!snapshot.identity.traits.includes(trait)) {
+    return 0;
+  }
+
+  return snapshot.identity.coherence * weight;
 }
 
 function preservationConcernBoost(

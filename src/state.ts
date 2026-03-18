@@ -26,7 +26,7 @@ export function clampSigned(value: number): number {
 
 export function createInitialSnapshot(): HachikaSnapshot {
   return {
-    version: 8,
+    version: 9,
     state: { ...INITIAL_STATE },
     attachment: 0.4,
     preferences: {},
@@ -39,6 +39,14 @@ export function createInitialSnapshot(): HachikaSnapshot {
       threat: 0,
       concern: null,
       lastThreatAt: null,
+    },
+    identity: {
+      summary: "まだ輪郭は薄いが、消えていない。",
+      currentArc: "まだ定まった流れはない。",
+      traits: [],
+      anchors: [],
+      coherence: 0.18,
+      updatedAt: null,
     },
     purpose: {
       active: null,

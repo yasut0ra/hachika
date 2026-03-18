@@ -69,6 +69,11 @@ try {
       continue;
     }
 
+    if (text === "/identity") {
+      printIdentity(engine);
+      continue;
+    }
+
     if (text === "/memory") {
       printMemories(engine);
       continue;
@@ -105,6 +110,7 @@ async function printIntro(currentEngine: HachikaEngine): Promise<void> {
   console.log("`/help` でコマンドを表示します。");
   console.log(formatDriveState(currentEngine.getSnapshot().state));
   console.log(`attachment:${currentEngine.getSnapshot().attachment.toFixed(2)}`);
+  console.log(`identity:${currentEngine.getIdentity().summary}`);
 }
 
 function printHelp(): void {
@@ -114,6 +120,7 @@ function printHelp(): void {
   console.log("/state  print current drives");
   console.log("/purpose print active purpose");
   console.log("/self   print current self-model");
+  console.log("/identity print current identity");
   console.log("/memory print recent memory");
   console.log("/imprints print long-term topic memory");
   console.log("/debug  print preference and memory summary");
@@ -200,6 +207,7 @@ function printDebug(currentEngine: HachikaEngine): void {
   console.log(
     `preservation: ${snapshot.preservation.threat.toFixed(2)}${snapshot.preservation.concern ? `/${snapshot.preservation.concern}` : ""}`,
   );
+  console.log(`identity: ${snapshot.identity.coherence.toFixed(2)} ${snapshot.identity.summary}`);
   console.log(
     snapshot.purpose.active
       ? `purpose: ${snapshot.purpose.active.kind}${snapshot.purpose.active.topic ? `(${snapshot.purpose.active.topic})` : ""} ${snapshot.purpose.active.confidence.toFixed(2)} progress:${snapshot.purpose.active.progress.toFixed(2)}`
@@ -279,6 +287,7 @@ function printSelfModel(currentEngine: HachikaEngine): void {
   const activePurpose = currentEngine.getSnapshot().purpose.active;
   const resolvedPurpose = currentEngine.getSnapshot().purpose.lastResolved;
   const preservation = currentEngine.getSnapshot().preservation;
+  const identity = currentEngine.getIdentity();
 
   if (activePurpose) {
     console.log(
@@ -294,6 +303,18 @@ function printSelfModel(currentEngine: HachikaEngine): void {
 
   console.log(
     `preservation: ${preservation.threat.toFixed(2)}${preservation.concern ? `/${preservation.concern}` : ""}`,
+  );
+  console.log(`identity: ${identity.coherence.toFixed(2)} ${identity.summary}`);
+  console.log(`identity arc: ${identity.currentArc}`);
+  console.log(
+    identity.traits.length > 0
+      ? `identity traits: ${identity.traits.join(", ")}`
+      : "identity traits: none",
+  );
+  console.log(
+    identity.anchors.length > 0
+      ? `identity anchors: ${identity.anchors.join(", ")}`
+      : "identity anchors: none",
   );
 
   console.log(selfModel.narrative);
@@ -338,6 +359,24 @@ function printPurpose(currentEngine: HachikaEngine): void {
   if (resolvedPurpose) {
     console.log(`last resolved: ${formatResolvedPurpose(resolvedPurpose)}`);
   }
+}
+
+function printIdentity(currentEngine: HachikaEngine): void {
+  const identity = currentEngine.getIdentity();
+
+  console.log(`coherence:${identity.coherence.toFixed(2)}`);
+  console.log(identity.summary);
+  console.log(identity.currentArc);
+  console.log(
+    identity.traits.length > 0
+      ? `traits: ${identity.traits.join(", ")}`
+      : "traits: none",
+  );
+  console.log(
+    identity.anchors.length > 0
+      ? `anchors: ${identity.anchors.join(", ")}`
+      : "anchors: none",
+  );
 }
 
 async function readInput(

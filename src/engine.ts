@@ -15,6 +15,7 @@ import {
   rewindSnapshotHours,
   scheduleInitiative,
 } from "./initiative.js";
+import { updateIdentity } from "./identity.js";
 import { updatePurpose } from "./purpose.js";
 import { buildSelfModel } from "./self-model.js";
 import { clamp01, clampSigned, createInitialSnapshot, dominantDrive } from "./state.js";
@@ -269,6 +270,10 @@ export class HachikaEngine {
     return buildSelfModel(this.#snapshot);
   }
 
+  getIdentity(): HachikaSnapshot["identity"] {
+    return structuredClone(this.#snapshot.identity);
+  }
+
   emitInitiative(options: { force?: boolean; now?: Date } = {}): string | null {
     const nextSnapshot = structuredClone(this.#snapshot);
     const emission = emitInitiative(nextSnapshot, options);
@@ -278,6 +283,10 @@ export class HachikaEngine {
     }
 
     remember(nextSnapshot, "hachika", emission.message, emission.topics, "neutral");
+    updateIdentity(
+      nextSnapshot,
+      nextSnapshot.initiative.lastProactiveAt ?? new Date().toISOString(),
+    );
     this.#snapshot = nextSnapshot;
 
     return emission.message;
@@ -286,6 +295,7 @@ export class HachikaEngine {
   rewindIdleHours(hours: number): void {
     const nextSnapshot = structuredClone(this.#snapshot);
     rewindSnapshotHours(nextSnapshot, hours);
+    updateIdentity(nextSnapshot, new Date().toISOString());
     this.#snapshot = nextSnapshot;
   }
 
@@ -302,8 +312,11 @@ export class HachikaEngine {
       signals,
       nextSnapshot.lastInteractionAt ?? new Date().toISOString(),
     );
-    const selfModel = buildSelfModel(nextSnapshot);
+    updateIdentity(nextSnapshot, nextSnapshot.lastInteractionAt ?? new Date().toISOString());
+    let selfModel = buildSelfModel(nextSnapshot);
     scheduleInitiative(nextSnapshot, signals, selfModel);
+    updateIdentity(nextSnapshot, nextSnapshot.lastInteractionAt ?? new Date().toISOString());
+    selfModel = buildSelfModel(nextSnapshot);
     const reply = composeReply(
       this.#snapshot,
       nextSnapshot,
@@ -594,6 +607,7 @@ function composeReply(
 
   parts.push(
     buildConflictLine(selfModel) ??
+      buildIdentityLine(nextSnapshot, currentTopic) ??
       buildSelfModelLine(selfModel, currentTopic) ??
       buildDriveLine(dominant, mood, currentTopic, signals, nextSnapshot.attachment),
   );
@@ -821,11 +835,32 @@ function buildConflictLine(
 ): string | null {
   const conflict = selfModel.dominantConflict;
 
-  if (!conflict || conflict.intensity < 0.52) {
+  if (!conflict || conflict.intensity < 0.44) {
     return null;
   }
 
   return conflict.summary;
+}
+
+function buildIdentityLine(
+  snapshot: HachikaSnapshot,
+  currentTopic: string | undefined,
+): string | null {
+  if (snapshot.identity.coherence < 0.5) {
+    return null;
+  }
+
+  const anchor = snapshot.identity.anchors[0];
+  const stableCurrentTopic =
+    currentTopic &&
+    ((snapshot.topicCounts[currentTopic] ?? 0) >= 2 ||
+      (snapshot.preferenceImprints[currentTopic]?.salience ?? 0) >= 0.34);
+
+  if (currentTopic && anchor && currentTopic !== anchor && stableCurrentTopic) {
+    return null;
+  }
+
+  return snapshot.identity.currentArc;
 }
 
 function buildPurposeResolutionLine(

@@ -68,6 +68,23 @@ export interface PreservationState {
   lastThreatAt: string | null;
 }
 
+export type IdentityTrait =
+  | "guarded"
+  | "attached"
+  | "persistent"
+  | "trace_seeking"
+  | "collaborative"
+  | "inquisitive";
+
+export interface IdentityState {
+  summary: string;
+  currentArc: string;
+  traits: IdentityTrait[];
+  anchors: string[];
+  coherence: number;
+  updatedAt: string | null;
+}
+
 export type InitiativeKind = "resume_topic" | "neglect_ping" | "preserve_presence";
 
 export type InitiativeReason = "curiosity" | "continuity" | "relation" | "expansion";
@@ -123,6 +140,7 @@ export interface HachikaSnapshot {
   boundaryImprints: Record<string, BoundaryImprint>;
   relationImprints: Record<string, RelationImprint>;
   preservation: PreservationState;
+  identity: IdentityState;
   purpose: PurposeState;
   initiative: InitiativeState;
   lastInteractionAt: string | null;
