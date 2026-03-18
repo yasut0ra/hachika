@@ -73,6 +73,21 @@ export interface InitiativeState {
   lastProactiveAt: string | null;
 }
 
+export interface ActivePurpose {
+  kind: MotiveKind;
+  topic: string | null;
+  summary: string;
+  confidence: number;
+  createdAt: string;
+  lastUpdatedAt: string;
+  turnsActive: number;
+}
+
+export interface PurposeState {
+  active: ActivePurpose | null;
+  lastShiftAt: string | null;
+}
+
 export interface HachikaSnapshot {
   version: number;
   state: DriveState;
@@ -83,6 +98,7 @@ export interface HachikaSnapshot {
   preferenceImprints: Record<string, PreferenceImprint>;
   boundaryImprints: Record<string, BoundaryImprint>;
   relationImprints: Record<string, RelationImprint>;
+  purpose: PurposeState;
   initiative: InitiativeState;
   lastInteractionAt: string | null;
   conversationCount: number;

@@ -3,6 +3,7 @@ import { dirname } from "node:path";
 
 import { clamp01, clampSigned, createInitialSnapshot } from "./state.js";
 import type {
+  ActivePurpose,
   BoundaryImprint,
   DriveState,
   HachikaSnapshot,
@@ -10,6 +11,7 @@ import type {
   MemoryEntry,
   MotiveKind,
   PendingInitiative,
+  PurposeState,
   PreferenceImprint,
   RelationImprint,
 } from "./types.js";
@@ -39,7 +41,7 @@ function hydrateSnapshot(raw: unknown): HachikaSnapshot {
   }
 
   return {
-    version: 5,
+    version: 6,
     state: hydrateState(raw.state),
     attachment:
       typeof raw.attachment === "number" ? clamp01(raw.attachment) : initial.attachment,
@@ -51,6 +53,7 @@ function hydrateSnapshot(raw: unknown): HachikaSnapshot {
     preferenceImprints: hydratePreferenceImprints(raw.preferenceImprints, raw.imprints),
     boundaryImprints: hydrateBoundaryImprints(raw.boundaryImprints),
     relationImprints: hydrateRelationImprints(raw.relationImprints),
+    purpose: hydratePurpose(raw.purpose),
     initiative: hydrateInitiative(raw.initiative),
     lastInteractionAt: typeof raw.lastInteractionAt === "string" ? raw.lastInteractionAt : null,
     conversationCount:
@@ -290,6 +293,20 @@ function hydrateRelationImprints(raw: unknown): Record<string, RelationImprint> 
   return result;
 }
 
+function hydratePurpose(raw: unknown): PurposeState {
+  if (!isRecord(raw)) {
+    return {
+      active: null,
+      lastShiftAt: null,
+    };
+  }
+
+  return {
+    active: hydrateActivePurpose(raw.active),
+    lastShiftAt: typeof raw.lastShiftAt === "string" ? raw.lastShiftAt : null,
+  };
+}
+
 function hydrateInitiative(raw: unknown): InitiativeState {
   if (!isRecord(raw)) {
     return {
@@ -302,6 +319,33 @@ function hydrateInitiative(raw: unknown): InitiativeState {
     pending: hydratePendingInitiative(raw.pending),
     lastProactiveAt:
       typeof raw.lastProactiveAt === "string" ? raw.lastProactiveAt : null,
+  };
+}
+
+function hydrateActivePurpose(raw: unknown): ActivePurpose | null {
+  if (!isRecord(raw)) {
+    return null;
+  }
+
+  const kind = isMotiveKind(raw.kind) ? raw.kind : undefined;
+  if (!kind) {
+    return null;
+  }
+
+  return {
+    kind,
+    topic: typeof raw.topic === "string" ? raw.topic : null,
+    summary: typeof raw.summary === "string" ? raw.summary : "",
+    confidence:
+      typeof raw.confidence === "number" ? clamp01(raw.confidence) : 0.5,
+    createdAt:
+      typeof raw.createdAt === "string" ? raw.createdAt : new Date().toISOString(),
+    lastUpdatedAt:
+      typeof raw.lastUpdatedAt === "string" ? raw.lastUpdatedAt : new Date().toISOString(),
+    turnsActive:
+      typeof raw.turnsActive === "number" && Number.isFinite(raw.turnsActive)
+        ? Math.max(1, Math.round(raw.turnsActive))
+        : 1,
   };
 }
 

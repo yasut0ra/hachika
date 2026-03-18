@@ -15,6 +15,7 @@ import {
   rewindSnapshotHours,
   scheduleInitiative,
 } from "./initiative.js";
+import { updatePurpose } from "./purpose.js";
 import { buildSelfModel } from "./self-model.js";
 import { clamp01, clampSigned, createInitialSnapshot, dominantDrive } from "./state.js";
 import type {
@@ -215,8 +216,9 @@ export class HachikaEngine {
     const mood = resolveMood(nextSnapshot, signals);
     const dominant = dominantDrive(nextSnapshot.state);
     const preliminarySelfModel = buildSelfModel(nextSnapshot);
-    scheduleInitiative(nextSnapshot, signals, preliminarySelfModel);
+    updatePurpose(nextSnapshot, preliminarySelfModel, signals);
     const selfModel = buildSelfModel(nextSnapshot);
+    scheduleInitiative(nextSnapshot, signals, selfModel);
     const reply = composeReply(
       this.#snapshot,
       nextSnapshot,

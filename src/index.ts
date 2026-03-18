@@ -58,6 +58,11 @@ try {
       continue;
     }
 
+    if (text === "/purpose") {
+      printPurpose(engine);
+      continue;
+    }
+
     if (text === "/self") {
       printSelfModel(engine);
       continue;
@@ -106,6 +111,7 @@ function printHelp(): void {
   console.log("/proactive force a proactive line now");
   console.log("/idle N simulate N hours of inactivity");
   console.log("/state  print current drives");
+  console.log("/purpose print active purpose");
   console.log("/self   print current self-model");
   console.log("/memory print recent memory");
   console.log("/imprints print long-term topic memory");
@@ -190,6 +196,11 @@ function printDebug(currentEngine: HachikaEngine): void {
 
   console.log(formatDriveState(snapshot.state));
   console.log(`attachment: ${snapshot.attachment.toFixed(2)}`);
+  console.log(
+    snapshot.purpose.active
+      ? `purpose: ${snapshot.purpose.active.kind}${snapshot.purpose.active.topic ? `(${snapshot.purpose.active.topic})` : ""} ${snapshot.purpose.active.confidence.toFixed(2)}`
+      : "purpose: none",
+  );
   console.log(`self: ${selfModel.narrative}`);
   console.log(
     snapshot.initiative.pending
@@ -251,6 +262,15 @@ function printDebug(currentEngine: HachikaEngine): void {
 
 function printSelfModel(currentEngine: HachikaEngine): void {
   const selfModel = currentEngine.getSelfModel();
+  const activePurpose = currentEngine.getSnapshot().purpose.active;
+
+  if (activePurpose) {
+    console.log(
+      `active purpose: ${activePurpose.kind}${activePurpose.topic ? `(${activePurpose.topic})` : ""} score:${activePurpose.confidence.toFixed(2)} ${activePurpose.summary}`,
+    );
+  } else {
+    console.log("active purpose: none");
+  }
 
   console.log(selfModel.narrative);
 
@@ -259,6 +279,20 @@ function printSelfModel(currentEngine: HachikaEngine): void {
       `${motive.kind}${motive.topic ? `(${motive.topic})` : ""} score:${motive.score.toFixed(2)} ${motive.reason}`,
     );
   }
+}
+
+function printPurpose(currentEngine: HachikaEngine): void {
+  const activePurpose = currentEngine.getSnapshot().purpose.active;
+
+  if (!activePurpose) {
+    console.log("no active purpose");
+    return;
+  }
+
+  console.log(
+    `${activePurpose.kind}${activePurpose.topic ? `(${activePurpose.topic})` : ""} confidence:${activePurpose.confidence.toFixed(2)} turns:${activePurpose.turnsActive}`,
+  );
+  console.log(activePurpose.summary);
 }
 
 async function readInput(

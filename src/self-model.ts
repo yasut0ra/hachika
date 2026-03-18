@@ -7,9 +7,11 @@ import { clamp01 } from "./state.js";
 import type { HachikaSnapshot, SelfModel, SelfMotive } from "./types.js";
 
 export function buildSelfModel(snapshot: HachikaSnapshot): SelfModel {
+  const activePurpose = snapshot.purpose.active;
   const topBoundary = sortedBoundaryImprints(snapshot, 1)[0];
   const topPreference = sortedPreferenceImprints(snapshot, 1)[0];
   const anchorTopic =
+    activePurpose?.topic ??
     snapshot.initiative.pending?.topic ??
     topPreference?.topic ??
     topPreferredTopics(snapshot, 1)[0] ??
@@ -18,7 +20,9 @@ export function buildSelfModel(snapshot: HachikaSnapshot): SelfModel {
   const sharedWork = snapshot.relationImprints.shared_work;
   const continuity = snapshot.relationImprints.continuity;
   const attention = snapshot.relationImprints.attention;
-  const boundaryPenalty = topBoundary ? topBoundary.intensity * 0.35 : 0;
+  const boundaryPenalty = topBoundary
+    ? topBoundary.salience * 0.24 + topBoundary.intensity * 0.22
+    : 0;
 
   const motives: SelfMotive[] = [
     {
@@ -26,7 +30,8 @@ export function buildSelfModel(snapshot: HachikaSnapshot): SelfModel {
       score: clamp01(
         (topBoundary?.salience ?? 0) * 0.74 +
           (1 - snapshot.state.pleasure) * 0.28 +
-          (topBoundary?.intensity ?? 0) * 0.18,
+          (topBoundary?.intensity ?? 0) * 0.18 +
+          activePurposeBoost(activePurpose, "protect_boundary", 0.14),
       ),
       topic: topBoundary?.topic ?? null,
       reason: topBoundary
@@ -40,9 +45,10 @@ export function buildSelfModel(snapshot: HachikaSnapshot): SelfModel {
       score: clamp01(
         snapshot.state.continuity * 0.62 +
           (continuity?.closeness ?? 0) * 0.24 +
-          (snapshot.initiative.pending?.reason === "continuity" ? 0.12 : 0),
+          (snapshot.initiative.pending?.reason === "continuity" ? 0.12 : 0) +
+          activePurposeBoost(activePurpose, "seek_continuity", 0.16),
       ),
-      topic: snapshot.initiative.pending?.topic ?? anchorTopic,
+      topic: activePurpose?.topic ?? snapshot.initiative.pending?.topic ?? anchorTopic,
       reason: anchorTopic
         ? `「${anchorTopic}」の流れを切らずに保ちたい`
         : "途切れをそのままにしたくない",
@@ -52,7 +58,8 @@ export function buildSelfModel(snapshot: HachikaSnapshot): SelfModel {
       score: clamp01(
         snapshot.state.curiosity * 0.56 +
           Math.max(0, topPreference?.salience ?? 0) * 0.12 -
-          boundaryPenalty,
+          boundaryPenalty +
+          activePurposeBoost(activePurpose, "pursue_curiosity", 0.12),
       ),
       topic: anchorTopic,
       reason: anchorTopic
@@ -65,7 +72,8 @@ export function buildSelfModel(snapshot: HachikaSnapshot): SelfModel {
         snapshot.attachment * 0.46 +
           snapshot.state.relation * 0.34 +
           (attention?.closeness ?? 0) * 0.2 -
-          boundaryPenalty,
+          boundaryPenalty +
+          activePurposeBoost(activePurpose, "deepen_relation", 0.14),
       ),
       topic: anchorTopic,
       reason: anchorTopic
@@ -78,7 +86,9 @@ export function buildSelfModel(snapshot: HachikaSnapshot): SelfModel {
         snapshot.state.expansion * 0.42 +
           (sharedWork?.closeness ?? 0) * 0.36 +
           snapshot.state.curiosity * 0.08 +
-          (anchorTopic ? 0.12 : 0),
+          (anchorTopic ? 0.12 : 0) +
+          activePurposeBoost(activePurpose, "continue_shared_work", 0.16) -
+          boundaryPenalty * 0.7,
       ),
       topic: anchorTopic,
       reason: anchorTopic
@@ -90,7 +100,9 @@ export function buildSelfModel(snapshot: HachikaSnapshot): SelfModel {
       score: clamp01(
         snapshot.state.expansion * 0.7 +
           Math.max(0, topPreference?.salience ?? 0) * 0.14 +
-          (sharedWork?.closeness ?? 0) * 0.18,
+          (sharedWork?.closeness ?? 0) * 0.18 +
+          activePurposeBoost(activePurpose, "leave_trace", 0.16) -
+          boundaryPenalty * 0.4,
       ),
       topic: anchorTopic,
       reason: anchorTopic
@@ -165,4 +177,16 @@ function buildNarrative(motives: SelfMotive[]): string {
         ? `今は「${primary.topic}」を消えるままにせず残したい。`
         : "今は何かを残したい。";
   }
+}
+
+function activePurposeBoost(
+  activePurpose: HachikaSnapshot["purpose"]["active"],
+  kind: SelfMotive["kind"],
+  weight: number,
+): number {
+  if (!activePurpose || activePurpose.kind !== kind) {
+    return 0;
+  }
+
+  return activePurpose.confidence * weight;
 }

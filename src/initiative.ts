@@ -332,6 +332,23 @@ function synthesizePendingInitiative(
   createdAt: string,
   kind: PendingInitiative["kind"] = "resume_topic",
 ): PendingInitiative | null {
+  const activePurpose = snapshot.purpose.active;
+
+  if (
+    activePurpose &&
+    activePurpose.confidence >= 0.46 &&
+    (activePurpose.kind !== "protect_boundary" || kind === "neglect_ping")
+  ) {
+    return {
+      kind,
+      motive: activePurpose.kind,
+      reason: reasonFromMotive(activePurpose.kind),
+      topic: activePurpose.topic ?? selectInitiativeTopic(snapshot, candidateTopics),
+      createdAt,
+      readyAfterHours: readyAfterMotive(activePurpose.kind),
+    };
+  }
+
   const motive = selectInitiativeMotive(selfModel.topMotives);
 
   if (!motive) {

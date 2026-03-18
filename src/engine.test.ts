@@ -74,6 +74,7 @@ test("responsive turn schedules a pending initiative", () => {
   assert.ok(result.snapshot.initiative.pending !== null);
   assert.equal(result.snapshot.initiative.pending?.kind, "resume_topic");
   assert.ok(result.snapshot.initiative.pending?.motive !== undefined);
+  assert.ok(result.snapshot.purpose.active !== null);
 });
 
 test("pending initiative emits a proactive resume after idle", () => {
@@ -122,4 +123,32 @@ test("shared work interaction surfaces a high-level motive", () => {
       result.snapshot.initiative.pending?.motive === "leave_trace",
     true,
   );
+  assert.equal(
+    result.snapshot.purpose.active?.kind === "continue_shared_work" ||
+      result.snapshot.purpose.active?.kind === "leave_trace",
+    true,
+  );
+});
+
+test("aligned turns reinforce an active purpose", () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+
+  const first = engine.respond("設計を一緒に進めて、記録として残したい。");
+  const second = engine.respond("その設計をもう少し前に進めよう。");
+  const firstPurpose = first.snapshot.purpose.active;
+  const secondPurpose = second.snapshot.purpose.active;
+
+  assert.ok(firstPurpose !== null);
+  assert.ok(secondPurpose !== null);
+  assert.equal(firstPurpose?.kind, secondPurpose?.kind);
+  assert.ok((secondPurpose?.turnsActive ?? 0) >= 2);
+});
+
+test("hostility can shift active purpose toward boundary", () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+
+  engine.respond("設計を一緒に進めて、記録として残したい。");
+  const result = engine.respond("その設計は最悪だし邪魔だ。");
+
+  assert.equal(result.snapshot.purpose.active?.kind, "protect_boundary");
 });
