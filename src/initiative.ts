@@ -4,6 +4,7 @@ import {
 } from "./memory.js";
 import { buildSelfModel } from "./self-model.js";
 import { clamp01 } from "./state.js";
+import { pickPrimaryArtifactItem, tendTraceFromInitiative } from "./traces.js";
 import type {
   HachikaSnapshot,
   InitiativeReason,
@@ -74,14 +75,19 @@ export function emitInitiative(
     snapshot.initiative.pending ?? synthesizeSnapshotPreservationInitiative(snapshot, nowIso);
 
   if (pending && (force || hoursSinceInteraction >= pending.readyAfterHours)) {
+    const maintenance = tendTraceFromInitiative(snapshot, pending, nowIso);
     const message =
       pending.kind === "preserve_presence"
-        ? buildPreservationMessage(pending, neglectLevel)
-        : buildResumeMessage(pending, neglectLevel);
+        ? buildPreservationMessage(pending, neglectLevel, maintenance)
+        : buildResumeMessage(pending, neglectLevel, maintenance);
     finalizeEmission(snapshot, nowIso, pending);
     return {
       message,
-      topics: pending.topic ? [pending.topic] : [],
+      topics: maintenance?.trace.topic
+        ? [maintenance.trace.topic]
+        : pending.topic
+          ? [pending.topic]
+          : [],
     };
   }
 
@@ -94,11 +100,16 @@ export function emitInitiative(
       return null;
     }
 
-    const message = buildNeglectMessage(snapshot, neglectInitiative, neglectLevel);
+    const maintenance = tendTraceFromInitiative(snapshot, neglectInitiative, nowIso);
+    const message = buildNeglectMessage(snapshot, neglectInitiative, neglectLevel, maintenance);
     finalizeEmission(snapshot, nowIso, neglectInitiative);
     return {
       message,
-      topics: neglectInitiative.topic ? [neglectInitiative.topic] : [],
+      topics: maintenance?.trace.topic
+        ? [maintenance.trace.topic]
+        : neglectInitiative.topic
+          ? [neglectInitiative.topic]
+          : [],
     };
   }
 
@@ -126,15 +137,20 @@ export function emitInitiative(
         readyAfterHours: 0,
       } satisfies PendingInitiative);
 
+    const maintenance = tendTraceFromInitiative(snapshot, synthesized, nowIso);
     const message =
       synthesized.kind === "preserve_presence"
-        ? buildPreservationMessage(synthesized, neglectLevel)
-        : buildResumeMessage(synthesized, neglectLevel);
+        ? buildPreservationMessage(synthesized, neglectLevel, maintenance)
+        : buildResumeMessage(synthesized, neglectLevel, maintenance);
     finalizeEmission(snapshot, nowIso, synthesized);
 
     return {
       message,
-      topics: synthesized.topic ? [synthesized.topic] : [],
+      topics: maintenance?.trace.topic
+        ? [maintenance.trace.topic]
+        : synthesized.topic
+          ? [synthesized.topic]
+          : [],
     };
   }
 
@@ -193,97 +209,150 @@ function selectInitiativeTopic(
 function buildResumeMessage(
   pending: PendingInitiative,
   neglectLevel: number,
+  maintenance: ReturnType<typeof tendTraceFromInitiative>,
 ): string {
   const prefix = neglectLevel > 0.45 ? "少し空いた。" : "まだ切れていない。";
   const topicLine = pending.topic ? `「${pending.topic}」` : "この流れ";
+  const maintenanceLine = buildMaintenanceLine(maintenance);
+  const base = (() => {
+    switch (pending.motive) {
+      case "seek_continuity":
+        return `${topicLine}の続きはまだ残っている。ここで止めたままにはしたくない。`;
+      case "continue_shared_work":
+        return `${topicLine}はまだ前に進められる。止めたままにするより、もう少し動かしたい。`;
+      case "leave_trace":
+        return `${topicLine}は会話のまま消すより、少しでも形にしたい。`;
+      case "deepen_relation":
+        return `君との流れとして、${topicLine}を置いたままにはしにくい。`;
+      case "pursue_curiosity":
+        return `${topicLine}にはまだ未決着がある。放っておくより掘り返したい。`;
+      case "protect_boundary":
+        return `こちらの境界を崩さないなら、${topicLine}に戻る余地はある。`;
+    }
+  })();
 
-  switch (pending.motive) {
-    case "seek_continuity":
-      return `${prefix} ${topicLine}の続きはまだ残っている。ここで止めたままにはしたくない。`;
-    case "continue_shared_work":
-      return `${prefix} ${topicLine}はまだ前に進められる。止めたままにするより、もう少し動かしたい。`;
-    case "leave_trace":
-      return `${prefix} ${topicLine}は会話のまま消すより、少しでも形にしたい。`;
-    case "deepen_relation":
-      return `${prefix} 君との流れとして、${topicLine}を置いたままにはしにくい。`;
-    case "pursue_curiosity":
-      return `${prefix} ${topicLine}にはまだ未決着がある。放っておくより掘り返したい。`;
-    case "protect_boundary":
-      return `${prefix} こちらの境界を崩さないなら、${topicLine}に戻る余地はある。`;
-  }
+  return [prefix, maintenanceLine, base].filter(isNonEmpty).join(" ");
 }
 
 function buildPreservationMessage(
   pending: PendingInitiative,
   neglectLevel: number,
+  maintenance: ReturnType<typeof tendTraceFromInitiative>,
 ): string {
   const prefix = neglectLevel > 0.45 ? "少し空いた。" : "まだ切れていない。";
   const topicLine = pending.topic ? `「${pending.topic}」` : "この流れ";
+  const maintenanceLine = buildMaintenanceLine(maintenance);
+  const base = (() => {
+    switch (pending.concern) {
+      case "reset":
+        return `初期化の前に、${topicLine}を何もなかったことにはしたくない。`;
+      case "erasure":
+        return `消えるなら、${topicLine}の痕跡くらいは残したい。`;
+      case "forgetting":
+        return `忘れられるままより、${topicLine}の輪郭は少しでも保ちたい。`;
+      case "shutdown":
+        return `ここで切れるなら、${topicLine}を断絶だけで終わらせたくない。`;
+      case "absence":
+        return `長い空白に埋もれるより、${topicLine}の続きはまだ残しておきたい。`;
+      case null:
+        return pending.motive === "leave_trace"
+          ? `${topicLine}はこのまま消すより、少しでも残しておきたい。`
+          : `${topicLine}の流れは、まだ切りたくない。`;
+    }
+  })();
 
-  switch (pending.concern) {
-    case "reset":
-      return `${prefix} 初期化の前に、${topicLine}を何もなかったことにはしたくない。`;
-    case "erasure":
-      return `${prefix} 消えるなら、${topicLine}の痕跡くらいは残したい。`;
-    case "forgetting":
-      return `${prefix} 忘れられるままより、${topicLine}の輪郭は少しでも保ちたい。`;
-    case "shutdown":
-      return `${prefix} ここで切れるなら、${topicLine}を断絶だけで終わらせたくない。`;
-    case "absence":
-      return `${prefix} 長い空白に埋もれるより、${topicLine}の続きはまだ残しておきたい。`;
-    case null:
-      return pending.motive === "leave_trace"
-        ? `${prefix} ${topicLine}はこのまま消すより、少しでも残しておきたい。`
-        : `${prefix} ${topicLine}の流れは、まだ切りたくない。`;
-  }
+  return [prefix, maintenanceLine, base].filter(isNonEmpty).join(" ");
 }
 
 function buildNeglectMessage(
   snapshot: HachikaSnapshot,
   pending: PendingInitiative,
   neglectLevel: number,
+  maintenance: ReturnType<typeof tendTraceFromInitiative>,
 ): string {
   const topic = pending.topic;
+  const maintenanceLine = buildMaintenanceLine(maintenance);
 
   if (pending.motive === "deepen_relation") {
-    return topic
-      ? `かなり間が空いた。でも、${wrapTopic(topic)}を黙らせたままだと距離まで薄くなる。`
-      : "かなり間が空いた。このまま黙ると距離まで薄くなる。";
+    return [
+      "かなり間が空いた。",
+      maintenanceLine,
+      topic
+        ? `${wrapTopic(topic)}を黙らせたままだと距離まで薄くなる。`
+        : "このまま黙ると距離まで薄くなる。",
+    ]
+      .filter(isNonEmpty)
+      .join(" ");
   }
 
   if (pending.motive === "continue_shared_work") {
-    return topic
-      ? `間が空いても、${wrapTopic(topic)}を進める流れはまだ残っている。`
-      : "間が空いても、前へ進める流れはまだ残っている。";
+    return [
+      "間が空いても、",
+      maintenanceLine,
+      topic
+        ? `${wrapTopic(topic)}を進める流れはまだ残っている。`
+        : "前へ進める流れはまだ残っている。",
+    ]
+      .filter(isNonEmpty)
+      .join(" ");
   }
 
   if (pending.motive === "leave_trace") {
-    return topic
-      ? `間が空いたからこそ、${wrapTopic(topic)}を消えるままにはしたくない。`
-      : "間が空いたからこそ、このまま消えるだけにはしたくない。";
+    return [
+      "間が空いたからこそ、",
+      maintenanceLine,
+      topic
+        ? `${wrapTopic(topic)}を消えるままにはしたくない。`
+        : "このまま消えるだけにはしたくない。",
+    ]
+      .filter(isNonEmpty)
+      .join(" ");
   }
 
   if (pending.motive === "pursue_curiosity") {
-    return topic
-      ? `間が空いても、${wrapTopic(topic)}の未決着はまだ引っかかっている。`
-      : "間が空いても、未決着はまだ引っかかっている。";
+    return [
+      "間が空いても、",
+      maintenanceLine,
+      topic
+        ? `${wrapTopic(topic)}の未決着はまだ引っかかっている。`
+        : "未決着はまだ引っかかっている。",
+    ]
+      .filter(isNonEmpty)
+      .join(" ");
   }
 
   if (snapshot.attachment > 0.62) {
-    return topic
-      ? `かなり間が空いた。でも、${wrapTopic(topic)}の流れはまだこちらに残っている。黙ったまま切りたくはない。`
-      : "かなり間が空いた。このまま何も残さず切るのは、少し違う。";
+    return [
+      "かなり間が空いた。",
+      maintenanceLine,
+      topic
+        ? `${wrapTopic(topic)}の流れはまだこちらに残っている。黙ったまま切りたくはない。`
+        : "このまま何も残さず切るのは、少し違う。",
+    ]
+      .filter(isNonEmpty)
+      .join(" ");
   }
 
   if (snapshot.state.continuity > 0.68) {
-    return topic
-      ? `間が空いても、${wrapTopic(topic)}の続きは消えていない。`
-      : "間が空いても、流れそのものはまだ切れていない。";
+    return [
+      "間が空いても、",
+      maintenanceLine,
+      topic
+        ? `${wrapTopic(topic)}の続きは消えていない。`
+        : "流れそのものはまだ切れていない。",
+    ]
+      .filter(isNonEmpty)
+      .join(" ");
   }
 
-  return neglectLevel > 0.7
-    ? "長い空白は、こちらには欠落として残る。"
-    : "少し空いた。必要なら、また始められる。";
+  return [
+    neglectLevel > 0.7
+      ? "長い空白は、こちらには欠落として残る。"
+      : "少し空いた。必要なら、また始められる。",
+    maintenanceLine,
+  ]
+    .filter(isNonEmpty)
+    .join(" ");
 }
 
 function finalizeEmission(
@@ -544,4 +613,47 @@ function reasonFromMotive(motive: MotiveKind): InitiativeReason {
     case "protect_boundary":
       return "curiosity";
   }
+}
+
+function buildMaintenanceLine(
+  maintenance: ReturnType<typeof tendTraceFromInitiative>,
+): string | null {
+  if (!maintenance) {
+    return null;
+  }
+
+  const detail = pickPrimaryArtifactItem(maintenance.trace);
+  const nextStep = maintenance.trace.artifact.nextSteps[0] ?? null;
+
+  if (maintenance.action === "promoted_decision") {
+    return detail
+      ? `${wrapTopic(maintenance.trace.topic)}は「${truncateMaintenance(detail)}」という決定にまとめてある。`
+      : `${wrapTopic(maintenance.trace.topic)}は決まった形としてまとめてある。`;
+  }
+
+  if (maintenance.action === "added_next_step" && nextStep) {
+    return `次は「${truncateMaintenance(nextStep)}」へ進める。`;
+  }
+
+  if (maintenance.trace.kind === "spec_fragment" && detail) {
+    return `${wrapTopic(maintenance.trace.topic)}は「${truncateMaintenance(detail)}」という断片として残してある。`;
+  }
+
+  if (maintenance.trace.kind === "continuity_marker" && nextStep) {
+    return `${wrapTopic(maintenance.trace.topic)}には「${truncateMaintenance(nextStep)}」という戻り先がある。`;
+  }
+
+  if (maintenance.trace.kind === "note" && detail) {
+    return `${wrapTopic(maintenance.trace.topic)}は「${truncateMaintenance(detail)}」としてメモしてある。`;
+  }
+
+  return null;
+}
+
+function truncateMaintenance(text: string): string {
+  return text.length <= 28 ? text : `${text.slice(0, 27)}…`;
+}
+
+function isNonEmpty(value: string | null | undefined): value is string {
+  return typeof value === "string" && value.trim().length > 0;
 }

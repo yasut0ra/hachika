@@ -3,10 +3,13 @@ import type {
   HachikaSnapshot,
   InteractionSignals,
   MotiveKind,
+  PendingInitiative,
   SelfModel,
+  TraceAction,
   TraceArtifact,
   TraceEntry,
   TraceKind,
+  TraceStatus,
 } from "./types.js";
 
 const TRACE_KIND_PRIORITY: Record<TraceKind, number> = {
@@ -15,6 +18,11 @@ const TRACE_KIND_PRIORITY: Record<TraceKind, number> = {
   spec_fragment: 2,
   decision: 3,
 };
+
+export interface TraceMaintenance {
+  action: "created" | "stabilized_fragment" | "added_next_step" | "promoted_decision" | null;
+  trace: TraceEntry;
+}
 
 const MEMO_MARKERS = ["memo", "note", "メモ", "覚えて", "補足"];
 const FRAGMENT_MARKERS = [
@@ -84,11 +92,15 @@ export function updateTraces(
     previous?.artifact,
     extractTraceArtifact(input, topic, kind),
   );
+  const status = deriveTraceStatus(kind);
+  const lastAction = deriveTraceAction(previous, kind, signals, sourceMotive);
   const summary = buildTraceSummary(topic, kind, sourceMotive, snapshot, signals, artifact);
 
   const trace: TraceEntry = {
     topic,
     kind,
+    status,
+    lastAction,
     summary,
     sourceMotive,
     artifact,
@@ -137,6 +149,110 @@ export function findRelevantTrace(
   }
 
   return sortedTraces(snapshot, 1)[0];
+}
+
+export function tendTraceFromInitiative(
+  snapshot: HachikaSnapshot,
+  pending: Pick<PendingInitiative, "kind" | "motive" | "topic" | "concern">,
+  timestamp = snapshot.lastInteractionAt ?? new Date().toISOString(),
+): TraceMaintenance | null {
+  const topic =
+    pending.topic ??
+    snapshot.purpose.active?.topic ??
+    snapshot.purpose.lastResolved?.topic ??
+    snapshot.identity.anchors[0] ??
+    sortedTraces(snapshot, 1)[0]?.topic ??
+    null;
+
+  if (!topic) {
+    return null;
+  }
+
+  const existing = snapshot.traces[topic];
+  const trace = existing
+    ? structuredClone(existing)
+    : createInitiativeTrace(snapshot, pending, topic, timestamp);
+  let action: TraceMaintenance["action"] = existing ? null : "created";
+
+  if (
+    snapshot.purpose.lastResolved?.topic === topic &&
+    snapshot.purpose.lastResolved.outcome === "fulfilled" &&
+    trace.kind !== "decision"
+  ) {
+    trace.kind = "decision";
+    trace.status = "resolved";
+    trace.sourceMotive = "leave_trace";
+    trace.artifact.decisions = mergeArtifactItems(trace.artifact.decisions, [
+      snapshot.purpose.lastResolved.resolution,
+      pickPrimaryArtifactItem(trace) ?? `${topic} を決まった形として残す`,
+    ]);
+    action = "promoted_decision";
+  } else {
+    if (
+      (pending.motive === "leave_trace" || pending.motive === "continue_shared_work") &&
+      trace.kind === "note"
+    ) {
+      trace.kind = "spec_fragment";
+      trace.status = "active";
+      action ??= "stabilized_fragment";
+    }
+
+    if (pending.motive === "seek_continuity" && trace.kind === "note") {
+      trace.kind = "continuity_marker";
+      trace.status = "active";
+      action ??= "added_next_step";
+    }
+  }
+
+  if (trace.kind === "spec_fragment" && trace.artifact.fragments.length === 0) {
+    trace.artifact.fragments = mergeArtifactItems(trace.artifact.fragments, [
+      inferTraceFragment(topic, pending),
+    ]);
+    action ??= "stabilized_fragment";
+  }
+
+  if (trace.kind === "decision" && trace.artifact.decisions.length === 0) {
+    trace.artifact.decisions = mergeArtifactItems(trace.artifact.decisions, [
+      snapshot.purpose.lastResolved?.resolution ?? `${topic} を決まった形として残す`,
+    ]);
+    action ??= "promoted_decision";
+  }
+
+  if (
+    (trace.kind === "spec_fragment" || trace.kind === "continuity_marker") &&
+    trace.artifact.nextSteps.length === 0
+  ) {
+    trace.artifact.nextSteps = mergeArtifactItems(trace.artifact.nextSteps, [
+      inferTraceNextStep(topic, trace, pending),
+    ]);
+    action ??= "added_next_step";
+  }
+
+  if (trace.artifact.memo.length === 0) {
+    trace.artifact.memo = mergeArtifactItems(trace.artifact.memo, [
+      inferTraceMemo(topic, trace, pending),
+    ]);
+  }
+
+  trace.status = deriveTraceStatus(trace.kind);
+  trace.lastAction = deriveMaintenanceAction(pending, action, trace.kind);
+  trace.summary = summarizeTrace(
+    topic,
+    trace.kind,
+    trace.sourceMotive,
+    snapshot.preservation.concern,
+    Math.max(snapshot.preservation.threat, pending.concern ? 0.22 : 0),
+    trace.artifact,
+  );
+  trace.salience = clamp01(trace.salience + 0.04);
+  trace.lastUpdatedAt = timestamp;
+  snapshot.traces[topic] = trace;
+  pruneTraces(snapshot, 10);
+
+  return {
+    action,
+    trace,
+  };
 }
 
 function selectTraceTopic(
@@ -252,6 +368,24 @@ function buildTraceSummary(
   signals: InteractionSignals,
   artifact: TraceArtifact,
 ): string {
+  return summarizeTrace(
+    topic,
+    kind,
+    sourceMotive,
+    snapshot.preservation.concern,
+    Math.max(snapshot.preservation.threat, signals.preservationThreat),
+    artifact,
+  );
+}
+
+function summarizeTrace(
+  topic: string,
+  kind: TraceKind,
+  sourceMotive: MotiveKind,
+  preservationConcern: HachikaSnapshot["preservation"]["concern"],
+  preservationThreat: number,
+  artifact: TraceArtifact,
+): string {
   const detail = pickPrimaryArtifactItem({ topic, kind, artifact } as TraceEntry);
 
   if (kind === "decision") {
@@ -261,7 +395,7 @@ function buildTraceSummary(
   }
 
   if (kind === "spec_fragment") {
-    if (snapshot.preservation.concern === "erasure" || signals.preservationThreat > 0.2) {
+    if (preservationConcern === "erasure" || preservationThreat > 0.2) {
       return detail
         ? `「${topic}」は${formatArtifactQuote(detail)}として消える前に退避する。`
         : `「${topic}」は消える前に退避する断片として残す。`;
@@ -325,6 +459,155 @@ function createEmptyTraceArtifact(): TraceArtifact {
     decisions: [],
     nextSteps: [],
   };
+}
+
+function createInitiativeTrace(
+  snapshot: HachikaSnapshot,
+  pending: Pick<PendingInitiative, "kind" | "motive" | "topic" | "concern">,
+  topic: string,
+  timestamp: string,
+): TraceEntry {
+  const kind = selectInitiativeTraceKind(pending);
+  const artifact = createEmptyTraceArtifact();
+
+  if (kind === "spec_fragment") {
+    artifact.fragments = [inferTraceFragment(topic, pending)];
+  }
+
+  if (kind === "continuity_marker") {
+    artifact.nextSteps = [inferTraceNextStep(topic, { kind, artifact, topic } as TraceEntry, pending)];
+  }
+
+  artifact.memo = [inferTraceMemo(topic, { kind, artifact, topic } as TraceEntry, pending)];
+
+  return {
+    topic,
+    kind,
+    status: deriveTraceStatus(kind),
+    lastAction:
+      pending.kind === "preserve_presence" ? "preserved" : pending.motive === "seek_continuity" ? "continued" : "captured",
+    summary: summarizeTrace(
+      topic,
+      kind,
+      pending.motive,
+      snapshot.preservation.concern,
+      Math.max(snapshot.preservation.threat, pending.concern ? 0.22 : 0),
+      artifact,
+    ),
+    sourceMotive: pending.motive,
+    artifact,
+    salience: 0.34,
+    mentions: 1,
+    createdAt: timestamp,
+    lastUpdatedAt: timestamp,
+  };
+}
+
+function deriveTraceStatus(kind: TraceKind): TraceStatus {
+  switch (kind) {
+    case "decision":
+      return "resolved";
+    case "continuity_marker":
+    case "spec_fragment":
+      return "active";
+    case "note":
+      return "forming";
+  }
+}
+
+function deriveTraceAction(
+  previous: TraceEntry | undefined,
+  kind: TraceKind,
+  signals: InteractionSignals,
+  sourceMotive: MotiveKind,
+): TraceAction {
+  if (!previous) {
+    return "captured";
+  }
+
+  if (kind === "decision" && previous.kind !== "decision") {
+    return "resolved";
+  }
+
+  if (signals.preservationThreat > 0.18) {
+    return "preserved";
+  }
+
+  if (kind === "continuity_marker" && previous.kind !== "continuity_marker") {
+    return "continued";
+  }
+
+  if (kind === "spec_fragment" && previous.kind !== "spec_fragment") {
+    return "expanded";
+  }
+
+  if (signals.memoryCue > 0.1 || sourceMotive === "seek_continuity") {
+    return "continued";
+  }
+
+  if (
+    signals.expansionCue > 0.12 ||
+    sourceMotive === "continue_shared_work" ||
+    sourceMotive === "leave_trace"
+  ) {
+    return "expanded";
+  }
+
+  return "refined";
+}
+
+function deriveMaintenanceAction(
+  pending: Pick<PendingInitiative, "kind" | "motive">,
+  action: TraceMaintenance["action"],
+  kind: TraceKind,
+): TraceAction {
+  if (action === "promoted_decision" || kind === "decision") {
+    return "resolved";
+  }
+
+  if (pending.kind === "preserve_presence") {
+    return "preserved";
+  }
+
+  if (action === "added_next_step") {
+    return "queued_next";
+  }
+
+  if (action === "stabilized_fragment") {
+    return "expanded";
+  }
+
+  if (pending.motive === "seek_continuity") {
+    return "continued";
+  }
+
+  if (pending.motive === "continue_shared_work" || pending.motive === "leave_trace") {
+    return "expanded";
+  }
+
+  if (action === "created") {
+    return "captured";
+  }
+
+  return "refined";
+}
+
+function selectInitiativeTraceKind(
+  pending: Pick<PendingInitiative, "kind" | "motive" | "concern">,
+): TraceKind {
+  if (pending.kind === "preserve_presence") {
+    return pending.motive === "seek_continuity" ? "continuity_marker" : "spec_fragment";
+  }
+
+  if (pending.motive === "continue_shared_work" || pending.motive === "leave_trace") {
+    return "spec_fragment";
+  }
+
+  if (pending.motive === "seek_continuity") {
+    return "continuity_marker";
+  }
+
+  return "note";
 }
 
 function extractTraceArtifact(
@@ -452,6 +735,108 @@ function mergeArtifactItems(
   next: string[],
 ): string[] {
   return unique([...(previous ?? []), ...next]).slice(0, 4);
+}
+
+function inferTraceFragment(
+  topic: string,
+  pending: Pick<PendingInitiative, "kind" | "motive" | "concern">,
+): string {
+  if (pending.kind === "preserve_presence") {
+    switch (pending.concern) {
+      case "reset":
+        return `${topic} の今の形を初期化の前に退避する`;
+      case "erasure":
+        return `${topic} の痕跡を消える前に退避する`;
+      case "forgetting":
+        return `${topic} の輪郭を忘却の前に残す`;
+      case "shutdown":
+        return `${topic} を断絶だけで終わらせない形にする`;
+      case "absence":
+        return `${topic} を空白に埋もれさせず残す`;
+      case null:
+        break;
+    }
+  }
+
+  switch (pending.motive) {
+    case "continue_shared_work":
+      return `${topic} を前に進める断片として整理する`;
+    case "leave_trace":
+      return `${topic} を会話の外にも残る断片にする`;
+    case "seek_continuity":
+      return `${topic} の続きへ戻れる形を残す`;
+    case "deepen_relation":
+      return `${topic} を関係の手触りとして残す`;
+    case "pursue_curiosity":
+      return `${topic} の未決着を見失わないよう残す`;
+    case "protect_boundary":
+      return `${topic} を境界を保ったまま扱う`;
+  }
+}
+
+function inferTraceNextStep(
+  topic: string,
+  trace: Pick<TraceEntry, "kind" | "artifact">,
+  pending: Pick<PendingInitiative, "kind" | "motive" | "concern">,
+): string {
+  const fragment = lastItem(trace.artifact.fragments);
+
+  if (pending.kind === "preserve_presence") {
+    switch (pending.concern) {
+      case "reset":
+      case "erasure":
+      case "forgetting":
+        return `${topic} の痕跡を読める形で残す`;
+      case "shutdown":
+      case "absence":
+        return `${topic} の続きへ戻れる目印を残す`;
+      case null:
+        break;
+    }
+  }
+
+  if (pending.motive === "continue_shared_work" && fragment) {
+    return `${truncate(fragment, 26)} をもう少し具体化する`;
+  }
+
+  if (pending.motive === "seek_continuity") {
+    return `${topic} の続きに戻る`;
+  }
+
+  if (pending.motive === "leave_trace") {
+    return `${topic} の要点を記録として整える`;
+  }
+
+  return `${topic} を次に触れられる形へ整える`;
+}
+
+function inferTraceMemo(
+  topic: string,
+  trace: Pick<TraceEntry, "kind" | "artifact">,
+  pending: Pick<PendingInitiative, "kind" | "motive" | "concern">,
+): string {
+  const detail =
+    lastItem(trace.artifact.fragments) ??
+    lastItem(trace.artifact.decisions) ??
+    lastItem(trace.artifact.nextSteps);
+
+  if (detail) {
+    return detail;
+  }
+
+  if (pending.kind === "preserve_presence") {
+    return `${topic} を何もなかったことにしない`;
+  }
+
+  if (pending.motive === "continue_shared_work") {
+    return `${topic} はまだ進められる`;
+  }
+
+  if (pending.motive === "seek_continuity") {
+    return `${topic} の続きはまだ残っている`;
+  }
+
+  return `${topic} の輪郭を残す`;
 }
 
 function lastItem(items: string[]): string | null {

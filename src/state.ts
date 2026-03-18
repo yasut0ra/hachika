@@ -26,7 +26,7 @@ export function clampSigned(value: number): number {
 
 export function createInitialSnapshot(): HachikaSnapshot {
   return {
-    version: 11,
+    version: 12,
     state: { ...INITIAL_STATE },
     attachment: 0.4,
     preferences: {},

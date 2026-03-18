@@ -2,7 +2,7 @@ import { mkdir, readdir, unlink, writeFile } from "node:fs/promises";
 import { basename, join, relative, resolve } from "node:path";
 
 import { sortedTraces } from "./traces.js";
-import type { HachikaSnapshot, TraceEntry } from "./types.js";
+import type { HachikaSnapshot, TraceAction, TraceEntry, TraceStatus } from "./types.js";
 
 const INDEX_FILE_NAME = "index.md";
 const TRACE_FILE_PREFIX = "trace-";
@@ -10,6 +10,10 @@ const TRACE_FILE_PREFIX = "trace-";
 export interface ArtifactFile {
   topic: string;
   kind: TraceEntry["kind"];
+  status: TraceStatus;
+  lastAction: TraceAction;
+  pendingNextStep: string | null;
+  updatedAt: string;
   fileName: string;
   absolutePath: string;
   relativePath: string;
@@ -33,6 +37,10 @@ export function describeArtifactFiles(
     return {
       topic: trace.topic,
       kind: trace.kind,
+      status: trace.status,
+      lastAction: trace.lastAction,
+      pendingNextStep: trace.artifact.nextSteps[0] ?? null,
+      updatedAt: trace.lastUpdatedAt,
       fileName,
       absolutePath,
       relativePath: relative(process.cwd(), absolutePath) || fileName,
@@ -111,8 +119,14 @@ function renderArtifactIndex(
       continue;
     }
 
-    lines.push(`- ${trace.topic} (${trace.kind}) -> ${basename(file.relativePath)}`);
+    lines.push(
+      `- ${trace.topic} (${trace.kind}/${trace.status}) -> ${basename(file.relativePath)}`,
+    );
+    lines.push(`  - last action: ${trace.lastAction}`);
     lines.push(`  - ${trace.summary}`);
+    if (trace.artifact.nextSteps[0]) {
+      lines.push(`  - pending next step: ${trace.artifact.nextSteps[0]}`);
+    }
   }
 
   return `${lines.join("\n")}\n`;
@@ -122,11 +136,14 @@ export function renderArtifactDocument(trace: TraceEntry): string {
   const lines = [`# ${trace.topic}`, ""];
 
   lines.push(`- Kind: ${trace.kind}`);
+  lines.push(`- Status: ${trace.status}`);
+  lines.push(`- Last Action: ${trace.lastAction}`);
   lines.push(`- Source Motive: ${trace.sourceMotive}`);
   lines.push(`- Salience: ${trace.salience.toFixed(2)}`);
   lines.push(`- Mentions: ${trace.mentions}`);
   lines.push(`- Created: ${trace.createdAt}`);
   lines.push(`- Updated: ${trace.lastUpdatedAt}`);
+  lines.push(`- Pending Next Step: ${trace.artifact.nextSteps[0] ?? "none"}`);
   lines.push("");
   lines.push("## Summary");
   lines.push(trace.summary);

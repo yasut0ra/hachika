@@ -91,6 +91,17 @@ export type TraceKind =
   | "spec_fragment"
   | "decision";
 
+export type TraceStatus = "forming" | "active" | "resolved";
+
+export type TraceAction =
+  | "captured"
+  | "refined"
+  | "continued"
+  | "expanded"
+  | "queued_next"
+  | "resolved"
+  | "preserved";
+
 export interface TraceArtifact {
   memo: string[];
   fragments: string[];
@@ -101,6 +112,8 @@ export interface TraceArtifact {
 export interface TraceEntry {
   topic: string;
   kind: TraceKind;
+  status: TraceStatus;
+  lastAction: TraceAction;
   summary: string;
   sourceMotive: MotiveKind;
   artifact: TraceArtifact;

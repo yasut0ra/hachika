@@ -16,6 +16,8 @@ test("renderArtifactDocument includes structured sections", () => {
   const trace: TraceEntry = {
     topic: "設計",
     kind: "spec_fragment",
+    status: "active",
+    lastAction: "expanded",
     summary: "「設計」は「API を分ける」という断片として残す。",
     sourceMotive: "continue_shared_work",
     artifact: {
@@ -33,6 +35,9 @@ test("renderArtifactDocument includes structured sections", () => {
   const markdown = renderArtifactDocument(trace);
 
   assert.match(markdown, /^# 設計/m);
+  assert.match(markdown, /Status: active/);
+  assert.match(markdown, /Last Action: expanded/);
+  assert.match(markdown, /Pending Next Step: 責務ごとに整理する/);
   assert.match(markdown, /## Summary/);
   assert.match(markdown, /## Memo/);
   assert.match(markdown, /## Fragments/);
@@ -47,6 +52,8 @@ test("syncArtifacts writes markdown files and index", async () => {
     const snapshot = withTrace(createInitialSnapshot(), {
       topic: "設計",
       kind: "decision",
+      status: "resolved",
+      lastAction: "resolved",
       summary: "「設計」は「記録として保存した」という決定として残す。",
       sourceMotive: "leave_trace",
       artifact: {
@@ -71,9 +78,12 @@ test("syncArtifacts writes markdown files and index", async () => {
     const indexBody = await readFile(join(tempDir, "index.md"), "utf8");
 
     assert.match(artifactBody, /Kind: decision/);
+    assert.match(artifactBody, /Status: resolved/);
+    assert.match(artifactBody, /Last Action: resolved/);
     assert.match(artifactBody, /## Decisions/);
     assert.match(artifactBody, /記録として保存した/);
-    assert.match(indexBody, /設計 \(decision\)/);
+    assert.match(indexBody, /設計 \(decision\/resolved\)/);
+    assert.match(indexBody, /last action: resolved/);
   } finally {
     await rm(tempDir, { recursive: true, force: true });
   }
@@ -86,6 +96,8 @@ test("syncArtifacts removes stale materialized files", async () => {
     const first = withTrace(createInitialSnapshot(), {
       topic: "設計",
       kind: "spec_fragment",
+      status: "active",
+      lastAction: "expanded",
       summary: "「設計」は断片として残す。",
       sourceMotive: "continue_shared_work",
       artifact: {

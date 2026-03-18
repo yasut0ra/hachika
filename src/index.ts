@@ -170,7 +170,7 @@ function printTraces(currentEngine: HachikaEngine): void {
 
   for (const trace of traces) {
     console.log(
-      `${trace.topic} ${trace.kind} salience:${trace.salience.toFixed(2)} mentions:${trace.mentions} motive:${trace.sourceMotive} ${trace.summary}`,
+      `${trace.topic} ${trace.kind}/${trace.status} action:${trace.lastAction} salience:${trace.salience.toFixed(2)} mentions:${trace.mentions} motive:${trace.sourceMotive} ${trace.summary}`,
     );
     printTraceArtifactGroup("memo", trace.artifact.memo);
     printTraceArtifactGroup("fragments", trace.artifact.fragments);
@@ -188,7 +188,9 @@ function printArtifacts(currentEngine: HachikaEngine): void {
   }
 
   for (const file of files) {
-    console.log(`${file.topic} ${file.kind} ${file.relativePath}`);
+    console.log(
+      `${file.topic} ${file.kind}/${file.status} action:${file.lastAction} next:${file.pendingNextStep ?? "none"} ${file.relativePath}`,
+    );
   }
 }
 
@@ -293,7 +295,7 @@ function printDebug(currentEngine: HachikaEngine): void {
       : `traces: ${traces
           .map(
             (trace) =>
-              `${trace.topic}:${trace.kind}/${trace.salience.toFixed(2)}/${trace.sourceMotive}/m${trace.artifact.memo.length}f${trace.artifact.fragments.length}d${trace.artifact.decisions.length}n${trace.artifact.nextSteps.length}`,
+              `${trace.topic}:${trace.kind}/${trace.status}/${trace.lastAction}/${trace.salience.toFixed(2)}/${trace.sourceMotive}/m${trace.artifact.memo.length}f${trace.artifact.fragments.length}d${trace.artifact.decisions.length}n${trace.artifact.nextSteps.length}`,
           )
           .join(" | ")}`,
   );

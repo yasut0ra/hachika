@@ -102,6 +102,24 @@ test("pending initiative emits a proactive resume after idle", () => {
   assert.ok(snapshot.initiative.lastProactiveAt !== null);
 });
 
+test("proactive emission can maintain a trace by adding a next step", () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+
+  engine.respond("設計を記録として残したい。");
+  const before = engine.getSnapshot().traces.設計;
+  assert.ok(before !== undefined);
+  assert.equal(before?.artifact.nextSteps.length ?? 0, 0);
+
+  engine.rewindIdleHours(8);
+  const message = engine.emitInitiative();
+  const after = engine.getSnapshot().traces.設計;
+
+  assert.ok(message !== null);
+  assert.ok(after !== undefined);
+  assert.ok((after?.artifact.nextSteps.length ?? 0) > 0);
+  assert.match(message ?? "", /次は|断片|残してある/);
+});
+
 test("continuity threat raises preservation and schedules self-protective initiative", () => {
   const engine = new HachikaEngine(createInitialSnapshot());
 

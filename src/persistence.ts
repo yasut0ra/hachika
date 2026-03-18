@@ -18,8 +18,10 @@ import type {
   PreferenceImprint,
   RelationImprint,
   ResolvedPurpose,
+  TraceAction,
   TraceArtifact,
   TraceEntry,
+  TraceStatus,
 } from "./types.js";
 
 export async function loadSnapshot(filePath: string): Promise<HachikaSnapshot> {
@@ -47,7 +49,7 @@ function hydrateSnapshot(raw: unknown): HachikaSnapshot {
   }
 
   return {
-    version: 11,
+    version: 12,
     state: hydrateState(raw.state),
     attachment:
       typeof raw.attachment === "number" ? clamp01(raw.attachment) : initial.attachment,
@@ -378,6 +380,10 @@ function hydrateTraces(raw: unknown): Record<string, TraceEntry> {
     result[topic] = {
       topic,
       kind,
+      status: isTraceStatus(value.status) ? value.status : inferLegacyTraceStatus(kind),
+      lastAction: isTraceAction(value.lastAction)
+        ? value.lastAction
+        : inferLegacyTraceAction(kind),
       summary: typeof value.summary === "string" ? value.summary : `「${topic}」を残しておく。`,
       sourceMotive,
       artifact: hydrateTraceArtifact(value.artifact, topic, kind),
@@ -458,6 +464,31 @@ function inferLegacyTraceArtifact(
         decisions: [],
         nextSteps: [],
       };
+  }
+}
+
+function inferLegacyTraceStatus(kind: TraceEntry["kind"]): TraceStatus {
+  switch (kind) {
+    case "decision":
+      return "resolved";
+    case "continuity_marker":
+    case "spec_fragment":
+      return "active";
+    case "note":
+      return "forming";
+  }
+}
+
+function inferLegacyTraceAction(kind: TraceEntry["kind"]): TraceAction {
+  switch (kind) {
+    case "decision":
+      return "resolved";
+    case "continuity_marker":
+      return "continued";
+    case "spec_fragment":
+      return "expanded";
+    case "note":
+      return "captured";
   }
 }
 
@@ -617,6 +648,22 @@ function isTraceKind(value: unknown): value is TraceEntry["kind"] {
     value === "continuity_marker" ||
     value === "spec_fragment" ||
     value === "decision"
+  );
+}
+
+function isTraceStatus(value: unknown): value is TraceStatus {
+  return value === "forming" || value === "active" || value === "resolved";
+}
+
+function isTraceAction(value: unknown): value is TraceAction {
+  return (
+    value === "captured" ||
+    value === "refined" ||
+    value === "continued" ||
+    value === "expanded" ||
+    value === "queued_next" ||
+    value === "resolved" ||
+    value === "preserved"
   );
 }
 
