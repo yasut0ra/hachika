@@ -4,6 +4,7 @@ import type {
   InteractionSignals,
   MotiveKind,
   SelfModel,
+  TraceArtifact,
   TraceEntry,
   TraceKind,
 } from "./types.js";
@@ -15,8 +16,56 @@ const TRACE_KIND_PRIORITY: Record<TraceKind, number> = {
   decision: 3,
 };
 
+const MEMO_MARKERS = ["memo", "note", "メモ", "覚えて", "補足"];
+const FRAGMENT_MARKERS = [
+  "build",
+  "implement",
+  "spec",
+  "record",
+  "save",
+  "ship",
+  "進め",
+  "実装",
+  "仕様",
+  "記録",
+  "保存",
+  "残し",
+  "作",
+  "整理",
+];
+const DECISION_MARKERS = [
+  "done",
+  "finished",
+  "completed",
+  "saved",
+  "recorded",
+  "resolved",
+  "decided",
+  "まとまった",
+  "終わった",
+  "完了",
+  "保存した",
+  "記録した",
+  "決まった",
+  "形になった",
+  "できた",
+];
+const NEXT_STEP_MARKERS = [
+  "again",
+  "continue",
+  "next",
+  "remember",
+  "戻",
+  "続き",
+  "次",
+  "覚えて",
+  "再開",
+  "進めたい",
+];
+
 export function updateTraces(
   snapshot: HachikaSnapshot,
+  input: string,
   signals: InteractionSignals,
   selfModel: SelfModel,
   timestamp = snapshot.lastInteractionAt ?? new Date().toISOString(),
@@ -31,13 +80,18 @@ export function updateTraces(
   const nextKind = selectTraceKind(signals, sourceMotive);
   const previous = snapshot.traces[topic];
   const kind = strongerTraceKind(previous?.kind, nextKind);
-  const summary = buildTraceSummary(topic, kind, sourceMotive, snapshot, signals);
+  const artifact = mergeTraceArtifacts(
+    previous?.artifact,
+    extractTraceArtifact(input, topic, kind),
+  );
+  const summary = buildTraceSummary(topic, kind, sourceMotive, snapshot, signals, artifact);
 
   const trace: TraceEntry = {
     topic,
     kind,
     summary,
     sourceMotive,
+    artifact,
     salience: clamp01(
       (previous?.salience ?? 0) * 0.82 +
         0.14 +
@@ -196,14 +250,27 @@ function buildTraceSummary(
   sourceMotive: MotiveKind,
   snapshot: HachikaSnapshot,
   signals: InteractionSignals,
+  artifact: TraceArtifact,
 ): string {
+  const detail = pickPrimaryArtifactItem({ topic, kind, artifact } as TraceEntry);
+
   if (kind === "decision") {
-    return `「${topic}」はひとまず決まった形として残す。`;
+    return detail
+      ? `「${topic}」は${formatArtifactQuote(detail)}という決定として残す。`
+      : `「${topic}」はひとまず決まった形として残す。`;
   }
 
   if (kind === "spec_fragment") {
     if (snapshot.preservation.concern === "erasure" || signals.preservationThreat > 0.2) {
-      return `「${topic}」は消える前に退避する断片として残す。`;
+      return detail
+        ? `「${topic}」は${formatArtifactQuote(detail)}として消える前に退避する。`
+        : `「${topic}」は消える前に退避する断片として残す。`;
+    }
+
+    if (detail) {
+      return sourceMotive === "continue_shared_work"
+        ? `「${topic}」は${formatArtifactQuote(detail)}という前進用の断片として残す。`
+        : `「${topic}」は${formatArtifactQuote(detail)}という断片として残す。`;
     }
 
     return sourceMotive === "continue_shared_work"
@@ -212,10 +279,14 @@ function buildTraceSummary(
   }
 
   if (kind === "continuity_marker") {
-    return `「${topic}」は続きに戻るための目印として残す。`;
+    return detail
+      ? `「${topic}」は${formatArtifactQuote(detail)}という続きの目印として残す。`
+      : `「${topic}」は続きに戻るための目印として残す。`;
   }
 
-  return `「${topic}」はひとまずメモとして残す。`;
+  return detail
+    ? `「${topic}」は${formatArtifactQuote(detail)}というメモとして残す。`
+    : `「${topic}」はひとまずメモとして残す。`;
 }
 
 function pruneTraces(snapshot: HachikaSnapshot, limit: number): void {
@@ -232,4 +303,178 @@ function pruneTraces(snapshot: HachikaSnapshot, limit: number): void {
   for (const key of sortedKeys.slice(limit)) {
     delete snapshot.traces[key];
   }
+}
+
+export function pickPrimaryArtifactItem(trace: TraceEntry): string | null {
+  switch (trace.kind) {
+    case "decision":
+      return lastItem(trace.artifact.decisions) ?? lastItem(trace.artifact.fragments) ?? lastItem(trace.artifact.memo) ?? null;
+    case "spec_fragment":
+      return lastItem(trace.artifact.fragments) ?? lastItem(trace.artifact.memo) ?? null;
+    case "continuity_marker":
+      return lastItem(trace.artifact.nextSteps) ?? lastItem(trace.artifact.memo) ?? null;
+    case "note":
+      return lastItem(trace.artifact.memo) ?? lastItem(trace.artifact.fragments) ?? null;
+  }
+}
+
+function createEmptyTraceArtifact(): TraceArtifact {
+  return {
+    memo: [],
+    fragments: [],
+    decisions: [],
+    nextSteps: [],
+  };
+}
+
+function extractTraceArtifact(
+  input: string,
+  topic: string,
+  kind: TraceKind,
+): TraceArtifact {
+  const clauses = prioritizeClauses(splitTraceClauses(input), topic);
+  const artifact = createEmptyTraceArtifact();
+  const fallback = clauses[0] ?? `${topic} を残す`;
+
+  artifact.memo = selectClauses(clauses, MEMO_MARKERS, kind === "note" ? 2 : 1);
+  artifact.fragments = selectClauses(
+    clauses,
+    FRAGMENT_MARKERS,
+    kind === "spec_fragment" ? 3 : 1,
+  );
+  artifact.decisions = selectClauses(
+    clauses,
+    DECISION_MARKERS,
+    kind === "decision" ? 2 : 1,
+  );
+  artifact.nextSteps = selectClauses(
+    clauses,
+    NEXT_STEP_MARKERS,
+    kind === "continuity_marker" ? 2 : 1,
+  );
+
+  if (kind === "note" && artifact.memo.length === 0) {
+    artifact.memo = [fallback];
+  }
+
+  if (kind === "spec_fragment" && artifact.fragments.length === 0) {
+    artifact.fragments = [fallback];
+  }
+
+  if (kind === "decision" && artifact.decisions.length === 0) {
+    artifact.decisions = [fallback];
+  }
+
+  if (kind === "continuity_marker" && artifact.nextSteps.length === 0) {
+    artifact.nextSteps = [fallback];
+  }
+
+  if (artifact.memo.length === 0 && kind !== "decision") {
+    artifact.memo = clauses.slice(0, 1);
+  }
+
+  return artifact;
+}
+
+function splitTraceClauses(input: string): string[] {
+  return unique(
+    input
+      .normalize("NFKC")
+      .split(/[。.!?！？\n]|、|,/g)
+      .map((clause) => sanitizeClause(clause))
+      .filter((clause) => clause.length >= 2),
+  ).slice(0, 8);
+}
+
+function sanitizeClause(clause: string): string {
+  return clause
+    .trim()
+    .replace(/^[「『"'`\s]+/, "")
+    .replace(/[」』"'`\s]+$/, "")
+    .replace(/\s+/g, " ")
+    .replace(/^(そして|それで|ただ|でも|では|じゃあ)\s*/, "");
+}
+
+function prioritizeClauses(clauses: string[], topic: string): string[] {
+  return [...clauses].sort((left, right) => scoreClause(right, topic) - scoreClause(left, topic));
+}
+
+function scoreClause(clause: string, topic: string): number {
+  let score = 0;
+
+  if (clause.includes(topic)) {
+    score += 4;
+  }
+
+  if (clause.length >= 6) {
+    score += 1;
+  }
+
+  if (clause.length <= 28) {
+    score += 1;
+  }
+
+  if (containsAny(clause, FRAGMENT_MARKERS) || containsAny(clause, DECISION_MARKERS)) {
+    score += 1;
+  }
+
+  return score;
+}
+
+function selectClauses(
+  clauses: string[],
+  markers: readonly string[],
+  limit: number,
+): string[] {
+  const selected = clauses.filter((clause) => containsAny(clause, markers));
+
+  if (selected.length === 0) {
+    return [];
+  }
+
+  return unique(selected).slice(0, limit);
+}
+
+function mergeTraceArtifacts(
+  previous: TraceArtifact | undefined,
+  next: TraceArtifact,
+): TraceArtifact {
+  return {
+    memo: mergeArtifactItems(previous?.memo, next.memo),
+    fragments: mergeArtifactItems(previous?.fragments, next.fragments),
+    decisions: mergeArtifactItems(previous?.decisions, next.decisions),
+    nextSteps: mergeArtifactItems(previous?.nextSteps, next.nextSteps),
+  };
+}
+
+function mergeArtifactItems(
+  previous: string[] | undefined,
+  next: string[],
+): string[] {
+  return unique([...(previous ?? []), ...next]).slice(0, 4);
+}
+
+function lastItem(items: string[]): string | null {
+  return items.length > 0 ? items[items.length - 1] ?? null : null;
+}
+
+function formatArtifactQuote(detail: string): string {
+  return `「${truncate(detail, 28)}」`;
+}
+
+function truncate(text: string, maxLength: number): string {
+  if (text.length <= maxLength) {
+    return text;
+  }
+
+  return `${text.slice(0, Math.max(0, maxLength - 1))}…`;
+}
+
+function containsAny(text: string, markers: readonly string[]): boolean {
+  const normalized = text.toLowerCase();
+  return markers.some((marker) => normalized.includes(marker));
+}
+
+function unique(items: string[]): string[] {
+  return items.filter((item, index) => item.length > 0 && items.indexOf(item) === index);
 }

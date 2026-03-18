@@ -19,7 +19,7 @@ import { updateIdentity } from "./identity.js";
 import { updatePurpose } from "./purpose.js";
 import { buildSelfModel } from "./self-model.js";
 import { clamp01, clampSigned, createInitialSnapshot, dominantDrive } from "./state.js";
-import { findRelevantTrace, updateTraces } from "./traces.js";
+import { findRelevantTrace, pickPrimaryArtifactItem, updateTraces } from "./traces.js";
 import type {
   DriveName,
   HachikaSnapshot,
@@ -317,6 +317,7 @@ export class HachikaEngine {
     let selfModel = buildSelfModel(nextSnapshot);
     updateTraces(
       nextSnapshot,
+      input,
       signals,
       selfModel,
       nextSnapshot.lastInteractionAt ?? new Date().toISOString(),
@@ -816,12 +817,21 @@ function buildTraceLine(
   }
 
   const updatedThisTurn = trace.lastUpdatedAt === snapshot.lastInteractionAt;
+  const detail = pickPrimaryArtifactItem(trace);
 
   if (updatedThisTurn) {
     switch (trace.kind) {
       case "decision":
-        return `「${trace.topic}」はひとまず決まった形として残した。`;
+        return detail
+          ? `「${trace.topic}」は「${truncateTraceDetail(detail)}」という決定として残した。`
+          : `「${trace.topic}」はひとまず決まった形として残した。`;
       case "spec_fragment":
+        if (detail) {
+          return signals.preservationThreat > 0.18
+            ? `「${trace.topic}」は「${truncateTraceDetail(detail)}」として退避した。`
+            : `「${trace.topic}」は「${truncateTraceDetail(detail)}」という断片として残した。`;
+        }
+
         if (trace.sourceMotive === "continue_shared_work") {
           return `「${trace.topic}」は前へ進める断片として残した。`;
         }
@@ -830,9 +840,13 @@ function buildTraceLine(
           ? `「${trace.topic}」は消える前の断片として残した。`
           : `「${trace.topic}」は会話の外にも伸ばせる断片として残した。`;
       case "continuity_marker":
-        return `「${trace.topic}」は続きに戻る目印として残した。`;
+        return detail
+          ? `「${trace.topic}」は「${truncateTraceDetail(detail)}」という続きの目印として残した。`
+          : `「${trace.topic}」は続きに戻る目印として残した。`;
       case "note":
-        return `「${trace.topic}」はひとまずメモとして残した。`;
+        return detail
+          ? `「${trace.topic}」は「${truncateTraceDetail(detail)}」をメモとして残した。`
+          : `「${trace.topic}」はひとまずメモとして残した。`;
     }
   }
 
@@ -847,14 +861,30 @@ function buildTraceLine(
 
   switch (trace.kind) {
     case "decision":
-      return `「${trace.topic}」には決まった形の痕跡が残っている。`;
+      return detail
+        ? `「${trace.topic}」には「${truncateTraceDetail(detail)}」という決定が残っている。`
+        : `「${trace.topic}」には決まった形の痕跡が残っている。`;
     case "spec_fragment":
-      return `「${trace.topic}」にはまだ前へ進める断片が残っている。`;
+      return detail
+        ? `「${trace.topic}」には「${truncateTraceDetail(detail)}」という断片が残っている。`
+        : `「${trace.topic}」にはまだ前へ進める断片が残っている。`;
     case "continuity_marker":
-      return `「${trace.topic}」には戻るための目印が残っている。`;
+      return detail
+        ? `「${trace.topic}」には「${truncateTraceDetail(detail)}」という目印が残っている。`
+        : `「${trace.topic}」には戻るための目印が残っている。`;
     case "note":
-      return `「${trace.topic}」のメモはまだ残っている。`;
+      return detail
+        ? `「${trace.topic}」の「${truncateTraceDetail(detail)}」というメモはまだ残っている。`
+        : `「${trace.topic}」のメモはまだ残っている。`;
   }
+}
+
+function truncateTraceDetail(detail: string): string {
+  if (detail.length <= 28) {
+    return detail;
+  }
+
+  return `${detail.slice(0, 27)}…`;
 }
 
 function buildSelfModelLine(

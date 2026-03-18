@@ -91,11 +91,19 @@ export type TraceKind =
   | "spec_fragment"
   | "decision";
 
+export interface TraceArtifact {
+  memo: string[];
+  fragments: string[];
+  decisions: string[];
+  nextSteps: string[];
+}
+
 export interface TraceEntry {
   topic: string;
   kind: TraceKind;
   summary: string;
   sourceMotive: MotiveKind;
+  artifact: TraceArtifact;
   salience: number;
   mentions: number;
   createdAt: string;

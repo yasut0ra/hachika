@@ -162,6 +162,10 @@ function printTraces(currentEngine: HachikaEngine): void {
     console.log(
       `${trace.topic} ${trace.kind} salience:${trace.salience.toFixed(2)} mentions:${trace.mentions} motive:${trace.sourceMotive} ${trace.summary}`,
     );
+    printTraceArtifactGroup("memo", trace.artifact.memo);
+    printTraceArtifactGroup("fragments", trace.artifact.fragments);
+    printTraceArtifactGroup("decisions", trace.artifact.decisions);
+    printTraceArtifactGroup("next", trace.artifact.nextSteps);
   }
 }
 
@@ -266,7 +270,7 @@ function printDebug(currentEngine: HachikaEngine): void {
       : `traces: ${traces
           .map(
             (trace) =>
-              `${trace.topic}:${trace.kind}/${trace.salience.toFixed(2)}/${trace.sourceMotive}`,
+              `${trace.topic}:${trace.kind}/${trace.salience.toFixed(2)}/${trace.sourceMotive}/m${trace.artifact.memo.length}f${trace.artifact.fragments.length}d${trace.artifact.decisions.length}n${trace.artifact.nextSteps.length}`,
           )
           .join(" | ")}`,
   );
@@ -485,4 +489,14 @@ function formatConflict(
   conflict: ReturnType<HachikaEngine["getSelfModel"]>["conflicts"][number],
 ): string {
   return `${conflict.kind}:${conflict.dominant}>${conflict.opposing}${conflict.topic ? `(${conflict.topic})` : ""}:${conflict.intensity.toFixed(2)} ${conflict.summary}`;
+}
+
+function printTraceArtifactGroup(label: string, items: string[]): void {
+  if (items.length === 0) {
+    return;
+  }
+
+  for (const item of items) {
+    console.log(`  ${label}: ${item}`);
+  }
 }

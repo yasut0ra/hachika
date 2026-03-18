@@ -18,6 +18,7 @@ import type {
   PreferenceImprint,
   RelationImprint,
   ResolvedPurpose,
+  TraceArtifact,
   TraceEntry,
 } from "./types.js";
 
@@ -46,7 +47,7 @@ function hydrateSnapshot(raw: unknown): HachikaSnapshot {
   }
 
   return {
-    version: 10,
+    version: 11,
     state: hydrateState(raw.state),
     attachment:
       typeof raw.attachment === "number" ? clamp01(raw.attachment) : initial.attachment,
@@ -379,6 +380,7 @@ function hydrateTraces(raw: unknown): Record<string, TraceEntry> {
       kind,
       summary: typeof value.summary === "string" ? value.summary : `「${topic}」を残しておく。`,
       sourceMotive,
+      artifact: hydrateTraceArtifact(value.artifact, topic, kind),
       salience: typeof value.salience === "number" ? clamp01(value.salience) : 0.3,
       mentions:
         typeof value.mentions === "number" && Number.isFinite(value.mentions)
@@ -392,6 +394,71 @@ function hydrateTraces(raw: unknown): Record<string, TraceEntry> {
   }
 
   return result;
+}
+
+function hydrateTraceArtifact(
+  raw: unknown,
+  topic: string,
+  kind: TraceEntry["kind"],
+): TraceArtifact {
+  if (!isRecord(raw)) {
+    return inferLegacyTraceArtifact(topic, kind);
+  }
+
+  return {
+    memo: hydrateTraceArtifactItems(raw.memo),
+    fragments: hydrateTraceArtifactItems(raw.fragments),
+    decisions: hydrateTraceArtifactItems(raw.decisions),
+    nextSteps: hydrateTraceArtifactItems(raw.nextSteps),
+  };
+}
+
+function hydrateTraceArtifactItems(raw: unknown): string[] {
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+
+  return raw
+    .filter((value): value is string => typeof value === "string")
+    .map((value) => value.trim())
+    .filter((value, index, values) => value.length > 0 && values.indexOf(value) === index)
+    .slice(0, 4);
+}
+
+function inferLegacyTraceArtifact(
+  topic: string,
+  kind: TraceEntry["kind"],
+): TraceArtifact {
+  switch (kind) {
+    case "decision":
+      return {
+        memo: [],
+        fragments: [],
+        decisions: [`${topic} を決まった形として残す`],
+        nextSteps: [],
+      };
+    case "spec_fragment":
+      return {
+        memo: [],
+        fragments: [`${topic} を残る断片として扱う`],
+        decisions: [],
+        nextSteps: [],
+      };
+    case "continuity_marker":
+      return {
+        memo: [],
+        fragments: [],
+        decisions: [],
+        nextSteps: [`${topic} の続きへ戻る`],
+      };
+    case "note":
+      return {
+        memo: [`${topic} をメモしておく`],
+        fragments: [],
+        decisions: [],
+        nextSteps: [],
+      };
+  }
 }
 
 function hydrateInitiative(raw: unknown): InitiativeState {

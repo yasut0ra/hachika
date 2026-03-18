@@ -221,6 +221,7 @@ Hachika は、単に有用なだけでなく、
 - active purpose は進捗を持ち、達成・放棄・別目的への遷移として解決されうる
 - `leave_trace / continue_shared_work / seek_continuity` は topic ごとの `trace` として保存される
   - trace は `note / continuity_marker / spec_fragment / decision` の形を取り、会話の外にも残る断片として扱われる
+  - 各 trace は `memo / fragments / decisions / nextSteps` の structured artifact を持ち、単なる要約文ではなく再利用可能な痕跡として保持される
 - 内部状態に応じて応答のトーンと内容を変化させる
 - `data/hachika-state.json` に状態を保存し、セッションをまたいで継続性を残す
 
@@ -243,7 +244,7 @@ npm run dev
 - `/purpose` 現在の active purpose と直近の解決済み purpose を表示
 - `/self` 現在の self-model、motive、conflict を表示
 - `/identity` 現在の identity summary / arc / traits / anchors を表示
-- `/traces` 保存された trace を表示
+- `/traces` 保存された trace と structured artifact を表示
 - `/memory` 直近の記憶を表示
 - `/imprints` 長期記憶を `preference / boundary / relation` 別に表示
 - `/debug` 嗜好、identity、traces、preservation threat、purpose progress、直近の purpose 解決、dominant conflict を含む状態概要を表示

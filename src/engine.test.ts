@@ -62,9 +62,15 @@ test("memory cue builds continuity relation imprint", () => {
   engine.respond("前回の設計の続きに戻りたい。覚えてる？");
   const result = engine.respond("この続きは残しておきたい。");
   const continuity = result.snapshot.relationImprints.continuity;
+  const trace = Object.values(result.snapshot.traces).find(
+    (entry) => entry.kind === "continuity_marker" && entry.artifact.nextSteps.length > 0,
+  );
 
   assert.ok(continuity !== undefined);
   assert.ok((continuity?.closeness ?? 0) > 0);
+  assert.ok(trace !== undefined);
+  assert.equal(trace.kind, "continuity_marker");
+  assert.ok(trace.artifact.nextSteps.length > 0);
 });
 
 test("responsive turn schedules a pending initiative", () => {
@@ -169,6 +175,8 @@ test("shared work interaction creates a concrete trace", () => {
     true,
   );
   assert.match(trace?.summary ?? "", /断片|残す/);
+  assert.ok((trace?.artifact.fragments.length ?? 0) > 0);
+  assert.ok((trace?.artifact.memo.length ?? 0) > 0);
   assert.match(result.reply, /残した/);
 });
 
@@ -256,8 +264,10 @@ test("completion upgrades an existing trace into a decision", () => {
 
   assert.ok(trace !== undefined);
   assert.equal(trace?.kind, "decision");
-  assert.match(trace?.summary ?? "", /決まった形/);
-  assert.match(result.reply, /決まった形|保存/);
+  assert.match(trace?.summary ?? "", /決定|保存|まとまった/);
+  assert.ok((trace?.artifact.decisions.length ?? 0) > 0);
+  assert.ok((trace?.artifact.fragments.length ?? 0) > 0);
+  assert.match(result.reply, /決定|保存|まとまった/);
 });
 
 test("abandonment cue can release an active purpose", () => {
