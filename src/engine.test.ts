@@ -53,6 +53,7 @@ test("negative repeated topic creates adverse imprint", () => {
   assert.ok(boundary !== undefined);
   assert.ok((boundary?.intensity ?? 0) > 0);
   assert.ok(result.snapshot.attachment < createInitialSnapshot().attachment);
+  assert.equal(result.debug.selfModel.topMotives[0]?.kind, "protect_boundary");
 });
 
 test("memory cue builds continuity relation imprint", () => {
@@ -96,4 +97,18 @@ test("force proactive emits even without waiting", () => {
 
   assert.ok(message !== null);
   assert.match(message ?? "", /仕様|流れ/);
+});
+
+test("shared work interaction surfaces a high-level motive", () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+
+  engine.respond("設計を一緒に進めて、記録として残したい。");
+  const selfModel = engine.getSelfModel();
+  const motiveKinds = selfModel.topMotives.map((motive) => motive.kind);
+
+  assert.ok(selfModel.narrative.length > 0);
+  assert.equal(
+    motiveKinds.includes("continue_shared_work") || motiveKinds.includes("leave_trace"),
+    true,
+  );
 });

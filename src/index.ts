@@ -58,6 +58,11 @@ try {
       continue;
     }
 
+    if (text === "/self") {
+      printSelfModel(engine);
+      continue;
+    }
+
     if (text === "/memory") {
       printMemories(engine);
       continue;
@@ -101,6 +106,7 @@ function printHelp(): void {
   console.log("/proactive force a proactive line now");
   console.log("/idle N simulate N hours of inactivity");
   console.log("/state  print current drives");
+  console.log("/self   print current self-model");
   console.log("/memory print recent memory");
   console.log("/imprints print long-term topic memory");
   console.log("/debug  print preference and memory summary");
@@ -174,6 +180,7 @@ function printImprints(currentEngine: HachikaEngine): void {
 
 function printDebug(currentEngine: HachikaEngine): void {
   const snapshot = currentEngine.getSnapshot();
+  const selfModel = currentEngine.getSelfModel();
   const preferredTopics = Object.entries(snapshot.preferences)
     .sort((left, right) => right[1] - left[1])
     .slice(0, 6);
@@ -183,10 +190,19 @@ function printDebug(currentEngine: HachikaEngine): void {
 
   console.log(formatDriveState(snapshot.state));
   console.log(`attachment: ${snapshot.attachment.toFixed(2)}`);
+  console.log(`self: ${selfModel.narrative}`);
   console.log(
     snapshot.initiative.pending
       ? `pending initiative: ${snapshot.initiative.pending.kind}/${snapshot.initiative.pending.reason}${snapshot.initiative.pending.topic ? `/${snapshot.initiative.pending.topic}` : ""}`
       : "pending initiative: none",
+  );
+  console.log(
+    `motives: ${selfModel.topMotives
+      .map(
+        (motive) =>
+          `${motive.kind}${motive.topic ? `(${motive.topic})` : ""}:${motive.score.toFixed(2)}`,
+      )
+      .join(" | ")}`,
   );
 
   if (preferredTopics.length === 0) {
@@ -231,6 +247,18 @@ function printDebug(currentEngine: HachikaEngine): void {
           )
           .join(" | ")}`,
   );
+}
+
+function printSelfModel(currentEngine: HachikaEngine): void {
+  const selfModel = currentEngine.getSelfModel();
+
+  console.log(selfModel.narrative);
+
+  for (const motive of selfModel.topMotives) {
+    console.log(
+      `${motive.kind}${motive.topic ? `(${motive.topic})` : ""} score:${motive.score.toFixed(2)} ${motive.reason}`,
+    );
+  }
 }
 
 async function readInput(

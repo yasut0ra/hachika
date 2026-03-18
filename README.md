@@ -212,6 +212,7 @@ Hachika は、単に有用なだけでなく、
 - トピックごとの好み、短期記憶、長期記憶の痕跡を保持する
   - 長期記憶は `preference / boundary / relation` の3系統に分けて保持する
 - 放置後の反応や話題の再開を、能動行動レイヤーとして扱う
+- drive と記憶から、その時点の高次目的を self-model として導出する
 - 内部状態に応じて応答のトーンと内容を変化させる
 - `data/hachika-state.json` に状態を保存し、セッションをまたいで継続性を残す
 
@@ -231,6 +232,7 @@ npm run dev
 - `/proactive` 能動発話を強制的に出す
 - `/idle <hours>` 指定時間だけ放置された状態をシミュレートする
 - `/state` 現在の drive 状態を表示
+- `/self` 現在の self-model と motive を表示
 - `/memory` 直近の記憶を表示
 - `/imprints` 長期記憶を `preference / boundary / relation` 別に表示
 - `/debug` 嗜好と状態の概要を表示

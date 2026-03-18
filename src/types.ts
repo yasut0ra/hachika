@@ -101,6 +101,26 @@ export interface InteractionSignals {
   topics: string[];
 }
 
+export type MotiveKind =
+  | "protect_boundary"
+  | "seek_continuity"
+  | "pursue_curiosity"
+  | "deepen_relation"
+  | "continue_shared_work"
+  | "leave_trace";
+
+export interface SelfMotive {
+  kind: MotiveKind;
+  score: number;
+  topic: string | null;
+  reason: string;
+}
+
+export interface SelfModel {
+  narrative: string;
+  topMotives: SelfMotive[];
+}
+
 export interface TurnResult {
   reply: string;
   snapshot: HachikaSnapshot;
@@ -108,5 +128,6 @@ export interface TurnResult {
     dominantDrive: DriveName;
     mood: MoodLabel;
     signals: InteractionSignals;
+    selfModel: SelfModel;
   };
 }

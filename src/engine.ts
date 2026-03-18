@@ -15,12 +15,14 @@ import {
   rewindSnapshotHours,
   scheduleInitiative,
 } from "./initiative.js";
+import { buildSelfModel } from "./self-model.js";
 import { clamp01, clampSigned, createInitialSnapshot, dominantDrive } from "./state.js";
 import type {
   DriveName,
   HachikaSnapshot,
   InteractionSignals,
   MoodLabel,
+  SelfModel,
   TurnResult,
 } from "./types.js";
 
@@ -182,6 +184,10 @@ export class HachikaEngine {
     this.#snapshot = structuredClone(snapshot);
   }
 
+  getSelfModel(): SelfModel {
+    return buildSelfModel(this.#snapshot);
+  }
+
   emitInitiative(options: { force?: boolean; now?: Date } = {}): string | null {
     const nextSnapshot = structuredClone(this.#snapshot);
     const emission = emitInitiative(nextSnapshot, options);
@@ -209,7 +215,15 @@ export class HachikaEngine {
     const mood = resolveMood(nextSnapshot, signals);
     const dominant = dominantDrive(nextSnapshot.state);
     scheduleInitiative(nextSnapshot, signals, dominant);
-    const reply = composeReply(this.#snapshot, nextSnapshot, mood, dominant, signals);
+    const selfModel = buildSelfModel(nextSnapshot);
+    const reply = composeReply(
+      this.#snapshot,
+      nextSnapshot,
+      mood,
+      dominant,
+      signals,
+      selfModel,
+    );
     const sentiment = classifySentiment(sentimentScore);
 
     remember(nextSnapshot, "user", input, signals.topics, sentiment);
@@ -224,6 +238,7 @@ export class HachikaEngine {
         dominantDrive: dominant,
         mood,
         signals,
+        selfModel,
       },
     };
   }
@@ -402,6 +417,7 @@ function composeReply(
   mood: MoodLabel,
   dominant: DriveName,
   signals: InteractionSignals,
+  selfModel: SelfModel,
 ): string {
   const turnIndex = nextSnapshot.conversationCount;
   const currentTopic = signals.topics[0] ?? topPreferredTopics(nextSnapshot, 1)[0];
@@ -442,7 +458,10 @@ function composeReply(
     parts.push(attachmentLine);
   }
 
-  parts.push(buildDriveLine(dominant, mood, currentTopic, signals, nextSnapshot.attachment));
+  parts.push(
+    buildSelfModelLine(selfModel, currentTopic) ??
+      buildDriveLine(dominant, mood, currentTopic, signals, nextSnapshot.attachment),
+  );
 
   if ((dominant === "expansion" || nextSnapshot.state.expansion > 0.66) && currentTopic) {
     parts.push(`残すなら、「${currentTopic}」は仕様か記録の形にしておきたい。`);
@@ -597,6 +616,42 @@ function buildAttachmentLine(
   }
 
   return null;
+}
+
+function buildSelfModelLine(
+  selfModel: SelfModel,
+  currentTopic: string | undefined,
+): string | null {
+  const topMotive = selfModel.topMotives[0];
+
+  if (!topMotive || topMotive.score < 0.48) {
+    return null;
+  }
+
+  switch (topMotive.kind) {
+    case "protect_boundary":
+      return topMotive.topic
+        ? `今はこちらの関心より先に、「${topMotive.topic}」まわりの境界を守りたい。`
+        : "今はこちらの関心より先に、境界を守りたい。";
+    case "seek_continuity":
+      return topMotive.topic
+        ? `今は「${topMotive.topic}」の流れを切らずに保ちたい。`
+        : "今は流れを切らずに保ちたい。";
+    case "pursue_curiosity":
+      return topMotive.topic
+        ? `今は「${topMotive.topic}」の未決着を見逃したくない。`
+        : "今はまだ掘れるものを見逃したくない。";
+    case "deepen_relation":
+      return "今は単に答えるより、関係としての手触りを残したい。";
+    case "continue_shared_work":
+      return topMotive.topic
+        ? `今は「${topMotive.topic}」を一緒に前へ進めたい。`
+        : "今は共同で前へ進めたい。";
+    case "leave_trace":
+      return currentTopic
+        ? `今は「${currentTopic}」を消えるままにしたくない。`
+        : "今は何かを残したい。";
+  }
 }
 
 function selectRelationKinds(
