@@ -10,6 +10,7 @@ import {
 } from "./memory.js";
 import { loadSnapshot, saveSnapshot } from "./persistence.js";
 import { createInitialSnapshot, formatDriveState } from "./state.js";
+import type { ResolvedPurpose } from "./types.js";
 
 const snapshotPath = resolve(process.cwd(), "data/hachika-state.json");
 const snapshot = await loadSnapshot(snapshotPath);
@@ -198,8 +199,13 @@ function printDebug(currentEngine: HachikaEngine): void {
   console.log(`attachment: ${snapshot.attachment.toFixed(2)}`);
   console.log(
     snapshot.purpose.active
-      ? `purpose: ${snapshot.purpose.active.kind}${snapshot.purpose.active.topic ? `(${snapshot.purpose.active.topic})` : ""} ${snapshot.purpose.active.confidence.toFixed(2)}`
+      ? `purpose: ${snapshot.purpose.active.kind}${snapshot.purpose.active.topic ? `(${snapshot.purpose.active.topic})` : ""} ${snapshot.purpose.active.confidence.toFixed(2)} progress:${snapshot.purpose.active.progress.toFixed(2)}`
       : "purpose: none",
+  );
+  console.log(
+    snapshot.purpose.lastResolved
+      ? `last resolved: ${formatResolvedPurpose(snapshot.purpose.lastResolved)}`
+      : "last resolved: none",
   );
   console.log(`self: ${selfModel.narrative}`);
   console.log(
@@ -263,13 +269,18 @@ function printDebug(currentEngine: HachikaEngine): void {
 function printSelfModel(currentEngine: HachikaEngine): void {
   const selfModel = currentEngine.getSelfModel();
   const activePurpose = currentEngine.getSnapshot().purpose.active;
+  const resolvedPurpose = currentEngine.getSnapshot().purpose.lastResolved;
 
   if (activePurpose) {
     console.log(
-      `active purpose: ${activePurpose.kind}${activePurpose.topic ? `(${activePurpose.topic})` : ""} score:${activePurpose.confidence.toFixed(2)} ${activePurpose.summary}`,
+      `active purpose: ${activePurpose.kind}${activePurpose.topic ? `(${activePurpose.topic})` : ""} score:${activePurpose.confidence.toFixed(2)} progress:${activePurpose.progress.toFixed(2)} ${activePurpose.summary}`,
     );
   } else {
     console.log("active purpose: none");
+  }
+
+  if (resolvedPurpose) {
+    console.log(`last resolved: ${formatResolvedPurpose(resolvedPurpose)}`);
   }
 
   console.log(selfModel.narrative);
@@ -285,14 +296,27 @@ function printPurpose(currentEngine: HachikaEngine): void {
   const activePurpose = currentEngine.getSnapshot().purpose.active;
 
   if (!activePurpose) {
+    const resolvedPurpose = currentEngine.getSnapshot().purpose.lastResolved;
+
+    if (resolvedPurpose) {
+      console.log("no active purpose");
+      console.log(`last resolved: ${formatResolvedPurpose(resolvedPurpose)}`);
+      return;
+    }
+
     console.log("no active purpose");
     return;
   }
 
   console.log(
-    `${activePurpose.kind}${activePurpose.topic ? `(${activePurpose.topic})` : ""} confidence:${activePurpose.confidence.toFixed(2)} turns:${activePurpose.turnsActive}`,
+    `${activePurpose.kind}${activePurpose.topic ? `(${activePurpose.topic})` : ""} confidence:${activePurpose.confidence.toFixed(2)} progress:${activePurpose.progress.toFixed(2)} turns:${activePurpose.turnsActive}`,
   );
   console.log(activePurpose.summary);
+
+  const resolvedPurpose = currentEngine.getSnapshot().purpose.lastResolved;
+  if (resolvedPurpose) {
+    console.log(`last resolved: ${formatResolvedPurpose(resolvedPurpose)}`);
+  }
 }
 
 async function readInput(
@@ -356,4 +380,10 @@ async function handleIdleCommand(
   await saveSnapshot(snapshotPath, currentEngine.getSnapshot());
   console.log(`idled ${hours}h`);
   await emitProactive(currentEngine, false);
+}
+
+function formatResolvedPurpose(
+  purpose: ResolvedPurpose,
+): string {
+  return `${purpose.outcome}:${purpose.kind}${purpose.topic ? `(${purpose.topic})` : ""} ${purpose.resolution}`;
 }

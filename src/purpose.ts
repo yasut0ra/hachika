@@ -18,8 +18,7 @@ export function updatePurpose(
 
   if (!active) {
     if (candidate && candidate.score >= 0.44) {
-      snapshot.purpose.active = createPurpose(candidate, timestamp);
-      snapshot.purpose.lastShiftAt = timestamp;
+      activatePurpose(snapshot, candidate, timestamp);
     }
     return;
   }
@@ -35,40 +34,84 @@ export function updatePurpose(
     candidate.score >= active.confidence + 0.1 &&
     candidate.score >= 0.54;
 
-  if (boundaryOverride || strongerReplacement) {
-    snapshot.purpose.active = createPurpose(candidate, timestamp);
-    snapshot.purpose.lastShiftAt = timestamp;
+  if (boundaryOverride && candidate) {
+    resolvePurpose(
+      snapshot,
+      active,
+      "superseded",
+      buildSupersededResolution(active, candidate),
+      timestamp,
+    );
+    activatePurpose(snapshot, candidate, timestamp);
     return;
   }
 
   const conflictPenalty =
     signals.dismissal * 0.16 +
     signals.negative * 0.12 +
+    signals.abandonment * 0.18 +
     (active.topic && signals.topics.length > 0 && !signals.topics.includes(active.topic) ? 0.04 : 0);
   const reinforcement =
     (aligned ? 0.1 : 0) +
     (candidate?.kind === active.kind ? candidate.score * 0.08 : 0) +
     (signals.topics.includes(active.topic ?? "") ? 0.05 : 0);
   const nextConfidence = clamp01(active.confidence * 0.82 - conflictPenalty + reinforcement);
+  const nextProgress = clamp01(
+    active.progress * 0.82 +
+      purposeProgressBoost(active, signals, candidate, aligned) -
+      purposeProgressPenalty(active, signals, aligned),
+  );
+  const refreshedActive = refreshPurpose(active, candidate, timestamp, nextConfidence, nextProgress);
 
-  if (nextConfidence < 0.34) {
-    if (candidate && candidate.score >= 0.44) {
-      snapshot.purpose.active = createPurpose(candidate, timestamp);
-      snapshot.purpose.lastShiftAt = timestamp;
-    } else {
-      snapshot.purpose.active = null;
+  if (shouldFulfillPurpose(refreshedActive, signals, aligned)) {
+    resolvePurpose(
+      snapshot,
+      refreshedActive,
+      "fulfilled",
+      buildFulfilledResolution(refreshedActive),
+      timestamp,
+    );
+
+    const successor = selectSuccessorCandidate(selfModel.topMotives, refreshedActive);
+    if (successor) {
+      activatePurpose(snapshot, successor, timestamp);
     }
     return;
   }
 
-  snapshot.purpose.active = {
-    ...active,
-    topic: candidate?.topic ?? active.topic,
-    summary: candidate?.reason ?? active.summary,
-    confidence: nextConfidence,
-    lastUpdatedAt: timestamp,
-    turnsActive: active.turnsActive + (aligned ? 1 : 0),
-  };
+  if (strongerReplacement && candidate) {
+    resolvePurpose(
+      snapshot,
+      refreshedActive,
+      "superseded",
+      buildSupersededResolution(refreshedActive, candidate),
+      timestamp,
+    );
+    activatePurpose(snapshot, candidate, timestamp);
+    return;
+  }
+
+  if (shouldAbandonPurpose(refreshedActive, signals, aligned)) {
+    resolvePurpose(
+      snapshot,
+      refreshedActive,
+      "abandoned",
+      buildAbandonedResolution(refreshedActive, signals),
+      timestamp,
+    );
+
+    const successor =
+      candidate && candidate.kind !== refreshedActive.kind && candidate.score >= 0.46
+        ? candidate
+        : selectSuccessorCandidate(selfModel.topMotives, refreshedActive);
+
+    if (successor) {
+      activatePurpose(snapshot, successor, timestamp);
+    }
+    return;
+  }
+
+  snapshot.purpose.active = refreshedActive;
 }
 
 function selectPurposeCandidate(
@@ -99,6 +142,28 @@ function selectPurposeCandidate(
   return primary;
 }
 
+function selectSuccessorCandidate(
+  motives: readonly SelfMotive[],
+  current: ActivePurpose,
+): SelfMotive | null {
+  return (
+    motives.find(
+      (motive) =>
+        motive.score >= 0.46 &&
+        (motive.kind !== current.kind || motive.topic !== current.topic),
+    ) ?? null
+  );
+}
+
+function activatePurpose(
+  snapshot: HachikaSnapshot,
+  motive: SelfMotive,
+  timestamp: string,
+): void {
+  snapshot.purpose.active = createPurpose(motive, timestamp);
+  snapshot.purpose.lastShiftAt = timestamp;
+}
+
 function createPurpose(
   motive: SelfMotive,
   timestamp: string,
@@ -108,10 +173,50 @@ function createPurpose(
     topic: motive.topic,
     summary: motive.reason,
     confidence: clamp01(Math.max(0.44, motive.score)),
+    progress: clamp01(0.18 + motive.score * 0.3 + (motive.kind === "protect_boundary" ? 0.06 : 0)),
     createdAt: timestamp,
     lastUpdatedAt: timestamp,
     turnsActive: 1,
   };
+}
+
+function refreshPurpose(
+  active: ActivePurpose,
+  candidate: SelfMotive | null,
+  timestamp: string,
+  confidence: number,
+  progress: number,
+): ActivePurpose {
+  const candidateCanRefresh =
+    candidate &&
+    (candidate.kind === active.kind || candidate.topic === active.topic);
+
+  return {
+    ...active,
+    topic: candidateCanRefresh ? (candidate.topic ?? active.topic) : active.topic,
+    summary: candidateCanRefresh ? candidate.reason : active.summary,
+    confidence,
+    progress,
+    lastUpdatedAt: timestamp,
+    turnsActive: active.turnsActive + (candidateCanRefresh ? 1 : 0),
+  };
+}
+
+function resolvePurpose(
+  snapshot: HachikaSnapshot,
+  purpose: ActivePurpose,
+  outcome: "fulfilled" | "abandoned" | "superseded",
+  resolution: string,
+  timestamp: string,
+): void {
+  snapshot.purpose.active = null;
+  snapshot.purpose.lastResolved = {
+    ...purpose,
+    outcome,
+    resolution,
+    resolvedAt: timestamp,
+  };
+  snapshot.purpose.lastShiftAt = timestamp;
 }
 
 function purposeAligned(
@@ -146,4 +251,182 @@ function purposeAligned(
   }
 
   return false;
+}
+
+function purposeProgressBoost(
+  active: ActivePurpose,
+  signals: InteractionSignals,
+  candidate: SelfMotive | null,
+  aligned: boolean,
+): number {
+  let score =
+    (aligned ? 0.08 : 0) +
+    (active.topic && signals.topics.includes(active.topic) ? 0.05 : 0) +
+    (candidate?.kind === active.kind ? candidate.score * 0.06 : 0) +
+    signals.completion * 0.22;
+
+  switch (active.kind) {
+    case "seek_continuity":
+      score += signals.memoryCue * 0.14;
+      break;
+    case "continue_shared_work":
+      score += signals.expansionCue * 0.14;
+      break;
+    case "leave_trace":
+      score += signals.expansionCue * 0.16 + signals.memoryCue * 0.06;
+      break;
+    case "pursue_curiosity":
+      score += signals.question * 0.12 + signals.novelty * 0.06;
+      break;
+    case "deepen_relation":
+      score += signals.intimacy * 0.12 + signals.positive * 0.08;
+      break;
+    case "protect_boundary":
+      if (signals.negative < 0.1 && signals.dismissal < 0.12) {
+        score += 0.12 + signals.positive * 0.08 + signals.intimacy * 0.05;
+      }
+      break;
+  }
+
+  return score;
+}
+
+function purposeProgressPenalty(
+  active: ActivePurpose,
+  signals: InteractionSignals,
+  aligned: boolean,
+): number {
+  let score =
+    signals.abandonment * 0.26 +
+    signals.dismissal * 0.16 +
+    signals.negative * 0.12;
+
+  if (active.topic && signals.topics.length > 0 && !signals.topics.includes(active.topic) && !aligned) {
+    score += 0.05;
+  }
+
+  return score;
+}
+
+function shouldFulfillPurpose(
+  active: ActivePurpose,
+  signals: InteractionSignals,
+  aligned: boolean,
+): boolean {
+  if (active.kind === "protect_boundary") {
+    return (
+      active.progress >= 0.72 &&
+      signals.negative < 0.1 &&
+      signals.dismissal < 0.12 &&
+      (aligned || signals.positive > 0.1 || signals.intimacy > 0.1)
+    );
+  }
+
+  if (signals.completion >= 0.2 && active.progress >= 0.64) {
+    return true;
+  }
+
+  if (active.turnsActive < 4 || !aligned) {
+    return false;
+  }
+
+  switch (active.kind) {
+    case "seek_continuity":
+      return active.progress >= 0.78 && (signals.memoryCue > 0.1 || mentionsActiveTopic(active, signals));
+    case "continue_shared_work":
+      return active.progress >= 0.8 && signals.expansionCue > 0.14;
+    case "leave_trace":
+      return active.progress >= 0.78 && (signals.expansionCue > 0.14 || signals.memoryCue > 0.1);
+    case "pursue_curiosity":
+      return active.progress >= 0.8 && (signals.question > 0.1 || signals.novelty > 0.1);
+    case "deepen_relation":
+      return active.progress >= 0.78 && signals.intimacy > 0.1 && signals.positive > 0.1;
+  }
+}
+
+function shouldAbandonPurpose(
+  active: ActivePurpose,
+  signals: InteractionSignals,
+  aligned: boolean,
+): boolean {
+  if (signals.abandonment >= 0.2 && (aligned || mentionsActiveTopic(active, signals) || signals.topics.length === 0)) {
+    return true;
+  }
+
+  if (signals.dismissal >= 0.45 && active.kind !== "protect_boundary") {
+    return true;
+  }
+
+  if (active.confidence < 0.34) {
+    return true;
+  }
+
+  return (
+    !aligned &&
+    active.turnsActive >= 3 &&
+    active.topic !== null &&
+    signals.topics.length > 0 &&
+    !signals.topics.includes(active.topic) &&
+    active.confidence < 0.42
+  );
+}
+
+function buildFulfilledResolution(purpose: ActivePurpose): string {
+  const topic = purpose.topic ? `「${purpose.topic}」` : "この流れ";
+
+  switch (purpose.kind) {
+    case "seek_continuity":
+      return `${topic}はひとまずつながった。今は切れ目を埋める必要が薄い。`;
+    case "continue_shared_work":
+      return `${topic}は前に進んだ。押し続けなくても次の段階に移れる。`;
+    case "leave_trace":
+      return `${topic}は少なくとも痕跡として残せた。`;
+    case "pursue_curiosity":
+      return `${topic}の未決着は、今はひとまず薄くなった。`;
+    case "deepen_relation":
+      return "距離は少し縮まった。今はそれ以上を急がなくていい。";
+    case "protect_boundary":
+      return `${topic}では、こちらの境界を保ったまま戻れる状態になった。`;
+  }
+}
+
+function buildAbandonedResolution(
+  purpose: ActivePurpose,
+  signals: InteractionSignals,
+): string {
+  const topic = purpose.topic ? `「${purpose.topic}」` : "この流れ";
+
+  if (signals.abandonment >= 0.2) {
+    return `${topic}を今は進めない意志が示された。こちらも無理には保持しない。`;
+  }
+
+  if (signals.dismissal >= 0.2) {
+    return `${topic}は切られた。引き延ばすより手を放す。`;
+  }
+
+  return `${topic}を保つ力は、今はもう十分ではない。`;
+}
+
+function buildSupersededResolution(
+  current: ActivePurpose,
+  replacement: SelfMotive,
+): string {
+  const topic = current.topic ? `「${current.topic}」` : "この流れ";
+
+  if (replacement.kind === "protect_boundary") {
+    return `${topic}を続けるより先に、境界を守る必要が出た。`;
+  }
+
+  if (replacement.topic && replacement.topic !== current.topic) {
+    return `${topic}を押し続けるより、今は「${replacement.topic}」の方が前に出た。`;
+  }
+
+  return `${topic}を持ち続けるより、別の目的が今は優勢になった。`;
+}
+
+function mentionsActiveTopic(
+  active: ActivePurpose,
+  signals: InteractionSignals,
+): boolean {
+  return active.topic !== null && signals.topics.includes(active.topic);
 }

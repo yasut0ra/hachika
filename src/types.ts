@@ -78,13 +78,23 @@ export interface ActivePurpose {
   topic: string | null;
   summary: string;
   confidence: number;
+  progress: number;
   createdAt: string;
   lastUpdatedAt: string;
   turnsActive: number;
 }
 
+export type PurposeOutcome = "fulfilled" | "abandoned" | "superseded";
+
+export interface ResolvedPurpose extends ActivePurpose {
+  outcome: PurposeOutcome;
+  resolution: string;
+  resolvedAt: string;
+}
+
 export interface PurposeState {
   active: ActivePurpose | null;
+  lastResolved: ResolvedPurpose | null;
   lastShiftAt: string | null;
 }
 
@@ -113,6 +123,8 @@ export interface InteractionSignals {
   dismissal: number;
   memoryCue: number;
   expansionCue: number;
+  completion: number;
+  abandonment: number;
   repetition: number;
   neglect: number;
   topics: string[];

@@ -215,6 +215,7 @@ Hachika は、単に有用なだけでなく、
 - drive と記憶から、その時点の高次目的を self-model として導出する
 - 能動行動は self-model の motive をもとに計画される
 - motive のうち強いものは active purpose として数ターン持続する
+- active purpose は進捗を持ち、達成・放棄・別目的への遷移として解決されうる
 - 内部状態に応じて応答のトーンと内容を変化させる
 - `data/hachika-state.json` に状態を保存し、セッションをまたいで継続性を残す
 
@@ -234,11 +235,11 @@ npm run dev
 - `/proactive` 能動発話を強制的に出す
 - `/idle <hours>` 指定時間だけ放置された状態をシミュレートする
 - `/state` 現在の drive 状態を表示
-- `/purpose` 現在の active purpose を表示
+- `/purpose` 現在の active purpose と直近の解決済み purpose を表示
 - `/self` 現在の self-model と motive を表示
 - `/memory` 直近の記憶を表示
 - `/imprints` 長期記憶を `preference / boundary / relation` 別に表示
-- `/debug` 嗜好と状態の概要を表示
+- `/debug` 嗜好、purpose progress、直近の purpose 解決を含む状態概要を表示
 - `/reset` 状態と記憶を初期化
 - `/exit` 終了
 

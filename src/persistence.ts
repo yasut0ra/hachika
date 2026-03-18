@@ -14,6 +14,7 @@ import type {
   PurposeState,
   PreferenceImprint,
   RelationImprint,
+  ResolvedPurpose,
 } from "./types.js";
 
 export async function loadSnapshot(filePath: string): Promise<HachikaSnapshot> {
@@ -41,7 +42,7 @@ function hydrateSnapshot(raw: unknown): HachikaSnapshot {
   }
 
   return {
-    version: 6,
+    version: 7,
     state: hydrateState(raw.state),
     attachment:
       typeof raw.attachment === "number" ? clamp01(raw.attachment) : initial.attachment,
@@ -297,12 +298,14 @@ function hydratePurpose(raw: unknown): PurposeState {
   if (!isRecord(raw)) {
     return {
       active: null,
+      lastResolved: null,
       lastShiftAt: null,
     };
   }
 
   return {
     active: hydrateActivePurpose(raw.active),
+    lastResolved: hydrateResolvedPurpose(raw.lastResolved),
     lastShiftAt: typeof raw.lastShiftAt === "string" ? raw.lastShiftAt : null,
   };
 }
@@ -338,6 +341,10 @@ function hydrateActivePurpose(raw: unknown): ActivePurpose | null {
     summary: typeof raw.summary === "string" ? raw.summary : "",
     confidence:
       typeof raw.confidence === "number" ? clamp01(raw.confidence) : 0.5,
+    progress:
+      typeof raw.progress === "number"
+        ? clamp01(raw.progress)
+        : clamp01(Math.max(0.2, (typeof raw.confidence === "number" ? raw.confidence : 0.5) * 0.48)),
     createdAt:
       typeof raw.createdAt === "string" ? raw.createdAt : new Date().toISOString(),
     lastUpdatedAt:
@@ -346,6 +353,27 @@ function hydrateActivePurpose(raw: unknown): ActivePurpose | null {
       typeof raw.turnsActive === "number" && Number.isFinite(raw.turnsActive)
         ? Math.max(1, Math.round(raw.turnsActive))
         : 1,
+  };
+}
+
+function hydrateResolvedPurpose(raw: unknown): ResolvedPurpose | null {
+  if (!isRecord(raw)) {
+    return null;
+  }
+
+  const active = hydrateActivePurpose(raw);
+  const outcome = isPurposeOutcome(raw.outcome) ? raw.outcome : undefined;
+
+  if (!active || !outcome) {
+    return null;
+  }
+
+  return {
+    ...active,
+    outcome,
+    resolution: typeof raw.resolution === "string" ? raw.resolution : active.summary,
+    resolvedAt:
+      typeof raw.resolvedAt === "string" ? raw.resolvedAt : new Date().toISOString(),
   };
 }
 
@@ -400,6 +428,10 @@ function isMotiveKind(value: unknown): value is MotiveKind {
     value === "continue_shared_work" ||
     value === "leave_trace"
   );
+}
+
+function isPurposeOutcome(value: unknown): value is ResolvedPurpose["outcome"] {
+  return value === "fulfilled" || value === "abandoned" || value === "superseded";
 }
 
 function inferLegacyMotive(reason: PendingInitiative["reason"]): MotiveKind {

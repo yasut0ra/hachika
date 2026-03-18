@@ -136,6 +136,43 @@ const EXPANSION_MARKERS = [
   "作る",
 ];
 
+const COMPLETION_MARKERS = [
+  "done",
+  "finished",
+  "completed",
+  "implemented",
+  "saved",
+  "recorded",
+  "resolved",
+  "decided",
+  "まとまった",
+  "終わった",
+  "完了",
+  "実装した",
+  "保存した",
+  "記録した",
+  "解決した",
+  "決まった",
+  "形になった",
+  "できた",
+];
+
+const ABANDONMENT_MARKERS = [
+  "drop",
+  "skip",
+  "leave it",
+  "not now",
+  "give up",
+  "やめる",
+  "やめよう",
+  "見送る",
+  "置いておく",
+  "進めない",
+  "不要",
+  "やらない",
+  "もういい",
+];
+
 const OPENERS: Record<MoodLabel, readonly string[]> = {
   warm: [
     "その向きなら、こちらも応じやすい。",
@@ -216,7 +253,12 @@ export class HachikaEngine {
     const mood = resolveMood(nextSnapshot, signals);
     const dominant = dominantDrive(nextSnapshot.state);
     const preliminarySelfModel = buildSelfModel(nextSnapshot);
-    updatePurpose(nextSnapshot, preliminarySelfModel, signals);
+    updatePurpose(
+      nextSnapshot,
+      preliminarySelfModel,
+      signals,
+      nextSnapshot.lastInteractionAt ?? new Date().toISOString(),
+    );
     const selfModel = buildSelfModel(nextSnapshot);
     scheduleInitiative(nextSnapshot, signals, selfModel);
     const reply = composeReply(
@@ -269,6 +311,8 @@ function analyzeInteraction(
     dismissal: countMatches(normalized, DISMISSAL_MARKERS),
     memoryCue: countMatches(normalized, MEMORY_MARKERS),
     expansionCue: countMatches(normalized, EXPANSION_MARKERS),
+    completion: countMatches(normalized, COMPLETION_MARKERS),
+    abandonment: countMatches(normalized, ABANDONMENT_MARKERS),
     repetition: clamp01(repetitionBase),
     neglect: calculateNeglect(snapshot.lastInteractionAt),
     topics,
@@ -459,6 +503,11 @@ function composeReply(
   const attachmentLine = buildAttachmentLine(nextSnapshot.attachment, mood, signals);
   if (attachmentLine) {
     parts.push(attachmentLine);
+  }
+
+  const purposeResolutionLine = buildPurposeResolutionLine(nextSnapshot);
+  if (purposeResolutionLine) {
+    parts.push(purposeResolutionLine);
   }
 
   parts.push(
@@ -655,6 +704,18 @@ function buildSelfModelLine(
         ? `今は「${currentTopic}」を消えるままにしたくない。`
         : "今は何かを残したい。";
   }
+}
+
+function buildPurposeResolutionLine(
+  snapshot: HachikaSnapshot,
+): string | null {
+  const resolved = snapshot.purpose.lastResolved;
+
+  if (!resolved || resolved.resolvedAt !== snapshot.lastInteractionAt) {
+    return null;
+  }
+
+  return resolved.resolution;
 }
 
 function selectRelationKinds(

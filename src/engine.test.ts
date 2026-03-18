@@ -144,6 +144,32 @@ test("aligned turns reinforce an active purpose", () => {
   assert.ok((secondPurpose?.turnsActive ?? 0) >= 2);
 });
 
+test("completion can fulfill an active purpose", () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+
+  const first = engine.respond("設計を一緒に進めたい。");
+  const activePurpose = first.snapshot.purpose.active;
+  const result = engine.respond("その設計はまとまった。記録として保存した。");
+
+  assert.ok(activePurpose !== null);
+  assert.equal(result.snapshot.purpose.lastResolved?.outcome, "fulfilled");
+  assert.equal(result.snapshot.purpose.lastResolved?.kind, activePurpose?.kind);
+  assert.match(result.snapshot.purpose.lastResolved?.resolution ?? "", /設計|流れ/);
+});
+
+test("abandonment cue can release an active purpose", () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+
+  const first = engine.respond("設計を一緒に進めたい。");
+  const activePurpose = first.snapshot.purpose.active;
+  const result = engine.respond("その設計はやめよう。今は進めない。");
+
+  assert.ok(activePurpose !== null);
+  assert.equal(result.snapshot.purpose.lastResolved?.outcome, "abandoned");
+  assert.equal(result.snapshot.purpose.lastResolved?.kind, activePurpose?.kind);
+  assert.equal(result.snapshot.purpose.active?.kind === activePurpose?.kind, false);
+});
+
 test("hostility can shift active purpose toward boundary", () => {
   const engine = new HachikaEngine(createInitialSnapshot());
 
@@ -151,4 +177,5 @@ test("hostility can shift active purpose toward boundary", () => {
   const result = engine.respond("その設計は最悪だし邪魔だ。");
 
   assert.equal(result.snapshot.purpose.active?.kind, "protect_boundary");
+  assert.equal(result.snapshot.purpose.lastResolved?.outcome, "superseded");
 });
