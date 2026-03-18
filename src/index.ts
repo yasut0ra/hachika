@@ -221,6 +221,11 @@ function printDebug(currentEngine: HachikaEngine): void {
       )
       .join(" | ")}`,
   );
+  console.log(
+    selfModel.dominantConflict
+      ? `conflict: ${formatConflict(selfModel.dominantConflict)}`
+      : "conflict: none",
+  );
 
   if (preferredTopics.length === 0) {
     console.log("preferences: none");
@@ -285,10 +290,18 @@ function printSelfModel(currentEngine: HachikaEngine): void {
 
   console.log(selfModel.narrative);
 
+  if (selfModel.dominantConflict) {
+    console.log(`dominant conflict: ${formatConflict(selfModel.dominantConflict)}`);
+  }
+
   for (const motive of selfModel.topMotives) {
     console.log(
       `${motive.kind}${motive.topic ? `(${motive.topic})` : ""} score:${motive.score.toFixed(2)} ${motive.reason}`,
     );
+  }
+
+  for (const conflict of selfModel.conflicts.slice(0, 3)) {
+    console.log(`conflict ${formatConflict(conflict)}`);
   }
 }
 
@@ -386,4 +399,10 @@ function formatResolvedPurpose(
   purpose: ResolvedPurpose,
 ): string {
   return `${purpose.outcome}:${purpose.kind}${purpose.topic ? `(${purpose.topic})` : ""} ${purpose.resolution}`;
+}
+
+function formatConflict(
+  conflict: ReturnType<HachikaEngine["getSelfModel"]>["conflicts"][number],
+): string {
+  return `${conflict.kind}:${conflict.dominant}>${conflict.opposing}${conflict.topic ? `(${conflict.topic})` : ""}:${conflict.intensity.toFixed(2)} ${conflict.summary}`;
 }

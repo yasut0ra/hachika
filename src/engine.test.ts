@@ -130,6 +130,30 @@ test("shared work interaction surfaces a high-level motive", () => {
   );
 });
 
+test("self-model surfaces curiosity and relation conflict", () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+
+  const result = engine.respond("君のことをもっと知りたいし、関係としても近づきたい。");
+  const conflict = result.debug.selfModel.dominantConflict;
+
+  assert.equal(conflict?.kind, "curiosity_relation");
+  assert.equal(conflict?.dominant, "deepen_relation");
+  assert.match(result.reply, /関係の輪郭|踏み込む/);
+});
+
+test("self-model can keep a topic while surfacing boundary conflict", () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+
+  engine.respond("仕様を一緒に進めて記録として残したい。");
+  engine.respond("仕様の話は最悪で邪魔だ。");
+  const result = engine.respond("仕様は気になるし、まだ残したい。");
+  const conflict = result.debug.selfModel.dominantConflict;
+
+  assert.equal(conflict?.kind, "curiosity_boundary");
+  assert.equal(conflict?.dominant, "protect_boundary");
+  assert.match(result.reply, /境界を崩してまで触れたくはない/);
+});
+
 test("aligned turns reinforce an active purpose", () => {
   const engine = new HachikaEngine(createInitialSnapshot());
 

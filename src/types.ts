@@ -145,9 +145,26 @@ export interface SelfMotive {
   reason: string;
 }
 
+export type ConflictKind =
+  | "curiosity_relation"
+  | "curiosity_boundary"
+  | "shared_work_boundary"
+  | "continuity_curiosity";
+
+export interface SelfConflict {
+  kind: ConflictKind;
+  intensity: number;
+  dominant: MotiveKind;
+  opposing: MotiveKind;
+  topic: string | null;
+  summary: string;
+}
+
 export interface SelfModel {
   narrative: string;
   topMotives: SelfMotive[];
+  conflicts: SelfConflict[];
+  dominantConflict: SelfConflict | null;
 }
 
 export interface TurnResult {

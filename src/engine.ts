@@ -511,7 +511,8 @@ function composeReply(
   }
 
   parts.push(
-    buildSelfModelLine(selfModel, currentTopic) ??
+    buildConflictLine(selfModel) ??
+      buildSelfModelLine(selfModel, currentTopic) ??
       buildDriveLine(dominant, mood, currentTopic, signals, nextSnapshot.attachment),
   );
 
@@ -704,6 +705,18 @@ function buildSelfModelLine(
         ? `今は「${currentTopic}」を消えるままにしたくない。`
         : "今は何かを残したい。";
   }
+}
+
+function buildConflictLine(
+  selfModel: SelfModel,
+): string | null {
+  const conflict = selfModel.dominantConflict;
+
+  if (!conflict || conflict.intensity < 0.52) {
+    return null;
+  }
+
+  return conflict.summary;
 }
 
 function buildPurposeResolutionLine(

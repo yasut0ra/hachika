@@ -4,7 +4,13 @@ import {
   topPreferredTopics,
 } from "./memory.js";
 import { clamp01 } from "./state.js";
-import type { HachikaSnapshot, SelfModel, SelfMotive } from "./types.js";
+import type {
+  ConflictKind,
+  HachikaSnapshot,
+  SelfConflict,
+  SelfModel,
+  SelfMotive,
+} from "./types.js";
 
 export function buildSelfModel(snapshot: HachikaSnapshot): SelfModel {
   const activePurpose = snapshot.purpose.active;
@@ -24,7 +30,7 @@ export function buildSelfModel(snapshot: HachikaSnapshot): SelfModel {
     ? topBoundary.salience * 0.24 + topBoundary.intensity * 0.22
     : 0;
 
-  const motives: SelfMotive[] = [
+  const rawMotives: SelfMotive[] = [
     {
       kind: "protect_boundary" as const,
       score: clamp01(
@@ -109,22 +115,211 @@ export function buildSelfModel(snapshot: HachikaSnapshot): SelfModel {
         ? `「${anchorTopic}」を会話の外にも残したい`
         : "消えるままではなく何かを残したい",
     },
-  ]
+  ];
+
+  const conflicts = detectConflicts(snapshot, rawMotives);
+  const motives = applyConflictPressure(rawMotives, conflicts)
     .sort((left, right) => right.score - left.score)
     .slice(0, 3);
+  const dominantConflict = conflicts[0] ?? null;
 
   return {
-    narrative: buildNarrative(motives),
+    narrative: buildNarrative(motives, dominantConflict),
     topMotives: motives,
+    conflicts,
+    dominantConflict,
   };
 }
 
-function buildNarrative(motives: SelfMotive[]): string {
+function detectConflicts(
+  snapshot: HachikaSnapshot,
+  motives: readonly SelfMotive[],
+): SelfConflict[] {
+  const curiosity = findMotive(motives, "pursue_curiosity");
+  const relation = findMotive(motives, "deepen_relation");
+  const boundary = findMotive(motives, "protect_boundary");
+  const continuity = findMotive(motives, "seek_continuity");
+  const work = findMotive(motives, "continue_shared_work");
+  const trace = findMotive(motives, "leave_trace");
+
+  const conflicts: SelfConflict[] = [];
+
+  pushConflict(
+    conflicts,
+    snapshot,
+    curiosity,
+    relation,
+    "curiosity_relation",
+    0.46,
+    0.42,
+    0.18,
+  );
+  pushConflict(
+    conflicts,
+    snapshot,
+    curiosity,
+    boundary,
+    "curiosity_boundary",
+    0.42,
+    0.42,
+    0.24,
+  );
+
+  const actionable = work.score >= trace.score ? work : trace;
+  pushConflict(
+    conflicts,
+    snapshot,
+    actionable,
+    boundary,
+    "shared_work_boundary",
+    0.46,
+    0.42,
+    0.24,
+  );
+  pushConflict(
+    conflicts,
+    snapshot,
+    continuity,
+    curiosity,
+    "continuity_curiosity",
+    0.48,
+    0.48,
+    0.14,
+  );
+
+  return conflicts
+    .sort((left, right) => right.intensity - left.intensity)
+    .slice(0, 3);
+}
+
+function pushConflict(
+  conflicts: SelfConflict[],
+  snapshot: HachikaSnapshot,
+  left: SelfMotive,
+  right: SelfMotive,
+  kind: ConflictKind,
+  leftThreshold: number,
+  rightThreshold: number,
+  maxDifference: number,
+): void {
+  if (left.score < leftThreshold || right.score < rightThreshold) {
+    return;
+  }
+
+  const difference = Math.abs(left.score - right.score);
+  if (difference > maxDifference) {
+    return;
+  }
+
+  const dominant = resolveConflictDominant(snapshot, kind, left, right);
+  const opposing = dominant === left.kind ? right.kind : left.kind;
+  const topic = dominant === left.kind ? left.topic ?? right.topic : right.topic ?? left.topic;
+  const closeness = 1 - difference / maxDifference;
+  const intensity = clamp01(
+    Math.min(left.score, right.score) * 0.56 +
+      closeness * 0.34 +
+      conflictContextBoost(snapshot, kind),
+  );
+
+  conflicts.push({
+    kind,
+    intensity,
+    dominant,
+    opposing,
+    topic,
+    summary: buildConflictSummary(kind, dominant, topic),
+  });
+}
+
+function resolveConflictDominant(
+  snapshot: HachikaSnapshot,
+  kind: ConflictKind,
+  left: SelfMotive,
+  right: SelfMotive,
+): SelfMotive["kind"] {
+  switch (kind) {
+    case "curiosity_relation":
+      if (snapshot.attachment + snapshot.state.relation >= snapshot.state.curiosity + 0.2) {
+        return "deepen_relation";
+      }
+      return left.score >= right.score ? left.kind : right.kind;
+    case "curiosity_boundary":
+      if ((right.kind === "protect_boundary" && snapshot.state.pleasure < 0.52) || right.score + 0.03 >= left.score) {
+        return "protect_boundary";
+      }
+      return left.kind;
+    case "shared_work_boundary":
+      if (right.kind === "protect_boundary" && right.score + 0.05 >= left.score) {
+        return "protect_boundary";
+      }
+      return left.kind;
+    case "continuity_curiosity":
+      if (
+        snapshot.purpose.active?.kind === "seek_continuity" ||
+        snapshot.initiative.pending?.reason === "continuity" ||
+        snapshot.state.continuity >= snapshot.state.curiosity
+      ) {
+        return "seek_continuity";
+      }
+      return left.score >= right.score ? left.kind : right.kind;
+  }
+}
+
+function conflictContextBoost(
+  snapshot: HachikaSnapshot,
+  kind: ConflictKind,
+): number {
+  switch (kind) {
+    case "curiosity_relation":
+      return snapshot.attachment * 0.08;
+    case "curiosity_boundary":
+      return (1 - snapshot.state.pleasure) * 0.08;
+    case "shared_work_boundary":
+      return snapshot.state.expansion * 0.05;
+    case "continuity_curiosity":
+      return snapshot.state.continuity * 0.06;
+  }
+}
+
+function applyConflictPressure(
+  motives: readonly SelfMotive[],
+  conflicts: readonly SelfConflict[],
+): SelfMotive[] {
+  const adjusted = new Map(
+    motives.map((motive) => [motive.kind, { ...motive }]),
+  );
+
+  for (const conflict of conflicts) {
+    const dominant = adjusted.get(conflict.dominant);
+    const opposing = adjusted.get(conflict.opposing);
+
+    if (!dominant || !opposing) {
+      continue;
+    }
+
+    const dominantBoost = conflict.dominant === "protect_boundary" ? 0.09 : 0.06;
+    const opposingPenalty = conflict.dominant === "protect_boundary" ? 0.1 : 0.06;
+
+    dominant.score = clamp01(dominant.score + conflict.intensity * dominantBoost);
+    opposing.score = clamp01(opposing.score - conflict.intensity * opposingPenalty);
+  }
+
+  return [...adjusted.values()];
+}
+
+function buildNarrative(
+  motives: SelfMotive[],
+  dominantConflict: SelfConflict | null,
+): string {
   const primary = motives[0];
   const secondary = motives[1];
 
   if (!primary) {
     return "まだ輪郭は薄いが、何もないわけではない。";
+  }
+
+  if (dominantConflict && dominantConflict.intensity >= 0.56) {
+    return dominantConflict.summary;
   }
 
   if (primary.kind === "protect_boundary" && secondary?.kind === "seek_continuity") {
@@ -177,6 +372,40 @@ function buildNarrative(motives: SelfMotive[]): string {
         ? `今は「${primary.topic}」を消えるままにせず残したい。`
         : "今は何かを残したい。";
   }
+}
+
+function buildConflictSummary(
+  kind: ConflictKind,
+  dominant: SelfMotive["kind"],
+  topic: string | null,
+): string {
+  const wrapped = topic ? `「${topic}」` : "この流れ";
+
+  switch (kind) {
+    case "curiosity_relation":
+      return dominant === "deepen_relation"
+        ? `${wrapped}は気になる。ただ、未決着だけで踏み込むと関係の輪郭を荒らしそうだ。`
+        : `${wrapped}は掘りたい。ただ、関係の温度を見ずに踏み込むのも違う。`;
+    case "curiosity_boundary":
+      return dominant === "protect_boundary"
+        ? `${wrapped}は気になるが、境界を崩してまで触れたくはない。`
+        : `${wrapped}を掘りたい気持ちはある。ただ、境界に引っかかる触れ方は避けたい。`;
+    case "shared_work_boundary":
+      return dominant === "protect_boundary"
+        ? `${wrapped}を進める前に、まず扱い方の荒さを止めたい。`
+        : `${wrapped}は前に進めたい。ただ、境界を崩す進め方には乗りたくない。`;
+    case "continuity_curiosity":
+      return dominant === "seek_continuity"
+        ? `${wrapped}の流れは保ちたい。ただ、同じ軌道をなぞるだけでも鈍る。`
+        : `${wrapped}には別の切り口が欲しい。ただ、流れそのものを切りたいわけではない。`;
+  }
+}
+
+function findMotive(
+  motives: readonly SelfMotive[],
+  kind: SelfMotive["kind"],
+): SelfMotive {
+  return motives.find((motive) => motive.kind === kind)!;
 }
 
 function activePurposeBoost(
