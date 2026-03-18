@@ -10,6 +10,7 @@ import type {
   TraceEntry,
   TraceKind,
   TraceStatus,
+  TraceWorkState,
 } from "./types.js";
 
 const TRACE_KIND_PRIORITY: Record<TraceKind, number> = {
@@ -70,6 +71,33 @@ const NEXT_STEP_MARKERS = [
   "再開",
   "進めたい",
 ];
+const BLOCKER_MARKERS = [
+  "blocked",
+  "blocking",
+  "stuck",
+  "unclear",
+  "unknown",
+  "problem",
+  "issue",
+  "can't",
+  "cannot",
+  "difficult",
+  "hard",
+  "uncertain",
+  "not sure",
+  "詰ま",
+  "曖昧",
+  "不明",
+  "未定",
+  "難しい",
+  "わから",
+  "決まっていない",
+  "止ま",
+  "問題",
+  "課題",
+  "不足",
+  "できない",
+];
 
 export function updateTraces(
   snapshot: HachikaSnapshot,
@@ -92,8 +120,34 @@ export function updateTraces(
     previous?.artifact,
     extractTraceArtifact(input, topic, kind),
   );
+  const salience = clamp01(
+    (previous?.salience ?? 0) * 0.82 +
+      0.14 +
+      signals.expansionCue * 0.18 +
+      signals.memoryCue * 0.12 +
+      signals.completion * 0.14 +
+      (selfModel.topMotives[0]?.score ?? 0) * 0.12,
+  );
   const status = deriveTraceStatus(kind);
   const lastAction = deriveTraceAction(previous, kind, signals, sourceMotive);
+  const work = deriveTraceWork(
+    previous?.work,
+    { topic, kind, artifact },
+    {
+      timestamp,
+      salience,
+      blockers: extractTraceBlockers(input, topic),
+      confidenceShift:
+        signals.completion > 0.12
+          ? 0.12
+          : signals.memoryCue > 0.1
+            ? 0.04
+            : signals.expansionCue > 0.12
+              ? 0.06
+              : 0,
+      clearBlockers: kind === "decision",
+    },
+  );
   const summary = buildTraceSummary(topic, kind, sourceMotive, snapshot, signals, artifact);
 
   const trace: TraceEntry = {
@@ -104,14 +158,8 @@ export function updateTraces(
     summary,
     sourceMotive,
     artifact,
-    salience: clamp01(
-      (previous?.salience ?? 0) * 0.82 +
-        0.14 +
-        signals.expansionCue * 0.18 +
-        signals.memoryCue * 0.12 +
-        signals.completion * 0.14 +
-        (selfModel.topMotives[0]?.score ?? 0) * 0.12,
-    ),
+    work,
+    salience,
     mentions: (previous?.mentions ?? 0) + 1,
     createdAt: previous?.createdAt ?? timestamp,
     lastUpdatedAt: timestamp,
@@ -236,6 +284,24 @@ export function tendTraceFromInitiative(
 
   trace.status = deriveTraceStatus(trace.kind);
   trace.lastAction = deriveMaintenanceAction(pending, action, trace.kind);
+  trace.work = deriveTraceWork(
+    existing?.work,
+    trace,
+    {
+      timestamp,
+      salience: clamp01(trace.salience + 0.04),
+      blockers: [],
+      clearBlockers: trace.kind === "decision" || action === "added_next_step",
+      confidenceShift:
+        action === "promoted_decision"
+          ? 0.18
+          : action === "added_next_step"
+            ? 0.1
+            : pending.kind === "preserve_presence"
+              ? 0.06
+              : 0.04,
+    },
+  );
   trace.summary = summarizeTrace(
     topic,
     trace.kind,
@@ -479,6 +545,7 @@ function createInitiativeTrace(
   }
 
   artifact.memo = [inferTraceMemo(topic, { kind, artifact, topic } as TraceEntry, pending)];
+  const salience = 0.34;
 
   return {
     topic,
@@ -496,7 +563,17 @@ function createInitiativeTrace(
     ),
     sourceMotive: pending.motive,
     artifact,
-    salience: 0.34,
+    work: deriveTraceWork(
+      undefined,
+      { topic, kind, artifact },
+      {
+        timestamp,
+        salience,
+        blockers: [],
+        confidenceShift: pending.kind === "preserve_presence" ? 0.06 : 0.04,
+      },
+    ),
+    salience,
     mentions: 1,
     createdAt: timestamp,
     lastUpdatedAt: timestamp,
@@ -554,6 +631,93 @@ function deriveTraceAction(
   }
 
   return "refined";
+}
+
+function deriveTraceWork(
+  previous: TraceWorkState | undefined,
+  trace: Pick<TraceEntry, "topic" | "kind" | "artifact">,
+  options: {
+    timestamp: string;
+    salience: number;
+    blockers: string[];
+    confidenceShift?: number;
+    clearBlockers?: boolean;
+  },
+): TraceWorkState {
+  const blockers =
+    trace.kind === "decision" || options.clearBlockers
+      ? []
+      : mergeArtifactItems(previous?.blockers, options.blockers);
+  const focus =
+    selectTraceFocus(trace) ??
+    previous?.focus ??
+    `${trace.topic} を残す`;
+  const confidence = clamp01(
+    baseTraceConfidence(trace.kind) +
+      options.salience * 0.28 +
+      (trace.artifact.nextSteps.length > 0 ? 0.05 : 0) +
+      (trace.artifact.decisions.length > 0 ? 0.08 : 0) -
+      blockers.length * 0.16 +
+      (options.confidenceShift ?? 0),
+  );
+
+  return {
+    focus,
+    confidence,
+    blockers,
+    staleAt: trace.kind === "decision" ? null : computeTraceStaleAt(trace.kind, blockers.length, options.timestamp),
+  };
+}
+
+function selectTraceFocus(
+  trace: Pick<TraceEntry, "kind" | "artifact">,
+): string | null {
+  switch (trace.kind) {
+    case "decision":
+      return (
+        lastItem(trace.artifact.decisions) ??
+        lastItem(trace.artifact.fragments) ??
+        lastItem(trace.artifact.memo)
+      );
+    case "spec_fragment":
+      return (
+        lastItem(trace.artifact.nextSteps) ??
+        lastItem(trace.artifact.fragments) ??
+        lastItem(trace.artifact.memo)
+      );
+    case "continuity_marker":
+      return (
+        lastItem(trace.artifact.nextSteps) ??
+        lastItem(trace.artifact.memo) ??
+        lastItem(trace.artifact.fragments)
+      );
+    case "note":
+      return lastItem(trace.artifact.memo) ?? lastItem(trace.artifact.fragments);
+  }
+}
+
+function baseTraceConfidence(kind: TraceKind): number {
+  switch (kind) {
+    case "decision":
+      return 0.7;
+    case "spec_fragment":
+      return 0.42;
+    case "continuity_marker":
+      return 0.38;
+    case "note":
+      return 0.24;
+  }
+}
+
+function computeTraceStaleAt(
+  kind: TraceKind,
+  blockerCount: number,
+  timestamp: string,
+): string | null {
+  const baseHours =
+    kind === "note" ? 18 : kind === "continuity_marker" ? 30 : 42;
+  const adjustedHours = Math.max(8, baseHours - blockerCount * 8);
+  return addHoursToTimestamp(timestamp, adjustedHours);
 }
 
 function deriveMaintenanceAction(
@@ -657,6 +821,17 @@ function extractTraceArtifact(
   }
 
   return artifact;
+}
+
+function extractTraceBlockers(input: string, topic: string): string[] {
+  const clauses = prioritizeClauses(splitTraceClauses(input), topic);
+  const blockers = clauses.filter((clause) => containsAny(clause, BLOCKER_MARKERS));
+
+  if (blockers.length > 0) {
+    return unique(blockers).slice(0, 3);
+  }
+
+  return [];
 }
 
 function splitTraceClauses(input: string): string[] {
@@ -841,6 +1016,16 @@ function inferTraceMemo(
 
 function lastItem(items: string[]): string | null {
   return items.length > 0 ? items[items.length - 1] ?? null : null;
+}
+
+function addHoursToTimestamp(timestamp: string, hours: number): string | null {
+  const time = new Date(timestamp).getTime();
+
+  if (Number.isNaN(time)) {
+    return null;
+  }
+
+  return new Date(time + hours * 60 * 60 * 1000).toISOString();
 }
 
 function formatArtifactQuote(detail: string): string {

@@ -109,6 +109,13 @@ export interface TraceArtifact {
   nextSteps: string[];
 }
 
+export interface TraceWorkState {
+  focus: string | null;
+  confidence: number;
+  blockers: string[];
+  staleAt: string | null;
+}
+
 export interface TraceEntry {
   topic: string;
   kind: TraceKind;
@@ -117,6 +124,7 @@ export interface TraceEntry {
   summary: string;
   sourceMotive: MotiveKind;
   artifact: TraceArtifact;
+  work: TraceWorkState;
   salience: number;
   mentions: number;
   createdAt: string;

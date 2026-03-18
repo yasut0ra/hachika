@@ -198,6 +198,18 @@ test("shared work interaction creates a concrete trace", () => {
   assert.match(result.reply, /残した/);
 });
 
+test("ambiguous work can create blockers in trace work state", () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+
+  const result = engine.respond("仕様の境界が未定で曖昧だ。まだ進められない。");
+  const trace = Object.values(result.snapshot.traces).find((entry) => entry.topic === "仕様");
+
+  assert.ok(trace !== undefined);
+  assert.ok(trace.work.blockers.length > 0);
+  assert.ok(trace.work.confidence < 0.7);
+  assert.ok(trace.work.staleAt !== null);
+});
+
 test("identity condenses repeated shared work into a stable summary", () => {
   const engine = new HachikaEngine(createInitialSnapshot());
 

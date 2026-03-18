@@ -21,6 +21,7 @@ import type {
   TraceAction,
   TraceArtifact,
   TraceEntry,
+  TraceWorkState,
   TraceStatus,
 } from "./types.js";
 
@@ -49,7 +50,7 @@ function hydrateSnapshot(raw: unknown): HachikaSnapshot {
   }
 
   return {
-    version: 12,
+    version: 13,
     state: hydrateState(raw.state),
     attachment:
       typeof raw.attachment === "number" ? clamp01(raw.attachment) : initial.attachment,
@@ -387,6 +388,7 @@ function hydrateTraces(raw: unknown): Record<string, TraceEntry> {
       summary: typeof value.summary === "string" ? value.summary : `「${topic}」を残しておく。`,
       sourceMotive,
       artifact: hydrateTraceArtifact(value.artifact, topic, kind),
+      work: hydrateTraceWork(value.work, topic, kind),
       salience: typeof value.salience === "number" ? clamp01(value.salience) : 0.3,
       mentions:
         typeof value.mentions === "number" && Number.isFinite(value.mentions)
@@ -416,6 +418,23 @@ function hydrateTraceArtifact(
     fragments: hydrateTraceArtifactItems(raw.fragments),
     decisions: hydrateTraceArtifactItems(raw.decisions),
     nextSteps: hydrateTraceArtifactItems(raw.nextSteps),
+  };
+}
+
+function hydrateTraceWork(
+  raw: unknown,
+  topic: string,
+  kind: TraceEntry["kind"],
+): TraceWorkState {
+  if (!isRecord(raw)) {
+    return inferLegacyTraceWork(topic, kind);
+  }
+
+  return {
+    focus: typeof raw.focus === "string" ? raw.focus : inferLegacyTraceWork(topic, kind).focus,
+    confidence: typeof raw.confidence === "number" ? clamp01(raw.confidence) : inferLegacyTraceWork(topic, kind).confidence,
+    blockers: hydrateTraceArtifactItems(raw.blockers),
+    staleAt: typeof raw.staleAt === "string" ? raw.staleAt : inferLegacyTraceWork(topic, kind).staleAt,
   };
 }
 
@@ -463,6 +482,42 @@ function inferLegacyTraceArtifact(
         fragments: [],
         decisions: [],
         nextSteps: [],
+      };
+  }
+}
+
+function inferLegacyTraceWork(
+  topic: string,
+  kind: TraceEntry["kind"],
+): TraceWorkState {
+  switch (kind) {
+    case "decision":
+      return {
+        focus: `${topic} を決まった形として残す`,
+        confidence: 0.88,
+        blockers: [],
+        staleAt: null,
+      };
+    case "spec_fragment":
+      return {
+        focus: `${topic} を前進用の断片として整える`,
+        confidence: 0.62,
+        blockers: [],
+        staleAt: null,
+      };
+    case "continuity_marker":
+      return {
+        focus: `${topic} の続きに戻る`,
+        confidence: 0.56,
+        blockers: [],
+        staleAt: null,
+      };
+    case "note":
+      return {
+        focus: `${topic} をメモとして残す`,
+        confidence: 0.36,
+        blockers: [],
+        staleAt: null,
       };
   }
 }

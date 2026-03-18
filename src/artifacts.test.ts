@@ -26,6 +26,12 @@ test("renderArtifactDocument includes structured sections", () => {
       decisions: [],
       nextSteps: ["責務ごとに整理する"],
     },
+    work: {
+      focus: "責務ごとに整理する",
+      confidence: 0.68,
+      blockers: ["境界が曖昧"],
+      staleAt: "2026-03-21T01:00:00.000Z",
+    },
     salience: 0.82,
     mentions: 2,
     createdAt: "2026-03-19T00:00:00.000Z",
@@ -37,7 +43,11 @@ test("renderArtifactDocument includes structured sections", () => {
   assert.match(markdown, /^# 設計/m);
   assert.match(markdown, /Status: active/);
   assert.match(markdown, /Last Action: expanded/);
+  assert.match(markdown, /Focus: 責務ごとに整理する/);
+  assert.match(markdown, /Confidence: 0.68/);
+  assert.match(markdown, /Blockers: 境界が曖昧/);
   assert.match(markdown, /Pending Next Step: 責務ごとに整理する/);
+  assert.match(markdown, /Stale At: 2026-03-21T01:00:00.000Z/);
   assert.match(markdown, /## Summary/);
   assert.match(markdown, /## Memo/);
   assert.match(markdown, /## Fragments/);
@@ -62,6 +72,12 @@ test("syncArtifacts writes markdown files and index", async () => {
         decisions: ["記録として保存した"],
         nextSteps: [],
       },
+      work: {
+        focus: "記録として保存した",
+        confidence: 0.94,
+        blockers: [],
+        staleAt: null,
+      },
       salience: 0.91,
       mentions: 3,
       createdAt: "2026-03-19T00:00:00.000Z",
@@ -80,10 +96,13 @@ test("syncArtifacts writes markdown files and index", async () => {
     assert.match(artifactBody, /Kind: decision/);
     assert.match(artifactBody, /Status: resolved/);
     assert.match(artifactBody, /Last Action: resolved/);
+    assert.match(artifactBody, /Focus: 記録として保存した/);
+    assert.match(artifactBody, /Confidence: 0.94/);
     assert.match(artifactBody, /## Decisions/);
     assert.match(artifactBody, /記録として保存した/);
     assert.match(indexBody, /設計 \(decision\/resolved\)/);
     assert.match(indexBody, /last action: resolved/);
+    assert.match(indexBody, /confidence: 0.94/);
   } finally {
     await rm(tempDir, { recursive: true, force: true });
   }
@@ -105,6 +124,12 @@ test("syncArtifacts removes stale materialized files", async () => {
         fragments: ["API を分ける"],
         decisions: [],
         nextSteps: ["続きを進める"],
+      },
+      work: {
+        focus: "続きを進める",
+        confidence: 0.61,
+        blockers: [],
+        staleAt: "2026-03-21T01:00:00.000Z",
       },
       salience: 0.74,
       mentions: 2,

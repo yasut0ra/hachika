@@ -12,7 +12,11 @@ export interface ArtifactFile {
   kind: TraceEntry["kind"];
   status: TraceStatus;
   lastAction: TraceAction;
+  focus: string | null;
+  confidence: number;
+  blockers: string[];
   pendingNextStep: string | null;
+  staleAt: string | null;
   updatedAt: string;
   fileName: string;
   absolutePath: string;
@@ -39,7 +43,11 @@ export function describeArtifactFiles(
       kind: trace.kind,
       status: trace.status,
       lastAction: trace.lastAction,
+      focus: trace.work.focus,
+      confidence: trace.work.confidence,
+      blockers: trace.work.blockers,
       pendingNextStep: trace.artifact.nextSteps[0] ?? null,
+      staleAt: trace.work.staleAt,
       updatedAt: trace.lastUpdatedAt,
       fileName,
       absolutePath,
@@ -123,9 +131,17 @@ function renderArtifactIndex(
       `- ${trace.topic} (${trace.kind}/${trace.status}) -> ${basename(file.relativePath)}`,
     );
     lines.push(`  - last action: ${trace.lastAction}`);
+    lines.push(`  - focus: ${trace.work.focus ?? "none"}`);
+    lines.push(`  - confidence: ${trace.work.confidence.toFixed(2)}`);
+    if (trace.work.blockers.length > 0) {
+      lines.push(`  - blockers: ${trace.work.blockers.join(" / ")}`);
+    }
     lines.push(`  - ${trace.summary}`);
     if (trace.artifact.nextSteps[0]) {
       lines.push(`  - pending next step: ${trace.artifact.nextSteps[0]}`);
+    }
+    if (trace.work.staleAt) {
+      lines.push(`  - stale at: ${trace.work.staleAt}`);
     }
   }
 
@@ -139,11 +155,15 @@ export function renderArtifactDocument(trace: TraceEntry): string {
   lines.push(`- Status: ${trace.status}`);
   lines.push(`- Last Action: ${trace.lastAction}`);
   lines.push(`- Source Motive: ${trace.sourceMotive}`);
+  lines.push(`- Focus: ${trace.work.focus ?? "none"}`);
+  lines.push(`- Confidence: ${trace.work.confidence.toFixed(2)}`);
+  lines.push(`- Blockers: ${trace.work.blockers.length > 0 ? trace.work.blockers.join(" | ") : "none"}`);
   lines.push(`- Salience: ${trace.salience.toFixed(2)}`);
   lines.push(`- Mentions: ${trace.mentions}`);
   lines.push(`- Created: ${trace.createdAt}`);
   lines.push(`- Updated: ${trace.lastUpdatedAt}`);
   lines.push(`- Pending Next Step: ${trace.artifact.nextSteps[0] ?? "none"}`);
+  lines.push(`- Stale At: ${trace.work.staleAt ?? "none"}`);
   lines.push("");
   lines.push("## Summary");
   lines.push(trace.summary);

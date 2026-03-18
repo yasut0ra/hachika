@@ -170,8 +170,12 @@ function printTraces(currentEngine: HachikaEngine): void {
 
   for (const trace of traces) {
     console.log(
-      `${trace.topic} ${trace.kind}/${trace.status} action:${trace.lastAction} salience:${trace.salience.toFixed(2)} mentions:${trace.mentions} motive:${trace.sourceMotive} ${trace.summary}`,
+      `${trace.topic} ${trace.kind}/${trace.status} action:${trace.lastAction} focus:${trace.work.focus ?? "none"} confidence:${trace.work.confidence.toFixed(2)} blockers:${trace.work.blockers.length} salience:${trace.salience.toFixed(2)} mentions:${trace.mentions} motive:${trace.sourceMotive} ${trace.summary}`,
     );
+    if (trace.work.staleAt) {
+      console.log(`  staleAt: ${trace.work.staleAt}`);
+    }
+    printTraceArtifactGroup("blocker", trace.work.blockers);
     printTraceArtifactGroup("memo", trace.artifact.memo);
     printTraceArtifactGroup("fragments", trace.artifact.fragments);
     printTraceArtifactGroup("decisions", trace.artifact.decisions);
@@ -189,7 +193,7 @@ function printArtifacts(currentEngine: HachikaEngine): void {
 
   for (const file of files) {
     console.log(
-      `${file.topic} ${file.kind}/${file.status} action:${file.lastAction} next:${file.pendingNextStep ?? "none"} ${file.relativePath}`,
+      `${file.topic} ${file.kind}/${file.status} action:${file.lastAction} focus:${file.focus ?? "none"} confidence:${file.confidence.toFixed(2)} blockers:${file.blockers.length} next:${file.pendingNextStep ?? "none"} stale:${file.staleAt ?? "none"} ${file.relativePath}`,
     );
   }
 }
@@ -295,7 +299,7 @@ function printDebug(currentEngine: HachikaEngine): void {
       : `traces: ${traces
           .map(
             (trace) =>
-              `${trace.topic}:${trace.kind}/${trace.status}/${trace.lastAction}/${trace.salience.toFixed(2)}/${trace.sourceMotive}/m${trace.artifact.memo.length}f${trace.artifact.fragments.length}d${trace.artifact.decisions.length}n${trace.artifact.nextSteps.length}`,
+              `${trace.topic}:${trace.kind}/${trace.status}/${trace.lastAction}/${trace.work.confidence.toFixed(2)}/${trace.sourceMotive}/b${trace.work.blockers.length}m${trace.artifact.memo.length}f${trace.artifact.fragments.length}d${trace.artifact.decisions.length}n${trace.artifact.nextSteps.length}`,
           )
           .join(" | ")}`,
   );
