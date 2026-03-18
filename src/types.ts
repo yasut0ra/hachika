@@ -23,12 +23,23 @@ export interface MemoryEntry {
   sentiment: "positive" | "negative" | "neutral";
 }
 
+export interface TopicImprint {
+  topic: string;
+  salience: number;
+  valence: number;
+  mentions: number;
+  firstSeenAt: string;
+  lastSeenAt: string;
+}
+
 export interface HachikaSnapshot {
   version: number;
   state: DriveState;
+  attachment: number;
   preferences: Record<string, number>;
   topicCounts: Record<string, number>;
   memories: MemoryEntry[];
+  imprints: Record<string, TopicImprint>;
   lastInteractionAt: string | null;
   conversationCount: number;
 }

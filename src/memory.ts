@@ -1,4 +1,10 @@
-import type { HachikaSnapshot, MemoryEntry } from "./types.js";
+import { clamp01, clampSigned } from "./state.js";
+import type {
+  HachikaSnapshot,
+  InteractionSignals,
+  MemoryEntry,
+  TopicImprint,
+} from "./types.js";
 
 const segmenter = new Intl.Segmenter("ja", { granularity: "word" });
 
@@ -135,6 +141,80 @@ export function topPreferredTopics(snapshot: HachikaSnapshot, limit = 3): string
     .map(([topic]) => topic);
 }
 
+export function consolidateImprints(
+  snapshot: HachikaSnapshot,
+  signals: InteractionSignals,
+  sentimentScore: number,
+  timestamp = new Date().toISOString(),
+): void {
+  for (const topic of signals.topics) {
+    const topicCount = snapshot.topicCounts[topic] ?? 0;
+    const preference = snapshot.preferences[topic] ?? 0;
+    const qualifies =
+      topicCount >= 2 ||
+      Math.abs(preference) >= 0.18 ||
+      Math.abs(sentimentScore) >= 0.35 ||
+      signals.memoryCue > 0.1 ||
+      signals.expansionCue > 0.2;
+
+    if (!qualifies) {
+      continue;
+    }
+
+    const previous = snapshot.imprints[topic];
+    const salienceGain =
+      0.12 +
+      Math.min(0.16, topicCount * 0.04) +
+      Math.abs(preference) * 0.1 +
+      Math.abs(sentimentScore) * 0.08 +
+      signals.memoryCue * 0.12 +
+      signals.expansionCue * 0.08 +
+      signals.question * 0.04;
+
+    snapshot.imprints[topic] = {
+      topic,
+      salience: clamp01((previous?.salience ?? 0) * 0.88 + salienceGain),
+      valence: clampSigned((previous?.valence ?? sentimentScore) * 0.72 + sentimentScore * 0.28),
+      mentions: Math.max(previous?.mentions ?? 0, topicCount),
+      firstSeenAt: previous?.firstSeenAt ?? timestamp,
+      lastSeenAt: timestamp,
+    };
+  }
+
+  pruneImprints(snapshot, 16);
+}
+
+export function findRelevantImprint(
+  snapshot: HachikaSnapshot,
+  topics: string[],
+): TopicImprint | undefined {
+  const imprints = Object.values(snapshot.imprints);
+
+  for (const topic of topics) {
+    const imprint = snapshot.imprints[topic];
+
+    if (imprint) {
+      return imprint;
+    }
+  }
+
+  return imprints
+    .sort((left, right) => right.salience - left.salience)
+    .find((imprint) => imprint.salience > 0.45);
+}
+
+export function sortedImprints(snapshot: HachikaSnapshot, limit = 6): TopicImprint[] {
+  return Object.values(snapshot.imprints)
+    .sort((left, right) => {
+      if (right.salience !== left.salience) {
+        return right.salience - left.salience;
+      }
+
+      return right.mentions - left.mentions;
+    })
+    .slice(0, limit);
+}
+
 function normalizeToken(token: string): string | null {
   const normalized = token.normalize("NFKC").trim().toLowerCase();
 
@@ -155,4 +235,14 @@ function normalizeToken(token: string): string | null {
   }
 
   return normalized;
+}
+
+function pruneImprints(snapshot: HachikaSnapshot, limit: number): void {
+  const sortedTopics = Object.values(snapshot.imprints)
+    .sort((left, right) => right.salience - left.salience)
+    .map((imprint) => imprint.topic);
+
+  for (const topic of sortedTopics.slice(limit)) {
+    delete snapshot.imprints[topic];
+  }
 }

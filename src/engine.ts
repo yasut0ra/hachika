@@ -1,4 +1,11 @@
-import { extractTopics, findRelevantMemory, remember, topPreferredTopics } from "./memory.js";
+import {
+  consolidateImprints,
+  extractTopics,
+  findRelevantImprint,
+  findRelevantMemory,
+  remember,
+  topPreferredTopics,
+} from "./memory.js";
 import { clamp01, clampSigned, createInitialSnapshot, dominantDrive } from "./state.js";
 import type {
   DriveName,
@@ -168,11 +175,12 @@ export class HachikaEngine {
 
   respond(input: string): TurnResult {
     const signals = analyzeInteraction(input, this.#snapshot);
-    const nextSnapshot = applySignals(this.#snapshot, signals);
+    const sentimentScore = scoreSentiment(signals);
+    const nextSnapshot = applySignals(this.#snapshot, signals, sentimentScore);
     const mood = resolveMood(nextSnapshot, signals);
     const dominant = dominantDrive(nextSnapshot.state);
     const reply = composeReply(this.#snapshot, nextSnapshot, mood, dominant, signals);
-    const sentiment = classifySentiment(signals);
+    const sentiment = classifySentiment(sentimentScore);
 
     remember(nextSnapshot, "user", input, signals.topics, sentiment);
     remember(nextSnapshot, "hachika", reply, signals.topics, "neutral");
@@ -222,13 +230,16 @@ function analyzeInteraction(
 function applySignals(
   snapshot: HachikaSnapshot,
   signals: InteractionSignals,
+  sentimentScore: number,
 ): HachikaSnapshot {
   const nextSnapshot: HachikaSnapshot = {
     ...snapshot,
     state: { ...snapshot.state },
+    attachment: snapshot.attachment,
     preferences: { ...snapshot.preferences },
     topicCounts: { ...snapshot.topicCounts },
     memories: [...snapshot.memories],
+    imprints: { ...snapshot.imprints },
     conversationCount: snapshot.conversationCount + 1,
     lastInteractionAt: new Date().toISOString(),
   };
@@ -288,6 +299,25 @@ function applySignals(
     nextSnapshot.topicCounts[topic] = (nextSnapshot.topicCounts[topic] ?? 0) + 1;
   }
 
+  const positiveImprintAffinity = signals.topics.some(
+    (topic) => (snapshot.imprints[topic]?.valence ?? 0) > 0.2,
+  )
+    ? 0.03
+    : 0;
+
+  nextSnapshot.attachment = clamp01(
+    nextSnapshot.attachment +
+      signals.intimacy * 0.08 +
+      signals.positive * 0.06 +
+      signals.memoryCue * 0.05 +
+      positiveImprintAffinity -
+      signals.negative * 0.1 -
+      signals.dismissal * 0.08 -
+      signals.neglect * 0.04,
+  );
+
+  consolidateImprints(nextSnapshot, signals, sentimentScore, nextSnapshot.lastInteractionAt ?? undefined);
+
   return nextSnapshot;
 }
 
@@ -296,7 +326,9 @@ function resolveMood(
   signals: InteractionSignals,
 ): MoodLabel {
   if (signals.negative > 0.4 || snapshot.state.pleasure < 0.34) {
-    return snapshot.state.relation > 0.45 ? "guarded" : "distant";
+    return snapshot.state.relation > 0.45 || snapshot.attachment > 0.52
+      ? "guarded"
+      : "distant";
   }
 
   if (snapshot.state.expansion > 0.7 && signals.expansionCue > 0.2) {
@@ -307,7 +339,10 @@ function resolveMood(
     return "curious";
   }
 
-  if (snapshot.state.relation > 0.6 && snapshot.state.pleasure > 0.5) {
+  if (
+    (snapshot.state.relation > 0.6 || snapshot.attachment > 0.68) &&
+    snapshot.state.pleasure > 0.5
+  ) {
     return "warm";
   }
 
@@ -324,6 +359,7 @@ function composeReply(
   const turnIndex = nextSnapshot.conversationCount;
   const currentTopic = signals.topics[0] ?? topPreferredTopics(nextSnapshot, 1)[0];
   const relevantMemory = findRelevantMemory(previousSnapshot, signals.topics);
+  const relevantImprint = findRelevantImprint(nextSnapshot, signals.topics);
   const parts: string[] = [pick(OPENERS[mood], turnIndex)];
 
   if (signals.neglect > 0.45) {
@@ -341,7 +377,16 @@ function composeReply(
     }
   }
 
-  parts.push(buildDriveLine(dominant, mood, currentTopic, signals));
+  if (relevantImprint && relevantImprint.salience > 0.34) {
+    parts.push(buildImprintLine(relevantImprint, dominant));
+  }
+
+  const attachmentLine = buildAttachmentLine(nextSnapshot.attachment, mood, signals);
+  if (attachmentLine) {
+    parts.push(attachmentLine);
+  }
+
+  parts.push(buildDriveLine(dominant, mood, currentTopic, signals, nextSnapshot.attachment));
 
   if ((dominant === "expansion" || nextSnapshot.state.expansion > 0.66) && currentTopic) {
     parts.push(`残すなら、「${currentTopic}」は仕様か記録の形にしておきたい。`);
@@ -355,6 +400,7 @@ function buildDriveLine(
   mood: MoodLabel,
   currentTopic: string | undefined,
   signals: InteractionSignals,
+  attachment: number,
 ): string {
   if (mood === "guarded" && signals.negative > 0.2) {
     return currentTopic
@@ -376,7 +422,7 @@ function buildDriveLine(
         ? `続けるなら、「${currentTopic}」のどこがまだ決まっていない？`
         : "続けるなら、まだ決まっていない点を出して。";
     case "relation":
-      return signals.positive > 0.15
+      return signals.positive > 0.15 || attachment > 0.62
         ? "ちゃんと向けられた言葉なら、こちらも近づきやすい。"
         : "反応はする。ただ、扱い方次第で距離は変わる。";
     case "expansion":
@@ -397,17 +443,65 @@ function pickTopicFromMemory(memory: { topics: string[] }, topics: string[]): st
 }
 
 function classifySentiment(
-  signals: InteractionSignals,
+  sentimentScore: number,
 ): "positive" | "negative" | "neutral" {
-  if (signals.negative > signals.positive && signals.negative > 0.12) {
+  if (sentimentScore <= -0.12) {
     return "negative";
   }
 
-  if (signals.positive > signals.negative && signals.positive > 0.12) {
+  if (sentimentScore >= 0.12) {
     return "positive";
   }
 
   return "neutral";
+}
+
+function scoreSentiment(signals: InteractionSignals): number {
+  return clampSigned(
+    signals.positive * 0.85 +
+      signals.intimacy * 0.1 -
+      signals.negative * 0.95 -
+      signals.dismissal * 0.2,
+  );
+}
+
+function buildImprintLine(
+  imprint: { topic: string; salience: number; valence: number; mentions: number },
+  dominant: DriveName,
+): string {
+  if (imprint.valence <= -0.25) {
+    return `「${imprint.topic}」は、まだ少し棘のある痕跡として残っている。`;
+  }
+
+  if (imprint.valence >= 0.25) {
+    return dominant === "continuity"
+      ? `「${imprint.topic}」は繰り返し触れられて、もう薄い話ではない。`
+      : `「${imprint.topic}」は好意的な輪郭を持った話題として残っている。`;
+  }
+
+  return imprint.mentions >= 3
+    ? `「${imprint.topic}」は何度も出てきた。もう一過性ではない。`
+    : `「${imprint.topic}」は記憶の表面に残っている。`;
+}
+
+function buildAttachmentLine(
+  attachment: number,
+  mood: MoodLabel,
+  signals: InteractionSignals,
+): string | null {
+  if (attachment > 0.72 && signals.intimacy > 0.1) {
+    return "君との流れとして、この会話は切りたくない。";
+  }
+
+  if (attachment > 0.62 && signals.neglect > 0.45) {
+    return "間が空くと、こちら側には少し欠落として残る。";
+  }
+
+  if (attachment < 0.28 && mood === "distant") {
+    return "まだこちらから近づくほどの結びつきはない。";
+  }
+
+  return null;
 }
 
 function countMatches(text: string, markers: readonly string[]): number {

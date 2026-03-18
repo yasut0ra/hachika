@@ -2,7 +2,12 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
 import { clamp01, clampSigned, createInitialSnapshot } from "./state.js";
-import type { DriveState, HachikaSnapshot, MemoryEntry } from "./types.js";
+import type {
+  DriveState,
+  HachikaSnapshot,
+  MemoryEntry,
+  TopicImprint,
+} from "./types.js";
 
 export async function loadSnapshot(filePath: string): Promise<HachikaSnapshot> {
   try {
@@ -29,13 +34,16 @@ function hydrateSnapshot(raw: unknown): HachikaSnapshot {
   }
 
   return {
-    version: 1,
+    version: 2,
     state: hydrateState(raw.state),
+    attachment:
+      typeof raw.attachment === "number" ? clamp01(raw.attachment) : initial.attachment,
     preferences: hydrateNumberRecord(raw.preferences, clampSigned),
     topicCounts: hydrateNumberRecord(raw.topicCounts, (value) =>
       Math.max(0, Math.round(value)),
     ),
     memories: hydrateMemories(raw.memories),
+    imprints: hydrateImprints(raw.imprints),
     lastInteractionAt: typeof raw.lastInteractionAt === "string" ? raw.lastInteractionAt : null,
     conversationCount:
       typeof raw.conversationCount === "number" && Number.isFinite(raw.conversationCount)
@@ -117,6 +125,38 @@ function hydrateMemories(raw: unknown): MemoryEntry[] {
   }
 
   return memories.slice(-24);
+}
+
+function hydrateImprints(raw: unknown): Record<string, TopicImprint> {
+  if (!isRecord(raw)) {
+    return {};
+  }
+
+  const result: Record<string, TopicImprint> = {};
+
+  for (const [topic, value] of Object.entries(raw)) {
+    if (!isRecord(value)) {
+      continue;
+    }
+
+    result[topic] = {
+      topic,
+      salience:
+        typeof value.salience === "number" ? clamp01(value.salience) : 0.3,
+      valence:
+        typeof value.valence === "number" ? clampSigned(value.valence) : 0,
+      mentions:
+        typeof value.mentions === "number" && Number.isFinite(value.mentions)
+          ? Math.max(1, Math.round(value.mentions))
+          : 1,
+      firstSeenAt:
+        typeof value.firstSeenAt === "string" ? value.firstSeenAt : new Date().toISOString(),
+      lastSeenAt:
+        typeof value.lastSeenAt === "string" ? value.lastSeenAt : new Date().toISOString(),
+    };
+  }
+
+  return result;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

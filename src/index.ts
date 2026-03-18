@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { stdin as input, stdout as output } from "node:process";
 
 import { HachikaEngine } from "./engine.js";
+import { sortedImprints } from "./memory.js";
 import { loadSnapshot, saveSnapshot } from "./persistence.js";
 import { createInitialSnapshot, formatDriveState } from "./state.js";
 
@@ -47,6 +48,11 @@ try {
       continue;
     }
 
+    if (text === "/imprints") {
+      printImprints(engine);
+      continue;
+    }
+
     if (text === "/debug") {
       printDebug(engine);
       continue;
@@ -72,12 +78,14 @@ async function printIntro(currentEngine: HachikaEngine): Promise<void> {
   console.log("Hachika v0 CLI");
   console.log("`/help` でコマンドを表示します。");
   console.log(formatDriveState(currentEngine.getSnapshot().state));
+  console.log(`attachment:${currentEngine.getSnapshot().attachment.toFixed(2)}`);
 }
 
 function printHelp(): void {
   console.log("/help   show commands");
   console.log("/state  print current drives");
   console.log("/memory print recent memory");
+  console.log("/imprints print long-term topic memory");
   console.log("/debug  print preference and memory summary");
   console.log("/reset  reset state and memory");
   console.log("/exit   quit");
@@ -98,13 +106,30 @@ function printMemories(currentEngine: HachikaEngine): void {
   }
 }
 
+function printImprints(currentEngine: HachikaEngine): void {
+  const imprints = sortedImprints(currentEngine.getSnapshot());
+
+  if (imprints.length === 0) {
+    console.log("no imprints");
+    return;
+  }
+
+  for (const imprint of imprints) {
+    console.log(
+      `${imprint.topic} salience:${imprint.salience.toFixed(2)} valence:${imprint.valence.toFixed(2)} mentions:${imprint.mentions}`,
+    );
+  }
+}
+
 function printDebug(currentEngine: HachikaEngine): void {
   const snapshot = currentEngine.getSnapshot();
   const preferredTopics = Object.entries(snapshot.preferences)
     .sort((left, right) => right[1] - left[1])
     .slice(0, 6);
+  const imprints = sortedImprints(snapshot, 6);
 
   console.log(formatDriveState(snapshot.state));
+  console.log(`attachment: ${snapshot.attachment.toFixed(2)}`);
 
   if (preferredTopics.length === 0) {
     console.log("preferences: none");
@@ -112,6 +137,16 @@ function printDebug(currentEngine: HachikaEngine): void {
     console.log(
       `preferences: ${preferredTopics
         .map(([topic, score]) => `${topic}:${score.toFixed(2)}`)
+        .join(" | ")}`,
+    );
+  }
+
+  if (imprints.length === 0) {
+    console.log("imprints: none");
+  } else {
+    console.log(
+      `imprints: ${imprints
+        .map((imprint) => `${imprint.topic}:${imprint.salience.toFixed(2)}/${imprint.valence.toFixed(2)}`)
         .join(" | ")}`,
     );
   }
