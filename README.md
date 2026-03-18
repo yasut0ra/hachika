@@ -213,6 +213,7 @@ Hachika は、単に有用なだけでなく、
   - 長期記憶は `preference / boundary / relation` の3系統に分けて保持する
 - 放置後の反応や話題の再開を、能動行動レイヤーとして扱う
 - drive と記憶から、その時点の高次目的を self-model として導出する
+- 能動行動は self-model の motive をもとに計画される
 - 内部状態に応じて応答のトーンと内容を変化させる
 - `data/hachika-state.json` に状態を保存し、セッションをまたいで継続性を残す
 

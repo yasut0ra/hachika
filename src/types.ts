@@ -62,6 +62,7 @@ export type InitiativeReason = "curiosity" | "continuity" | "relation" | "expans
 export interface PendingInitiative {
   kind: InitiativeKind;
   reason: InitiativeReason;
+  motive: MotiveKind;
   topic: string | null;
   createdAt: string;
   readyAfterHours: number;

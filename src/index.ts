@@ -193,7 +193,7 @@ function printDebug(currentEngine: HachikaEngine): void {
   console.log(`self: ${selfModel.narrative}`);
   console.log(
     snapshot.initiative.pending
-      ? `pending initiative: ${snapshot.initiative.pending.kind}/${snapshot.initiative.pending.reason}${snapshot.initiative.pending.topic ? `/${snapshot.initiative.pending.topic}` : ""}`
+      ? `pending initiative: ${snapshot.initiative.pending.kind}/${snapshot.initiative.pending.motive}/${snapshot.initiative.pending.reason}${snapshot.initiative.pending.topic ? `/${snapshot.initiative.pending.topic}` : ""}`
       : "pending initiative: none",
   );
   console.log(

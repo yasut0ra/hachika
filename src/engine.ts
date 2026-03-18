@@ -214,7 +214,8 @@ export class HachikaEngine {
     const nextSnapshot = applySignals(this.#snapshot, signals, sentimentScore);
     const mood = resolveMood(nextSnapshot, signals);
     const dominant = dominantDrive(nextSnapshot.state);
-    scheduleInitiative(nextSnapshot, signals, dominant);
+    const preliminarySelfModel = buildSelfModel(nextSnapshot);
+    scheduleInitiative(nextSnapshot, signals, preliminarySelfModel);
     const selfModel = buildSelfModel(nextSnapshot);
     const reply = composeReply(
       this.#snapshot,

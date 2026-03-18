@@ -8,6 +8,7 @@ import type {
   HachikaSnapshot,
   InitiativeState,
   MemoryEntry,
+  MotiveKind,
   PendingInitiative,
   PreferenceImprint,
   RelationImprint,
@@ -38,7 +39,7 @@ function hydrateSnapshot(raw: unknown): HachikaSnapshot {
   }
 
   return {
-    version: 4,
+    version: 5,
     state: hydrateState(raw.state),
     attachment:
       typeof raw.attachment === "number" ? clamp01(raw.attachment) : initial.attachment,
@@ -318,14 +319,20 @@ function hydratePendingInitiative(raw: unknown): PendingInitiative | null {
     raw.reason === "expansion"
       ? raw.reason
       : undefined;
+  const motive = isMotiveKind(raw.motive)
+    ? raw.motive
+    : reason
+      ? inferLegacyMotive(reason)
+      : undefined;
 
-  if (!kind || !reason) {
+  if (!kind || !reason || !motive) {
     return null;
   }
 
   return {
     kind,
     reason,
+    motive,
     topic: typeof raw.topic === "string" ? raw.topic : null,
     createdAt:
       typeof raw.createdAt === "string" ? raw.createdAt : new Date().toISOString(),
@@ -338,4 +345,28 @@ function hydratePendingInitiative(raw: unknown): PendingInitiative | null {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+function isMotiveKind(value: unknown): value is MotiveKind {
+  return (
+    value === "protect_boundary" ||
+    value === "seek_continuity" ||
+    value === "pursue_curiosity" ||
+    value === "deepen_relation" ||
+    value === "continue_shared_work" ||
+    value === "leave_trace"
+  );
+}
+
+function inferLegacyMotive(reason: PendingInitiative["reason"]): MotiveKind {
+  switch (reason) {
+    case "continuity":
+      return "seek_continuity";
+    case "relation":
+      return "deepen_relation";
+    case "expansion":
+      return "leave_trace";
+    case "curiosity":
+      return "pursue_curiosity";
+  }
 }

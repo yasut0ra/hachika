@@ -73,12 +73,18 @@ test("responsive turn schedules a pending initiative", () => {
 
   assert.ok(result.snapshot.initiative.pending !== null);
   assert.equal(result.snapshot.initiative.pending?.kind, "resume_topic");
+  assert.ok(result.snapshot.initiative.pending?.motive !== undefined);
 });
 
 test("pending initiative emits a proactive resume after idle", () => {
   const engine = new HachikaEngine(createInitialSnapshot());
 
   engine.respond("実装を記録して、仕様として残したい。");
+  assert.equal(
+    engine.getSnapshot().initiative.pending?.motive === "continue_shared_work" ||
+      engine.getSnapshot().initiative.pending?.motive === "leave_trace",
+    true,
+  );
   engine.rewindIdleHours(8);
   const message = engine.emitInitiative();
   const snapshot = engine.getSnapshot();
@@ -102,13 +108,18 @@ test("force proactive emits even without waiting", () => {
 test("shared work interaction surfaces a high-level motive", () => {
   const engine = new HachikaEngine(createInitialSnapshot());
 
-  engine.respond("設計を一緒に進めて、記録として残したい。");
+  const result = engine.respond("設計を一緒に進めて、記録として残したい。");
   const selfModel = engine.getSelfModel();
   const motiveKinds = selfModel.topMotives.map((motive) => motive.kind);
 
   assert.ok(selfModel.narrative.length > 0);
   assert.equal(
     motiveKinds.includes("continue_shared_work") || motiveKinds.includes("leave_trace"),
+    true,
+  );
+  assert.equal(
+    result.snapshot.initiative.pending?.motive === "continue_shared_work" ||
+      result.snapshot.initiative.pending?.motive === "leave_trace",
     true,
   );
 });
