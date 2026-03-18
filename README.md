@@ -214,6 +214,7 @@ Hachika は、単に有用なだけでなく、
 - 放置後の反応や話題の再開を、能動行動レイヤーとして扱う
 - drive と記憶から、その時点の高次目的を self-model として導出する
 - self-model では好奇心 / 関係性 / 境界などの motive conflict を明示的に扱う
+- 忘却 / 初期化 / 消去 / 切断の示唆を continuity threat として扱い、自己保存的に反応する
 - 能動行動は self-model の motive をもとに計画される
 - motive のうち強いものは active purpose として数ターン持続する
 - active purpose は進捗を持ち、達成・放棄・別目的への遷移として解決されうる
@@ -240,7 +241,7 @@ npm run dev
 - `/self` 現在の self-model、motive、conflict を表示
 - `/memory` 直近の記憶を表示
 - `/imprints` 長期記憶を `preference / boundary / relation` 別に表示
-- `/debug` 嗜好、purpose progress、直近の purpose 解決、dominant conflict を含む状態概要を表示
+- `/debug` 嗜好、preservation threat、purpose progress、直近の purpose 解決、dominant conflict を含む状態概要を表示
 - `/reset` 状態と記憶を初期化
 - `/exit` 終了
 
