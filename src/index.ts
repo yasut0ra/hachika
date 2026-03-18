@@ -1,0 +1,137 @@
+import { createInterface } from "node:readline/promises";
+import { resolve } from "node:path";
+import { stdin as input, stdout as output } from "node:process";
+
+import { HachikaEngine } from "./engine.js";
+import { loadSnapshot, saveSnapshot } from "./persistence.js";
+import { createInitialSnapshot, formatDriveState } from "./state.js";
+
+const snapshotPath = resolve(process.cwd(), "data/hachika-state.json");
+const snapshot = await loadSnapshot(snapshotPath);
+const engine = new HachikaEngine(snapshot);
+
+const rl = createInterface({ input, output });
+
+printIntro(engine);
+
+try {
+  while (true) {
+    const raw = await readInput(rl);
+
+    if (raw === null) {
+      break;
+    }
+
+    const text = raw.trim();
+
+    if (!text) {
+      continue;
+    }
+
+    if (text === "/exit" || text === "/quit") {
+      break;
+    }
+
+    if (text === "/help") {
+      printHelp();
+      continue;
+    }
+
+    if (text === "/state") {
+      console.log(formatDriveState(engine.getSnapshot().state));
+      continue;
+    }
+
+    if (text === "/memory") {
+      printMemories(engine);
+      continue;
+    }
+
+    if (text === "/debug") {
+      printDebug(engine);
+      continue;
+    }
+
+    if (text === "/reset") {
+      engine.reset(createInitialSnapshot());
+      await saveSnapshot(snapshotPath, engine.getSnapshot());
+      console.log("state reset");
+      continue;
+    }
+
+    const result = engine.respond(text);
+    await saveSnapshot(snapshotPath, result.snapshot);
+
+    console.log(`hachika> ${result.reply}`);
+  }
+} finally {
+  rl.close();
+}
+
+async function printIntro(currentEngine: HachikaEngine): Promise<void> {
+  console.log("Hachika v0 CLI");
+  console.log("`/help` でコマンドを表示します。");
+  console.log(formatDriveState(currentEngine.getSnapshot().state));
+}
+
+function printHelp(): void {
+  console.log("/help   show commands");
+  console.log("/state  print current drives");
+  console.log("/memory print recent memory");
+  console.log("/debug  print preference and memory summary");
+  console.log("/reset  reset state and memory");
+  console.log("/exit   quit");
+}
+
+function printMemories(currentEngine: HachikaEngine): void {
+  const memories = currentEngine.getSnapshot().memories.slice(-6);
+
+  if (memories.length === 0) {
+    console.log("no memory");
+    return;
+  }
+
+  for (const memory of memories) {
+    console.log(
+      `[${memory.role}] ${memory.text}${memory.topics.length > 0 ? ` [${memory.topics.join(", ")}]` : ""}`,
+    );
+  }
+}
+
+function printDebug(currentEngine: HachikaEngine): void {
+  const snapshot = currentEngine.getSnapshot();
+  const preferredTopics = Object.entries(snapshot.preferences)
+    .sort((left, right) => right[1] - left[1])
+    .slice(0, 6);
+
+  console.log(formatDriveState(snapshot.state));
+
+  if (preferredTopics.length === 0) {
+    console.log("preferences: none");
+  } else {
+    console.log(
+      `preferences: ${preferredTopics
+        .map(([topic, score]) => `${topic}:${score.toFixed(2)}`)
+        .join(" | ")}`,
+    );
+  }
+}
+
+async function readInput(
+  rl: ReturnType<typeof createInterface>,
+): Promise<string | null> {
+  try {
+    return await rl.question("> ");
+  } catch (error) {
+    if (
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      error.code === "ERR_USE_AFTER_CLOSE"
+    ) {
+      return null;
+    }
+
+    throw error;
+  }
+}
