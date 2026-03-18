@@ -210,6 +210,7 @@ Hachika は、単に有用なだけでなく、
 - `attachment` を長期的な関係指標として保持する
 - ユーザー入力を簡易的な相互作用イベントに変換し、状態を更新する
 - トピックごとの好み、短期記憶、長期記憶の痕跡を保持する
+  - 長期記憶は `preference / boundary / relation` の3系統に分けて保持する
 - 内部状態に応じて応答のトーンと内容を変化させる
 - `data/hachika-state.json` に状態を保存し、セッションをまたいで継続性を残す
 
@@ -228,7 +229,7 @@ npm run dev
 - `/help` コマンド一覧を表示
 - `/state` 現在の drive 状態を表示
 - `/memory` 直近の記憶を表示
-- `/imprints` 長期記憶として残った話題を表示
+- `/imprints` 長期記憶を `preference / boundary / relation` 別に表示
 - `/debug` 嗜好と状態の概要を表示
 - `/reset` 状態と記憶を初期化
 - `/exit` 終了

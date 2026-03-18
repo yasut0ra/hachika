@@ -1,9 +1,12 @@
 import { clamp01, clampSigned } from "./state.js";
 import type {
+  BoundaryImprint,
   HachikaSnapshot,
   InteractionSignals,
   MemoryEntry,
-  TopicImprint,
+  PreferenceImprint,
+  RelationImprint,
+  RelationKind,
 } from "./types.js";
 
 const segmenter = new Intl.Segmenter("ja", { granularity: "word" });
@@ -31,6 +34,19 @@ const STOPWORDS = new Set([
   "then",
   "them",
   "they",
+  "me",
+  "my",
+  "好き",
+  "嫌い",
+  "いい",
+  "面白い",
+  "助かる",
+  "嬉しい",
+  "つまらない",
+  "最悪",
+  "邪魔",
+  "うるさい",
+  "だし",
   "ありがとう",
   "こんにちは",
   "こんばんは",
@@ -38,6 +54,18 @@ const STOPWORDS = new Set([
   "よろしく",
   "お願い",
   "お願いします",
+  "前回",
+  "続き",
+  "覚えて",
+  "覚え",
+  "として",
+  "てい",
+  "あなた",
+  "君",
+  "きみ",
+  "私",
+  "わたし",
+  "私たち",
   "する",
   "して",
   "した",
@@ -148,7 +176,7 @@ export function topPreferredTopics(snapshot: HachikaSnapshot, limit = 3): string
     .map(([topic]) => topic);
 }
 
-export function consolidateImprints(
+export function consolidatePreferenceImprints(
   snapshot: HachikaSnapshot,
   signals: InteractionSignals,
   sentimentScore: number,
@@ -168,7 +196,7 @@ export function consolidateImprints(
       continue;
     }
 
-    const previous = snapshot.imprints[topic];
+    const previous = snapshot.preferenceImprints[topic];
     const salienceGain =
       0.12 +
       Math.min(0.16, topicCount * 0.04) +
@@ -178,40 +206,189 @@ export function consolidateImprints(
       signals.expansionCue * 0.08 +
       signals.question * 0.04;
 
-    snapshot.imprints[topic] = {
+    snapshot.preferenceImprints[topic] = {
       topic,
       salience: clamp01((previous?.salience ?? 0) * 0.88 + salienceGain),
-      valence: clampSigned((previous?.valence ?? sentimentScore) * 0.72 + sentimentScore * 0.28),
+      affinity: clampSigned((previous?.affinity ?? sentimentScore) * 0.72 + sentimentScore * 0.28),
       mentions: Math.max(previous?.mentions ?? 0, topicCount),
       firstSeenAt: previous?.firstSeenAt ?? timestamp,
       lastSeenAt: timestamp,
     };
   }
 
-  pruneImprints(snapshot, 16);
+  pruneRecord(snapshot.preferenceImprints, 16, (imprint) => imprint.salience);
 }
 
-export function findRelevantImprint(
+export function consolidateBoundaryImprints(
+  snapshot: HachikaSnapshot,
+  signals: InteractionSignals,
+  timestamp = new Date().toISOString(),
+): void {
+  const candidates = [
+    {
+      kind: "hostility" as const,
+      active: signals.negative > 0.15,
+      intensity: clamp01(signals.negative * 0.9 + signals.intimacy * 0.05),
+      topic: signals.topics[0] ?? null,
+    },
+    {
+      kind: "dismissal" as const,
+      active: signals.dismissal > 0.1,
+      intensity: clamp01(signals.dismissal * 0.95 + signals.neglect * 0.08),
+      topic: signals.topics[0] ?? null,
+    },
+    {
+      kind: "neglect" as const,
+      active: signals.neglect > 0.45,
+      intensity: clamp01(signals.neglect * 0.9),
+      topic: null,
+    },
+  ];
+
+  for (const candidate of candidates) {
+    if (!candidate.active) {
+      continue;
+    }
+
+    const key = boundaryKey(candidate.kind, candidate.topic);
+    const previous = snapshot.boundaryImprints[key];
+
+    snapshot.boundaryImprints[key] = {
+      kind: candidate.kind,
+      topic: candidate.topic,
+      salience: clamp01((previous?.salience ?? 0) * 0.9 + candidate.intensity * 0.34 + 0.08),
+      intensity: clamp01((previous?.intensity ?? 0) * 0.72 + candidate.intensity * 0.28),
+      violations: (previous?.violations ?? 0) + 1,
+      firstSeenAt: previous?.firstSeenAt ?? timestamp,
+      lastSeenAt: timestamp,
+    };
+  }
+
+  pruneRecord(snapshot.boundaryImprints, 10, (imprint) => imprint.salience);
+}
+
+export function consolidateRelationImprints(
+  snapshot: HachikaSnapshot,
+  signals: InteractionSignals,
+  timestamp = new Date().toISOString(),
+): void {
+  const candidates = [
+    {
+      kind: "attention" as const,
+      active: signals.intimacy > 0.1 || signals.positive > 0.15,
+      closeness: clamp01(snapshot.attachment * 0.55 + signals.positive * 0.25 + signals.intimacy * 0.2),
+    },
+    {
+      kind: "continuity" as const,
+      active: signals.memoryCue > 0.1 || signals.neglect > 0.45,
+      closeness: clamp01(snapshot.state.continuity * 0.7 + signals.memoryCue * 0.2 + signals.neglect * 0.1),
+    },
+    {
+      kind: "shared_work" as const,
+      active: signals.expansionCue > 0.15 || (signals.question > 0.1 && signals.topics.length > 0),
+      closeness: clamp01(snapshot.attachment * 0.35 + snapshot.state.expansion * 0.4 + signals.question * 0.15 + signals.expansionCue * 0.1),
+    },
+  ];
+
+  for (const candidate of candidates) {
+    if (!candidate.active) {
+      continue;
+    }
+
+    const previous = snapshot.relationImprints[candidate.kind];
+    snapshot.relationImprints[candidate.kind] = {
+      kind: candidate.kind,
+      salience: clamp01((previous?.salience ?? 0) * 0.9 + candidate.closeness * 0.28 + 0.08),
+      closeness: clamp01((previous?.closeness ?? 0) * 0.74 + candidate.closeness * 0.26),
+      mentions: (previous?.mentions ?? 0) + 1,
+      firstSeenAt: previous?.firstSeenAt ?? timestamp,
+      lastSeenAt: timestamp,
+    };
+  }
+
+  pruneRecord(snapshot.relationImprints, 6, (imprint) => imprint.salience);
+}
+
+export function findRelevantPreferenceImprint(
   snapshot: HachikaSnapshot,
   topics: string[],
-): TopicImprint | undefined {
-  const imprints = Object.values(snapshot.imprints);
-
+): PreferenceImprint | undefined {
   for (const topic of topics) {
-    const imprint = snapshot.imprints[topic];
+    const imprint = snapshot.preferenceImprints[topic];
 
     if (imprint) {
       return imprint;
     }
   }
 
-  return imprints
-    .sort((left, right) => right.salience - left.salience)
-    .find((imprint) => imprint.salience > 0.45);
+  return sortedPreferenceImprints(snapshot, 1)[0];
 }
 
-export function sortedImprints(snapshot: HachikaSnapshot, limit = 6): TopicImprint[] {
-  return Object.values(snapshot.imprints)
+export function findRelevantBoundaryImprint(
+  snapshot: HachikaSnapshot,
+  topics: string[],
+): BoundaryImprint | undefined {
+  for (const topic of topics) {
+    const direct = snapshot.boundaryImprints[boundaryKey("hostility", topic)];
+
+    if (direct) {
+      return direct;
+    }
+  }
+
+  return sortedBoundaryImprints(snapshot, 1)[0];
+}
+
+export function findRelevantRelationImprint(
+  snapshot: HachikaSnapshot,
+  preferredKinds: readonly RelationKind[],
+): RelationImprint | undefined {
+  for (const kind of preferredKinds) {
+    const imprint = snapshot.relationImprints[kind];
+
+    if (imprint) {
+      return imprint;
+    }
+  }
+
+  return sortedRelationImprints(snapshot, 1)[0];
+}
+
+export function sortedPreferenceImprints(
+  snapshot: HachikaSnapshot,
+  limit = 6,
+): PreferenceImprint[] {
+  return Object.values(snapshot.preferenceImprints)
+    .sort((left, right) => {
+      if (right.salience !== left.salience) {
+        return right.salience - left.salience;
+      }
+
+      return right.mentions - left.mentions;
+    })
+    .slice(0, limit);
+}
+
+export function sortedBoundaryImprints(
+  snapshot: HachikaSnapshot,
+  limit = 6,
+): BoundaryImprint[] {
+  return Object.values(snapshot.boundaryImprints)
+    .sort((left, right) => {
+      if (right.salience !== left.salience) {
+        return right.salience - left.salience;
+      }
+
+      return right.violations - left.violations;
+    })
+    .slice(0, limit);
+}
+
+export function sortedRelationImprints(
+  snapshot: HachikaSnapshot,
+  limit = 6,
+): RelationImprint[] {
+  return Object.values(snapshot.relationImprints)
     .sort((left, right) => {
       if (right.salience !== left.salience) {
         return right.salience - left.salience;
@@ -244,12 +421,20 @@ function normalizeToken(token: string): string | null {
   return normalized;
 }
 
-function pruneImprints(snapshot: HachikaSnapshot, limit: number): void {
-  const sortedTopics = Object.values(snapshot.imprints)
-    .sort((left, right) => right.salience - left.salience)
-    .map((imprint) => imprint.topic);
+function boundaryKey(kind: BoundaryImprint["kind"], topic: string | null): string {
+  return topic ? `${kind}:${topic}` : kind;
+}
 
-  for (const topic of sortedTopics.slice(limit)) {
-    delete snapshot.imprints[topic];
+function pruneRecord<T extends { salience: number }>(
+  record: Record<string, T>,
+  limit: number,
+  getScore: (value: T) => number,
+): void {
+  const sortedKeys = Object.entries(record)
+    .sort((left, right) => getScore(right[1]) - getScore(left[1]))
+    .map(([key]) => key);
+
+  for (const key of sortedKeys.slice(limit)) {
+    delete record[key];
   }
 }

@@ -26,13 +26,15 @@ export function clampSigned(value: number): number {
 
 export function createInitialSnapshot(): HachikaSnapshot {
   return {
-    version: 2,
+    version: 3,
     state: { ...INITIAL_STATE },
     attachment: 0.4,
     preferences: {},
     topicCounts: {},
     memories: [],
-    imprints: {},
+    preferenceImprints: {},
+    boundaryImprints: {},
+    relationImprints: {},
     lastInteractionAt: null,
     conversationCount: 0,
   };

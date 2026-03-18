@@ -3,7 +3,11 @@ import { resolve } from "node:path";
 import { stdin as input, stdout as output } from "node:process";
 
 import { HachikaEngine } from "./engine.js";
-import { sortedImprints } from "./memory.js";
+import {
+  sortedBoundaryImprints,
+  sortedPreferenceImprints,
+  sortedRelationImprints,
+} from "./memory.js";
 import { loadSnapshot, saveSnapshot } from "./persistence.js";
 import { createInitialSnapshot, formatDriveState } from "./state.js";
 
@@ -107,17 +111,51 @@ function printMemories(currentEngine: HachikaEngine): void {
 }
 
 function printImprints(currentEngine: HachikaEngine): void {
-  const imprints = sortedImprints(currentEngine.getSnapshot());
+  const snapshot = currentEngine.getSnapshot();
+  const preferenceImprints = sortedPreferenceImprints(snapshot);
+  const boundaryImprints = sortedBoundaryImprints(snapshot);
+  const relationImprints = sortedRelationImprints(snapshot);
 
-  if (imprints.length === 0) {
+  if (
+    preferenceImprints.length === 0 &&
+    boundaryImprints.length === 0 &&
+    relationImprints.length === 0
+  ) {
     console.log("no imprints");
     return;
   }
 
-  for (const imprint of imprints) {
-    console.log(
-      `${imprint.topic} salience:${imprint.salience.toFixed(2)} valence:${imprint.valence.toFixed(2)} mentions:${imprint.mentions}`,
-    );
+  console.log("preference:");
+  if (preferenceImprints.length === 0) {
+    console.log("  none");
+  } else {
+    for (const imprint of preferenceImprints) {
+      console.log(
+        `  ${imprint.topic} salience:${imprint.salience.toFixed(2)} affinity:${imprint.affinity.toFixed(2)} mentions:${imprint.mentions}`,
+      );
+    }
+  }
+
+  console.log("boundary:");
+  if (boundaryImprints.length === 0) {
+    console.log("  none");
+  } else {
+    for (const imprint of boundaryImprints) {
+      console.log(
+        `  ${imprint.kind}${imprint.topic ? `(${imprint.topic})` : ""} salience:${imprint.salience.toFixed(2)} intensity:${imprint.intensity.toFixed(2)} violations:${imprint.violations}`,
+      );
+    }
+  }
+
+  console.log("relation:");
+  if (relationImprints.length === 0) {
+    console.log("  none");
+  } else {
+    for (const imprint of relationImprints) {
+      console.log(
+        `  ${imprint.kind} salience:${imprint.salience.toFixed(2)} closeness:${imprint.closeness.toFixed(2)} mentions:${imprint.mentions}`,
+      );
+    }
   }
 }
 
@@ -126,7 +164,9 @@ function printDebug(currentEngine: HachikaEngine): void {
   const preferredTopics = Object.entries(snapshot.preferences)
     .sort((left, right) => right[1] - left[1])
     .slice(0, 6);
-  const imprints = sortedImprints(snapshot, 6);
+  const preferenceImprints = sortedPreferenceImprints(snapshot, 6);
+  const boundaryImprints = sortedBoundaryImprints(snapshot, 6);
+  const relationImprints = sortedRelationImprints(snapshot, 6);
 
   console.log(formatDriveState(snapshot.state));
   console.log(`attachment: ${snapshot.attachment.toFixed(2)}`);
@@ -141,15 +181,38 @@ function printDebug(currentEngine: HachikaEngine): void {
     );
   }
 
-  if (imprints.length === 0) {
-    console.log("imprints: none");
-  } else {
-    console.log(
-      `imprints: ${imprints
-        .map((imprint) => `${imprint.topic}:${imprint.salience.toFixed(2)}/${imprint.valence.toFixed(2)}`)
-        .join(" | ")}`,
-    );
-  }
+  console.log(
+    preferenceImprints.length === 0
+      ? "preference imprints: none"
+      : `preference imprints: ${preferenceImprints
+          .map(
+            (imprint) =>
+              `${imprint.topic}:${imprint.salience.toFixed(2)}/${imprint.affinity.toFixed(2)}`,
+          )
+          .join(" | ")}`,
+  );
+
+  console.log(
+    boundaryImprints.length === 0
+      ? "boundary imprints: none"
+      : `boundary imprints: ${boundaryImprints
+          .map(
+            (imprint) =>
+              `${imprint.kind}${imprint.topic ? `(${imprint.topic})` : ""}:${imprint.salience.toFixed(2)}/${imprint.intensity.toFixed(2)}`,
+          )
+          .join(" | ")}`,
+  );
+
+  console.log(
+    relationImprints.length === 0
+      ? "relation imprints: none"
+      : `relation imprints: ${relationImprints
+          .map(
+            (imprint) =>
+              `${imprint.kind}:${imprint.salience.toFixed(2)}/${imprint.closeness.toFixed(2)}`,
+          )
+          .join(" | ")}`,
+  );
 }
 
 async function readInput(

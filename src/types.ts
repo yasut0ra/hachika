@@ -23,10 +23,33 @@ export interface MemoryEntry {
   sentiment: "positive" | "negative" | "neutral";
 }
 
-export interface TopicImprint {
+export interface PreferenceImprint {
   topic: string;
   salience: number;
-  valence: number;
+  affinity: number;
+  mentions: number;
+  firstSeenAt: string;
+  lastSeenAt: string;
+}
+
+export type BoundaryKind = "hostility" | "dismissal" | "neglect";
+
+export interface BoundaryImprint {
+  kind: BoundaryKind;
+  topic: string | null;
+  salience: number;
+  intensity: number;
+  violations: number;
+  firstSeenAt: string;
+  lastSeenAt: string;
+}
+
+export type RelationKind = "attention" | "continuity" | "shared_work";
+
+export interface RelationImprint {
+  kind: RelationKind;
+  salience: number;
+  closeness: number;
   mentions: number;
   firstSeenAt: string;
   lastSeenAt: string;
@@ -39,7 +62,9 @@ export interface HachikaSnapshot {
   preferences: Record<string, number>;
   topicCounts: Record<string, number>;
   memories: MemoryEntry[];
-  imprints: Record<string, TopicImprint>;
+  preferenceImprints: Record<string, PreferenceImprint>;
+  boundaryImprints: Record<string, BoundaryImprint>;
+  relationImprints: Record<string, RelationImprint>;
   lastInteractionAt: string | null;
   conversationCount: number;
 }

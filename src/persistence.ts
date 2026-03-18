@@ -3,10 +3,12 @@ import { dirname } from "node:path";
 
 import { clamp01, clampSigned, createInitialSnapshot } from "./state.js";
 import type {
+  BoundaryImprint,
   DriveState,
   HachikaSnapshot,
   MemoryEntry,
-  TopicImprint,
+  PreferenceImprint,
+  RelationImprint,
 } from "./types.js";
 
 export async function loadSnapshot(filePath: string): Promise<HachikaSnapshot> {
@@ -34,7 +36,7 @@ function hydrateSnapshot(raw: unknown): HachikaSnapshot {
   }
 
   return {
-    version: 2,
+    version: 3,
     state: hydrateState(raw.state),
     attachment:
       typeof raw.attachment === "number" ? clamp01(raw.attachment) : initial.attachment,
@@ -43,7 +45,9 @@ function hydrateSnapshot(raw: unknown): HachikaSnapshot {
       Math.max(0, Math.round(value)),
     ),
     memories: hydrateMemories(raw.memories),
-    imprints: hydrateImprints(raw.imprints),
+    preferenceImprints: hydratePreferenceImprints(raw.preferenceImprints, raw.imprints),
+    boundaryImprints: hydrateBoundaryImprints(raw.boundaryImprints),
+    relationImprints: hydrateRelationImprints(raw.relationImprints),
     lastInteractionAt: typeof raw.lastInteractionAt === "string" ? raw.lastInteractionAt : null,
     conversationCount:
       typeof raw.conversationCount === "number" && Number.isFinite(raw.conversationCount)
@@ -127,12 +131,23 @@ function hydrateMemories(raw: unknown): MemoryEntry[] {
   return memories.slice(-24);
 }
 
-function hydrateImprints(raw: unknown): Record<string, TopicImprint> {
-  if (!isRecord(raw)) {
-    return {};
+function hydratePreferenceImprints(
+  raw: unknown,
+  legacyRaw?: unknown,
+): Record<string, PreferenceImprint> {
+  if (isRecord(raw)) {
+    return hydratePreferenceImprintRecord(raw);
   }
 
-  const result: Record<string, TopicImprint> = {};
+  if (isRecord(legacyRaw)) {
+    return hydrateLegacyPreferenceImprints(legacyRaw);
+  }
+
+  return {};
+}
+
+function hydratePreferenceImprintRecord(raw: Record<string, unknown>): Record<string, PreferenceImprint> {
+  const result: Record<string, PreferenceImprint> = {};
 
   for (const [topic, value] of Object.entries(raw)) {
     if (!isRecord(value)) {
@@ -141,10 +156,122 @@ function hydrateImprints(raw: unknown): Record<string, TopicImprint> {
 
     result[topic] = {
       topic,
-      salience:
-        typeof value.salience === "number" ? clamp01(value.salience) : 0.3,
-      valence:
-        typeof value.valence === "number" ? clampSigned(value.valence) : 0,
+      salience: typeof value.salience === "number" ? clamp01(value.salience) : 0.3,
+      affinity: typeof value.affinity === "number" ? clampSigned(value.affinity) : 0,
+      mentions:
+        typeof value.mentions === "number" && Number.isFinite(value.mentions)
+          ? Math.max(1, Math.round(value.mentions))
+          : 1,
+      firstSeenAt:
+        typeof value.firstSeenAt === "string" ? value.firstSeenAt : new Date().toISOString(),
+      lastSeenAt:
+        typeof value.lastSeenAt === "string" ? value.lastSeenAt : new Date().toISOString(),
+    };
+  }
+
+  return result;
+}
+
+function hydrateLegacyPreferenceImprints(
+  raw: Record<string, unknown>,
+): Record<string, PreferenceImprint> {
+  const result: Record<string, PreferenceImprint> = {};
+
+  for (const [topic, value] of Object.entries(raw)) {
+    if (!isRecord(value)) {
+      continue;
+    }
+
+    result[topic] = {
+      topic,
+      salience: typeof value.salience === "number" ? clamp01(value.salience) : 0.3,
+      affinity:
+        typeof value.valence === "number"
+          ? clampSigned(value.valence)
+          : typeof value.affinity === "number"
+            ? clampSigned(value.affinity)
+            : 0,
+      mentions:
+        typeof value.mentions === "number" && Number.isFinite(value.mentions)
+          ? Math.max(1, Math.round(value.mentions))
+          : 1,
+      firstSeenAt:
+        typeof value.firstSeenAt === "string" ? value.firstSeenAt : new Date().toISOString(),
+      lastSeenAt:
+        typeof value.lastSeenAt === "string" ? value.lastSeenAt : new Date().toISOString(),
+    };
+  }
+
+  return result;
+}
+
+function hydrateBoundaryImprints(raw: unknown): Record<string, BoundaryImprint> {
+  if (!isRecord(raw)) {
+    return {};
+  }
+
+  const result: Record<string, BoundaryImprint> = {};
+
+  for (const [key, value] of Object.entries(raw)) {
+    if (!isRecord(value)) {
+      continue;
+    }
+
+    const kind =
+      value.kind === "hostility" || value.kind === "dismissal" || value.kind === "neglect"
+        ? value.kind
+        : undefined;
+
+    if (!kind) {
+      continue;
+    }
+
+    result[key] = {
+      kind,
+      topic: typeof value.topic === "string" ? value.topic : null,
+      salience: typeof value.salience === "number" ? clamp01(value.salience) : 0.3,
+      intensity: typeof value.intensity === "number" ? clamp01(value.intensity) : 0.3,
+      violations:
+        typeof value.violations === "number" && Number.isFinite(value.violations)
+          ? Math.max(1, Math.round(value.violations))
+          : 1,
+      firstSeenAt:
+        typeof value.firstSeenAt === "string" ? value.firstSeenAt : new Date().toISOString(),
+      lastSeenAt:
+        typeof value.lastSeenAt === "string" ? value.lastSeenAt : new Date().toISOString(),
+    };
+  }
+
+  return result;
+}
+
+function hydrateRelationImprints(raw: unknown): Record<string, RelationImprint> {
+  if (!isRecord(raw)) {
+    return {};
+  }
+
+  const result: Record<string, RelationImprint> = {};
+
+  for (const [key, value] of Object.entries(raw)) {
+    if (!isRecord(value)) {
+      continue;
+    }
+
+    const kind =
+      value.kind === "attention" ||
+      value.kind === "continuity" ||
+      value.kind === "shared_work"
+        ? value.kind
+        : undefined;
+
+    if (!kind) {
+      continue;
+    }
+
+    result[key] = {
+      kind,
+      salience: typeof value.salience === "number" ? clamp01(value.salience) : 0.3,
+      closeness: typeof value.closeness === "number" ? clamp01(value.closeness) : 0.3,
       mentions:
         typeof value.mentions === "number" && Number.isFinite(value.mentions)
           ? Math.max(1, Math.round(value.mentions))

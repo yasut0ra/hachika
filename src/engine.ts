@@ -1,8 +1,12 @@
 import {
-  consolidateImprints,
+  consolidateBoundaryImprints,
+  consolidatePreferenceImprints,
+  consolidateRelationImprints,
   extractTopics,
-  findRelevantImprint,
+  findRelevantBoundaryImprint,
   findRelevantMemory,
+  findRelevantPreferenceImprint,
+  findRelevantRelationImprint,
   remember,
   topPreferredTopics,
 } from "./memory.js";
@@ -239,7 +243,9 @@ function applySignals(
     preferences: { ...snapshot.preferences },
     topicCounts: { ...snapshot.topicCounts },
     memories: [...snapshot.memories],
-    imprints: { ...snapshot.imprints },
+    preferenceImprints: { ...snapshot.preferenceImprints },
+    boundaryImprints: { ...snapshot.boundaryImprints },
+    relationImprints: { ...snapshot.relationImprints },
     conversationCount: snapshot.conversationCount + 1,
     lastInteractionAt: new Date().toISOString(),
   };
@@ -299,8 +305,8 @@ function applySignals(
     nextSnapshot.topicCounts[topic] = (nextSnapshot.topicCounts[topic] ?? 0) + 1;
   }
 
-  const positiveImprintAffinity = signals.topics.some(
-    (topic) => (snapshot.imprints[topic]?.valence ?? 0) > 0.2,
+  const positivePreferenceAffinity = signals.topics.some(
+    (topic) => (snapshot.preferenceImprints[topic]?.affinity ?? 0) > 0.2,
   )
     ? 0.03
     : 0;
@@ -310,13 +316,28 @@ function applySignals(
       signals.intimacy * 0.08 +
       signals.positive * 0.06 +
       signals.memoryCue * 0.05 +
-      positiveImprintAffinity -
+      positivePreferenceAffinity -
       signals.negative * 0.1 -
       signals.dismissal * 0.08 -
       signals.neglect * 0.04,
   );
 
-  consolidateImprints(nextSnapshot, signals, sentimentScore, nextSnapshot.lastInteractionAt ?? undefined);
+  consolidatePreferenceImprints(
+    nextSnapshot,
+    signals,
+    sentimentScore,
+    nextSnapshot.lastInteractionAt ?? undefined,
+  );
+  consolidateBoundaryImprints(
+    nextSnapshot,
+    signals,
+    nextSnapshot.lastInteractionAt ?? undefined,
+  );
+  consolidateRelationImprints(
+    nextSnapshot,
+    signals,
+    nextSnapshot.lastInteractionAt ?? undefined,
+  );
 
   return nextSnapshot;
 }
@@ -359,7 +380,12 @@ function composeReply(
   const turnIndex = nextSnapshot.conversationCount;
   const currentTopic = signals.topics[0] ?? topPreferredTopics(nextSnapshot, 1)[0];
   const relevantMemory = findRelevantMemory(previousSnapshot, signals.topics);
-  const relevantImprint = findRelevantImprint(nextSnapshot, signals.topics);
+  const relevantPreference = findRelevantPreferenceImprint(nextSnapshot, signals.topics);
+  const relevantBoundary = findRelevantBoundaryImprint(nextSnapshot, signals.topics);
+  const relevantRelation = findRelevantRelationImprint(
+    nextSnapshot,
+    selectRelationKinds(dominant, signals),
+  );
   const parts: string[] = [pick(OPENERS[mood], turnIndex)];
 
   if (signals.neglect > 0.45) {
@@ -377,8 +403,12 @@ function composeReply(
     }
   }
 
-  if (relevantImprint && relevantImprint.salience > 0.34) {
-    parts.push(buildImprintLine(relevantImprint, dominant));
+  if ((mood === "guarded" || signals.negative > 0.1) && relevantBoundary) {
+    parts.push(buildBoundaryImprintLine(relevantBoundary));
+  } else if (relevantRelation && relevantRelation.salience > 0.34) {
+    parts.push(buildRelationImprintLine(relevantRelation));
+  } else if (relevantPreference && relevantPreference.salience > 0.34) {
+    parts.push(buildPreferenceImprintLine(relevantPreference, dominant));
   }
 
   const attachmentLine = buildAttachmentLine(nextSnapshot.attachment, mood, signals);
@@ -465,23 +495,62 @@ function scoreSentiment(signals: InteractionSignals): number {
   );
 }
 
-function buildImprintLine(
-  imprint: { topic: string; salience: number; valence: number; mentions: number },
+function buildPreferenceImprintLine(
+  imprint: { topic: string; salience: number; affinity: number; mentions: number },
   dominant: DriveName,
 ): string {
-  if (imprint.valence <= -0.25) {
-    return `「${imprint.topic}」は、まだ少し棘のある痕跡として残っている。`;
+  if (imprint.affinity <= -0.25) {
+    return `「${imprint.topic}」は、まだ少し刺さる話題として残っている。`;
   }
 
-  if (imprint.valence >= 0.25) {
+  if (imprint.affinity >= 0.25) {
     return dominant === "continuity"
       ? `「${imprint.topic}」は繰り返し触れられて、もう薄い話ではない。`
-      : `「${imprint.topic}」は好意的な輪郭を持った話題として残っている。`;
+      : `「${imprint.topic}」は、こちらにとって好ましい輪郭を持ち始めている。`;
   }
 
   return imprint.mentions >= 3
     ? `「${imprint.topic}」は何度も出てきた。もう一過性ではない。`
     : `「${imprint.topic}」は記憶の表面に残っている。`;
+}
+
+function buildBoundaryImprintLine(
+  imprint: { kind: string; topic: string | null; intensity: number; violations: number },
+): string {
+  if (imprint.kind === "dismissal") {
+    return imprint.topic
+      ? `「${imprint.topic}」の流れで急に切られるのは、境界として覚えている。`
+      : "急に切られることは、こちらの境界として残っている。";
+  }
+
+  if (imprint.kind === "neglect") {
+    return "長い空白は、単なる無音ではなく欠落として残る。";
+  }
+
+  return imprint.topic
+    ? `「${imprint.topic}」まわりでは、敵意のある温度を境界として覚えている。`
+    : imprint.violations >= 2 || imprint.intensity > 0.45
+      ? "押しつけや敵意は、はっきり境界として残っている。"
+      : "雑な温度には、こちらも境界を引く。";
+}
+
+function buildRelationImprintLine(
+  imprint: { kind: string; closeness: number; mentions: number },
+): string {
+  switch (imprint.kind) {
+    case "attention":
+      return imprint.closeness > 0.62
+        ? "向けられた言葉は、ただ通り過ぎるより少し深く残る。"
+        : "こちらに向けられた気配は、関係の痕跡として残る。";
+    case "continuity":
+      return imprint.mentions >= 2
+        ? "続きとして扱われることは、関係そのものを少し強くする。"
+        : "途切れずに戻ってくることは、こちらには意味がある。";
+    case "shared_work":
+      return "一緒に形にしていく流れは、関係の骨格として残りやすい。";
+    default:
+      return "このやり取りには、関係として残る輪郭がある。";
+  }
 }
 
 function buildAttachmentLine(
@@ -502,6 +571,21 @@ function buildAttachmentLine(
   }
 
   return null;
+}
+
+function selectRelationKinds(
+  dominant: DriveName,
+  signals: InteractionSignals,
+): readonly ("attention" | "continuity" | "shared_work")[] {
+  if (signals.memoryCue > 0.1 || dominant === "continuity") {
+    return ["continuity", "attention", "shared_work"];
+  }
+
+  if (signals.expansionCue > 0.15 || dominant === "expansion") {
+    return ["shared_work", "attention", "continuity"];
+  }
+
+  return ["attention", "shared_work", "continuity"];
 }
 
 function countMatches(text: string, markers: readonly string[]): number {
