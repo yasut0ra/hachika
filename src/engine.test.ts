@@ -65,3 +65,35 @@ test("memory cue builds continuity relation imprint", () => {
   assert.ok(continuity !== undefined);
   assert.ok((continuity?.closeness ?? 0) > 0);
 });
+
+test("responsive turn schedules a pending initiative", () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+  const result = engine.respond("君と設計の続きを進めたい。");
+
+  assert.ok(result.snapshot.initiative.pending !== null);
+  assert.equal(result.snapshot.initiative.pending?.kind, "resume_topic");
+});
+
+test("pending initiative emits a proactive resume after idle", () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+
+  engine.respond("実装を記録して、仕様として残したい。");
+  engine.rewindIdleHours(8);
+  const message = engine.emitInitiative();
+  const snapshot = engine.getSnapshot();
+
+  assert.ok(message !== null);
+  assert.match(message ?? "", /実装|設計/);
+  assert.equal(snapshot.initiative.pending, null);
+  assert.ok(snapshot.initiative.lastProactiveAt !== null);
+});
+
+test("force proactive emits even without waiting", () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+
+  engine.respond("仕様の流れを残したい。");
+  const message = engine.emitInitiative({ force: true });
+
+  assert.ok(message !== null);
+  assert.match(message ?? "", /仕様|流れ/);
+});

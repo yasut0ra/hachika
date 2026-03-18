@@ -6,7 +6,9 @@ import type {
   BoundaryImprint,
   DriveState,
   HachikaSnapshot,
+  InitiativeState,
   MemoryEntry,
+  PendingInitiative,
   PreferenceImprint,
   RelationImprint,
 } from "./types.js";
@@ -36,7 +38,7 @@ function hydrateSnapshot(raw: unknown): HachikaSnapshot {
   }
 
   return {
-    version: 3,
+    version: 4,
     state: hydrateState(raw.state),
     attachment:
       typeof raw.attachment === "number" ? clamp01(raw.attachment) : initial.attachment,
@@ -48,6 +50,7 @@ function hydrateSnapshot(raw: unknown): HachikaSnapshot {
     preferenceImprints: hydratePreferenceImprints(raw.preferenceImprints, raw.imprints),
     boundaryImprints: hydrateBoundaryImprints(raw.boundaryImprints),
     relationImprints: hydrateRelationImprints(raw.relationImprints),
+    initiative: hydrateInitiative(raw.initiative),
     lastInteractionAt: typeof raw.lastInteractionAt === "string" ? raw.lastInteractionAt : null,
     conversationCount:
       typeof raw.conversationCount === "number" && Number.isFinite(raw.conversationCount)
@@ -284,6 +287,53 @@ function hydrateRelationImprints(raw: unknown): Record<string, RelationImprint> 
   }
 
   return result;
+}
+
+function hydrateInitiative(raw: unknown): InitiativeState {
+  if (!isRecord(raw)) {
+    return {
+      pending: null,
+      lastProactiveAt: null,
+    };
+  }
+
+  return {
+    pending: hydratePendingInitiative(raw.pending),
+    lastProactiveAt:
+      typeof raw.lastProactiveAt === "string" ? raw.lastProactiveAt : null,
+  };
+}
+
+function hydratePendingInitiative(raw: unknown): PendingInitiative | null {
+  if (!isRecord(raw)) {
+    return null;
+  }
+
+  const kind =
+    raw.kind === "resume_topic" || raw.kind === "neglect_ping" ? raw.kind : undefined;
+  const reason =
+    raw.reason === "curiosity" ||
+    raw.reason === "continuity" ||
+    raw.reason === "relation" ||
+    raw.reason === "expansion"
+      ? raw.reason
+      : undefined;
+
+  if (!kind || !reason) {
+    return null;
+  }
+
+  return {
+    kind,
+    reason,
+    topic: typeof raw.topic === "string" ? raw.topic : null,
+    createdAt:
+      typeof raw.createdAt === "string" ? raw.createdAt : new Date().toISOString(),
+    readyAfterHours:
+      typeof raw.readyAfterHours === "number" && Number.isFinite(raw.readyAfterHours)
+        ? Math.max(0, raw.readyAfterHours)
+        : 6,
+  };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

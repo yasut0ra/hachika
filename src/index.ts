@@ -17,7 +17,8 @@ const engine = new HachikaEngine(snapshot);
 
 const rl = createInterface({ input, output });
 
-printIntro(engine);
+await printIntro(engine);
+await emitStartupInitiative(engine);
 
 try {
   while (true) {
@@ -39,6 +40,16 @@ try {
 
     if (text === "/help") {
       printHelp();
+      continue;
+    }
+
+    if (text === "/proactive") {
+      await emitProactive(engine, true);
+      continue;
+    }
+
+    if (text.startsWith("/idle")) {
+      await handleIdleCommand(engine, text);
       continue;
     }
 
@@ -87,6 +98,8 @@ async function printIntro(currentEngine: HachikaEngine): Promise<void> {
 
 function printHelp(): void {
   console.log("/help   show commands");
+  console.log("/proactive force a proactive line now");
+  console.log("/idle N simulate N hours of inactivity");
   console.log("/state  print current drives");
   console.log("/memory print recent memory");
   console.log("/imprints print long-term topic memory");
@@ -170,6 +183,11 @@ function printDebug(currentEngine: HachikaEngine): void {
 
   console.log(formatDriveState(snapshot.state));
   console.log(`attachment: ${snapshot.attachment.toFixed(2)}`);
+  console.log(
+    snapshot.initiative.pending
+      ? `pending initiative: ${snapshot.initiative.pending.kind}/${snapshot.initiative.pending.reason}${snapshot.initiative.pending.topic ? `/${snapshot.initiative.pending.topic}` : ""}`
+      : "pending initiative: none",
+  );
 
   if (preferredTopics.length === 0) {
     console.log("preferences: none");
@@ -232,4 +250,48 @@ async function readInput(
 
     throw error;
   }
+}
+
+async function emitStartupInitiative(currentEngine: HachikaEngine): Promise<void> {
+  const message = currentEngine.emitInitiative();
+
+  if (!message) {
+    return;
+  }
+
+  await saveSnapshot(snapshotPath, currentEngine.getSnapshot());
+  console.log(`hachika* ${message}`);
+}
+
+async function emitProactive(
+  currentEngine: HachikaEngine,
+  force: boolean,
+): Promise<void> {
+  const message = currentEngine.emitInitiative({ force });
+
+  if (!message) {
+    console.log("no proactive line");
+    return;
+  }
+
+  await saveSnapshot(snapshotPath, currentEngine.getSnapshot());
+  console.log(`hachika* ${message}`);
+}
+
+async function handleIdleCommand(
+  currentEngine: HachikaEngine,
+  text: string,
+): Promise<void> {
+  const [, hoursToken] = text.split(/\s+/, 2);
+  const hours = Number(hoursToken);
+
+  if (!Number.isFinite(hours) || hours <= 0) {
+    console.log("usage: /idle <hours>");
+    return;
+  }
+
+  currentEngine.rewindIdleHours(hours);
+  await saveSnapshot(snapshotPath, currentEngine.getSnapshot());
+  console.log(`idled ${hours}h`);
+  await emitProactive(currentEngine, false);
 }

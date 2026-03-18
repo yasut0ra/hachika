@@ -10,6 +10,11 @@ import {
   remember,
   topPreferredTopics,
 } from "./memory.js";
+import {
+  emitInitiative,
+  rewindSnapshotHours,
+  scheduleInitiative,
+} from "./initiative.js";
 import { clamp01, clampSigned, createInitialSnapshot, dominantDrive } from "./state.js";
 import type {
   DriveName,
@@ -177,12 +182,33 @@ export class HachikaEngine {
     this.#snapshot = structuredClone(snapshot);
   }
 
+  emitInitiative(options: { force?: boolean; now?: Date } = {}): string | null {
+    const nextSnapshot = structuredClone(this.#snapshot);
+    const emission = emitInitiative(nextSnapshot, options);
+
+    if (!emission) {
+      return null;
+    }
+
+    remember(nextSnapshot, "hachika", emission.message, emission.topics, "neutral");
+    this.#snapshot = nextSnapshot;
+
+    return emission.message;
+  }
+
+  rewindIdleHours(hours: number): void {
+    const nextSnapshot = structuredClone(this.#snapshot);
+    rewindSnapshotHours(nextSnapshot, hours);
+    this.#snapshot = nextSnapshot;
+  }
+
   respond(input: string): TurnResult {
     const signals = analyzeInteraction(input, this.#snapshot);
     const sentimentScore = scoreSentiment(signals);
     const nextSnapshot = applySignals(this.#snapshot, signals, sentimentScore);
     const mood = resolveMood(nextSnapshot, signals);
     const dominant = dominantDrive(nextSnapshot.state);
+    scheduleInitiative(nextSnapshot, signals, dominant);
     const reply = composeReply(this.#snapshot, nextSnapshot, mood, dominant, signals);
     const sentiment = classifySentiment(sentimentScore);
 

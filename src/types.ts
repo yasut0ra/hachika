@@ -55,6 +55,23 @@ export interface RelationImprint {
   lastSeenAt: string;
 }
 
+export type InitiativeKind = "resume_topic" | "neglect_ping";
+
+export type InitiativeReason = "curiosity" | "continuity" | "relation" | "expansion";
+
+export interface PendingInitiative {
+  kind: InitiativeKind;
+  reason: InitiativeReason;
+  topic: string | null;
+  createdAt: string;
+  readyAfterHours: number;
+}
+
+export interface InitiativeState {
+  pending: PendingInitiative | null;
+  lastProactiveAt: string | null;
+}
+
 export interface HachikaSnapshot {
   version: number;
   state: DriveState;
@@ -65,6 +82,7 @@ export interface HachikaSnapshot {
   preferenceImprints: Record<string, PreferenceImprint>;
   boundaryImprints: Record<string, BoundaryImprint>;
   relationImprints: Record<string, RelationImprint>;
+  initiative: InitiativeState;
   lastInteractionAt: string | null;
   conversationCount: number;
 }
