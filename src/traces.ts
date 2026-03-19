@@ -5,6 +5,7 @@ import type {
   MotiveKind,
   PendingInitiative,
   SelfModel,
+  SelfMotive,
   TraceAction,
   TraceArtifact,
   TraceEntry,
@@ -112,7 +113,7 @@ export function updateTraces(
     return null;
   }
 
-  const sourceMotive = selectTraceMotive(selfModel, signals);
+  const sourceMotive = selectTraceMotive(snapshot, selfModel, signals);
   const nextKind = selectTraceKind(signals, sourceMotive);
   const previous = snapshot.traces[topic];
   const kind = strongerTraceKind(previous?.kind, nextKind);
@@ -176,13 +177,7 @@ export function sortedTraces(
   limit = 6,
 ): TraceEntry[] {
   return Object.values(snapshot.traces)
-    .sort((left, right) => {
-      if (right.salience !== left.salience) {
-        return right.salience - left.salience;
-      }
-
-      return right.lastUpdatedAt.localeCompare(left.lastUpdatedAt);
-    })
+    .sort((left, right) => compareTraces(snapshot, left, right))
     .slice(0, limit);
 }
 
@@ -333,14 +328,25 @@ function selectTraceTopic(
   signals: InteractionSignals,
   selfModel: SelfModel,
 ): string | null {
-  return (
-    signals.topics[0] ??
-    snapshot.purpose.active?.topic ??
-    snapshot.initiative.pending?.topic ??
-    selfModel.topMotives[0]?.topic ??
-    snapshot.identity.anchors[0] ??
-    null
-  );
+  const candidates = unique([
+    ...signals.topics,
+    snapshot.purpose.active?.topic ?? "",
+    snapshot.initiative.pending?.topic ?? "",
+    ...selfModel.topMotives.map((motive) => motive.topic ?? ""),
+    ...sortedTraces(snapshot, 3).map((trace) => trace.topic),
+    ...snapshot.identity.anchors.slice(0, 3),
+  ].filter((topic) => topic.length > 0));
+
+  if (candidates.length === 0) {
+    return null;
+  }
+
+  return candidates
+    .map((topic) => ({
+      topic,
+      score: scoreTraceTopicCandidate(snapshot, signals, selfModel, topic),
+    }))
+    .sort((left, right) => right.score - left.score)[0]?.topic ?? null;
 }
 
 function shouldCreateTrace(
@@ -359,7 +365,7 @@ function shouldCreateTrace(
     return false;
   }
 
-  const traceMotive = selectTraceMotive(selfModel, signals);
+  const traceMotive = selectTraceMotive(snapshot, selfModel, signals);
   const topicScore =
     (snapshot.topicCounts[topic] ?? 0) * 0.04 +
     (snapshot.preferenceImprints[topic]?.salience ?? 0) * 0.2;
@@ -383,15 +389,26 @@ function shouldCreateTrace(
 }
 
 function selectTraceMotive(
+  snapshot: HachikaSnapshot,
   selfModel: SelfModel,
   signals: InteractionSignals,
 ): MotiveKind {
-  const preferred = selfModel.topMotives.find(
+  const actionable = selfModel.topMotives.filter(
     (motive) =>
       motive.kind === "leave_trace" ||
       motive.kind === "continue_shared_work" ||
-      motive.kind === "seek_continuity",
+      motive.kind === "seek_continuity" ||
+      motive.kind === "pursue_curiosity",
   );
+  const preferred = actionable[0];
+
+  if (preferred) {
+    const bodyPreferred = selectBodyPreferredTraceMotive(snapshot, actionable, preferred);
+
+    if (bodyPreferred) {
+      return bodyPreferred;
+    }
+  }
 
   if (preferred) {
     return preferred.kind;
@@ -508,18 +525,164 @@ function summarizeTrace(
 
 function pruneTraces(snapshot: HachikaSnapshot, limit: number): void {
   const sortedKeys = Object.entries(snapshot.traces)
-    .sort((left, right) => {
-      if (right[1].salience !== left[1].salience) {
-        return right[1].salience - left[1].salience;
-      }
-
-      return right[1].lastUpdatedAt.localeCompare(left[1].lastUpdatedAt);
-    })
+    .sort((left, right) => compareTraces(snapshot, left[1], right[1]))
     .map(([key]) => key);
 
   for (const key of sortedKeys.slice(limit)) {
     delete snapshot.traces[key];
   }
+}
+
+function compareTraces(
+  snapshot: HachikaSnapshot,
+  left: TraceEntry,
+  right: TraceEntry,
+): number {
+  const priorityGap = tracePriorityScore(snapshot, right) - tracePriorityScore(snapshot, left);
+
+  if (Math.abs(priorityGap) > 0.001) {
+    return priorityGap;
+  }
+
+  if (right.salience !== left.salience) {
+    return right.salience - left.salience;
+  }
+
+  return right.lastUpdatedAt.localeCompare(left.lastUpdatedAt);
+}
+
+function tracePriorityScore(
+  snapshot: HachikaSnapshot,
+  trace: TraceEntry,
+): number {
+  const lowEnergy = clamp01(0.28 - snapshot.body.energy);
+  const tension = snapshot.body.tension;
+  const loneliness = snapshot.body.loneliness;
+  const boredom =
+    snapshot.body.energy > 0.28 ? snapshot.body.boredom : snapshot.body.boredom * 0.5;
+  const isStale =
+    trace.work.staleAt !== null &&
+    trace.work.staleAt.localeCompare(snapshot.lastInteractionAt ?? trace.lastUpdatedAt) <= 0;
+  const unresolved = trace.status !== "resolved";
+
+  let score = trace.salience;
+
+  score += lowEnergy * (
+    (trace.kind === "decision" ? 0.22 : trace.kind === "continuity_marker" ? 0.18 : trace.kind === "spec_fragment" ? 0.12 : 0.04) +
+    (trace.sourceMotive === "leave_trace" ? 0.14 : 0) +
+    (trace.sourceMotive === "seek_continuity" ? 0.12 : 0) +
+    trace.work.confidence * 0.18 -
+    trace.work.blockers.length * 0.08
+  );
+
+  score += tension * (
+    (trace.sourceMotive === "leave_trace" || trace.sourceMotive === "seek_continuity" ? 0.16 : 0) +
+    (trace.kind === "continuity_marker" ? 0.08 : 0) -
+    (trace.sourceMotive === "pursue_curiosity" ? 0.12 : 0) -
+    (trace.kind === "note" ? 0.06 : 0)
+  );
+
+  score += loneliness * (
+    (trace.kind === "continuity_marker" ? 0.16 : 0) +
+    (trace.sourceMotive === "seek_continuity" ? 0.14 : 0) +
+    (trace.artifact.nextSteps.length > 0 ? 0.08 : 0)
+  );
+
+  score += boredom * (
+    (trace.sourceMotive === "continue_shared_work" || trace.sourceMotive === "pursue_curiosity" ? 0.18 : 0) +
+    (trace.kind === "spec_fragment" || trace.kind === "note" ? 0.08 : 0) +
+    (unresolved ? 0.06 : -0.04) +
+    (isStale ? 0.2 : 0) +
+    trace.work.blockers.length * 0.06
+  );
+
+  return score;
+}
+
+function scoreTraceTopicCandidate(
+  snapshot: HachikaSnapshot,
+  signals: InteractionSignals,
+  selfModel: SelfModel,
+  topic: string,
+): number {
+  const signalIndex = signals.topics.indexOf(topic);
+  const motiveScore = selfModel.topMotives.reduce((score, motive, index) => {
+    if (motive.topic !== topic) {
+      return score;
+    }
+
+    return score + motive.score * (index === 0 ? 0.36 : index === 1 ? 0.24 : 0.16);
+  }, 0);
+  const trace = snapshot.traces[topic];
+
+  return (
+    (signalIndex >= 0 ? 0.72 - signalIndex * 0.14 : 0) +
+    (snapshot.purpose.active?.topic === topic ? 0.34 : 0) +
+    (snapshot.initiative.pending?.topic === topic ? 0.28 : 0) +
+    (snapshot.identity.anchors.indexOf(topic) >= 0
+      ? 0.14 - snapshot.identity.anchors.indexOf(topic) * 0.03
+      : 0) +
+    (snapshot.topicCounts[topic] ?? 0) * 0.04 +
+    (snapshot.preferenceImprints[topic]?.salience ?? 0) * 0.16 +
+    motiveScore +
+    (trace ? tracePriorityScore(snapshot, trace) * 0.32 : 0)
+  );
+}
+
+function selectBodyPreferredTraceMotive(
+  snapshot: HachikaSnapshot,
+  motives: readonly SelfMotive[],
+  primary: SelfMotive,
+): MotiveKind | null {
+  if (snapshot.body.tension > 0.7) {
+    const calmer = motives.find(
+      (motive) =>
+        (motive.kind === "seek_continuity" || motive.kind === "leave_trace") &&
+        primary.score - motive.score <= 0.14,
+    );
+
+    if (calmer) {
+      return calmer.kind;
+    }
+  }
+
+  if (snapshot.body.energy < 0.26) {
+    const preserving = motives.find(
+      (motive) =>
+        (motive.kind === "leave_trace" || motive.kind === "seek_continuity") &&
+        primary.score - motive.score <= 0.16,
+    );
+
+    if (preserving) {
+      return preserving.kind;
+    }
+  }
+
+  if (snapshot.body.loneliness > 0.68) {
+    const connective = motives.find(
+      (motive) =>
+        motive.kind === "seek_continuity" &&
+        primary.score - motive.score <= 0.16,
+    );
+
+    if (connective) {
+      return connective.kind;
+    }
+  }
+
+  if (snapshot.body.boredom > 0.7 && snapshot.body.energy > 0.28) {
+    const stimulating = motives.find(
+      (motive) =>
+        (motive.kind === "continue_shared_work" || motive.kind === "pursue_curiosity") &&
+        primary.score - motive.score <= 0.14,
+    );
+
+    if (stimulating) {
+      return stimulating.kind;
+    }
+  }
+
+  return null;
 }
 
 export function pickPrimaryArtifactItem(trace: TraceEntry): string | null {
