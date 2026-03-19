@@ -209,7 +209,9 @@ Hachika は、単に有用なだけでなく、
 - `continuity / pleasure / curiosity / relation / expansion` の内部状態を保持する
 - `energy / tension / boredom / loneliness` の身体的な内部状態を保持する
 - `attachment` を長期的な関係指標として保持する
-- ユーザー入力を簡易的な相互作用イベントに変換し、状態を更新する
+- ユーザー入力を相互作用イベントに変換し、状態を更新する
+  - rule-based な signal 抽出に加えて、OpenAI 互換の `input interpreter` を使えば greeting / smalltalk / repair / self-inquiry / work を LLM で正規化できる
+  - 挨拶や相槌のような低情報入力を topic / trace として扱いにくくし、雑談や自己開示要求を stale work と切り分けやすくしている
 - トピックごとの好み、短期記憶、長期記憶の痕跡を保持する
   - 長期記憶は `preference / boundary / relation` の3系統に分けて保持する
 - 放置後の反応や話題の再開を、能動行動レイヤーとして扱う
@@ -241,6 +243,7 @@ Hachika は、単に有用なだけでなく、
 - `scenario harness` により、複数ターンの対話シナリオを fixture として検証できる
   - active purpose の継続と解決、blocker maintenance、archive/reopen、preservation threat、body drift による wording 変化を長めの回帰テストとして固定している
   - async scenario では LLM adapter の `reply / proactive` fallback でも local state 更新と maintenance が保たれることを検証している
+- async reply では optional な `input interpreter` を通せるため、挨拶・雑談・関係修復・自己質問が stale trace や弱い topic に吸われにくい
 - OpenAI 互換の `reply generator` を env から有効化でき、local engine が決めた state / motive / purpose / traces を保ったまま通常応答と能動発話の wording だけを LLM に委譲できる
   - adapter が失敗した場合や空文字を返した場合は rule-based wording に fallback する
   - 直近の生成が `reply` か `proactive` か、`llm` か `rule` か、どの provider / model を使ったか、fallback したかも CLI から確認できる
@@ -263,14 +266,14 @@ LLM wording を有効にする場合:
 cp .env.example .env
 ```
 
-`.env` に `OPENAI_API_KEY` を入れると、CLI は rule wording の代わりに OpenAI reply generator を使います。  
-モデルは `OPENAI_MODEL` で切り替えられ、未設定時は `gpt-5-mini` を使います。
+`.env` に `OPENAI_API_KEY` を入れると、CLI は OpenAI reply generator と input interpreter を使います。  
+返答のモデルは `OPENAI_MODEL`、入力解釈だけ別に変えたい場合は `OPENAI_INTERPRETER_MODEL` を使えます。未設定時はどちらも `gpt-5-mini` です。
 
 主なコマンド:
 
 - `/help` コマンド一覧を表示
 - `/proactive` 能動発話を強制的に出す
-- `/llm` 現在の reply generator と直近の `reply/proactive` diagnostics を表示
+- `/llm` 現在の reply generator / input interpreter と直近の `reply/proactive` diagnostics を表示
 - `/idle <hours>` 指定時間だけ放置された状態をシミュレートする
 - `/state` 現在の drive 状態を表示
 - `/body` 現在の body 状態を表示

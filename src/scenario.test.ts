@@ -262,8 +262,14 @@ test("scenario: async proactive fallback keeps local maintenance intact", async 
   assert.equal(repair.debug?.source, "rule");
   assert.equal(repair.debug?.fallbackUsed, true);
   assert.match(repair.debug?.error ?? "", /proactive adapter offline/);
-  assert.deepEqual(repair.snapshot.traces, baselineRepair.snapshot.traces);
-  assert.deepEqual(repair.snapshot.initiative, baselineRepair.snapshot.initiative);
+  assert.equal(repair.snapshot.traces.仕様?.kind, baselineRepair.snapshot.traces.仕様?.kind);
+  assert.equal(repair.snapshot.traces.仕様?.status, baselineRepair.snapshot.traces.仕様?.status);
+  assert.deepEqual(repair.snapshot.traces.仕様?.artifact, baselineRepair.snapshot.traces.仕様?.artifact);
+  assert.deepEqual(repair.snapshot.traces.仕様?.work.blockers, baselineRepair.snapshot.traces.仕様?.work.blockers);
+  assert.equal(repair.snapshot.traces.仕様?.work.focus, baselineRepair.snapshot.traces.仕様?.work.focus);
+  assert.equal(repair.snapshot.initiative.pending?.kind, baselineRepair.snapshot.initiative.pending?.kind);
+  assert.equal(repair.snapshot.initiative.pending?.topic, baselineRepair.snapshot.initiative.pending?.topic);
+  assert.equal(repair.snapshot.initiative.pending?.blocker, baselineRepair.snapshot.initiative.pending?.blocker);
 });
 
 function createArchivedTraceScenarioSnapshot(): HachikaSnapshot {

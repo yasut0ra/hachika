@@ -5,6 +5,7 @@ import { stdin as input, stdout as output } from "node:process";
 import { describeArtifactFiles, syncArtifacts } from "./artifacts.js";
 import { HachikaEngine } from "./engine.js";
 import { loadDotEnv } from "./env.js";
+import { createInputInterpreterFromEnv, describeInputInterpreter } from "./input-interpreter.js";
 import {
   sortedBoundaryImprints,
   sortedPreferenceImprints,
@@ -27,6 +28,7 @@ loadDotEnv();
 const snapshot = await loadSnapshot(snapshotPath);
 const engine = new HachikaEngine(snapshot);
 const replyGenerator = createReplyGeneratorFromEnv();
+const inputInterpreter = createInputInterpreterFromEnv();
 
 const rl = createInterface({ input, output });
 
@@ -130,7 +132,7 @@ try {
     }
 
     const result = replyGenerator
-      ? await engine.respondAsync(text, { replyGenerator })
+      ? await engine.respondAsync(text, { replyGenerator, inputInterpreter })
       : engine.respond(text);
     await persistState(engine);
 
@@ -148,6 +150,7 @@ async function printIntro(currentEngine: HachikaEngine): Promise<void> {
   console.log(`attachment:${currentEngine.getSnapshot().attachment.toFixed(2)}`);
   console.log(`identity:${currentEngine.getIdentity().summary}`);
   console.log(`reply:${describeReplyGenerator(replyGenerator)}`);
+  console.log(`interpret:${describeInputInterpreter(inputInterpreter)}`);
   console.log(`last reply:${formatLastReplyDebug(currentEngine)}`);
   console.log(`artifacts:${describeArtifactFiles(currentEngine.getSnapshot(), artifactsDir).length}`);
 }
@@ -192,6 +195,7 @@ function printBody(currentEngine: HachikaEngine): void {
 
 function printReplyGeneratorStatus(): void {
   console.log(`reply:${describeReplyGenerator(replyGenerator)}`);
+  console.log(`interpret:${describeInputInterpreter(inputInterpreter)}`);
   console.log(`last reply:${formatLastReplyDebug(engine)}`);
 }
 
@@ -327,6 +331,7 @@ function printDebug(currentEngine: HachikaEngine): void {
   console.log(formatBodyState(snapshot.body));
   console.log(`attachment: ${snapshot.attachment.toFixed(2)}`);
   console.log(`reply generator: ${describeReplyGenerator(replyGenerator)}`);
+  console.log(`input interpreter: ${describeInputInterpreter(inputInterpreter)}`);
   console.log(`last reply: ${formatLastReplyDebug(currentEngine)}`);
   console.log(
     `preservation: ${snapshot.preservation.threat.toFixed(2)}${snapshot.preservation.concern ? `/${snapshot.preservation.concern}` : ""}`,

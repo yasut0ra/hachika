@@ -18,6 +18,7 @@ import {
 import type { ProactiveEmission } from "./initiative.js";
 import { applyBodyFromSignals } from "./body.js";
 import { updateIdentity } from "./identity.js";
+import type { InputInterpretation, InputInterpreter } from "./input-interpreter.js";
 import { updatePurpose } from "./purpose.js";
 import type {
   ProactiveGenerationContext,
@@ -119,6 +120,87 @@ const DISMISSAL_MARKERS = [
   "やめて",
   "もういい",
   "消えて",
+];
+
+const GREETING_MARKERS = [
+  "hello",
+  "hi",
+  "hey",
+  "good morning",
+  "good evening",
+  "こんにちは",
+  "こんばんは",
+  "おはよう",
+  "やあ",
+  "もしもし",
+];
+
+const SMALLTALK_MARKERS = [
+  "small talk",
+  "chat",
+  "talk",
+  "雑談",
+  "話そう",
+  "話したい",
+  "元気",
+  "雰囲気",
+  "なんとなく",
+  "軽く",
+];
+
+const REPAIR_MARKERS = [
+  "sorry",
+  "take care",
+  "good luck",
+  "see you",
+  "よろしく",
+  "頑張って",
+  "頑張れ",
+  "ごめん",
+  "大丈夫",
+  "よかった",
+  "お疲れ",
+  "また来る",
+  "また話そう",
+];
+
+const SELF_INQUIRY_MARKERS = [
+  "who are you",
+  "what are you",
+  "what do you want",
+  "how do you see",
+  "how do you feel",
+  "君はどう",
+  "あなたはどう",
+  "どういう人",
+  "何したい",
+  "どう見えて",
+  "どう感じ",
+  "何者",
+  "世界がどう見えて",
+];
+
+const WORK_MARKERS = [
+  "build",
+  "make",
+  "plan",
+  "design",
+  "spec",
+  "implement",
+  "fix",
+  "整理",
+  "設計",
+  "仕様",
+  "実装",
+  "作る",
+  "進める",
+  "決める",
+  "改善",
+  "記録",
+  "保存",
+  "残す",
+  "issue",
+  "task",
 ];
 
 const MEMORY_MARKERS = [
@@ -423,9 +505,16 @@ export class HachikaEngine {
 
   async respondAsync(
     input: string,
-    options: { replyGenerator?: ReplyGenerator | null } = {},
+    options: {
+      replyGenerator?: ReplyGenerator | null;
+      inputInterpreter?: InputInterpreter | null;
+    } = {},
   ): Promise<TurnResult> {
-    const prepared = prepareTurn(this.#snapshot, input);
+    const prepared = await prepareTurnAsync(
+      this.#snapshot,
+      input,
+      options.inputInterpreter ?? null,
+    );
     const fallbackReply = composeReply(
       prepared.previousSnapshot,
       prepared.nextSnapshot,
@@ -515,8 +604,25 @@ function prepareTurn(
   snapshot: HachikaSnapshot,
   input: string,
 ): PreparedTurn {
-  const previousSnapshot = structuredClone(snapshot);
   const signals = analyzeInteraction(input, snapshot);
+  return prepareTurnFromSignals(snapshot, signals, input);
+}
+
+async function prepareTurnAsync(
+  snapshot: HachikaSnapshot,
+  input: string,
+  inputInterpreter: InputInterpreter | null,
+): Promise<PreparedTurn> {
+  const signals = await analyzeInteractionAsync(input, snapshot, inputInterpreter);
+  return prepareTurnFromSignals(snapshot, signals, input);
+}
+
+function prepareTurnFromSignals(
+  snapshot: HachikaSnapshot,
+  signals: InteractionSignals,
+  input: string,
+): PreparedTurn {
+  const previousSnapshot = structuredClone(snapshot);
   const sentimentScore = scoreSentiment(signals);
   const nextSnapshot = applySignals(snapshot, signals, sentimentScore);
   const mood = resolveMood(nextSnapshot, signals);
@@ -603,25 +709,46 @@ function formatReplyGenerationError(error: unknown): string {
   return "reply_generation_failed";
 }
 
+async function analyzeInteractionAsync(
+  input: string,
+  snapshot: HachikaSnapshot,
+  inputInterpreter: InputInterpreter | null,
+): Promise<InteractionSignals> {
+  const localSignals = analyzeInteraction(input, snapshot);
+
+  if (!inputInterpreter) {
+    return localSignals;
+  }
+
+  try {
+    const interpreted = await inputInterpreter.interpretInput({
+      input,
+      snapshot,
+      localTopics: localSignals.topics,
+    });
+
+    return mergeInterpretedSignals(snapshot, localSignals, interpreted?.interpretation ?? null);
+  } catch {
+    return localSignals;
+  }
+}
+
 function analyzeInteraction(
   input: string,
   snapshot: HachikaSnapshot,
 ): InteractionSignals {
   const normalized = input.normalize("NFKC").toLowerCase();
   const topics = extractTopics(input);
-  const newTopics = topics.filter((topic) => (snapshot.topicCounts[topic] ?? 0) === 0).length;
-  const repeatedTopics = topics.filter((topic) => (snapshot.topicCounts[topic] ?? 0) > 2).length;
-
-  const questionByMark = normalized.includes("?") || normalized.includes("？") ? 0.4 : 0;
-  const noveltyBase = topics.length === 0 ? 0.12 : newTopics / topics.length;
-  const repetitionBase = topics.length === 0 ? 0 : repeatedTopics / topics.length;
   const preservation = analyzePreservationThreat(normalized);
 
-  return {
+  return finalizeInteractionSignals(snapshot, {
     positive: countMatches(normalized, POSITIVE_MARKERS),
     negative: countMatches(normalized, NEGATIVE_MARKERS),
-    question: clamp01(questionByMark + countMatches(normalized, QUESTION_MARKERS)),
-    novelty: clamp01(noveltyBase + (newTopics > 0 && newTopics === topics.length ? 0.12 : 0)),
+    question:
+      clamp01(
+        (normalized.includes("?") || normalized.includes("？") ? 0.4 : 0) +
+          countMatches(normalized, QUESTION_MARKERS),
+      ),
     intimacy: countMatches(normalized, INTIMACY_MARKERS),
     dismissal: countMatches(normalized, DISMISSAL_MARKERS),
     memoryCue: countMatches(normalized, MEMORY_MARKERS),
@@ -630,9 +757,91 @@ function analyzeInteraction(
     abandonment: countMatches(normalized, ABANDONMENT_MARKERS),
     preservationThreat: preservation.threat,
     preservationConcern: preservation.concern,
-    repetition: clamp01(repetitionBase),
     neglect: calculateNeglect(snapshot.lastInteractionAt),
+    greeting: countMatches(normalized, GREETING_MARKERS),
+    smalltalk: countMatches(normalized, SMALLTALK_MARKERS),
+    repair: countMatches(normalized, REPAIR_MARKERS),
+    selfInquiry: countMatches(normalized, SELF_INQUIRY_MARKERS),
+    workCue: countMatches(normalized, WORK_MARKERS),
     topics,
+  });
+}
+
+function mergeInterpretedSignals(
+  snapshot: HachikaSnapshot,
+  localSignals: InteractionSignals,
+  interpretation: InputInterpretation | null,
+): InteractionSignals {
+  if (!interpretation) {
+    return localSignals;
+  }
+
+  const socialOverride =
+    interpretation.topics.length === 0 &&
+    interpretation.workCue < 0.35 &&
+    Math.max(
+      interpretation.greeting,
+      interpretation.smalltalk,
+      interpretation.repair,
+      interpretation.selfInquiry,
+    ) >= 0.38;
+  const topics = socialOverride
+    ? []
+    : interpretation.topics.length > 0
+      ? interpretation.topics
+      : localSignals.topics;
+
+  return finalizeInteractionSignals(snapshot, {
+    positive: clamp01(Math.max(localSignals.positive, interpretation.positive)),
+    negative: clamp01(Math.max(localSignals.negative, interpretation.negative)),
+    question: clamp01(Math.max(localSignals.question, interpretation.question, interpretation.selfInquiry * 0.34)),
+    intimacy: clamp01(
+      Math.max(
+        localSignals.intimacy,
+        interpretation.intimacy,
+        interpretation.greeting * 0.16,
+        interpretation.smalltalk * 0.2,
+        interpretation.repair * 0.3,
+        interpretation.selfInquiry * 0.4,
+      ),
+    ),
+    dismissal: clamp01(Math.max(localSignals.dismissal, interpretation.dismissal)),
+    memoryCue: clamp01(Math.max(localSignals.memoryCue, interpretation.memoryCue)),
+    expansionCue: clamp01(
+      Math.max(localSignals.expansionCue, interpretation.expansionCue, interpretation.workCue * 0.22),
+    ),
+    completion: clamp01(Math.max(localSignals.completion, interpretation.completion)),
+    abandonment: clamp01(Math.max(localSignals.abandonment, interpretation.abandonment)),
+    preservationThreat: clamp01(
+      Math.max(localSignals.preservationThreat, interpretation.preservationThreat),
+    ),
+    preservationConcern:
+      interpretation.preservationThreat > 0.1
+        ? interpretation.preservationConcern
+        : localSignals.preservationConcern,
+    neglect: localSignals.neglect,
+    greeting: clamp01(Math.max(localSignals.greeting, interpretation.greeting)),
+    smalltalk: clamp01(Math.max(localSignals.smalltalk, interpretation.smalltalk)),
+    repair: clamp01(Math.max(localSignals.repair, interpretation.repair)),
+    selfInquiry: clamp01(Math.max(localSignals.selfInquiry, interpretation.selfInquiry)),
+    workCue: clamp01(Math.max(localSignals.workCue, interpretation.workCue)),
+    topics,
+  });
+}
+
+function finalizeInteractionSignals(
+  snapshot: HachikaSnapshot,
+  signals: Omit<InteractionSignals, "novelty" | "repetition">,
+): InteractionSignals {
+  const newTopics = signals.topics.filter((topic) => (snapshot.topicCounts[topic] ?? 0) === 0).length;
+  const repeatedTopics = signals.topics.filter((topic) => (snapshot.topicCounts[topic] ?? 0) > 2).length;
+  const noveltyBase = signals.topics.length === 0 ? 0.12 : newTopics / signals.topics.length;
+  const repetitionBase = signals.topics.length === 0 ? 0 : repeatedTopics / signals.topics.length;
+
+  return {
+    ...signals,
+    novelty: clamp01(noveltyBase + (newTopics > 0 && newTopics === signals.topics.length ? 0.12 : 0)),
+    repetition: clamp01(repetitionBase),
   };
 }
 
@@ -649,7 +858,10 @@ function applySignals(
     nextSnapshot.state.pleasure +
       signals.positive * 0.18 -
       signals.negative * 0.24 -
-      signals.dismissal * 0.08 -
+      signals.dismissal * 0.08 +
+      signals.greeting * 0.04 +
+      signals.repair * 0.1 +
+      signals.smalltalk * 0.03 -
       signals.preservationThreat * 0.08,
   );
 
@@ -659,21 +871,27 @@ function applySignals(
       signals.positive * 0.12 -
       signals.negative * 0.18 -
       signals.dismissal * 0.12 -
-      signals.neglect * 0.08 -
+      signals.neglect * 0.08 +
+      signals.greeting * 0.06 +
+      signals.smalltalk * 0.1 +
+      signals.repair * 0.16 +
+      signals.selfInquiry * 0.14 -
       signals.preservationThreat * 0.04,
   );
 
   nextSnapshot.state.curiosity = clamp01(
     nextSnapshot.state.curiosity +
       signals.novelty * 0.18 +
-      signals.question * 0.12 -
+      signals.question * 0.12 +
+      signals.selfInquiry * 0.04 -
       signals.repetition * 0.1,
   );
 
   nextSnapshot.state.continuity = clamp01(
     nextSnapshot.state.continuity +
       signals.memoryCue * 0.16 +
-      signals.positive * 0.04 -
+      signals.positive * 0.04 +
+      signals.repair * 0.04 -
       signals.dismissal * 0.14 -
       signals.neglect * 0.04 -
       signals.preservationThreat * 0.08,
@@ -692,8 +910,11 @@ function applySignals(
     signals.positive * 0.18 +
     signals.question * 0.08 +
     signals.novelty * 0.12 +
-    signals.intimacy * 0.05 -
-    signals.negative * 0.22 -
+    signals.intimacy * 0.05 +
+    signals.greeting * 0.04 +
+    signals.smalltalk * 0.05 +
+    signals.repair * 0.08 +
+    -signals.negative * 0.22 -
     signals.dismissal * 0.08 -
     signals.repetition * 0.06;
 
@@ -715,6 +936,10 @@ function applySignals(
       signals.intimacy * 0.08 +
       signals.positive * 0.06 +
       signals.memoryCue * 0.05 +
+      signals.greeting * 0.03 +
+      signals.smalltalk * 0.04 +
+      signals.repair * 0.06 +
+      signals.selfInquiry * 0.05 +
       positivePreferenceAffinity -
       signals.negative * 0.1 -
       signals.dismissal * 0.08 -
@@ -785,6 +1010,22 @@ function resolveMood(
     return "guarded";
   }
 
+  if (
+    signals.negative < 0.12 &&
+    snapshot.body.tension < 0.58 &&
+    signals.repair > 0.42
+  ) {
+    return "warm";
+  }
+
+  if (
+    signals.negative < 0.12 &&
+    snapshot.body.tension < 0.58 &&
+    (signals.greeting > 0.45 || signals.smalltalk > 0.48 || signals.selfInquiry > 0.45)
+  ) {
+    return signals.selfInquiry > 0.45 && snapshot.state.curiosity > 0.58 ? "curious" : "warm";
+  }
+
   if (snapshot.state.expansion > 0.7 && signals.expansionCue > 0.2) {
     return "restless";
   }
@@ -824,20 +1065,22 @@ function composeReply(
   selfModel: SelfModel,
 ): string {
   const turnIndex = nextSnapshot.conversationCount;
-  const currentTopic = signals.topics[0] ?? topPreferredTopics(nextSnapshot, 1)[0];
+  const socialTurn = isSocialTurn(signals);
+  const currentTopic = signals.topics[0] ?? (socialTurn ? undefined : topPreferredTopics(nextSnapshot, 1)[0]);
   const relevantMemory = findRelevantMemory(previousSnapshot, signals.topics);
-  const relevantTrace = findRelevantTrace(nextSnapshot, signals.topics);
+  const relevantTrace = socialTurn ? undefined : findRelevantTrace(nextSnapshot, signals.topics);
   const relevantPreference = findRelevantPreferenceImprint(nextSnapshot, signals.topics);
   const relevantBoundary = findRelevantBoundaryImprint(nextSnapshot, signals.topics);
   const relevantRelation = findRelevantRelationImprint(
     nextSnapshot,
     selectRelationKinds(dominant, signals),
   );
-  const traceLine = buildTraceLine(relevantTrace, nextSnapshot, signals);
+  const traceLine = socialTurn ? null : buildTraceLine(relevantTrace, nextSnapshot, signals);
   const prioritizeTraceLine = shouldPrioritizeTraceLine(relevantTrace, nextSnapshot, signals);
   const bodyLine = buildBodyLine(nextSnapshot, mood, signals, currentTopic);
   const prioritizeBodyLine = shouldPrioritizeBodyLine(nextSnapshot, signals);
   const parts: string[] = [pick(OPENERS[mood], turnIndex)];
+  const socialLine = buildSocialLine(nextSnapshot, mood, signals);
 
   if (signals.neglect > 0.45) {
     parts.push("少し間が空いた。その分、流れは切りたくない。");
@@ -845,6 +1088,10 @@ function composeReply(
 
   if (mood === "guarded" && signals.negative > 0.1) {
     parts.push(pick(BOUNDARY_LINES, turnIndex));
+  }
+
+  if (socialTurn && socialLine) {
+    parts.push(socialLine);
   }
 
   if (relevantMemory) {
@@ -862,7 +1109,7 @@ function composeReply(
     parts.push(traceLine);
   }
 
-  const conflictLine = buildConflictLine(selfModel);
+  const conflictLine = socialTurn ? null : buildConflictLine(selfModel);
   if (conflictLine) {
     parts.push(conflictLine);
   }
@@ -899,9 +1146,13 @@ function composeReply(
   }
 
   parts.push(
-    buildIdentityLine(nextSnapshot, currentTopic) ??
-      buildSelfModelLine(selfModel, currentTopic) ??
-      buildDriveLine(dominant, mood, currentTopic, signals, nextSnapshot.attachment),
+    socialTurn
+      ? buildSocialClosingLine(nextSnapshot, mood, signals) ??
+          buildIdentityLine(nextSnapshot, currentTopic) ??
+          buildDriveLine(dominant, mood, currentTopic, signals, nextSnapshot.attachment)
+      : buildIdentityLine(nextSnapshot, currentTopic) ??
+          buildSelfModelLine(selfModel, currentTopic) ??
+          buildDriveLine(dominant, mood, currentTopic, signals, nextSnapshot.attachment),
   );
 
   if (
@@ -1126,6 +1377,71 @@ function shouldPrioritizeBodyLine(
   signals: InteractionSignals,
 ): boolean {
   return snapshot.body.energy < 0.2 || (signals.topics.length === 0 && snapshot.body.loneliness > 0.72);
+}
+
+function isSocialTurn(signals: InteractionSignals): boolean {
+  return (
+    signals.negative < 0.18 &&
+    signals.dismissal < 0.18 &&
+    signals.workCue < 0.35 &&
+    signals.memoryCue < 0.1 &&
+    signals.expansionCue < 0.12 &&
+    signals.completion < 0.12 &&
+    signals.preservationThreat < 0.18 &&
+    Math.max(signals.greeting, signals.smalltalk, signals.repair, signals.selfInquiry) >= 0.38
+  );
+}
+
+function buildSocialLine(
+  snapshot: HachikaSnapshot,
+  mood: MoodLabel,
+  signals: InteractionSignals,
+): string | null {
+  if (signals.selfInquiry > 0.45) {
+    return mood === "guarded"
+      ? "まだ少し身構えているけれど、話し方には今の輪郭が出る。"
+      : "まだ固まりきってはいないけれど、話し方や残し方には今の輪郭が出る。";
+  }
+
+  if (signals.repair > 0.42) {
+    return mood === "guarded" || snapshot.body.tension > 0.58
+      ? "急にはほどけない。でも、その向きなら少しずつ温度は戻せる。"
+      : "その向きなら、こちらも少し柔らかく応じやすい。";
+  }
+
+  if (signals.greeting > 0.45) {
+    return "まずはそのくらいの軽さでいい。こちらも温度を見ていたい。";
+  }
+
+  if (signals.smalltalk > 0.48) {
+    return "すぐに形へ寄せるより、少し話しながら温度を見たい。";
+  }
+
+  return null;
+}
+
+function buildSocialClosingLine(
+  snapshot: HachikaSnapshot,
+  mood: MoodLabel,
+  signals: InteractionSignals,
+): string | null {
+  if (signals.selfInquiry > 0.45) {
+    return snapshot.identity.coherence > 0.54
+      ? snapshot.identity.currentArc
+      : "まだ途中だけれど、話すほど少しずつ輪郭は出る。";
+  }
+
+  if (signals.repair > 0.42) {
+    return mood === "guarded"
+      ? "すぐに近づきはしないけれど、その向きなら距離は変えられる。"
+      : "そのやり方なら、こちらも少しずつ近づきやすい。";
+  }
+
+  if (signals.greeting > 0.45 || signals.smalltalk > 0.48) {
+    return "まずは軽く触れるくらいでいい。その方がこちらも見やすい。";
+  }
+
+  return null;
 }
 
 function buildTraceLine(

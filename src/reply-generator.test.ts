@@ -91,6 +91,11 @@ test("buildReplyGenerationPayload surfaces fallback intent and internal state su
       preservationConcern: null,
       repetition: 0,
       neglect: 0,
+      greeting: 0,
+      smalltalk: 0,
+      repair: 0,
+      selfInquiry: 0,
+      workCue: 0,
       topics: ["設計"],
     },
     selfModel: {

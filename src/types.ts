@@ -230,6 +230,11 @@ export interface InteractionSignals {
   preservationConcern: PreservationConcern | null;
   repetition: number;
   neglect: number;
+  greeting: number;
+  smalltalk: number;
+  repair: number;
+  selfInquiry: number;
+  workCue: number;
   topics: string[];
 }
 

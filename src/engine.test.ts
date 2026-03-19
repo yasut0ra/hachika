@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { HachikaEngine } from "./engine.js";
+import type { InputInterpreter } from "./input-interpreter.js";
 import { createInitialSnapshot } from "./state.js";
 import type {
   ProactiveGenerationContext,
@@ -969,6 +970,47 @@ test("respondAsync can use an external reply generator while keeping local state
   assert.ok(result.snapshot.attachment > before.attachment);
 });
 
+test("respondAsync can use an input interpreter to keep greetings non-topical", async () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+
+  const inputInterpreter: InputInterpreter = {
+    name: "test-interpreter",
+    async interpretInput() {
+      return {
+        provider: "test-interpreter",
+        model: "stub",
+        interpretation: {
+          topics: [],
+          positive: 0.08,
+          negative: 0,
+          question: 0,
+          intimacy: 0.14,
+          dismissal: 0,
+          memoryCue: 0,
+          expansionCue: 0,
+          completion: 0,
+          abandonment: 0,
+          preservationThreat: 0,
+          preservationConcern: null,
+          greeting: 0.92,
+          smalltalk: 0.68,
+          repair: 0,
+          selfInquiry: 0,
+          workCue: 0,
+        },
+      };
+    },
+  };
+
+  const result = await engine.respondAsync("こんにちは", { inputInterpreter });
+
+  assert.deepEqual(result.debug.signals.topics, []);
+  assert.ok(result.debug.signals.greeting > 0.8);
+  assert.ok(result.debug.signals.smalltalk > 0.5);
+  assert.equal(Object.keys(result.snapshot.traces).length, 0);
+  assert.ok(result.snapshot.state.relation >= createInitialSnapshot().state.relation);
+});
+
 test("respondAsync falls back to the rule reply when the generator fails", async () => {
   const engine = new HachikaEngine(createInitialSnapshot());
 
@@ -992,6 +1034,30 @@ test("respondAsync falls back to the rule reply when the generator fails", async
   assert.match(result.debug.reply.error ?? "", /adapter offline/);
   assert.equal(engine.getLastReplyDebug()?.source, "rule");
   assert.equal(engine.getLastReplyDebug()?.fallbackUsed, true);
+});
+
+test("respondAsync falls back to local analysis when the input interpreter fails", async () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+
+  const ruleResult = engine.respond("仕様を記録として残したい。");
+  engine.reset(createInitialSnapshot());
+
+  const inputInterpreter: InputInterpreter = {
+    name: "broken-interpreter",
+    async interpretInput() {
+      throw new Error("input interpreter offline");
+    },
+  };
+
+  const result = await engine.respondAsync("仕様を記録として残したい。", {
+    inputInterpreter,
+  });
+
+  assert.equal(result.reply, ruleResult.reply);
+  assert.deepEqual(result.debug.signals.topics, ruleResult.debug.signals.topics);
+  assert.equal(result.snapshot.purpose.active?.kind, ruleResult.snapshot.purpose.active?.kind);
+  assert.equal(result.snapshot.purpose.active?.topic, ruleResult.snapshot.purpose.active?.topic);
+  assert.equal(result.snapshot.traces.仕様?.kind, ruleResult.snapshot.traces.仕様?.kind);
 });
 
 test("reset clears the last reply diagnostics", async () => {

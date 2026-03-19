@@ -14,6 +14,9 @@ export function applyBodyFromSignals(
         signals.intimacy * 0.04 +
         signals.novelty * 0.08 +
         signals.question * 0.04 +
+        signals.greeting * 0.04 +
+        signals.smalltalk * 0.03 +
+        signals.repair * 0.06 +
         signals.expansionCue * 0.06 -
         signals.negative * 0.16 -
         signals.dismissal * 0.08 -
@@ -28,6 +31,8 @@ export function applyBodyFromSignals(
         signals.preservationThreat * 0.16 +
         signals.neglect * 0.06 -
         signals.positive * 0.06 -
+        signals.greeting * 0.03 -
+        signals.repair * 0.08 -
         signals.intimacy * 0.04 -
         signals.question * 0.03,
     ),
@@ -37,6 +42,8 @@ export function applyBodyFromSignals(
         signals.neglect * 0.08 -
         signals.novelty * 0.18 -
         signals.question * 0.08 -
+        signals.smalltalk * 0.02 -
+        signals.selfInquiry * 0.04 -
         signals.expansionCue * 0.06 -
         signals.memoryCue * 0.04,
     ),
@@ -46,6 +53,10 @@ export function applyBodyFromSignals(
         signals.dismissal * 0.1 -
         signals.intimacy * 0.18 -
         signals.positive * 0.08 -
+        signals.greeting * 0.06 -
+        signals.smalltalk * 0.08 -
+        signals.repair * 0.1 -
+        signals.selfInquiry * 0.06 -
         signals.memoryCue * 0.04,
     ),
   };
