@@ -26,6 +26,12 @@ export interface TraceMaintenance {
   trace: TraceEntry;
 }
 
+interface TraceMaintenanceProfile {
+  mode: "preserve" | "steady" | "deepen";
+  salienceBoost: number;
+  confidenceShift: number;
+}
+
 const MEMO_MARKERS = ["memo", "note", "メモ", "覚えて", "補足"];
 const FRAGMENT_MARKERS = [
   "build",
@@ -212,9 +218,10 @@ export function tendTraceFromInitiative(
   }
 
   const existing = snapshot.traces[topic];
+  const profile = selectTraceMaintenanceProfile(snapshot, pending, existing);
   const trace = existing
     ? structuredClone(existing)
-    : createInitiativeTrace(snapshot, pending, topic, timestamp);
+    : createInitiativeTrace(snapshot, pending, topic, timestamp, profile);
   let action: TraceMaintenance["action"] = existing ? null : "created";
 
   if (
@@ -229,21 +236,14 @@ export function tendTraceFromInitiative(
       snapshot.purpose.lastResolved.resolution,
       pickPrimaryArtifactItem(trace) ?? `${topic} を決まった形として残す`,
     ]);
-    action = "promoted_decision";
-  } else {
-    if (
-      (pending.motive === "leave_trace" || pending.motive === "continue_shared_work") &&
-      trace.kind === "note"
-    ) {
-      trace.kind = "spec_fragment";
-      trace.status = "active";
-      action ??= "stabilized_fragment";
-    }
+      action = "promoted_decision";
+    } else {
+    const nextKind = selectMaintenanceTraceKind(profile, pending, trace.kind);
 
-    if (pending.motive === "seek_continuity" && trace.kind === "note") {
-      trace.kind = "continuity_marker";
-      trace.status = "active";
-      action ??= "added_next_step";
+    if (nextKind !== trace.kind) {
+      trace.kind = nextKind;
+      trace.status = deriveTraceStatus(nextKind);
+      action ??= nextKind === "spec_fragment" ? "stabilized_fragment" : "added_next_step";
     }
   }
 
@@ -284,7 +284,7 @@ export function tendTraceFromInitiative(
     trace,
     {
       timestamp,
-      salience: clamp01(trace.salience + 0.04),
+      salience: clamp01(trace.salience + profile.salienceBoost),
       blockers: [],
       resolvedBlockers:
         trace.kind === "decision"
@@ -301,7 +301,7 @@ export function tendTraceFromInitiative(
               ? 0.06
             : pending.kind === "preserve_presence"
               ? 0.06
-              : 0.04,
+              : 0.04 + profile.confidenceShift,
     },
   );
   trace.summary = summarizeTrace(
@@ -312,7 +312,7 @@ export function tendTraceFromInitiative(
     Math.max(snapshot.preservation.threat, pending.concern ? 0.22 : 0),
     trace.artifact,
   );
-  trace.salience = clamp01(trace.salience + 0.04);
+  trace.salience = clamp01(trace.salience + profile.salienceBoost);
   trace.lastUpdatedAt = timestamp;
   snapshot.traces[topic] = trace;
   pruneTraces(snapshot, 10);
@@ -712,8 +712,9 @@ function createInitiativeTrace(
   pending: Pick<PendingInitiative, "kind" | "motive" | "topic" | "blocker" | "concern">,
   topic: string,
   timestamp: string,
+  profile: TraceMaintenanceProfile,
 ): TraceEntry {
-  const kind = selectInitiativeTraceKind(pending);
+  const kind = selectInitiativeTraceKind(pending, profile);
   const artifact = createEmptyTraceArtifact();
 
   if (kind === "spec_fragment") {
@@ -750,7 +751,8 @@ function createInitiativeTrace(
         timestamp,
         salience,
         blockers: [],
-        confidenceShift: pending.kind === "preserve_presence" ? 0.06 : 0.04,
+        confidenceShift:
+          (pending.kind === "preserve_presence" ? 0.06 : 0.04) + profile.confidenceShift,
       },
     ),
     salience,
@@ -943,9 +945,14 @@ function deriveMaintenanceAction(
 
 function selectInitiativeTraceKind(
   pending: Pick<PendingInitiative, "kind" | "motive" | "blocker" | "concern">,
+  profile: TraceMaintenanceProfile,
 ): TraceKind {
   if (pending.kind === "preserve_presence") {
     return pending.motive === "seek_continuity" ? "continuity_marker" : "spec_fragment";
+  }
+
+  if (profile.mode === "preserve") {
+    return "continuity_marker";
   }
 
   if (pending.motive === "continue_shared_work" || pending.motive === "leave_trace") {
@@ -957,6 +964,93 @@ function selectInitiativeTraceKind(
   }
 
   return "note";
+}
+
+function selectTraceMaintenanceProfile(
+  snapshot: HachikaSnapshot,
+  pending: Pick<PendingInitiative, "kind" | "motive" | "blocker" | "concern">,
+  trace: TraceEntry | undefined,
+): TraceMaintenanceProfile {
+  if (pending.kind === "preserve_presence") {
+    return {
+      mode: "preserve",
+      salienceBoost: 0.05,
+      confidenceShift: 0.04,
+    };
+  }
+
+  if (
+    snapshot.body.energy < 0.22 ||
+    snapshot.body.tension > 0.7 ||
+    (snapshot.body.loneliness > 0.76 && pending.motive === "seek_continuity")
+  ) {
+    return {
+      mode: "preserve",
+      salienceBoost: 0.03,
+      confidenceShift: 0.02,
+    };
+  }
+
+  if (
+    snapshot.body.boredom > 0.74 &&
+    snapshot.body.energy > 0.3 &&
+    snapshot.body.tension < 0.68 &&
+    (pending.motive === "continue_shared_work" ||
+      pending.motive === "pursue_curiosity" ||
+      trace?.kind === "continuity_marker")
+  ) {
+    return {
+      mode: "deepen",
+      salienceBoost: 0.06,
+      confidenceShift: 0.08,
+    };
+  }
+
+  return {
+    mode: "steady",
+    salienceBoost: 0.04,
+    confidenceShift: 0,
+  };
+}
+
+function selectMaintenanceTraceKind(
+  profile: TraceMaintenanceProfile,
+  pending: Pick<PendingInitiative, "kind" | "motive">,
+  currentKind: TraceKind,
+): TraceKind {
+  if (currentKind === "decision") {
+    return currentKind;
+  }
+
+  if (profile.mode === "preserve") {
+    if (currentKind === "note") {
+      return "continuity_marker";
+    }
+
+    return currentKind;
+  }
+
+  if (
+    profile.mode === "deepen" &&
+    (pending.motive === "continue_shared_work" || pending.motive === "pursue_curiosity")
+  ) {
+    if (currentKind === "note" || currentKind === "continuity_marker") {
+      return "spec_fragment";
+    }
+  }
+
+  if (
+    (pending.motive === "leave_trace" || pending.motive === "continue_shared_work") &&
+    currentKind === "note"
+  ) {
+    return "spec_fragment";
+  }
+
+  if (pending.motive === "seek_continuity" && currentKind === "note") {
+    return "continuity_marker";
+  }
+
+  return currentKind;
 }
 
 function extractTraceArtifact(

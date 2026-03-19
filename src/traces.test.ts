@@ -155,6 +155,79 @@ test("body can shift trace motive toward leave_trace when energy is low", () => 
   assert.equal(trace?.kind, "spec_fragment");
 });
 
+test("low energy maintenance preserves a resume as continuity instead of deepening it", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.body.energy = 0.08;
+  snapshot.body.tension = 0.26;
+  snapshot.lastInteractionAt = "2026-03-19T02:00:00.000Z";
+
+  const maintenance = tendTraceFromInitiative(
+    snapshot,
+    {
+      kind: "resume_topic",
+      motive: "continue_shared_work",
+      topic: "設計",
+      blocker: null,
+      concern: null,
+    },
+    "2026-03-19T02:30:00.000Z",
+  );
+
+  assert.ok(maintenance !== null);
+  assert.equal(maintenance?.action, "created");
+  assert.equal(snapshot.traces.設計?.kind, "continuity_marker");
+  assert.equal(snapshot.traces.設計?.artifact.fragments.length, 0);
+  assert.ok((snapshot.traces.設計?.artifact.nextSteps.length ?? 0) > 0);
+});
+
+test("high boredom maintenance deepens a continuity trace into a fragment", () => {
+  const snapshot = createTraceSnapshot({
+    topic: "設計",
+    kind: "continuity_marker",
+    status: "active",
+    lastAction: "continued",
+    summary: "「設計」は続きの目印として残っている。",
+    sourceMotive: "seek_continuity",
+    artifact: {
+      memo: ["設計の続き"],
+      fragments: [],
+      decisions: [],
+      nextSteps: ["設計をつなぎ直す"],
+    },
+    work: {
+      focus: "設計をつなぎ直す",
+      confidence: 0.54,
+      blockers: ["責務が未定"],
+      staleAt: "2026-03-18T01:00:00.000Z",
+    },
+    salience: 0.58,
+    mentions: 2,
+    createdAt: "2026-03-19T00:00:00.000Z",
+    lastUpdatedAt: "2026-03-19T01:00:00.000Z",
+  });
+  snapshot.body.energy = 0.66;
+  snapshot.body.boredom = 0.84;
+  snapshot.body.tension = 0.16;
+
+  const maintenance = tendTraceFromInitiative(
+    snapshot,
+    {
+      kind: "resume_topic",
+      motive: "continue_shared_work",
+      topic: "設計",
+      blocker: "責務が未定",
+      concern: null,
+    },
+    "2026-03-19T02:00:00.000Z",
+  );
+
+  assert.ok(maintenance !== null);
+  assert.equal(maintenance?.action, "stabilized_fragment");
+  assert.equal(snapshot.traces.設計?.kind, "spec_fragment");
+  assert.ok((snapshot.traces.設計?.artifact.fragments.length ?? 0) > 0);
+  assert.ok((snapshot.traces.設計?.work.confidence ?? 0) > 0.54);
+});
+
 test("trace maintenance can promote a fulfilled topic into a decision", () => {
   const snapshot = createTraceSnapshot({
     topic: "設計",
