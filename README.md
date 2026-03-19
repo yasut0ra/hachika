@@ -240,11 +240,13 @@ Hachika は、単に有用なだけでなく、
 - trace の優先順位と artifact の surfaced order も身体状態の影響を受け、低 energy では残しやすい痕跡が、高 boredom では stale な未完了が前に出やすくなる
 - `scenario harness` により、複数ターンの対話シナリオを fixture として検証できる
   - active purpose の継続と解決、blocker maintenance、archive/reopen、preservation threat、body drift による wording 変化を長めの回帰テストとして固定している
+- OpenAI 互換の `reply generator` を env から有効化でき、local engine が決めた state / motive / purpose / traces を保ったまま reply wording だけを LLM に委譲できる
+  - adapter が失敗した場合や空文字を返した場合は rule-based reply に fallback する
 - 内部状態に応じて応答のトーンと内容を変化させる
 - `data/hachika-state.json` に状態を保存し、セッションをまたいで継続性を残す
 
-この段階では LLM は使っておらず、応答生成はルールベースです。  
-まずは「駆動から振る舞いが変わる最小系」を成立させることを優先しています。
+デフォルトでは reply は rule-based ですが、環境変数を設定すれば wording だけ LLM に任せられます。  
+state 更新と内面ロジックはローカル実装のままです。
 
 ## 使い方
 
@@ -253,10 +255,20 @@ npm install
 npm run dev
 ```
 
+LLM wording を有効にする場合:
+
+```bash
+cp .env.example .env
+```
+
+`.env` に `OPENAI_API_KEY` を入れると、CLI は rule reply の代わりに OpenAI reply generator を使います。  
+モデルは `OPENAI_MODEL` で切り替えられ、未設定時は `gpt-5-mini` を使います。
+
 主なコマンド:
 
 - `/help` コマンド一覧を表示
 - `/proactive` 能動発話を強制的に出す
+- `/llm` 現在の reply generator を表示
 - `/idle <hours>` 指定時間だけ放置された状態をシミュレートする
 - `/state` 現在の drive 状態を表示
 - `/body` 現在の body 状態を表示

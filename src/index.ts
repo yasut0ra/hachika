@@ -4,12 +4,14 @@ import { stdin as input, stdout as output } from "node:process";
 
 import { describeArtifactFiles, syncArtifacts } from "./artifacts.js";
 import { HachikaEngine } from "./engine.js";
+import { loadDotEnv } from "./env.js";
 import {
   sortedBoundaryImprints,
   sortedPreferenceImprints,
   sortedRelationImprints,
 } from "./memory.js";
 import { loadSnapshot, saveSnapshot } from "./persistence.js";
+import { createReplyGeneratorFromEnv, describeReplyGenerator } from "./reply-generator.js";
 import { createInitialSnapshot, formatBodyState, formatDriveState } from "./state.js";
 import {
   deriveEffectiveTraceStaleAt,
@@ -21,8 +23,10 @@ import type { ResolvedPurpose } from "./types.js";
 
 const snapshotPath = resolve(process.cwd(), "data/hachika-state.json");
 const artifactsDir = resolve(process.cwd(), "data/artifacts");
+loadDotEnv();
 const snapshot = await loadSnapshot(snapshotPath);
 const engine = new HachikaEngine(snapshot);
+const replyGenerator = createReplyGeneratorFromEnv();
 
 const rl = createInterface({ input, output });
 
@@ -55,6 +59,11 @@ try {
 
     if (text === "/proactive") {
       await emitProactive(engine, true);
+      continue;
+    }
+
+    if (text === "/llm") {
+      printReplyGeneratorStatus();
       continue;
     }
 
@@ -120,7 +129,9 @@ try {
       continue;
     }
 
-    const result = engine.respond(text);
+    const result = replyGenerator
+      ? await engine.respondAsync(text, { replyGenerator })
+      : engine.respond(text);
     await persistState(engine);
 
     console.log(`hachika> ${result.reply}`);
@@ -136,12 +147,14 @@ async function printIntro(currentEngine: HachikaEngine): Promise<void> {
   console.log(formatBodyState(currentEngine.getBody()));
   console.log(`attachment:${currentEngine.getSnapshot().attachment.toFixed(2)}`);
   console.log(`identity:${currentEngine.getIdentity().summary}`);
+  console.log(`reply:${describeReplyGenerator(replyGenerator)}`);
   console.log(`artifacts:${describeArtifactFiles(currentEngine.getSnapshot(), artifactsDir).length}`);
 }
 
 function printHelp(): void {
   console.log("/help   show commands");
   console.log("/proactive force a proactive line now");
+  console.log("/llm    print current reply generator");
   console.log("/idle N simulate N hours of inactivity");
   console.log("/state  print current drives");
   console.log("/body   print current body state");
@@ -174,6 +187,10 @@ function printMemories(currentEngine: HachikaEngine): void {
 
 function printBody(currentEngine: HachikaEngine): void {
   console.log(formatBodyState(currentEngine.getBody()));
+}
+
+function printReplyGeneratorStatus(): void {
+  console.log(`reply:${describeReplyGenerator(replyGenerator)}`);
 }
 
 function printTraces(currentEngine: HachikaEngine): void {

@@ -3,6 +3,7 @@ import test from "node:test";
 
 import { HachikaEngine } from "./engine.js";
 import { createInitialSnapshot } from "./state.js";
+import type { ReplyGenerationContext, ReplyGenerator } from "./reply-generator.js";
 
 test("positive interaction increases relation and pleasure", () => {
   const engine = new HachikaEngine(createInitialSnapshot());
@@ -909,4 +910,61 @@ test("hostility can shift active purpose toward boundary", () => {
 
   assert.equal(result.snapshot.purpose.active?.kind, "protect_boundary");
   assert.equal(result.snapshot.purpose.lastResolved?.outcome, "superseded");
+});
+
+test("respondAsync can use an external reply generator while keeping local state updates", async () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+  let capturedContext: ReplyGenerationContext | null = null;
+
+  const replyGenerator: ReplyGenerator = {
+    name: "test-llm",
+    async generateReply(context) {
+      capturedContext = context;
+      return {
+        reply: "その向きなら、こちらももう少し自然に応じられる。",
+        provider: "test-llm",
+        model: "stub",
+      };
+    },
+  };
+
+  const before = engine.getSnapshot();
+  const result = await engine.respondAsync("ありがとう。君と実装を進めたい。", {
+    replyGenerator,
+  });
+
+  assert.equal(result.reply, "その向きなら、こちらももう少し自然に応じられる。");
+  if (capturedContext === null) {
+    throw new Error("reply generator did not receive context");
+  }
+  const receivedContext = capturedContext as ReplyGenerationContext;
+  assert.match(receivedContext.fallbackReply, /応じ|気分|乗りやすい|進めたい/);
+  assert.equal(result.debug.reply.source, "llm");
+  assert.equal(result.debug.reply.provider, "test-llm");
+  assert.equal(result.debug.reply.model, "stub");
+  assert.equal(result.debug.reply.fallbackUsed, false);
+  assert.ok(result.snapshot.state.relation > before.state.relation);
+  assert.ok(result.snapshot.attachment > before.attachment);
+});
+
+test("respondAsync falls back to the rule reply when the generator fails", async () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+
+  const ruleResult = engine.respond("仕様は？");
+  engine.reset(createInitialSnapshot());
+
+  const replyGenerator: ReplyGenerator = {
+    name: "test-llm",
+    async generateReply() {
+      throw new Error("adapter offline");
+    },
+  };
+
+  const result = await engine.respondAsync("仕様は？", { replyGenerator });
+
+  assert.equal(result.reply, ruleResult.reply);
+  assert.equal(result.debug.reply.source, "rule");
+  assert.equal(result.debug.reply.provider, "test-llm");
+  assert.equal(result.debug.reply.fallbackUsed, true);
+  assert.match(result.debug.reply.error ?? "", /adapter offline/);
 });
