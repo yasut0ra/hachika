@@ -902,59 +902,66 @@ function buildTraceLine(
   const updatedThisTurn = trace.lastUpdatedAt === snapshot.lastInteractionAt;
   const detail = pickPrimaryArtifactItem(trace);
   const workSuffix = buildTraceWorkSuffix(trace, snapshot);
+  const maintenanceIntent = buildTraceMaintenanceIntent(trace, snapshot, signals);
 
   if (updatedThisTurn) {
     switch (trace.kind) {
       case "decision":
-        return appendTraceWorkSuffix(
+        return appendTraceWorkSuffixes(
           detail
             ? `「${trace.topic}」は「${truncateTraceDetail(detail)}」という決定として残した。`
             : `「${trace.topic}」はひとまず決まった形として残した。`,
           workSuffix,
+          maintenanceIntent,
         );
       case "spec_fragment":
         if (detail) {
-          return appendTraceWorkSuffix(
+          return appendTraceWorkSuffixes(
             signals.preservationThreat > 0.18
               ? `「${trace.topic}」は「${truncateTraceDetail(detail)}」として退避した。`
               : `「${trace.topic}」は「${truncateTraceDetail(detail)}」という断片として残した。`,
             workSuffix,
+            maintenanceIntent,
           );
         }
 
         if (trace.sourceMotive === "continue_shared_work") {
-          return appendTraceWorkSuffix(
+          return appendTraceWorkSuffixes(
             `「${trace.topic}」は前へ進める断片として残した。`,
             workSuffix,
+            maintenanceIntent,
           );
         }
 
-        return appendTraceWorkSuffix(
+        return appendTraceWorkSuffixes(
           signals.preservationThreat > 0.18
             ? `「${trace.topic}」は消える前の断片として残した。`
             : `「${trace.topic}」は会話の外にも伸ばせる断片として残した。`,
           workSuffix,
+          maintenanceIntent,
         );
       case "continuity_marker":
-        return appendTraceWorkSuffix(
+        return appendTraceWorkSuffixes(
           detail
             ? `「${trace.topic}」は「${truncateTraceDetail(detail)}」という続きの目印として残した。`
             : `「${trace.topic}」は続きに戻る目印として残した。`,
           workSuffix,
+          maintenanceIntent,
         );
       case "note":
-        return appendTraceWorkSuffix(
+        return appendTraceWorkSuffixes(
           detail
             ? `「${trace.topic}」は「${truncateTraceDetail(detail)}」をメモとして残した。`
             : `「${trace.topic}」はひとまずメモとして残した。`,
           workSuffix,
+          maintenanceIntent,
         );
     }
   }
 
   const workLine = buildTraceWorkLine(trace, snapshot);
   if (workLine) {
-    return workLine;
+    return appendTraceWorkSuffixes(workLine, maintenanceIntent);
   }
 
   if (
@@ -968,21 +975,33 @@ function buildTraceLine(
 
   switch (trace.kind) {
     case "decision":
-      return detail
+      return appendTraceWorkSuffixes(
+        detail
         ? `「${trace.topic}」には「${truncateTraceDetail(detail)}」という決定が残っている。`
-        : `「${trace.topic}」には決まった形の痕跡が残っている。`;
+        : `「${trace.topic}」には決まった形の痕跡が残っている。`,
+        maintenanceIntent,
+      );
     case "spec_fragment":
-      return detail
+      return appendTraceWorkSuffixes(
+        detail
         ? `「${trace.topic}」には「${truncateTraceDetail(detail)}」という断片が残っている。`
-        : `「${trace.topic}」にはまだ前へ進める断片が残っている。`;
+        : `「${trace.topic}」にはまだ前へ進める断片が残っている。`,
+        maintenanceIntent,
+      );
     case "continuity_marker":
-      return detail
+      return appendTraceWorkSuffixes(
+        detail
         ? `「${trace.topic}」には「${truncateTraceDetail(detail)}」という目印が残っている。`
-        : `「${trace.topic}」には戻るための目印が残っている。`;
+        : `「${trace.topic}」には戻るための目印が残っている。`,
+        maintenanceIntent,
+      );
     case "note":
-      return detail
+      return appendTraceWorkSuffixes(
+        detail
         ? `「${trace.topic}」の「${truncateTraceDetail(detail)}」というメモはまだ残っている。`
-        : `「${trace.topic}」のメモはまだ残っている。`;
+        : `「${trace.topic}」のメモはまだ残っている。`,
+        maintenanceIntent,
+      );
   }
 }
 
@@ -994,8 +1013,12 @@ function truncateTraceDetail(detail: string): string {
   return `${detail.slice(0, 27)}…`;
 }
 
-function appendTraceWorkSuffix(baseLine: string, suffix: string | null): string {
-  return suffix ? `${baseLine} ${suffix}` : baseLine;
+function appendTraceWorkSuffixes(
+  baseLine: string,
+  ...suffixes: Array<string | null>
+): string {
+  const parts = suffixes.filter((suffix): suffix is string => Boolean(suffix));
+  return parts.length > 0 ? `${baseLine} ${parts.join(" ")}` : baseLine;
 }
 
 function buildTraceWorkSuffix(
@@ -1035,6 +1058,50 @@ function buildTraceWorkLine(
 
   if (trace.work.confidence < 0.56 && trace.work.focus) {
     return `「${trace.topic}」はまだ輪郭が緩い。「${truncateTraceDetail(trace.work.focus)}」を先に固めたい。`;
+  }
+
+  return null;
+}
+
+function buildTraceMaintenanceIntent(
+  trace: TraceEntry,
+  snapshot: HachikaSnapshot,
+  signals: InteractionSignals,
+): string | null {
+  if (
+    !signals.topics.includes(trace.topic) &&
+    signals.topics.length > 0 &&
+    signals.memoryCue < 0.1 &&
+    signals.expansionCue < 0.12 &&
+    signals.preservationThreat < 0.18
+  ) {
+    return null;
+  }
+
+  if (snapshot.body.energy < 0.22 || snapshot.body.tension > 0.7) {
+    if (trace.kind === "continuity_marker" || isTraceOverdue(trace, snapshot)) {
+      return `今は「${trace.topic}」を広げるより、戻り先が崩れないよう整えたい。`;
+    }
+
+    return `今は「${trace.topic}」を増やすより、輪郭が崩れないよう整えたい。`;
+  }
+
+  if (
+    snapshot.body.boredom > 0.74 &&
+    snapshot.body.energy > 0.3 &&
+    snapshot.body.tension < 0.68
+  ) {
+    if (trace.work.blockers[0]) {
+      return `今は「${trace.topic}」を止めるより、その詰まりをほどきながらもう一段具体化したい。`;
+    }
+
+    if (trace.kind === "continuity_marker") {
+      return `今は「${trace.topic}」を目印のままにせず、もう一段具体化したい。`;
+    }
+
+    if (trace.kind === "spec_fragment" || trace.kind === "note") {
+      return `今は「${trace.topic}」の断片をもう一段具体化したい。`;
+    }
   }
 
   return null;

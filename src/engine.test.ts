@@ -445,6 +445,79 @@ test("ordinary reply can surface stale trace continuity", () => {
   );
 });
 
+test("ordinary reply can surface a preserve intent from low energy", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.lastInteractionAt = "2026-03-19T12:00:00.000Z";
+  snapshot.body.energy = 0.08;
+  snapshot.body.tension = 0.22;
+  snapshot.traces.設計 = {
+    topic: "設計",
+    kind: "continuity_marker",
+    status: "active",
+    lastAction: "continued",
+    summary: "「設計」は続きの目印として残っている。",
+    sourceMotive: "seek_continuity",
+    artifact: {
+      memo: ["設計の続き"],
+      fragments: [],
+      decisions: [],
+      nextSteps: ["設計を続ける"],
+    },
+    work: {
+      focus: "設計を続ける",
+      confidence: 0.6,
+      blockers: [],
+      staleAt: "2026-03-18T12:00:00.000Z",
+    },
+    salience: 0.54,
+    mentions: 2,
+    createdAt: "2026-03-17T12:00:00.000Z",
+    lastUpdatedAt: "2026-03-17T12:00:00.000Z",
+  };
+
+  const engine = new HachikaEngine(snapshot);
+  const result = engine.respond("？");
+
+  assert.match(result.reply, /戻り先が崩れないよう整えたい|広げるより/);
+});
+
+test("ordinary reply can surface a deepening intent from boredom", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.lastInteractionAt = "2026-03-19T12:00:00.000Z";
+  snapshot.body.energy = 0.66;
+  snapshot.body.boredom = 0.84;
+  snapshot.body.tension = 0.16;
+  snapshot.traces.仕様 = {
+    topic: "仕様",
+    kind: "spec_fragment",
+    status: "active",
+    lastAction: "expanded",
+    summary: "「仕様」は断片として残っている。",
+    sourceMotive: "continue_shared_work",
+    artifact: {
+      memo: ["仕様を詰める"],
+      fragments: ["境界を整理する"],
+      decisions: [],
+      nextSteps: ["責務を切り分ける"],
+    },
+    work: {
+      focus: "責務を切り分ける",
+      confidence: 0.48,
+      blockers: ["責務が未定"],
+      staleAt: "2026-03-18T12:00:00.000Z",
+    },
+    salience: 0.6,
+    mentions: 2,
+    createdAt: "2026-03-17T12:00:00.000Z",
+    lastUpdatedAt: "2026-03-17T12:00:00.000Z",
+  };
+
+  const engine = new HachikaEngine(snapshot);
+  const result = engine.respond("？");
+
+  assert.match(result.reply, /もう一段具体化したい|詰まりをほどきながら/);
+});
+
 test("identity can absorb loneliness into its current arc", () => {
   const snapshot = createInitialSnapshot();
   snapshot.body.loneliness = 0.84;
