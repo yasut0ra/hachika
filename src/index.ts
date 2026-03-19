@@ -148,6 +148,7 @@ async function printIntro(currentEngine: HachikaEngine): Promise<void> {
   console.log(`attachment:${currentEngine.getSnapshot().attachment.toFixed(2)}`);
   console.log(`identity:${currentEngine.getIdentity().summary}`);
   console.log(`reply:${describeReplyGenerator(replyGenerator)}`);
+  console.log(`last reply:${formatLastReplyDebug(currentEngine)}`);
   console.log(`artifacts:${describeArtifactFiles(currentEngine.getSnapshot(), artifactsDir).length}`);
 }
 
@@ -191,6 +192,7 @@ function printBody(currentEngine: HachikaEngine): void {
 
 function printReplyGeneratorStatus(): void {
   console.log(`reply:${describeReplyGenerator(replyGenerator)}`);
+  console.log(`last reply:${formatLastReplyDebug(engine)}`);
 }
 
 function printTraces(currentEngine: HachikaEngine): void {
@@ -312,6 +314,7 @@ function printImprints(currentEngine: HachikaEngine): void {
 function printDebug(currentEngine: HachikaEngine): void {
   const snapshot = currentEngine.getSnapshot();
   const selfModel = currentEngine.getSelfModel();
+  const lastReply = currentEngine.getLastReplyDebug();
   const preferredTopics = Object.entries(snapshot.preferences)
     .sort((left, right) => right[1] - left[1])
     .slice(0, 6);
@@ -323,6 +326,8 @@ function printDebug(currentEngine: HachikaEngine): void {
   console.log(formatDriveState(snapshot.state));
   console.log(formatBodyState(snapshot.body));
   console.log(`attachment: ${snapshot.attachment.toFixed(2)}`);
+  console.log(`reply generator: ${describeReplyGenerator(replyGenerator)}`);
+  console.log(`last reply: ${formatLastReplyDebug(currentEngine)}`);
   console.log(
     `preservation: ${snapshot.preservation.threat.toFixed(2)}${snapshot.preservation.concern ? `/${snapshot.preservation.concern}` : ""}`,
   );
@@ -343,6 +348,9 @@ function printDebug(currentEngine: HachikaEngine): void {
       ? `pending initiative: ${snapshot.initiative.pending.kind}/${snapshot.initiative.pending.motive}/${snapshot.initiative.pending.reason}${snapshot.initiative.pending.topic ? `/${snapshot.initiative.pending.topic}` : ""}${snapshot.initiative.pending.blocker ? `/${snapshot.initiative.pending.blocker}` : ""}`
       : "pending initiative: none",
   );
+  if (lastReply?.error) {
+    console.log(`last reply error: ${lastReply.error}`);
+  }
   console.log(
     `motives: ${selfModel.topMotives
       .map(
@@ -597,4 +605,19 @@ function printTraceArtifactGroup(label: string, items: string[]): void {
   for (const item of items) {
     console.log(`  ${label}: ${item}`);
   }
+}
+
+function formatLastReplyDebug(currentEngine: HachikaEngine): string {
+  const debug = currentEngine.getLastReplyDebug();
+
+  if (!debug) {
+    return "none";
+  }
+
+  const via = debug.provider ? ` via:${debug.provider}` : "";
+  const model = debug.model ? ` model:${debug.model}` : "";
+  const fallback = debug.fallbackUsed ? " fallback" : "";
+  const error = debug.error ? ` error:${debug.error}` : "";
+
+  return `${debug.source}${via}${model}${fallback}${error}`;
 }

@@ -912,6 +912,20 @@ test("hostility can shift active purpose toward boundary", () => {
   assert.equal(result.snapshot.purpose.lastResolved?.outcome, "superseded");
 });
 
+test("respond stores the last local reply diagnostics on the engine", () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+
+  engine.respond("仕様は？");
+
+  assert.deepEqual(engine.getLastReplyDebug(), {
+    source: "rule",
+    provider: null,
+    model: null,
+    fallbackUsed: false,
+    error: null,
+  });
+});
+
 test("respondAsync can use an external reply generator while keeping local state updates", async () => {
   const engine = new HachikaEngine(createInitialSnapshot());
   let capturedContext: ReplyGenerationContext | null = null;
@@ -943,6 +957,8 @@ test("respondAsync can use an external reply generator while keeping local state
   assert.equal(result.debug.reply.provider, "test-llm");
   assert.equal(result.debug.reply.model, "stub");
   assert.equal(result.debug.reply.fallbackUsed, false);
+  assert.equal(engine.getLastReplyDebug()?.source, "llm");
+  assert.equal(engine.getLastReplyDebug()?.provider, "test-llm");
   assert.ok(result.snapshot.state.relation > before.state.relation);
   assert.ok(result.snapshot.attachment > before.attachment);
 });
@@ -967,4 +983,17 @@ test("respondAsync falls back to the rule reply when the generator fails", async
   assert.equal(result.debug.reply.provider, "test-llm");
   assert.equal(result.debug.reply.fallbackUsed, true);
   assert.match(result.debug.reply.error ?? "", /adapter offline/);
+  assert.equal(engine.getLastReplyDebug()?.source, "rule");
+  assert.equal(engine.getLastReplyDebug()?.fallbackUsed, true);
+});
+
+test("reset clears the last reply diagnostics", async () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+
+  await engine.respondAsync("仕様は？");
+  assert.ok(engine.getLastReplyDebug() !== null);
+
+  engine.reset(createInitialSnapshot());
+
+  assert.equal(engine.getLastReplyDebug(), null);
 });

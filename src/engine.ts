@@ -262,6 +262,7 @@ const BOUNDARY_LINES = [
 
 export class HachikaEngine {
   #snapshot: HachikaSnapshot;
+  #lastReplyDebug: TurnResult["debug"]["reply"] | null = null;
 
   constructor(snapshot: HachikaSnapshot = createInitialSnapshot()) {
     this.#snapshot = structuredClone(snapshot);
@@ -273,6 +274,7 @@ export class HachikaEngine {
 
   reset(snapshot: HachikaSnapshot = createInitialSnapshot()): void {
     this.#snapshot = structuredClone(snapshot);
+    this.#lastReplyDebug = null;
   }
 
   getSelfModel(): SelfModel {
@@ -285,6 +287,10 @@ export class HachikaEngine {
 
   getBody(): HachikaSnapshot["body"] {
     return structuredClone(this.#snapshot.body);
+  }
+
+  getLastReplyDebug(): TurnResult["debug"]["reply"] | null {
+    return this.#lastReplyDebug ? { ...this.#lastReplyDebug } : null;
   }
 
   emitInitiative(options: { force?: boolean; now?: Date } = {}): string | null {
@@ -393,6 +399,7 @@ export class HachikaEngine {
     remember(prepared.nextSnapshot, "hachika", reply, prepared.signals.topics, "neutral");
 
     this.#snapshot = prepared.nextSnapshot;
+    this.#lastReplyDebug = { ...replyDebug };
 
     return {
       reply,
