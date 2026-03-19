@@ -51,6 +51,7 @@ test("trace maintenance can promote a fulfilled topic into a decision", () => {
       kind: "resume_topic",
       motive: "leave_trace",
       topic: "設計",
+      blocker: null,
       concern: null,
     },
     "2026-03-19T01:30:00.000Z",

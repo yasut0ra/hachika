@@ -145,7 +145,7 @@ export function updateTraces(
             : signals.expansionCue > 0.12
               ? 0.06
               : 0,
-      clearBlockers: kind === "decision",
+      resolvedBlockers: kind === "decision" ? previous?.work.blockers ?? [] : [],
     },
   );
   const summary = buildTraceSummary(topic, kind, sourceMotive, snapshot, signals, artifact);
@@ -201,7 +201,7 @@ export function findRelevantTrace(
 
 export function tendTraceFromInitiative(
   snapshot: HachikaSnapshot,
-  pending: Pick<PendingInitiative, "kind" | "motive" | "topic" | "concern">,
+  pending: Pick<PendingInitiative, "kind" | "motive" | "topic" | "blocker" | "concern">,
   timestamp = snapshot.lastInteractionAt ?? new Date().toISOString(),
 ): TraceMaintenance | null {
   const topic =
@@ -268,7 +268,7 @@ export function tendTraceFromInitiative(
 
   if (
     (trace.kind === "spec_fragment" || trace.kind === "continuity_marker") &&
-    trace.artifact.nextSteps.length === 0
+    (trace.artifact.nextSteps.length === 0 || pending.blocker !== null)
   ) {
     trace.artifact.nextSteps = mergeArtifactItems(trace.artifact.nextSteps, [
       inferTraceNextStep(topic, trace, pending),
@@ -291,12 +291,19 @@ export function tendTraceFromInitiative(
       timestamp,
       salience: clamp01(trace.salience + 0.04),
       blockers: [],
-      clearBlockers: trace.kind === "decision" || action === "added_next_step",
+      resolvedBlockers:
+        trace.kind === "decision"
+          ? existing?.work.blockers ?? []
+          : pending.blocker
+            ? [pending.blocker]
+            : [],
       confidenceShift:
         action === "promoted_decision"
           ? 0.18
-          : action === "added_next_step"
+          : action === "added_next_step" && pending.blocker
             ? 0.1
+            : action === "added_next_step"
+              ? 0.06
             : pending.kind === "preserve_presence"
               ? 0.06
               : 0.04,
@@ -529,7 +536,7 @@ function createEmptyTraceArtifact(): TraceArtifact {
 
 function createInitiativeTrace(
   snapshot: HachikaSnapshot,
-  pending: Pick<PendingInitiative, "kind" | "motive" | "topic" | "concern">,
+  pending: Pick<PendingInitiative, "kind" | "motive" | "topic" | "blocker" | "concern">,
   topic: string,
   timestamp: string,
 ): TraceEntry {
@@ -641,13 +648,18 @@ function deriveTraceWork(
     salience: number;
     blockers: string[];
     confidenceShift?: number;
-    clearBlockers?: boolean;
+    resolvedBlockers?: string[];
   },
 ): TraceWorkState {
-  const blockers =
-    trace.kind === "decision" || options.clearBlockers
+  let blockers =
+    trace.kind === "decision"
       ? []
       : mergeArtifactItems(previous?.blockers, options.blockers);
+
+  if (options.resolvedBlockers && options.resolvedBlockers.length > 0) {
+    blockers = blockers.filter((blocker) => !options.resolvedBlockers?.includes(blocker));
+  }
+
   const focus =
     selectTraceFocus(trace) ??
     previous?.focus ??
@@ -721,7 +733,7 @@ function computeTraceStaleAt(
 }
 
 function deriveMaintenanceAction(
-  pending: Pick<PendingInitiative, "kind" | "motive">,
+  pending: Pick<PendingInitiative, "kind" | "motive" | "blocker">,
   action: TraceMaintenance["action"],
   kind: TraceKind,
 ): TraceAction {
@@ -757,7 +769,7 @@ function deriveMaintenanceAction(
 }
 
 function selectInitiativeTraceKind(
-  pending: Pick<PendingInitiative, "kind" | "motive" | "concern">,
+  pending: Pick<PendingInitiative, "kind" | "motive" | "blocker" | "concern">,
 ): TraceKind {
   if (pending.kind === "preserve_presence") {
     return pending.motive === "seek_continuity" ? "continuity_marker" : "spec_fragment";
@@ -914,8 +926,12 @@ function mergeArtifactItems(
 
 function inferTraceFragment(
   topic: string,
-  pending: Pick<PendingInitiative, "kind" | "motive" | "concern">,
+  pending: Pick<PendingInitiative, "kind" | "motive" | "blocker" | "concern">,
 ): string {
+  if (pending.blocker) {
+    return `${pending.blocker} をほどける形で ${topic} を整理する`;
+  }
+
   if (pending.kind === "preserve_presence") {
     switch (pending.concern) {
       case "reset":
@@ -952,8 +968,12 @@ function inferTraceFragment(
 function inferTraceNextStep(
   topic: string,
   trace: Pick<TraceEntry, "kind" | "artifact">,
-  pending: Pick<PendingInitiative, "kind" | "motive" | "concern">,
+  pending: Pick<PendingInitiative, "kind" | "motive" | "blocker" | "concern">,
 ): string {
+  if (pending.blocker) {
+    return `${truncate(pending.blocker, 24)} を先に整理する`;
+  }
+
   const fragment = lastItem(trace.artifact.fragments);
 
   if (pending.kind === "preserve_presence") {
@@ -988,8 +1008,12 @@ function inferTraceNextStep(
 function inferTraceMemo(
   topic: string,
   trace: Pick<TraceEntry, "kind" | "artifact">,
-  pending: Pick<PendingInitiative, "kind" | "motive" | "concern">,
+  pending: Pick<PendingInitiative, "kind" | "motive" | "blocker" | "concern">,
 ): string {
+  if (pending.blocker) {
+    return `${pending.blocker} がいまの詰まりどころになっている`;
+  }
+
   const detail =
     lastItem(trace.artifact.fragments) ??
     lastItem(trace.artifact.decisions) ??

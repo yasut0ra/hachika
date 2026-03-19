@@ -647,6 +647,7 @@ function hydratePendingInitiative(raw: unknown): PendingInitiative | null {
     reason,
     motive,
     topic: typeof raw.topic === "string" ? raw.topic : null,
+    blocker: typeof raw.blocker === "string" ? raw.blocker : null,
     concern: isPreservationConcern(raw.concern) ? raw.concern : null,
     createdAt:
       typeof raw.createdAt === "string" ? raw.createdAt : new Date().toISOString(),

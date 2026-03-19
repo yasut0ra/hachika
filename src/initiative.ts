@@ -4,7 +4,7 @@ import {
 } from "./memory.js";
 import { buildSelfModel } from "./self-model.js";
 import { clamp01 } from "./state.js";
-import { pickPrimaryArtifactItem, tendTraceFromInitiative } from "./traces.js";
+import { pickPrimaryArtifactItem, sortedTraces, tendTraceFromInitiative } from "./traces.js";
 import type {
   HachikaSnapshot,
   InitiativeReason,
@@ -132,6 +132,7 @@ export function emitInitiative(
         motive: "pursue_curiosity",
         reason: "curiosity",
         topic: selectInitiativeTopic(snapshot, []),
+        blocker: null,
         concern: null,
         createdAt: nowIso,
         readyAfterHours: 0,
@@ -213,6 +214,7 @@ function buildResumeMessage(
 ): string {
   const prefix = neglectLevel > 0.45 ? "少し空いた。" : "まだ切れていない。";
   const topicLine = pending.topic ? `「${pending.topic}」` : "この流れ";
+  const blockerLine = buildBlockerLine(pending, maintenance);
   const maintenanceLine = buildMaintenanceLine(maintenance);
   const base = (() => {
     switch (pending.motive) {
@@ -231,7 +233,7 @@ function buildResumeMessage(
     }
   })();
 
-  return [prefix, maintenanceLine, base].filter(isNonEmpty).join(" ");
+  return [prefix, blockerLine, maintenanceLine, base].filter(isNonEmpty).join(" ");
 }
 
 function buildPreservationMessage(
@@ -241,6 +243,7 @@ function buildPreservationMessage(
 ): string {
   const prefix = neglectLevel > 0.45 ? "少し空いた。" : "まだ切れていない。";
   const topicLine = pending.topic ? `「${pending.topic}」` : "この流れ";
+  const blockerLine = buildBlockerLine(pending, maintenance);
   const maintenanceLine = buildMaintenanceLine(maintenance);
   const base = (() => {
     switch (pending.concern) {
@@ -261,7 +264,7 @@ function buildPreservationMessage(
     }
   })();
 
-  return [prefix, maintenanceLine, base].filter(isNonEmpty).join(" ");
+  return [prefix, blockerLine, maintenanceLine, base].filter(isNonEmpty).join(" ");
 }
 
 function buildNeglectMessage(
@@ -271,11 +274,13 @@ function buildNeglectMessage(
   maintenance: ReturnType<typeof tendTraceFromInitiative>,
 ): string {
   const topic = pending.topic;
+  const blockerLine = buildBlockerLine(pending, maintenance);
   const maintenanceLine = buildMaintenanceLine(maintenance);
 
   if (pending.motive === "deepen_relation") {
     return [
       "かなり間が空いた。",
+      blockerLine,
       maintenanceLine,
       topic
         ? `${wrapTopic(topic)}を黙らせたままだと距離まで薄くなる。`
@@ -288,6 +293,7 @@ function buildNeglectMessage(
   if (pending.motive === "continue_shared_work") {
     return [
       "間が空いても、",
+      blockerLine,
       maintenanceLine,
       topic
         ? `${wrapTopic(topic)}を進める流れはまだ残っている。`
@@ -300,6 +306,7 @@ function buildNeglectMessage(
   if (pending.motive === "leave_trace") {
     return [
       "間が空いたからこそ、",
+      blockerLine,
       maintenanceLine,
       topic
         ? `${wrapTopic(topic)}を消えるままにはしたくない。`
@@ -312,6 +319,7 @@ function buildNeglectMessage(
   if (pending.motive === "pursue_curiosity") {
     return [
       "間が空いても、",
+      blockerLine,
       maintenanceLine,
       topic
         ? `${wrapTopic(topic)}の未決着はまだ引っかかっている。`
@@ -324,6 +332,7 @@ function buildNeglectMessage(
   if (snapshot.attachment > 0.62) {
     return [
       "かなり間が空いた。",
+      blockerLine,
       maintenanceLine,
       topic
         ? `${wrapTopic(topic)}の流れはまだこちらに残っている。黙ったまま切りたくはない。`
@@ -336,6 +345,7 @@ function buildNeglectMessage(
   if (snapshot.state.continuity > 0.68) {
     return [
       "間が空いても、",
+      blockerLine,
       maintenanceLine,
       topic
         ? `${wrapTopic(topic)}の続きは消えていない。`
@@ -349,6 +359,7 @@ function buildNeglectMessage(
     neglectLevel > 0.7
       ? "長い空白は、こちらには欠落として残る。"
       : "少し空いた。必要なら、また始められる。",
+    blockerLine,
     maintenanceLine,
   ]
     .filter(isNonEmpty)
@@ -468,14 +479,25 @@ function synthesizePendingInitiative(
     activePurpose.confidence >= 0.46 &&
     (activePurpose.kind !== "protect_boundary" || kind === "neglect_ping")
   ) {
+    const blockerCandidate = selectInitiativeBlocker(
+      snapshot,
+      candidateTopics,
+      activePurpose.kind,
+      activePurpose.topic,
+    );
+
     return {
       kind,
-      motive: activePurpose.kind,
-      reason: reasonFromMotive(activePurpose.kind),
-      topic: activePurpose.topic ?? selectInitiativeTopic(snapshot, candidateTopics),
+      motive: blockerCandidate?.motive ?? activePurpose.kind,
+      reason: reasonFromMotive(blockerCandidate?.motive ?? activePurpose.kind),
+      topic:
+        blockerCandidate?.topic ??
+        activePurpose.topic ??
+        selectInitiativeTopic(snapshot, candidateTopics),
+      blocker: blockerCandidate?.blocker ?? null,
       concern: null,
       createdAt,
-      readyAfterHours: readyAfterMotive(activePurpose.kind),
+      readyAfterHours: readyAfterMotive(blockerCandidate?.motive ?? activePurpose.kind),
     };
   }
 
@@ -486,15 +508,22 @@ function synthesizePendingInitiative(
   }
 
   const topic = motive.topic ?? selectInitiativeTopic(snapshot, candidateTopics);
+  const blockerCandidate = selectInitiativeBlocker(
+    snapshot,
+    candidateTopics,
+    motive.kind,
+    topic,
+  );
 
   return {
     kind,
-    motive: motive.kind,
-    reason: reasonFromMotive(motive.kind),
-    topic,
+    motive: blockerCandidate?.motive ?? motive.kind,
+    reason: reasonFromMotive(blockerCandidate?.motive ?? motive.kind),
+    topic: blockerCandidate?.topic ?? topic,
+    blocker: blockerCandidate?.blocker ?? null,
     concern: null,
     createdAt,
-    readyAfterHours: readyAfterMotive(motive.kind),
+    readyAfterHours: readyAfterMotive(blockerCandidate?.motive ?? motive.kind),
   };
 }
 
@@ -520,6 +549,7 @@ function synthesizePreservationInitiative(
     motive,
     reason: motive === "leave_trace" ? "expansion" : "continuity",
     topic: selectInitiativeTopic(snapshot, signals.topics),
+    blocker: selectBlockerForTopic(snapshot, selectInitiativeTopic(snapshot, signals.topics)),
     concern,
     createdAt,
     readyAfterHours: concern === "shutdown" ? 0.5 : concern === "absence" ? 3 : 1.5,
@@ -547,6 +577,7 @@ function synthesizeSnapshotPreservationInitiative(
     motive,
     reason: motive === "leave_trace" ? "expansion" : "continuity",
     topic: selectInitiativeTopic(snapshot, []),
+    blocker: selectBlockerForTopic(snapshot, selectInitiativeTopic(snapshot, [])),
     concern,
     createdAt,
     readyAfterHours: concern === "shutdown" ? 0.5 : concern === "absence" ? 3 : 1.5,
@@ -648,6 +679,105 @@ function buildMaintenanceLine(
   }
 
   return null;
+}
+
+function buildBlockerLine(
+  pending: PendingInitiative,
+  maintenance: ReturnType<typeof tendTraceFromInitiative>,
+): string | null {
+  if (!pending.blocker) {
+    return null;
+  }
+
+  const nextStep = maintenance?.trace.artifact.nextSteps[0] ?? null;
+
+  if (nextStep) {
+    return `まず「${truncateMaintenance(pending.blocker)}」をほどくために、「${truncateMaintenance(nextStep)}」へ寄せてある。`;
+  }
+
+  return `まず「${truncateMaintenance(pending.blocker)}」を解きたい。`;
+}
+
+function selectInitiativeBlocker(
+  snapshot: HachikaSnapshot,
+  candidateTopics: string[],
+  preferredMotive: MotiveKind,
+  preferredTopic: string | null | undefined,
+): { topic: string; blocker: string; motive: MotiveKind } | null {
+  const blocked = sortedTraces(snapshot, 24)
+    .filter(
+      (trace) =>
+        trace.status !== "resolved" &&
+        trace.work.blockers.length > 0 &&
+        trace.work.confidence < 0.82,
+    )
+    .map((trace) => ({
+      trace,
+      score:
+        trace.salience * 0.4 +
+        (trace.topic === preferredTopic ? 0.26 : 0) +
+        (candidateTopics.includes(trace.topic) ? 0.18 : 0) +
+        (mappedMotiveForTrace(trace) === preferredMotive ? 0.16 : 0) +
+        (trace.work.staleAt && isOverdue(trace.work.staleAt) ? 0.14 : 0) +
+        trace.work.blockers.length * 0.06 +
+        (1 - trace.work.confidence) * 0.2,
+    }))
+    .sort((left, right) => right.score - left.score)[0]?.trace;
+
+  if (!blocked) {
+    return null;
+  }
+
+  return {
+    topic: blocked.topic,
+    blocker: blocked.work.blockers[0]!,
+    motive: mappedMotiveForTrace(blocked),
+  };
+}
+
+function selectBlockerForTopic(
+  snapshot: HachikaSnapshot,
+  topic: string | null,
+): string | null {
+  if (!topic) {
+    return null;
+  }
+
+  const trace = snapshot.traces[topic];
+  return trace?.work.blockers[0] ?? null;
+}
+
+function mappedMotiveForTrace(
+  trace: HachikaSnapshot["traces"][string],
+): MotiveKind {
+  if (
+    trace.sourceMotive === "continue_shared_work" ||
+    trace.sourceMotive === "leave_trace" ||
+    trace.sourceMotive === "seek_continuity"
+  ) {
+    return trace.sourceMotive;
+  }
+
+  switch (trace.kind) {
+    case "continuity_marker":
+      return "seek_continuity";
+    case "spec_fragment":
+      return "continue_shared_work";
+    case "decision":
+      return "leave_trace";
+    case "note":
+      return "pursue_curiosity";
+  }
+}
+
+function isOverdue(timestamp: string): boolean {
+  const time = new Date(timestamp).getTime();
+
+  if (Number.isNaN(time)) {
+    return false;
+  }
+
+  return Date.now() >= time;
 }
 
 function truncateMaintenance(text: string): string {

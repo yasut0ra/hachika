@@ -80,7 +80,19 @@ test("responsive turn schedules a pending initiative", () => {
   assert.ok(result.snapshot.initiative.pending !== null);
   assert.equal(result.snapshot.initiative.pending?.kind, "resume_topic");
   assert.ok(result.snapshot.initiative.pending?.motive !== undefined);
+  assert.equal(result.snapshot.initiative.pending?.blocker, null);
   assert.ok(result.snapshot.purpose.active !== null);
+});
+
+test("blocked trace schedules a blocker-aware initiative", () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+
+  const result = engine.respond("仕様の境界が未定で曖昧だ。まだ進められない。");
+  const pending = result.snapshot.initiative.pending;
+
+  assert.ok(pending !== null);
+  assert.equal(pending?.topic, "仕様");
+  assert.ok((pending?.blocker ?? "").includes("未定") || (pending?.blocker ?? "").includes("曖昧"));
 });
 
 test("pending initiative emits a proactive resume after idle", () => {
@@ -118,6 +130,28 @@ test("proactive emission can maintain a trace by adding a next step", () => {
   assert.ok(after !== undefined);
   assert.ok((after?.artifact.nextSteps.length ?? 0) > 0);
   assert.match(message ?? "", /次は|断片|残してある/);
+});
+
+test("blocker-aware proactive emission resolves the targeted blocker into a next step", () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+
+  const first = engine.respond("仕様の境界が未定で曖昧だ。まだ進められない。");
+  const before = Object.values(first.snapshot.traces).find((entry) => entry.topic === "仕様");
+  const pendingBlocker = first.snapshot.initiative.pending?.blocker;
+
+  assert.ok(before !== undefined);
+  assert.ok(pendingBlocker !== null && pendingBlocker !== undefined);
+  assert.ok(before.work.blockers.includes(pendingBlocker));
+
+  engine.rewindIdleHours(8);
+  const message = engine.emitInitiative();
+  const after = engine.getSnapshot().traces.仕様;
+
+  assert.ok(message !== null);
+  assert.ok(after !== undefined);
+  assert.equal(after?.work.blockers.includes(pendingBlocker), false);
+  assert.ok((after?.artifact.nextSteps[0] ?? "").includes("整理"));
+  assert.match(message ?? "", /ほどく|整理/);
 });
 
 test("continuity threat raises preservation and schedules self-protective initiative", () => {

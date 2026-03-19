@@ -140,6 +140,7 @@ export interface PendingInitiative {
   reason: InitiativeReason;
   motive: MotiveKind;
   topic: string | null;
+  blocker: string | null;
   concern: PreservationConcern | null;
   createdAt: string;
   readyAfterHours: number;
