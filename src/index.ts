@@ -153,6 +153,7 @@ async function printIntro(currentEngine: HachikaEngine): Promise<void> {
   console.log(`reply:${describeReplyGenerator(replyGenerator)}`);
   console.log(`interpret:${describeInputInterpreter(inputInterpreter)}`);
   console.log(`last reply:${formatLastReplyDebug(currentEngine)}`);
+  console.log(`last interpretation:${formatInterpretationDebug(currentEngine.getLastInterpretationDebug())}`);
   console.log(`artifacts:${describeArtifactFiles(currentEngine.getSnapshot(), artifactsDir).length}`);
 }
 
@@ -198,6 +199,7 @@ function printReplyGeneratorStatus(): void {
   console.log(`reply:${describeReplyGenerator(replyGenerator)}`);
   console.log(`interpret:${describeInputInterpreter(inputInterpreter)}`);
   console.log(`last reply:${formatLastReplyDebug(engine)}`);
+  console.log(`last interpretation:${formatInterpretationDebug(engine.getLastInterpretationDebug())}`);
   console.log(`last response:${formatGeneratedDebug(engine.getLastResponseDebug())}`);
   console.log(`last proactive:${formatGeneratedDebug(engine.getLastProactiveDebug())}`);
 }
@@ -336,6 +338,7 @@ function printDebug(currentEngine: HachikaEngine): void {
   console.log(`reply generator: ${describeReplyGenerator(replyGenerator)}`);
   console.log(`input interpreter: ${describeInputInterpreter(inputInterpreter)}`);
   console.log(`last reply: ${formatLastReplyDebug(currentEngine)}`);
+  console.log(`last interpretation: ${formatInterpretationDebug(currentEngine.getLastInterpretationDebug())}`);
   console.log(`last response: ${formatGeneratedDebug(currentEngine.getLastResponseDebug())}`);
   console.log(`last proactive: ${formatGeneratedDebug(currentEngine.getLastProactiveDebug())}`);
   console.log(
@@ -646,6 +649,24 @@ function formatGeneratedDebug(
   const plan = debug.plan ? ` plan:${debug.plan}` : "";
 
   return `${mode}${debug.source}${via}${model}${fallback}${error}${plan}`;
+}
+
+function formatInterpretationDebug(
+  debug: ReturnType<HachikaEngine["getLastInterpretationDebug"]>,
+): string {
+  if (!debug) {
+    return "none";
+  }
+
+  const via = debug.provider ? ` via:${debug.provider}` : "";
+  const model = debug.model ? ` model:${debug.model}` : "";
+  const fallback = debug.fallbackUsed ? " fallback" : "";
+  const error = debug.error ? ` error:${debug.error}` : "";
+  const localTopics =
+    debug.localTopics.length > 0 ? ` local:${debug.localTopics.join(",")}` : " local:none";
+  const topics = debug.topics.length > 0 ? ` topics:${debug.topics.join(",")}` : " topics:none";
+
+  return `${debug.source}${via}${model}${fallback}${error} ${debug.summary}${localTopics}${topics}`;
 }
 
 function calculateNeglectLevelForDisplay(

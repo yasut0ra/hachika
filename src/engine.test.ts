@@ -922,6 +922,9 @@ test("respond stores the last local reply diagnostics on the engine", () => {
 
   engine.respond("仕様は？");
 
+  assert.equal(engine.getLastInterpretationDebug()?.source, "rule");
+  assert.equal(engine.getLastInterpretationDebug()?.fallbackUsed, false);
+  assert.ok((engine.getLastInterpretationDebug()?.summary ?? "").length > 0);
   assert.equal(engine.getLastReplyDebug()?.mode, "reply");
   assert.equal(engine.getLastReplyDebug()?.source, "rule");
   assert.equal(engine.getLastReplyDebug()?.provider, null);
@@ -1005,6 +1008,9 @@ test("respondAsync can use an input interpreter to keep greetings non-topical", 
 
   const result = await engine.respondAsync("こんにちは", { inputInterpreter });
 
+  assert.equal(result.debug.interpretation.source, "llm");
+  assert.equal(result.debug.interpretation.fallbackUsed, false);
+  assert.equal(result.debug.interpretation.topics.length, 0);
   assert.deepEqual(result.debug.signals.topics, []);
   assert.ok(result.debug.signals.greeting > 0.8);
   assert.ok(result.debug.signals.smalltalk > 0.5);
@@ -1054,6 +1060,9 @@ test("respondAsync falls back to local analysis when the input interpreter fails
     inputInterpreter,
   });
 
+  assert.equal(result.debug.interpretation.source, "rule");
+  assert.equal(result.debug.interpretation.fallbackUsed, true);
+  assert.match(result.debug.interpretation.error ?? "", /input interpreter offline/);
   assert.equal(result.reply, ruleResult.reply);
   assert.deepEqual(result.debug.signals.topics, ruleResult.debug.signals.topics);
   assert.equal(result.snapshot.purpose.active?.kind, ruleResult.snapshot.purpose.active?.kind);
@@ -1067,12 +1076,14 @@ test("reset clears the last reply diagnostics", async () => {
   await engine.respondAsync("仕様は？");
   assert.ok(engine.getLastReplyDebug() !== null);
   assert.ok(engine.getLastResponseDebug() !== null);
+  assert.ok(engine.getLastInterpretationDebug() !== null);
 
   engine.reset(createInitialSnapshot());
 
   assert.equal(engine.getLastReplyDebug(), null);
   assert.equal(engine.getLastResponseDebug(), null);
   assert.equal(engine.getLastProactiveDebug(), null);
+  assert.equal(engine.getLastInterpretationDebug(), null);
 });
 
 test("response and proactive diagnostics are preserved separately", () => {

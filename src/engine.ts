@@ -18,7 +18,11 @@ import {
 import type { ProactiveEmission } from "./initiative.js";
 import { applyBodyFromSignals } from "./body.js";
 import { updateIdentity } from "./identity.js";
-import type { InputInterpretation, InputInterpreter } from "./input-interpreter.js";
+import type {
+  InputInterpretation,
+  InputInterpretationResult,
+  InputInterpreter,
+} from "./input-interpreter.js";
 import { updatePurpose } from "./purpose.js";
 import { buildResponsePlan, isSocialTurnSignals } from "./response-planner.js";
 import type { ResponsePlan } from "./response-planner.js";
@@ -39,6 +43,7 @@ import type {
   DriveName,
   GeneratedTextDebug,
   HachikaSnapshot,
+  InterpretationDebug,
   InteractionSignals,
   MoodLabel,
   SelfModel,
@@ -355,6 +360,7 @@ export class HachikaEngine {
   #lastGeneratedDebug: GeneratedTextDebug | null = null;
   #lastResponseDebug: GeneratedTextDebug | null = null;
   #lastProactiveDebug: GeneratedTextDebug | null = null;
+  #lastInterpretationDebug: InterpretationDebug | null = null;
 
   constructor(snapshot: HachikaSnapshot = createInitialSnapshot()) {
     this.#snapshot = structuredClone(snapshot);
@@ -369,6 +375,7 @@ export class HachikaEngine {
     this.#lastGeneratedDebug = null;
     this.#lastResponseDebug = null;
     this.#lastProactiveDebug = null;
+    this.#lastInterpretationDebug = null;
   }
 
   getSelfModel(): SelfModel {
@@ -393,6 +400,10 @@ export class HachikaEngine {
 
   getLastProactiveDebug(): TurnResult["debug"]["reply"] | null {
     return this.#lastProactiveDebug ? { ...this.#lastProactiveDebug } : null;
+  }
+
+  getLastInterpretationDebug(): InterpretationDebug | null {
+    return this.#lastInterpretationDebug ? { ...this.#lastInterpretationDebug } : null;
   }
 
   emitInitiative(options: { force?: boolean; now?: Date } = {}): string | null {
@@ -601,6 +612,7 @@ export class HachikaEngine {
     this.#snapshot = prepared.nextSnapshot;
     this.#lastGeneratedDebug = { ...replyDebug };
     this.#lastResponseDebug = { ...replyDebug };
+    this.#lastInterpretationDebug = { ...prepared.interpretationDebug };
 
     return {
       reply,
@@ -610,6 +622,7 @@ export class HachikaEngine {
         mood: prepared.mood,
         signals: prepared.signals,
         selfModel: prepared.selfModel,
+        interpretation: prepared.interpretationDebug,
         reply: replyDebug,
       },
     };
@@ -620,6 +633,7 @@ interface PreparedTurn {
   previousSnapshot: HachikaSnapshot;
   nextSnapshot: HachikaSnapshot;
   signals: InteractionSignals;
+  interpretationDebug: InterpretationDebug;
   mood: MoodLabel;
   dominant: DriveName;
   selfModel: SelfModel;
@@ -632,7 +646,12 @@ function prepareTurn(
   input: string,
 ): PreparedTurn {
   const signals = analyzeInteraction(input, snapshot);
-  return prepareTurnFromSignals(snapshot, signals, input);
+  return prepareTurnFromSignals(
+    snapshot,
+    signals,
+    input,
+    buildRuleInterpretationDebug(signals),
+  );
 }
 
 async function prepareTurnAsync(
@@ -640,14 +659,20 @@ async function prepareTurnAsync(
   input: string,
   inputInterpreter: InputInterpreter | null,
 ): Promise<PreparedTurn> {
-  const signals = await analyzeInteractionAsync(input, snapshot, inputInterpreter);
-  return prepareTurnFromSignals(snapshot, signals, input);
+  const analyzed = await analyzeInteractionAsync(input, snapshot, inputInterpreter);
+  return prepareTurnFromSignals(
+    snapshot,
+    analyzed.signals,
+    input,
+    analyzed.interpretationDebug,
+  );
 }
 
 function prepareTurnFromSignals(
   snapshot: HachikaSnapshot,
   signals: InteractionSignals,
   input: string,
+  interpretationDebug: InterpretationDebug,
 ): PreparedTurn {
   const previousSnapshot = structuredClone(snapshot);
   const sentimentScore = scoreSentiment(signals);
@@ -686,6 +711,7 @@ function prepareTurnFromSignals(
     previousSnapshot,
     nextSnapshot,
     signals,
+    interpretationDebug,
     mood,
     dominant,
     selfModel,
@@ -746,15 +772,29 @@ function formatReplyGenerationError(error: unknown): string {
   return "reply_generation_failed";
 }
 
+function formatInterpretationError(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return "input_interpretation_failed";
+}
+
 async function analyzeInteractionAsync(
   input: string,
   snapshot: HachikaSnapshot,
   inputInterpreter: InputInterpreter | null,
-): Promise<InteractionSignals> {
+): Promise<{
+  signals: InteractionSignals;
+  interpretationDebug: InterpretationDebug;
+}> {
   const localSignals = analyzeInteraction(input, snapshot);
 
   if (!inputInterpreter) {
-    return localSignals;
+    return {
+      signals: localSignals,
+      interpretationDebug: buildRuleInterpretationDebug(localSignals),
+    };
   }
 
   try {
@@ -764,10 +804,133 @@ async function analyzeInteractionAsync(
       localTopics: localSignals.topics,
     });
 
-    return mergeInterpretedSignals(snapshot, localSignals, interpreted?.interpretation ?? null);
-  } catch {
-    return localSignals;
+    if (!interpreted) {
+      return {
+        signals: localSignals,
+        interpretationDebug: buildFallbackInterpretationDebug(
+          inputInterpreter,
+          localSignals,
+          "empty_interpretation",
+        ),
+      };
+    }
+
+    const mergedSignals = mergeInterpretedSignals(
+      snapshot,
+      localSignals,
+      interpreted.interpretation,
+    );
+    return {
+      signals: mergedSignals,
+      interpretationDebug: buildInterpreterInterpretationDebug(
+        localSignals,
+        mergedSignals,
+        interpreted,
+      ),
+    };
+  } catch (error) {
+    return {
+      signals: localSignals,
+      interpretationDebug: buildFallbackInterpretationDebug(
+        inputInterpreter,
+        localSignals,
+        formatInterpretationError(error),
+      ),
+    };
   }
+}
+
+function buildRuleInterpretationDebug(
+  signals: InteractionSignals,
+): InterpretationDebug {
+  return {
+    source: "rule",
+    provider: null,
+    model: null,
+    fallbackUsed: false,
+    error: null,
+    localTopics: [...signals.topics],
+    topics: [...signals.topics],
+    summary: summarizeInterpretation(signals),
+  };
+}
+
+function buildInterpreterInterpretationDebug(
+  localSignals: InteractionSignals,
+  mergedSignals: InteractionSignals,
+  interpreted: InputInterpretationResult,
+): InterpretationDebug {
+  return {
+    source: "llm",
+    provider: interpreted.provider,
+    model: interpreted.model,
+    fallbackUsed: false,
+    error: null,
+    localTopics: [...localSignals.topics],
+    topics: [...mergedSignals.topics],
+    summary: summarizeInterpretation(mergedSignals),
+  };
+}
+
+function buildFallbackInterpretationDebug(
+  inputInterpreter: InputInterpreter,
+  signals: InteractionSignals,
+  error: string,
+): InterpretationDebug {
+  return {
+    source: "rule",
+    provider: inputInterpreter.name,
+    model: null,
+    fallbackUsed: true,
+    error,
+    localTopics: [...signals.topics],
+    topics: [...signals.topics],
+    summary: summarizeInterpretation(signals),
+  };
+}
+
+function summarizeInterpretation(
+  signals: InteractionSignals,
+): string {
+  const tags: string[] = [];
+
+  if (signals.greeting >= 0.45) {
+    tags.push("greeting");
+  }
+  if (signals.smalltalk >= 0.45) {
+    tags.push("smalltalk");
+  }
+  if (signals.repair >= 0.42) {
+    tags.push("repair");
+  }
+  if (signals.selfInquiry >= 0.45) {
+    tags.push("self");
+  }
+  if (signals.workCue >= 0.35) {
+    tags.push("work");
+  }
+  if (signals.memoryCue >= 0.2) {
+    tags.push("memory");
+  }
+  if (signals.expansionCue >= 0.2) {
+    tags.push("expand");
+  }
+  if (signals.completion >= 0.2) {
+    tags.push("complete");
+  }
+  if (signals.abandonment >= 0.2) {
+    tags.push("abandon");
+  }
+  if (signals.preservationThreat >= 0.2) {
+    tags.push("preserve");
+  }
+  if (signals.negative >= 0.2 || signals.dismissal >= 0.18) {
+    tags.push("guard");
+  }
+
+  const topicSuffix =
+    signals.topics.length > 0 ? ` topics:${signals.topics.join(",")}` : " topics:none";
+  return `${tags.length > 0 ? tags.join("/") : "neutral"}${topicSuffix}`;
 }
 
 function analyzeInteraction(

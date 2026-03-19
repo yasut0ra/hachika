@@ -283,8 +283,20 @@ export interface TurnResult {
     mood: MoodLabel;
     signals: InteractionSignals;
     selfModel: SelfModel;
+    interpretation: InterpretationDebug;
     reply: GeneratedTextDebug;
   };
+}
+
+export interface InterpretationDebug {
+  source: "rule" | "llm";
+  provider: string | null;
+  model: string | null;
+  fallbackUsed: boolean;
+  error: string | null;
+  localTopics: string[];
+  topics: string[];
+  summary: string;
 }
 
 export interface GeneratedTextDebug {
