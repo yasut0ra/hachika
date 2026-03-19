@@ -289,6 +289,139 @@ test("trace maintenance can promote a fulfilled topic into a decision", () => {
   assert.match(snapshot.traces.設計?.summary ?? "", /決定|まとまった/);
 });
 
+test("resolved decision trace can archive when it no longer has open work", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.lastInteractionAt = "2026-03-19T12:00:00.000Z";
+
+  const trace = updateTraces(
+    snapshot,
+    "設計は決まった。保存した。",
+    createSignals({
+      completion: 0.34,
+      topics: ["設計"],
+    }),
+    createSelfModel([
+      { kind: "leave_trace", score: 0.74, topic: "設計", reason: "決まった形として残したい" },
+    ]),
+    "2026-03-19T12:00:00.000Z",
+  );
+
+  assert.ok(trace !== null);
+  assert.equal(trace?.kind, "decision");
+  assert.equal(trace?.status, "resolved");
+  assert.equal(trace?.lifecycle?.phase, "archived");
+  assert.equal(trace?.work.blockers.length, 0);
+  assert.equal(trace?.artifact.nextSteps.length, 0);
+});
+
+test("archived decision trace can reopen into active work on continuation cues", () => {
+  const snapshot = createTraceSnapshot({
+    topic: "設計",
+    kind: "decision",
+    status: "resolved",
+    lastAction: "resolved",
+    summary: "「設計」は決定として残っている。",
+    sourceMotive: "leave_trace",
+    artifact: {
+      memo: ["設計を残す"],
+      fragments: ["API を分ける"],
+      decisions: ["API を分ける"],
+      nextSteps: [],
+    },
+    work: {
+      focus: "API を分ける",
+      confidence: 0.92,
+      blockers: [],
+      staleAt: null,
+    },
+    lifecycle: {
+      phase: "archived",
+      archivedAt: "2026-03-19T08:00:00.000Z",
+      reopenedAt: null,
+      reopenCount: 0,
+    },
+    salience: 0.76,
+    mentions: 3,
+    createdAt: "2026-03-19T07:00:00.000Z",
+    lastUpdatedAt: "2026-03-19T08:00:00.000Z",
+  });
+
+  const trace = updateTraces(
+    snapshot,
+    "設計の続きを進めたい。仕様としてもう少し詰める。",
+    createSignals({
+      memoryCue: 0.24,
+      expansionCue: 0.28,
+      topics: ["設計"],
+    }),
+    createSelfModel([
+      { kind: "continue_shared_work", score: 0.78, topic: "設計", reason: "設計を前に進めたい" },
+      { kind: "seek_continuity", score: 0.61, topic: "設計", reason: "設計の流れを戻したい" },
+    ]),
+    "2026-03-19T12:00:00.000Z",
+  );
+
+  assert.ok(trace !== null);
+  assert.equal(trace?.kind, "spec_fragment");
+  assert.equal(trace?.status, "active");
+  assert.equal(trace?.lifecycle?.phase, "live");
+  assert.equal(trace?.lifecycle?.reopenCount, 1);
+  assert.equal(trace?.lifecycle?.reopenedAt, "2026-03-19T12:00:00.000Z");
+});
+
+test("initiative can reopen an archived decision into a live continuity trace", () => {
+  const snapshot = createTraceSnapshot({
+    topic: "設計",
+    kind: "decision",
+    status: "resolved",
+    lastAction: "resolved",
+    summary: "「設計」は決定として残っている。",
+    sourceMotive: "leave_trace",
+    artifact: {
+      memo: ["設計を残す"],
+      fragments: ["API を分ける"],
+      decisions: ["API を分ける"],
+      nextSteps: [],
+    },
+    work: {
+      focus: "API を分ける",
+      confidence: 0.92,
+      blockers: [],
+      staleAt: null,
+    },
+    lifecycle: {
+      phase: "archived",
+      archivedAt: "2026-03-19T08:00:00.000Z",
+      reopenedAt: null,
+      reopenCount: 0,
+    },
+    salience: 0.76,
+    mentions: 3,
+    createdAt: "2026-03-19T07:00:00.000Z",
+    lastUpdatedAt: "2026-03-19T08:00:00.000Z",
+  });
+  snapshot.body.energy = 0.12;
+  snapshot.body.tension = 0.22;
+
+  const maintenance = tendTraceFromInitiative(
+    snapshot,
+    {
+      kind: "resume_topic",
+      motive: "seek_continuity",
+      topic: "設計",
+      blocker: null,
+      concern: null,
+    },
+    "2026-03-19T13:00:00.000Z",
+  );
+
+  assert.ok(maintenance !== null);
+  assert.equal(snapshot.traces.設計?.kind, "continuity_marker");
+  assert.equal(snapshot.traces.設計?.status, "active");
+  assert.equal(snapshot.traces.設計?.lifecycle?.phase, "live");
+  assert.equal(snapshot.traces.設計?.lifecycle?.reopenCount, 1);
+});
+
 function createTraceSnapshot(trace: TraceEntry): HachikaSnapshot {
   const snapshot = createInitialSnapshot();
   snapshot.traces[trace.topic] = trace;

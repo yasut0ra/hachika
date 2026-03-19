@@ -11,7 +11,12 @@ import {
 } from "./memory.js";
 import { loadSnapshot, saveSnapshot } from "./persistence.js";
 import { createInitialSnapshot, formatBodyState, formatDriveState } from "./state.js";
-import { deriveEffectiveTraceStaleAt, deriveTraceTendingMode, sortedTraces } from "./traces.js";
+import {
+  deriveEffectiveTraceStaleAt,
+  deriveTraceTendingMode,
+  readTraceLifecycle,
+  sortedTraces,
+} from "./traces.js";
 import type { ResolvedPurpose } from "./types.js";
 
 const snapshotPath = resolve(process.cwd(), "data/hachika-state.json");
@@ -182,7 +187,7 @@ function printTraces(currentEngine: HachikaEngine): void {
 
   for (const trace of traces) {
     console.log(
-      `${trace.topic} ${trace.kind}/${trace.status} action:${trace.lastAction} tending:${deriveTraceTendingMode(snapshot, trace)} focus:${trace.work.focus ?? "none"} confidence:${trace.work.confidence.toFixed(2)} blockers:${trace.work.blockers.length} salience:${trace.salience.toFixed(2)} mentions:${trace.mentions} motive:${trace.sourceMotive} ${trace.summary}`,
+      `${trace.topic} ${trace.kind}/${trace.status} lifecycle:${readTraceLifecycle(trace).phase} action:${trace.lastAction} tending:${deriveTraceTendingMode(snapshot, trace)} focus:${trace.work.focus ?? "none"} confidence:${trace.work.confidence.toFixed(2)} blockers:${trace.work.blockers.length} salience:${trace.salience.toFixed(2)} mentions:${trace.mentions} motive:${trace.sourceMotive} ${trace.summary}`,
     );
     if (trace.work.staleAt) {
       console.log(`  staleAt: ${trace.work.staleAt}`);
@@ -208,7 +213,9 @@ function printArtifacts(currentEngine: HachikaEngine): void {
   }
 
   for (const tending of ["deepen", "preserve", "steady"] as const) {
-    const sectionFiles = files.filter((file) => file.tending === tending);
+    const sectionFiles = files.filter(
+      (file) => file.lifecyclePhase === "live" && file.tending === tending,
+    );
 
     if (sectionFiles.length === 0) {
       continue;
@@ -218,7 +225,19 @@ function printArtifacts(currentEngine: HachikaEngine): void {
 
     for (const file of sectionFiles) {
       console.log(
-        `  ${file.topic} ${file.kind}/${file.status} action:${file.lastAction} tending:${file.tending} focus:${file.focus ?? "none"} confidence:${file.confidence.toFixed(2)} blockers:${file.blockers.length} next:${file.pendingNextStep ?? "none"} stale:${file.staleAt ?? "none"} effectiveStale:${file.effectiveStaleAt ?? "none"} ${file.relativePath}`,
+        `  ${file.topic} ${file.kind}/${file.status} lifecycle:${file.lifecyclePhase} action:${file.lastAction} tending:${file.tending} focus:${file.focus ?? "none"} confidence:${file.confidence.toFixed(2)} blockers:${file.blockers.length} next:${file.pendingNextStep ?? "none"} stale:${file.staleAt ?? "none"} effectiveStale:${file.effectiveStaleAt ?? "none"} ${file.relativePath}`,
+      );
+    }
+  }
+
+  const archivedFiles = files.filter((file) => file.lifecyclePhase === "archived");
+
+  if (archivedFiles.length > 0) {
+    console.log("archive:");
+
+    for (const file of archivedFiles) {
+      console.log(
+        `  ${file.topic} ${file.kind}/${file.status} lifecycle:${file.lifecyclePhase} action:${file.lastAction} tending:${file.tending} focus:${file.focus ?? "none"} confidence:${file.confidence.toFixed(2)} blockers:${file.blockers.length} next:${file.pendingNextStep ?? "none"} stale:${file.staleAt ?? "none"} effectiveStale:${file.effectiveStaleAt ?? "none"} ${file.relativePath}`,
       );
     }
   }

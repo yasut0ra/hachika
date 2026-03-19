@@ -22,6 +22,7 @@ import type {
   TraceAction,
   TraceArtifact,
   TraceEntry,
+  TraceLifecycleState,
   TraceWorkState,
   TraceStatus,
 } from "./types.js";
@@ -51,7 +52,7 @@ function hydrateSnapshot(raw: unknown): HachikaSnapshot {
   }
 
   return {
-    version: 14,
+    version: 15,
     state: hydrateState(raw.state),
     body: hydrateBody(raw.body),
     attachment:
@@ -407,6 +408,14 @@ function hydrateTraces(raw: unknown): Record<string, TraceEntry> {
       sourceMotive,
       artifact: hydrateTraceArtifact(value.artifact, topic, kind),
       work: hydrateTraceWork(value.work, topic, kind),
+      lifecycle: hydrateTraceLifecycle(
+        value.lifecycle,
+        {
+          status: isTraceStatus(value.status) ? value.status : inferLegacyTraceStatus(kind),
+          artifact: hydrateTraceArtifact(value.artifact, topic, kind),
+          work: hydrateTraceWork(value.work, topic, kind),
+        },
+      ),
       salience: typeof value.salience === "number" ? clamp01(value.salience) : 0.3,
       mentions:
         typeof value.mentions === "number" && Number.isFinite(value.mentions)
@@ -453,6 +462,44 @@ function hydrateTraceWork(
     confidence: typeof raw.confidence === "number" ? clamp01(raw.confidence) : inferLegacyTraceWork(topic, kind).confidence,
     blockers: hydrateTraceArtifactItems(raw.blockers),
     staleAt: typeof raw.staleAt === "string" ? raw.staleAt : inferLegacyTraceWork(topic, kind).staleAt,
+  };
+}
+
+function hydrateTraceLifecycle(
+  raw: unknown,
+  trace: Pick<TraceEntry, "status" | "artifact" | "work">,
+): TraceLifecycleState {
+  const inferredPhase =
+    trace.status === "resolved" &&
+    trace.artifact.nextSteps.length === 0 &&
+    trace.work.blockers.length === 0
+      ? "archived"
+      : "live";
+
+  if (!isRecord(raw)) {
+    return {
+      phase: inferredPhase,
+      archivedAt: inferredPhase === "archived" ? new Date().toISOString() : null,
+      reopenedAt: null,
+      reopenCount: 0,
+    };
+  }
+
+  const phase = raw.phase === "archived" || raw.phase === "live" ? raw.phase : inferredPhase;
+
+  return {
+    phase,
+    archivedAt:
+      typeof raw.archivedAt === "string"
+        ? raw.archivedAt
+        : phase === "archived"
+          ? new Date().toISOString()
+          : null,
+    reopenedAt: typeof raw.reopenedAt === "string" ? raw.reopenedAt : null,
+    reopenCount:
+      typeof raw.reopenCount === "number" && Number.isFinite(raw.reopenCount)
+        ? Math.max(0, Math.round(raw.reopenCount))
+        : 0,
   };
 }
 

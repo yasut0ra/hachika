@@ -10,6 +10,7 @@ import type {
   TraceArtifact,
   TraceEntry,
   TraceKind,
+  TraceLifecycleState,
   TraceStatus,
   TraceTendingMode,
   TraceWorkState,
@@ -107,6 +108,20 @@ const BLOCKER_MARKERS = [
   "できない",
 ];
 
+export function readTraceLifecycle(
+  trace: { lifecycle?: TraceLifecycleState },
+): TraceLifecycleState {
+  return {
+    phase: trace.lifecycle?.phase ?? "live",
+    archivedAt: trace.lifecycle?.archivedAt ?? null,
+    reopenedAt: trace.lifecycle?.reopenedAt ?? null,
+    reopenCount:
+      typeof trace.lifecycle?.reopenCount === "number"
+        ? Math.max(0, Math.round(trace.lifecycle.reopenCount))
+        : 0,
+  };
+}
+
 export function updateTraces(
   snapshot: HachikaSnapshot,
   input: string,
@@ -123,7 +138,9 @@ export function updateTraces(
   const sourceMotive = selectTraceMotive(snapshot, selfModel, signals);
   const nextKind = selectTraceKind(signals, sourceMotive);
   const previous = snapshot.traces[topic];
-  const kind = strongerTraceKind(previous?.kind, nextKind);
+  const kind = shouldReopenArchivedTrace(previous, signals)
+    ? nextKind
+    : strongerTraceKind(previous?.kind, nextKind);
   const artifact = mergeTraceArtifacts(
     previous?.artifact,
     extractTraceArtifact(input, topic, kind),
@@ -157,6 +174,11 @@ export function updateTraces(
     },
   );
   const summary = buildTraceSummary(topic, kind, sourceMotive, snapshot, signals, artifact);
+  const lifecycle = deriveTraceLifecycle(
+    previous?.lifecycle,
+    { status, artifact, work },
+    { timestamp },
+  );
 
   const trace: TraceEntry = {
     topic,
@@ -167,6 +189,7 @@ export function updateTraces(
     sourceMotive,
     artifact,
     work,
+    lifecycle,
     salience,
     mentions: (previous?.mentions ?? 0) + 1,
     createdAt: previous?.createdAt ?? timestamp,
@@ -275,6 +298,7 @@ export function tendTraceFromInitiative(
   const trace = existing
     ? structuredClone(existing)
     : createInitiativeTrace(snapshot, pending, topic, timestamp, profile);
+  const wasArchived = readTraceLifecycle(existing ?? trace).phase === "archived";
   let action: TraceMaintenance["action"] = existing ? null : "created";
 
   if (
@@ -289,8 +313,18 @@ export function tendTraceFromInitiative(
       snapshot.purpose.lastResolved.resolution,
       pickPrimaryArtifactItem(trace) ?? `${topic} を決まった形として残す`,
     ]);
-      action = "promoted_decision";
-    } else {
+    action = "promoted_decision";
+  } else {
+    if (wasArchived) {
+      const reopenedKind = selectReopenedInitiativeTraceKind(profile, pending, trace.kind);
+
+      if (reopenedKind !== trace.kind) {
+        trace.kind = reopenedKind;
+        trace.status = deriveTraceStatus(reopenedKind);
+        action ??= reopenedKind === "spec_fragment" ? "stabilized_fragment" : "added_next_step";
+      }
+    }
+
     const nextKind = selectMaintenanceTraceKind(profile, pending, trace.kind);
 
     if (nextKind !== trace.kind) {
@@ -364,6 +398,11 @@ export function tendTraceFromInitiative(
     snapshot.preservation.concern,
     Math.max(snapshot.preservation.threat, pending.concern ? 0.22 : 0),
     trace.artifact,
+  );
+  trace.lifecycle = deriveTraceLifecycle(
+    existing?.lifecycle,
+    { status: trace.status, artifact: trace.artifact, work: trace.work },
+    { timestamp },
   );
   trace.salience = clamp01(trace.salience + profile.salienceBoost);
   trace.lastUpdatedAt = timestamp;
@@ -513,6 +552,66 @@ function strongerTraceKind(
   return TRACE_KIND_PRIORITY[next] >= TRACE_KIND_PRIORITY[previous] ? next : previous;
 }
 
+function shouldReopenArchivedTrace(
+  previous: TraceEntry | undefined,
+  signals: InteractionSignals,
+): boolean {
+  if (!previous || readTraceLifecycle(previous).phase !== "archived") {
+    return false;
+  }
+
+  return (
+    signals.completion < 0.12 &&
+    (signals.memoryCue > 0.1 ||
+      signals.expansionCue > 0.12 ||
+      signals.preservationThreat > 0.18)
+  );
+}
+
+function deriveTraceLifecycle(
+  previous: TraceEntry["lifecycle"] | undefined,
+  trace: Pick<TraceEntry, "status" | "artifact" | "work">,
+  options: { timestamp: string },
+): TraceLifecycleState {
+  const prior = previous
+    ? readTraceLifecycle({ lifecycle: previous })
+    : readTraceLifecycle({});
+  const shouldArchive =
+    trace.status === "resolved" &&
+    trace.artifact.nextSteps.length === 0 &&
+    trace.work.blockers.length === 0;
+  const shouldReopen =
+    prior.phase === "archived" &&
+    (trace.status !== "resolved" ||
+      trace.artifact.nextSteps.length > 0 ||
+      trace.work.blockers.length > 0);
+
+  if (shouldReopen) {
+    return {
+      phase: "live",
+      archivedAt: prior.archivedAt,
+      reopenedAt: options.timestamp,
+      reopenCount: prior.reopenCount + 1,
+    };
+  }
+
+  if (shouldArchive) {
+    return {
+      phase: "archived",
+      archivedAt: prior.archivedAt ?? options.timestamp,
+      reopenedAt: prior.reopenedAt,
+      reopenCount: prior.reopenCount,
+    };
+  }
+
+  return {
+    phase: "live",
+    archivedAt: prior.archivedAt,
+    reopenedAt: prior.reopenedAt,
+    reopenCount: prior.reopenCount,
+  };
+}
+
 function buildTraceSummary(
   topic: string,
   kind: TraceKind,
@@ -616,6 +715,7 @@ function tracePriorityScore(
   const tending = deriveTraceTendingMode(snapshot, trace);
   const isStale = isTraceStale(trace, snapshot);
   const unresolved = trace.status !== "resolved";
+  const lifecycle = readTraceLifecycle(trace);
 
   let score = trace.salience;
 
@@ -658,6 +758,8 @@ function tracePriorityScore(
         ? (trace.kind === "continuity_marker" ? 0.1 : 0.04) +
           (trace.sourceMotive === "seek_continuity" || trace.sourceMotive === "leave_trace" ? 0.05 : 0)
         : 0;
+
+  score += lifecycle.phase === "archived" ? -0.32 : 0;
 
   return score;
 }
@@ -839,6 +941,12 @@ function createInitiativeTrace(
           (pending.kind === "preserve_presence" ? 0.06 : 0.04) + profile.confidenceShift,
       },
     ),
+    lifecycle: {
+      phase: "live",
+      archivedAt: null,
+      reopenedAt: null,
+      reopenCount: 0,
+    },
     salience,
     mentions: 1,
     createdAt: timestamp,
@@ -1135,6 +1243,26 @@ function selectMaintenanceTraceKind(
   }
 
   return currentKind;
+}
+
+function selectReopenedInitiativeTraceKind(
+  profile: TraceMaintenanceProfile,
+  pending: Pick<PendingInitiative, "kind" | "motive">,
+  currentKind: TraceKind,
+): TraceKind {
+  if (currentKind !== "decision") {
+    return currentKind;
+  }
+
+  if (profile.mode === "preserve" || pending.motive === "seek_continuity") {
+    return "continuity_marker";
+  }
+
+  if (pending.motive === "continue_shared_work" || pending.motive === "leave_trace") {
+    return "spec_fragment";
+  }
+
+  return "note";
 }
 
 function extractTraceArtifact(

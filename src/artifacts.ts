@@ -4,12 +4,14 @@ import { dirname, join, relative, resolve } from "node:path";
 import {
   deriveEffectiveTraceStaleAt,
   deriveTraceTendingMode,
+  readTraceLifecycle,
   sortedTraces,
 } from "./traces.js";
 import type {
   HachikaSnapshot,
   TraceAction,
   TraceEntry,
+  TraceLifecyclePhase,
   TraceStatus,
   TraceTendingMode,
 } from "./types.js";
@@ -23,6 +25,10 @@ export interface ArtifactFile {
   kind: TraceEntry["kind"];
   status: TraceStatus;
   lastAction: TraceAction;
+  lifecyclePhase: TraceLifecyclePhase;
+  archivedAt: string | null;
+  reopenedAt: string | null;
+  reopenCount: number;
   tending: TraceTendingMode;
   focus: string | null;
   confidence: number;
@@ -49,8 +55,12 @@ export function describeArtifactFiles(
 
   return sortedTraces(snapshot, 64).map((trace) => {
     const tending = deriveTraceTendingMode(snapshot, trace);
+    const lifecycle = readTraceLifecycle(trace);
     const fileName = buildTraceFileName(trace);
-    const relativePath = join(tending, fileName);
+    const relativePath =
+      lifecycle.phase === "archived"
+        ? join("archive", fileName)
+        : join(tending, fileName);
     const absolutePath = join(root, relativePath);
 
     return {
@@ -58,6 +68,10 @@ export function describeArtifactFiles(
       kind: trace.kind,
       status: trace.status,
       lastAction: trace.lastAction,
+      lifecyclePhase: lifecycle.phase,
+      archivedAt: lifecycle.archivedAt,
+      reopenedAt: lifecycle.reopenedAt,
+      reopenCount: lifecycle.reopenCount,
       tending,
       focus: trace.work.focus,
       confidence: trace.work.confidence,
@@ -98,7 +112,9 @@ export async function syncArtifacts(
 
   for (const tending of TENDING_ORDER) {
     const tendingDir = join(root, tending);
-    const tendingFiles = files.filter((file) => file.tending === tending);
+    const tendingFiles = files.filter(
+      (file) => file.lifecyclePhase === "live" && file.tending === tending,
+    );
 
     await mkdir(tendingDir, { recursive: true });
     await writeFile(
@@ -107,6 +123,15 @@ export async function syncArtifacts(
       "utf8",
     );
   }
+
+  const archiveDir = join(root, "archive");
+  const archivedFiles = files.filter((file) => file.lifecyclePhase === "archived");
+  await mkdir(archiveDir, { recursive: true });
+  await writeFile(
+    join(archiveDir, INDEX_FILE_NAME),
+    renderArchiveArtifactIndex(snapshot, archivedFiles),
+    "utf8",
+  );
 
   const removedFiles: string[] = [];
   const existingRelativePaths = await listMaterializedTracePaths(root);
@@ -145,10 +170,13 @@ function renderArtifactIndex(
   for (const tending of TENDING_ORDER) {
     lines.push(`- ${tending}/index.md`);
   }
+  lines.push("- archive/index.md");
   lines.push("");
 
   for (const tending of TENDING_ORDER) {
-    const sectionFiles = files.filter((file) => file.tending === tending);
+    const sectionFiles = files.filter(
+      (file) => file.lifecyclePhase === "live" && file.tending === tending,
+    );
 
     if (sectionFiles.length === 0) {
       continue;
@@ -167,6 +195,22 @@ function renderArtifactIndex(
       appendArtifactIndexEntry(lines, trace, file, file.relativePath);
     }
 
+    lines.push("");
+  }
+
+  const archivedFiles = files.filter((file) => file.lifecyclePhase === "archived");
+  if (archivedFiles.length > 0) {
+    lines.push("## Archive");
+    lines.push("");
+    for (const file of archivedFiles) {
+      const trace = snapshot.traces[file.topic];
+
+      if (!trace) {
+        continue;
+      }
+
+      appendArtifactIndexEntry(lines, trace, file, file.relativePath);
+    }
     lines.push("");
   }
 
@@ -203,6 +247,35 @@ function renderTendingArtifactIndex(
   return `${lines.join("\n")}\n`;
 }
 
+function renderArchiveArtifactIndex(
+  snapshot: HachikaSnapshot,
+  files: ArtifactFile[],
+): string {
+  const lines = ["# Hachika Artifacts: Archive", ""];
+
+  lines.push(`Updated: ${snapshot.lastInteractionAt ?? "unknown"}`);
+  lines.push("Root Index: ../index.md");
+  lines.push("");
+
+  if (files.length === 0) {
+    lines.push("No archived artifacts right now.");
+    lines.push("");
+    return `${lines.join("\n")}\n`;
+  }
+
+  for (const file of files) {
+    const trace = snapshot.traces[file.topic];
+
+    if (!trace) {
+      continue;
+    }
+
+    appendArtifactIndexEntry(lines, trace, file, file.fileName);
+  }
+
+  return `${lines.join("\n")}\n`;
+}
+
 function appendArtifactIndexEntry(
   lines: string[],
   trace: TraceEntry,
@@ -210,8 +283,18 @@ function appendArtifactIndexEntry(
   pathLabel: string,
 ): void {
   lines.push(`- ${trace.topic} (${trace.kind}/${trace.status}) -> ${pathLabel}`);
+  lines.push(`  - lifecycle: ${file.lifecyclePhase}`);
   lines.push(`  - last action: ${trace.lastAction}`);
   lines.push(`  - tending: ${file.tending}`);
+  if (file.archivedAt) {
+    lines.push(`  - archived at: ${file.archivedAt}`);
+  }
+  if (file.reopenedAt) {
+    lines.push(`  - reopened at: ${file.reopenedAt}`);
+  }
+  if (file.reopenCount > 0) {
+    lines.push(`  - reopen count: ${file.reopenCount}`);
+  }
   lines.push(`  - focus: ${trace.work.focus ?? "none"}`);
   lines.push(`  - confidence: ${trace.work.confidence.toFixed(2)}`);
   if (trace.work.blockers.length > 0) {
@@ -264,9 +347,11 @@ export function renderArtifactDocument(
 ): string {
   const lines = [`# ${trace.topic}`, ""];
   const tending = deriveTraceTendingMode(snapshot, trace);
+  const lifecycle = readTraceLifecycle(trace);
 
   lines.push(`- Kind: ${trace.kind}`);
   lines.push(`- Status: ${trace.status}`);
+  lines.push(`- Lifecycle: ${lifecycle.phase}`);
   lines.push(`- Last Action: ${trace.lastAction}`);
   lines.push(`- Tending: ${tending}`);
   lines.push(`- Source Motive: ${trace.sourceMotive}`);
@@ -277,6 +362,9 @@ export function renderArtifactDocument(
   lines.push(`- Mentions: ${trace.mentions}`);
   lines.push(`- Created: ${trace.createdAt}`);
   lines.push(`- Updated: ${trace.lastUpdatedAt}`);
+  lines.push(`- Archived At: ${lifecycle.archivedAt ?? "none"}`);
+  lines.push(`- Reopened At: ${lifecycle.reopenedAt ?? "none"}`);
+  lines.push(`- Reopen Count: ${lifecycle.reopenCount}`);
   lines.push(`- Pending Next Step: ${trace.artifact.nextSteps[0] ?? "none"}`);
   lines.push(`- Stale At: ${trace.work.staleAt ?? "none"}`);
   lines.push(`- Effective Stale At: ${deriveEffectiveTraceStaleAt(snapshot, trace) ?? "none"}`);

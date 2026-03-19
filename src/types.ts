@@ -102,6 +102,8 @@ export type TraceStatus = "forming" | "active" | "resolved";
 
 export type TraceTendingMode = "preserve" | "steady" | "deepen";
 
+export type TraceLifecyclePhase = "live" | "archived";
+
 export type TraceAction =
   | "captured"
   | "refined"
@@ -125,6 +127,13 @@ export interface TraceWorkState {
   staleAt: string | null;
 }
 
+export interface TraceLifecycleState {
+  phase: TraceLifecyclePhase;
+  archivedAt: string | null;
+  reopenedAt: string | null;
+  reopenCount: number;
+}
+
 export interface TraceEntry {
   topic: string;
   kind: TraceKind;
@@ -134,6 +143,7 @@ export interface TraceEntry {
   sourceMotive: MotiveKind;
   artifact: TraceArtifact;
   work: TraceWorkState;
+  lifecycle?: TraceLifecycleState;
   salience: number;
   mentions: number;
   createdAt: string;

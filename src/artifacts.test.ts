@@ -44,6 +44,7 @@ test("renderArtifactDocument includes structured sections", () => {
 
   assert.match(markdown, /^# 設計/m);
   assert.match(markdown, /Status: active/);
+  assert.match(markdown, /Lifecycle: live/);
   assert.match(markdown, /Last Action: expanded/);
   assert.match(markdown, /Tending: preserve/);
   assert.match(markdown, /Focus: 責務ごとに整理する/);
@@ -82,6 +83,12 @@ test("syncArtifacts writes markdown files and index", async () => {
         blockers: [],
         staleAt: null,
       },
+      lifecycle: {
+        phase: "archived",
+        archivedAt: "2026-03-19T02:00:00.000Z",
+        reopenedAt: null,
+        reopenCount: 0,
+      },
       salience: 0.91,
       mentions: 3,
       createdAt: "2026-03-19T00:00:00.000Z",
@@ -96,14 +103,16 @@ test("syncArtifacts writes markdown files and index", async () => {
     assert.equal(result.files.length, 1);
     assert.equal(described.length, 1);
     assert.equal(described[0]?.tending, "steady");
-    assert.match(result.files[0]!.relativePath, /^steady\/trace-/);
+    assert.equal(described[0]?.lifecyclePhase, "archived");
+    assert.match(result.files[0]!.relativePath, /^archive\/trace-/);
 
     const artifactBody = await readFile(result.files[0]!.absolutePath, "utf8");
     const indexBody = await readFile(join(tempDir, "index.md"), "utf8");
-    const steadyIndexBody = await readFile(join(tempDir, "steady", "index.md"), "utf8");
+    const archiveIndexBody = await readFile(join(tempDir, "archive", "index.md"), "utf8");
 
     assert.match(artifactBody, /Kind: decision/);
     assert.match(artifactBody, /Status: resolved/);
+    assert.match(artifactBody, /Lifecycle: archived/);
     assert.match(artifactBody, /Last Action: resolved/);
     assert.match(artifactBody, /Tending: steady/);
     assert.match(artifactBody, /Focus: 記録として保存した/);
@@ -113,14 +122,16 @@ test("syncArtifacts writes markdown files and index", async () => {
     assert.match(artifactBody, /記録として保存した/);
     assert.match(indexBody, /Sections:/);
     assert.match(indexBody, /- deepen\/index\.md/);
-    assert.match(indexBody, /## Steady/);
-    assert.match(indexBody, /設計 \(decision\/resolved\) -> steady\/trace-/);
+    assert.match(indexBody, /- archive\/index\.md/);
+    assert.match(indexBody, /## Archive/);
+    assert.match(indexBody, /設計 \(decision\/resolved\) -> archive\/trace-/);
+    assert.match(indexBody, /lifecycle: archived/);
     assert.match(indexBody, /last action: resolved/);
     assert.match(indexBody, /tending: steady/);
     assert.match(indexBody, /confidence: 0.94/);
-    assert.match(steadyIndexBody, /^# Hachika Artifacts: Steady/m);
-    assert.match(steadyIndexBody, /Root Index: \.\.\/index\.md/);
-    assert.match(steadyIndexBody, /設計 \(decision\/resolved\) -> trace-/);
+    assert.match(archiveIndexBody, /^# Hachika Artifacts: Archive/m);
+    assert.match(archiveIndexBody, /Root Index: \.\.\/index\.md/);
+    assert.match(archiveIndexBody, /設計 \(decision\/resolved\) -> trace-/);
   } finally {
     await rm(tempDir, { recursive: true, force: true });
   }
@@ -212,6 +223,12 @@ test("syncArtifacts groups the index by tending order", async () => {
         blockers: [],
         staleAt: null,
       },
+      lifecycle: {
+        phase: "archived",
+        archivedAt: "2026-03-19T01:30:00.000Z",
+        reopenedAt: null,
+        reopenCount: 0,
+      },
       salience: 0.54,
       mentions: 2,
       createdAt: "2026-03-19T00:00:00.000Z",
@@ -223,15 +240,15 @@ test("syncArtifacts groups the index by tending order", async () => {
     const indexBody = await readFile(join(tempDir, "index.md"), "utf8");
 
     const deepenHeading = indexBody.indexOf("## Deepen");
-    const steadyHeading = indexBody.indexOf("## Steady");
+    const archiveHeading = indexBody.indexOf("## Archive");
     const deepenEntry = indexBody.indexOf("仕様 (spec_fragment/active)");
-    const steadyEntry = indexBody.indexOf("設計 (decision/resolved)");
+    const archiveEntry = indexBody.indexOf("設計 (decision/resolved)");
 
     assert.ok(deepenHeading >= 0);
-    assert.ok(steadyHeading >= 0);
-    assert.ok(deepenHeading < steadyHeading);
+    assert.ok(archiveHeading >= 0);
+    assert.ok(deepenHeading < archiveHeading);
     assert.ok(deepenEntry > deepenHeading);
-    assert.ok(steadyEntry > steadyHeading);
+    assert.ok(archiveEntry > archiveHeading);
   } finally {
     await rm(tempDir, { recursive: true, force: true });
   }
@@ -249,10 +266,12 @@ test("syncArtifacts writes per-tending index files even when a section is empty"
     const deepenIndexBody = await readFile(join(tempDir, "deepen", "index.md"), "utf8");
     const preserveIndexBody = await readFile(join(tempDir, "preserve", "index.md"), "utf8");
     const steadyIndexBody = await readFile(join(tempDir, "steady", "index.md"), "utf8");
+    const archiveIndexBody = await readFile(join(tempDir, "archive", "index.md"), "utf8");
 
     assert.match(deepenIndexBody, /No deepen artifacts right now\./);
     assert.match(preserveIndexBody, /No preserve artifacts right now\./);
     assert.match(steadyIndexBody, /No steady artifacts right now\./);
+    assert.match(archiveIndexBody, /No archived artifacts right now\./);
   } finally {
     await rm(tempDir, { recursive: true, force: true });
   }
