@@ -1,6 +1,7 @@
 import { HachikaEngine } from "./engine.js";
+import type { ReplyGenerator } from "./reply-generator.js";
 import { createInitialSnapshot } from "./state.js";
-import type { HachikaSnapshot, SelfModel, TurnResult } from "./types.js";
+import type { GeneratedTextDebug, HachikaSnapshot, SelfModel, TurnResult } from "./types.js";
 
 export interface UserScenarioStep {
   kind: "user";
@@ -45,6 +46,7 @@ export interface ProactiveScenarioEvent extends ScenarioEventBase {
   kind: "proactive";
   force: boolean;
   message: string | null;
+  debug: GeneratedTextDebug | null;
 }
 
 export type ScenarioEvent =
@@ -105,6 +107,76 @@ export function runScenario(
       label: step.label,
       force: step.force ?? false,
       message,
+      debug: message === null ? null : engine.getLastReplyDebug(),
+      snapshot: engine.getSnapshot(),
+      selfModel: engine.getSelfModel(),
+    });
+  }
+
+  return {
+    initialSnapshot: structuredClone(initialSnapshot),
+    events,
+    finalSnapshot: engine.getSnapshot(),
+  };
+}
+
+export async function runScenarioAsync(
+  steps: readonly ScenarioStep[],
+  initialSnapshot: HachikaSnapshot = createInitialSnapshot(),
+  options: { replyGenerator?: ReplyGenerator | null } = {},
+): Promise<ScenarioRun> {
+  const engine = new HachikaEngine(initialSnapshot);
+  const events: ScenarioEvent[] = [];
+  const replyGenerator = options.replyGenerator ?? null;
+
+  for (const step of steps) {
+    if (step.kind === "user") {
+      const result = replyGenerator
+        ? await engine.respondAsync(step.input, { replyGenerator })
+        : engine.respond(step.input);
+      events.push({
+        kind: "user",
+        label: step.label,
+        input: step.input,
+        reply: result.reply,
+        debug: result.debug,
+        snapshot: result.snapshot,
+        selfModel: result.debug.selfModel,
+      });
+      continue;
+    }
+
+    if (step.kind === "idle") {
+      engine.rewindIdleHours(step.hours);
+      events.push({
+        kind: "idle",
+        label: step.label,
+        hours: step.hours,
+        snapshot: engine.getSnapshot(),
+        selfModel: engine.getSelfModel(),
+      });
+      continue;
+    }
+
+    const proactiveOptions: { force?: boolean; now?: Date; replyGenerator?: ReplyGenerator | null } = {};
+    if (step.force !== undefined) {
+      proactiveOptions.force = step.force;
+    }
+    if (step.now !== undefined) {
+      proactiveOptions.now = step.now;
+    }
+    if (replyGenerator) {
+      proactiveOptions.replyGenerator = replyGenerator;
+    }
+    const message = replyGenerator
+      ? await engine.emitInitiativeAsync(proactiveOptions)
+      : engine.emitInitiative(proactiveOptions);
+    events.push({
+      kind: "proactive",
+      label: step.label,
+      force: step.force ?? false,
+      message,
+      debug: message === null ? null : engine.getLastReplyDebug(),
       snapshot: engine.getSnapshot(),
       selfModel: engine.getSelfModel(),
     });

@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { requireScenarioEvent, runScenario } from "./scenario-harness.js";
+import type { ReplyGenerator } from "./reply-generator.js";
+import { requireScenarioEvent, runScenario, runScenarioAsync } from "./scenario-harness.js";
 import { createInitialSnapshot } from "./state.js";
 import type { HachikaSnapshot } from "./types.js";
 
@@ -163,6 +164,108 @@ test("scenario: body drift can change reply wording from preserving to deepening
   assert.match(deepen.reply, /もう一段具体化したい|目印のままにせず/);
 });
 
+test("scenario: async reply fallback keeps local state updates intact", async () => {
+  const steps = [
+    {
+      kind: "user",
+      label: "blocked",
+      input: "仕様の境界が未定で曖昧だ。まだ進められない。",
+    },
+  ] as const;
+  const initialSnapshot = createInitialSnapshot();
+  const baseline = runScenario(steps, initialSnapshot);
+  const fallbackingGenerator = {
+    name: "stub",
+    async generateReply() {
+      throw new Error("reply adapter offline");
+    },
+  } satisfies ReplyGenerator;
+  const run = await runScenarioAsync(steps, initialSnapshot, {
+    replyGenerator: fallbackingGenerator,
+  });
+
+  const baselineBlocked = requireScenarioEvent(baseline, "blocked", "user");
+  const blocked = requireScenarioEvent(run, "blocked", "user");
+
+  assert.equal(blocked.reply, baselineBlocked.reply);
+  assert.equal(blocked.debug.reply.mode, "reply");
+  assert.equal(blocked.debug.reply.source, "rule");
+  assert.equal(blocked.debug.reply.fallbackUsed, true);
+  assert.match(blocked.debug.reply.error ?? "", /reply adapter offline/);
+  assert.equal(blocked.snapshot.traces.仕様?.kind, baselineBlocked.snapshot.traces.仕様?.kind);
+  assert.equal(blocked.snapshot.traces.仕様?.status, baselineBlocked.snapshot.traces.仕様?.status);
+  assert.deepEqual(blocked.snapshot.traces.仕様?.artifact, baselineBlocked.snapshot.traces.仕様?.artifact);
+  assert.deepEqual(blocked.snapshot.traces.仕様?.work.blockers, baselineBlocked.snapshot.traces.仕様?.work.blockers);
+  assert.equal(blocked.snapshot.traces.仕様?.work.focus, baselineBlocked.snapshot.traces.仕様?.work.focus);
+  assert.equal(
+    blocked.snapshot.purpose.active?.kind,
+    baselineBlocked.snapshot.purpose.active?.kind,
+  );
+  assert.equal(
+    blocked.snapshot.purpose.active?.topic,
+    baselineBlocked.snapshot.purpose.active?.topic,
+  );
+  assert.equal(
+    blocked.snapshot.purpose.active?.summary,
+    baselineBlocked.snapshot.purpose.active?.summary,
+  );
+  assert.equal(
+    blocked.snapshot.purpose.active?.progress,
+    baselineBlocked.snapshot.purpose.active?.progress,
+  );
+  assert.equal(
+    blocked.snapshot.initiative.pending?.kind,
+    baselineBlocked.snapshot.initiative.pending?.kind,
+  );
+  assert.equal(
+    blocked.snapshot.initiative.pending?.topic,
+    baselineBlocked.snapshot.initiative.pending?.topic,
+  );
+  assert.equal(
+    blocked.snapshot.initiative.pending?.blocker,
+    baselineBlocked.snapshot.initiative.pending?.blocker,
+  );
+});
+
+test("scenario: async proactive fallback keeps local maintenance intact", async () => {
+  const steps = [
+    {
+      kind: "proactive",
+      label: "repair",
+      force: true,
+    },
+  ] as const;
+  const initialSnapshot = createBlockedInitiativeScenarioSnapshot();
+  const baseline = runScenario(steps, initialSnapshot);
+  const fallbackingGenerator = {
+    name: "stub",
+    async generateReply() {
+      return {
+        reply: "使われない reply",
+        provider: "stub",
+        model: "stub-model",
+      };
+    },
+    async generateProactive() {
+      throw new Error("proactive adapter offline");
+    },
+  } satisfies ReplyGenerator;
+  const run = await runScenarioAsync(steps, initialSnapshot, {
+    replyGenerator: fallbackingGenerator,
+  });
+
+  const baselineRepair = requireScenarioEvent(baseline, "repair", "proactive");
+  const repair = requireScenarioEvent(run, "repair", "proactive");
+
+  assert.equal(repair.message, baselineRepair.message);
+  assert.equal(repair.debug?.mode, "proactive");
+  assert.equal(repair.debug?.source, "rule");
+  assert.equal(repair.debug?.fallbackUsed, true);
+  assert.match(repair.debug?.error ?? "", /proactive adapter offline/);
+  assert.deepEqual(repair.snapshot.traces, baselineRepair.snapshot.traces);
+  assert.deepEqual(repair.snapshot.initiative, baselineRepair.snapshot.initiative);
+});
+
 function createArchivedTraceScenarioSnapshot(): HachikaSnapshot {
   const snapshot = createInitialSnapshot();
   snapshot.body.energy = 0.68;
@@ -247,6 +350,52 @@ function createBodyDriftScenarioSnapshot(): HachikaSnapshot {
     mentions: 2,
     createdAt: "2026-03-17T12:00:00.000Z",
     lastUpdatedAt: "2026-03-17T12:00:00.000Z",
+  };
+
+  return snapshot;
+}
+
+function createBlockedInitiativeScenarioSnapshot(): HachikaSnapshot {
+  const snapshot = createInitialSnapshot();
+  snapshot.body.energy = 0.58;
+  snapshot.body.boredom = 0.44;
+  snapshot.body.tension = 0.18;
+  snapshot.lastInteractionAt = "2026-03-19T10:00:00.000Z";
+  snapshot.conversationCount = 1;
+  snapshot.identity.anchors = ["仕様"];
+  snapshot.initiative.pending = {
+    kind: "resume_topic",
+    reason: "continuity",
+    motive: "continue_shared_work",
+    topic: "仕様",
+    blocker: "境界が未定",
+    concern: null,
+    createdAt: "2026-03-19T10:00:00.000Z",
+    readyAfterHours: 1,
+  };
+  snapshot.traces.仕様 = {
+    topic: "仕様",
+    kind: "continuity_marker",
+    status: "active",
+    lastAction: "queued_next",
+    summary: "「仕様」は未決着のまま続き待ちになっている。",
+    sourceMotive: "continue_shared_work",
+    artifact: {
+      memo: ["仕様の境界は未定"],
+      fragments: [],
+      decisions: [],
+      nextSteps: [],
+    },
+    work: {
+      focus: "境界を決める",
+      confidence: 0.42,
+      blockers: ["境界が未定"],
+      staleAt: "2026-03-19T18:00:00.000Z",
+    },
+    salience: 0.72,
+    mentions: 2,
+    createdAt: "2026-03-19T09:00:00.000Z",
+    lastUpdatedAt: "2026-03-19T10:00:00.000Z",
   };
 
   return snapshot;

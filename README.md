@@ -240,6 +240,7 @@ Hachika は、単に有用なだけでなく、
 - trace の優先順位と artifact の surfaced order も身体状態の影響を受け、低 energy では残しやすい痕跡が、高 boredom では stale な未完了が前に出やすくなる
 - `scenario harness` により、複数ターンの対話シナリオを fixture として検証できる
   - active purpose の継続と解決、blocker maintenance、archive/reopen、preservation threat、body drift による wording 変化を長めの回帰テストとして固定している
+  - async scenario では LLM adapter の `reply / proactive` fallback でも local state 更新と maintenance が保たれることを検証している
 - OpenAI 互換の `reply generator` を env から有効化でき、local engine が決めた state / motive / purpose / traces を保ったまま通常応答と能動発話の wording だけを LLM に委譲できる
   - adapter が失敗した場合や空文字を返した場合は rule-based wording に fallback する
   - 直近の生成が `reply` か `proactive` か、`llm` か `rule` か、どの provider / model を使ったか、fallback したかも CLI から確認できる
