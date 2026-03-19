@@ -292,6 +292,77 @@ test("proactive emission can maintain a trace by adding a next step", () => {
   assert.match(message ?? "", /次は|断片|残してある/);
 });
 
+test("low energy proactive wording can surface a preserve intent", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.body.energy = 0.08;
+  snapshot.body.tension = 0.24;
+  snapshot.lastInteractionAt = "2026-03-19T10:00:00.000Z";
+  snapshot.initiative.pending = {
+    kind: "resume_topic",
+    reason: "expansion",
+    motive: "continue_shared_work",
+    topic: "設計",
+    blocker: null,
+    concern: null,
+    createdAt: "2026-03-19T10:00:00.000Z",
+    readyAfterHours: 0,
+  };
+
+  const engine = new HachikaEngine(snapshot);
+  const message = engine.emitInitiative({ force: true });
+
+  assert.ok(message !== null);
+  assert.match(message ?? "", /広げるより|戻り先と輪郭/);
+});
+
+test("high boredom proactive wording can surface a deepening intent", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.body.energy = 0.66;
+  snapshot.body.boredom = 0.86;
+  snapshot.body.tension = 0.16;
+  snapshot.lastInteractionAt = "2026-03-19T10:00:00.000Z";
+  snapshot.traces.設計 = {
+    topic: "設計",
+    kind: "continuity_marker",
+    status: "active",
+    lastAction: "continued",
+    summary: "「設計」は続きの目印として残っている。",
+    sourceMotive: "seek_continuity",
+    artifact: {
+      memo: ["設計の続き"],
+      fragments: [],
+      decisions: [],
+      nextSteps: ["設計をつなぎ直す"],
+    },
+    work: {
+      focus: "設計をつなぎ直す",
+      confidence: 0.54,
+      blockers: ["責務が未定"],
+      staleAt: "2026-03-18T10:00:00.000Z",
+    },
+    salience: 0.58,
+    mentions: 2,
+    createdAt: "2026-03-19T08:00:00.000Z",
+    lastUpdatedAt: "2026-03-19T09:00:00.000Z",
+  };
+  snapshot.initiative.pending = {
+    kind: "resume_topic",
+    reason: "expansion",
+    motive: "continue_shared_work",
+    topic: "設計",
+    blocker: "責務が未定",
+    concern: null,
+    createdAt: "2026-03-19T10:00:00.000Z",
+    readyAfterHours: 0,
+  };
+
+  const engine = new HachikaEngine(snapshot);
+  const message = engine.emitInitiative({ force: true });
+
+  assert.ok(message !== null);
+  assert.match(message ?? "", /もう一段具体化したい|断片をもう一段増やしたい/);
+});
+
 test("blocker-aware proactive emission resolves the targeted blocker into a next step", () => {
   const engine = new HachikaEngine(createInitialSnapshot());
 

@@ -229,6 +229,7 @@ Hachika は、単に有用なだけでなく、
 - 各 trace はさらに `focus / confidence / blockers / staleAt` を持ち、「今どこで止まっているか」を作業状態として保持する
 - 能動行動は unresolved blocker を優先して選び、必要ならその blocker を解くための `next step` へ変換する
 - trace maintenance 自体も身体状態の影響を受け、低 energy では保存寄りに、高 boredom では掘り下げ寄りに振れる
+- 能動発話の wording もその maintenance profile を反映し、「整えたい」ときと「掘りたい」ときで言い方が変わる
 - 通常の self-model と応答生成も `blockers / staleAt / confidence` を参照し、能動行動時だけでなく平常時の motive と発話にも未解決作業がにじむ
 - 身体状態は会話と放置で変化し、mood / motive / proactive timing / 通常応答に影響する
 - identity summary / current arc と initiative motive / topic / blocker selection も身体状態の影響を受ける

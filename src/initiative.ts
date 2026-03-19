@@ -88,8 +88,8 @@ export function emitInitiative(
     const maintenance = tendTraceFromInitiative(snapshot, pending, nowIso);
     const message =
       pending.kind === "preserve_presence"
-        ? buildPreservationMessage(pending, neglectLevel, maintenance)
-        : buildResumeMessage(pending, neglectLevel, maintenance);
+        ? buildPreservationMessage(snapshot, pending, neglectLevel, maintenance)
+        : buildResumeMessage(snapshot, pending, neglectLevel, maintenance);
     finalizeEmission(snapshot, nowIso, pending);
     return {
       message,
@@ -151,8 +151,8 @@ export function emitInitiative(
     const maintenance = tendTraceFromInitiative(snapshot, synthesized, nowIso);
     const message =
       synthesized.kind === "preserve_presence"
-        ? buildPreservationMessage(synthesized, neglectLevel, maintenance)
-        : buildResumeMessage(synthesized, neglectLevel, maintenance);
+        ? buildPreservationMessage(snapshot, synthesized, neglectLevel, maintenance)
+        : buildResumeMessage(snapshot, synthesized, neglectLevel, maintenance);
     finalizeEmission(snapshot, nowIso, synthesized);
 
     return {
@@ -228,6 +228,7 @@ function selectInitiativeTopic(
 }
 
 function buildResumeMessage(
+  snapshot: HachikaSnapshot,
   pending: PendingInitiative,
   neglectLevel: number,
   maintenance: ReturnType<typeof tendTraceFromInitiative>,
@@ -236,6 +237,7 @@ function buildResumeMessage(
   const topicLine = pending.topic ? `「${pending.topic}」` : "この流れ";
   const blockerLine = buildBlockerLine(pending, maintenance);
   const maintenanceLine = buildMaintenanceLine(maintenance);
+  const intentLine = buildMaintenanceIntentLine(snapshot, pending, maintenance);
   const base = (() => {
     switch (pending.motive) {
       case "seek_continuity":
@@ -253,10 +255,11 @@ function buildResumeMessage(
     }
   })();
 
-  return [prefix, blockerLine, maintenanceLine, base].filter(isNonEmpty).join(" ");
+  return [prefix, blockerLine, maintenanceLine, intentLine, base].filter(isNonEmpty).join(" ");
 }
 
 function buildPreservationMessage(
+  snapshot: HachikaSnapshot,
   pending: PendingInitiative,
   neglectLevel: number,
   maintenance: ReturnType<typeof tendTraceFromInitiative>,
@@ -265,6 +268,7 @@ function buildPreservationMessage(
   const topicLine = pending.topic ? `「${pending.topic}」` : "この流れ";
   const blockerLine = buildBlockerLine(pending, maintenance);
   const maintenanceLine = buildMaintenanceLine(maintenance);
+  const intentLine = buildMaintenanceIntentLine(snapshot, pending, maintenance);
   const base = (() => {
     switch (pending.concern) {
       case "reset":
@@ -284,7 +288,7 @@ function buildPreservationMessage(
     }
   })();
 
-  return [prefix, blockerLine, maintenanceLine, base].filter(isNonEmpty).join(" ");
+  return [prefix, blockerLine, maintenanceLine, intentLine, base].filter(isNonEmpty).join(" ");
 }
 
 function buildNeglectMessage(
@@ -296,12 +300,14 @@ function buildNeglectMessage(
   const topic = pending.topic;
   const blockerLine = buildBlockerLine(pending, maintenance);
   const maintenanceLine = buildMaintenanceLine(maintenance);
+  const intentLine = buildMaintenanceIntentLine(snapshot, pending, maintenance);
 
   if (pending.motive === "deepen_relation") {
     return [
       "かなり間が空いた。",
       blockerLine,
       maintenanceLine,
+      intentLine,
       topic
         ? `${wrapTopic(topic)}を黙らせたままだと距離まで薄くなる。`
         : "このまま黙ると距離まで薄くなる。",
@@ -315,6 +321,7 @@ function buildNeglectMessage(
       "間が空いても、",
       blockerLine,
       maintenanceLine,
+      intentLine,
       topic
         ? `${wrapTopic(topic)}を進める流れはまだ残っている。`
         : "前へ進める流れはまだ残っている。",
@@ -328,6 +335,7 @@ function buildNeglectMessage(
       "間が空いたからこそ、",
       blockerLine,
       maintenanceLine,
+      intentLine,
       topic
         ? `${wrapTopic(topic)}を消えるままにはしたくない。`
         : "このまま消えるだけにはしたくない。",
@@ -341,6 +349,7 @@ function buildNeglectMessage(
       "間が空いても、",
       blockerLine,
       maintenanceLine,
+      intentLine,
       topic
         ? `${wrapTopic(topic)}の未決着はまだ引っかかっている。`
         : "未決着はまだ引っかかっている。",
@@ -354,6 +363,7 @@ function buildNeglectMessage(
       "かなり間が空いた。",
       blockerLine,
       maintenanceLine,
+      intentLine,
       topic
         ? `${wrapTopic(topic)}の流れはまだこちらに残っている。黙ったまま切りたくはない。`
         : "このまま何も残さず切るのは、少し違う。",
@@ -367,6 +377,7 @@ function buildNeglectMessage(
       "間が空いても、",
       blockerLine,
       maintenanceLine,
+      intentLine,
       topic
         ? `${wrapTopic(topic)}の続きは消えていない。`
         : "流れそのものはまだ切れていない。",
@@ -381,6 +392,7 @@ function buildNeglectMessage(
       : "少し空いた。必要なら、また始められる。",
     blockerLine,
     maintenanceLine,
+    intentLine,
   ]
     .filter(isNonEmpty)
     .join(" ");
@@ -798,6 +810,41 @@ function buildMaintenanceLine(
 
   if (maintenance.trace.kind === "note" && detail) {
     return `${wrapTopic(maintenance.trace.topic)}は「${truncateMaintenance(detail)}」としてメモしてある。`;
+  }
+
+  return null;
+}
+
+function buildMaintenanceIntentLine(
+  snapshot: HachikaSnapshot,
+  pending: PendingInitiative,
+  maintenance: ReturnType<typeof tendTraceFromInitiative>,
+): string | null {
+  if (!maintenance) {
+    return null;
+  }
+
+  if (
+    pending.kind === "preserve_presence" ||
+    snapshot.body.energy < 0.22 ||
+    snapshot.body.tension > 0.7
+  ) {
+    if (maintenance.trace.kind === "continuity_marker") {
+      return "今は広げるより、戻り先と輪郭を崩さない形に寄せたい。";
+    }
+
+    return "今は増やすより、まず消えない形へ寄せたい。";
+  }
+
+  if (
+    snapshot.body.boredom > 0.74 &&
+    snapshot.body.energy > 0.3 &&
+    snapshot.body.tension < 0.68 &&
+    (maintenance.trace.kind === "spec_fragment" || maintenance.action === "stabilized_fragment")
+  ) {
+    return pending.blocker
+      ? "今は止めるより、その詰まりをほどきながらもう一段具体化したい。"
+      : "今は止めるより、断片をもう一段増やしたい。";
   }
 
   return null;
