@@ -1,5 +1,5 @@
 import { mkdir, readdir, unlink, writeFile } from "node:fs/promises";
-import { basename, join, relative, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 
 import {
   deriveEffectiveTraceStaleAt,
@@ -48,15 +48,17 @@ export function describeArtifactFiles(
   const root = resolve(artifactsDir);
 
   return sortedTraces(snapshot, 64).map((trace) => {
+    const tending = deriveTraceTendingMode(snapshot, trace);
     const fileName = buildTraceFileName(trace);
-    const absolutePath = join(root, fileName);
+    const relativePath = join(tending, fileName);
+    const absolutePath = join(root, relativePath);
 
     return {
       topic: trace.topic,
       kind: trace.kind,
       status: trace.status,
       lastAction: trace.lastAction,
-      tending: deriveTraceTendingMode(snapshot, trace),
+      tending,
       focus: trace.work.focus,
       confidence: trace.work.confidence,
       blockers: trace.work.blockers,
@@ -66,7 +68,7 @@ export function describeArtifactFiles(
       updatedAt: trace.lastUpdatedAt,
       fileName,
       absolutePath,
-      relativePath: relative(process.cwd(), absolutePath) || fileName,
+      relativePath,
     };
   });
 }
@@ -77,7 +79,7 @@ export async function syncArtifacts(
 ): Promise<ArtifactSyncResult> {
   const root = resolve(artifactsDir);
   const files = describeArtifactFiles(snapshot, root);
-  const currentFileNames = new Set(files.map((file) => file.fileName));
+  const currentRelativePaths = new Set(files.map((file) => file.relativePath));
 
   await mkdir(root, { recursive: true });
 
@@ -88,29 +90,22 @@ export async function syncArtifacts(
       continue;
     }
 
+    await mkdir(dirname(file.absolutePath), { recursive: true });
     await writeFile(file.absolutePath, renderArtifactDocument(snapshot, trace), "utf8");
   }
 
   await writeFile(join(root, INDEX_FILE_NAME), renderArtifactIndex(snapshot, files), "utf8");
 
   const removedFiles: string[] = [];
-  const entries = await readdir(root, { withFileTypes: true });
+  const existingRelativePaths = await listMaterializedTracePaths(root);
 
-  for (const entry of entries) {
-    if (!entry.isFile()) {
+  for (const relativePath of existingRelativePaths) {
+    if (currentRelativePaths.has(relativePath)) {
       continue;
     }
 
-    if (!entry.name.startsWith(TRACE_FILE_PREFIX) || !entry.name.endsWith(".md")) {
-      continue;
-    }
-
-    if (currentFileNames.has(entry.name)) {
-      continue;
-    }
-
-    await unlink(join(root, entry.name));
-    removedFiles.push(entry.name);
+    await unlink(join(root, relativePath));
+    removedFiles.push(relativePath);
   }
 
   return {
@@ -153,7 +148,7 @@ function renderArtifactIndex(
       }
 
       lines.push(
-        `- ${trace.topic} (${trace.kind}/${trace.status}) -> ${basename(file.relativePath)}`,
+        `- ${trace.topic} (${trace.kind}/${trace.status}) -> ${file.relativePath}`,
       );
       lines.push(`  - last action: ${trace.lastAction}`);
       lines.push(`  - tending: ${file.tending}`);
@@ -178,6 +173,35 @@ function renderArtifactIndex(
   }
 
   return `${lines.join("\n")}\n`;
+}
+
+async function listMaterializedTracePaths(
+  root: string,
+  currentDir = root,
+): Promise<string[]> {
+  const entries = await readdir(currentDir, { withFileTypes: true });
+  const relativePaths: string[] = [];
+
+  for (const entry of entries) {
+    const absolutePath = join(currentDir, entry.name);
+
+    if (entry.isDirectory()) {
+      relativePaths.push(...await listMaterializedTracePaths(root, absolutePath));
+      continue;
+    }
+
+    if (!entry.isFile()) {
+      continue;
+    }
+
+    if (!entry.name.startsWith(TRACE_FILE_PREFIX) || !entry.name.endsWith(".md")) {
+      continue;
+    }
+
+    relativePaths.push(relative(root, absolutePath) || entry.name);
+  }
+
+  return relativePaths;
 }
 
 export function renderArtifactDocument(

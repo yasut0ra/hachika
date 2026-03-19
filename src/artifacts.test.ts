@@ -96,6 +96,7 @@ test("syncArtifacts writes markdown files and index", async () => {
     assert.equal(result.files.length, 1);
     assert.equal(described.length, 1);
     assert.equal(described[0]?.tending, "steady");
+    assert.match(result.files[0]!.relativePath, /^steady\/trace-/);
 
     const artifactBody = await readFile(result.files[0]!.absolutePath, "utf8");
     const indexBody = await readFile(join(tempDir, "index.md"), "utf8");
@@ -110,7 +111,7 @@ test("syncArtifacts writes markdown files and index", async () => {
     assert.match(artifactBody, /## Decisions/);
     assert.match(artifactBody, /記録として保存した/);
     assert.match(indexBody, /## Steady/);
-    assert.match(indexBody, /設計 \(decision\/resolved\)/);
+    assert.match(indexBody, /設計 \(decision\/resolved\) -> steady\/trace-/);
     assert.match(indexBody, /last action: resolved/);
     assert.match(indexBody, /tending: steady/);
     assert.match(indexBody, /confidence: 0.94/);
@@ -230,6 +231,61 @@ test("syncArtifacts groups the index by tending order", async () => {
   }
 });
 
+test("syncArtifacts removes the old artifact file when a trace moves tending directories", async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), "hachika-artifacts-"));
+
+  try {
+    const first = withTrace(createInitialSnapshot(), {
+      topic: "仕様",
+      kind: "spec_fragment",
+      status: "active",
+      lastAction: "expanded",
+      summary: "「仕様」は断片として残っている。",
+      sourceMotive: "continue_shared_work",
+      artifact: {
+        memo: ["仕様を詰める"],
+        fragments: ["境界を整理する"],
+        decisions: [],
+        nextSteps: ["責務を切り分ける"],
+      },
+      work: {
+        focus: "責務を切り分ける",
+        confidence: 0.48,
+        blockers: ["責務が未定"],
+        staleAt: "2026-03-18T01:00:00.000Z",
+      },
+      salience: 0.62,
+      mentions: 2,
+      createdAt: "2026-03-19T00:00:00.000Z",
+      lastUpdatedAt: "2026-03-19T01:00:00.000Z",
+    });
+    first.body.energy = 0.66;
+    first.body.boredom = 0.86;
+    first.body.tension = 0.16;
+
+    const initialSync = await syncArtifacts(first, tempDir);
+
+    assert.equal(initialSync.files.length, 1);
+    assert.match(initialSync.files[0]!.relativePath, /^deepen\/trace-/);
+
+    const moved = structuredClone(first);
+    moved.body.energy = 0.08;
+    moved.body.boredom = 0.22;
+    moved.body.tension = 0.38;
+    moved.lastInteractionAt = "2026-03-19T02:00:00.000Z";
+
+    const nextSync = await syncArtifacts(moved, tempDir);
+
+    assert.equal(nextSync.files.length, 1);
+    assert.match(nextSync.files[0]!.relativePath, /^preserve\/trace-/);
+    assert.deepEqual(nextSync.removedFiles, [initialSync.files[0]!.relativePath]);
+    await assert.rejects(readFile(initialSync.files[0]!.absolutePath, "utf8"));
+    await readFile(nextSync.files[0]!.absolutePath, "utf8");
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("syncArtifacts removes stale materialized files", async () => {
   const tempDir = await mkdtemp(join(tmpdir(), "hachika-artifacts-"));
 
@@ -261,6 +317,7 @@ test("syncArtifacts removes stale materialized files", async () => {
 
     const initialSync = await syncArtifacts(first, tempDir);
     assert.equal(initialSync.files.length, 1);
+    assert.match(initialSync.files[0]!.relativePath, /^(deepen|preserve|steady)\/trace-/);
 
     const second = createInitialSnapshot();
     second.lastInteractionAt = "2026-03-19T03:00:00.000Z";
