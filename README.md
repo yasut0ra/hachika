@@ -224,6 +224,7 @@ Hachika は、単に有用なだけでなく、
   - trace は `note / continuity_marker / spec_fragment / decision` の形を取り、会話の外にも残る断片として扱われる
   - 各 trace は `memo / fragments / decisions / nextSteps` の structured artifact を持ち、単なる要約文ではなく再利用可能な痕跡として保持される
 - trace は `data/artifacts/deepen|preserve|steady/` 以下の Markdown ファイルにも materialize され、会話の外に実際の痕跡を残す
+  - 各ディレクトリには専用の `index.md` も生成され、その tending の痕跡だけを局所的に追える
 - 能動行動は発話だけでなく trace maintenance も行い、必要なら `nextSteps` を補完し、fulfilled な topic は `decision` へ昇格できる
 - artifact Markdown には `status / lastAction / pending next step / tending / effective stale` が含まれ、今どの段階の痕跡で、整えているのか掘っているのか、どれくらい早く掘り返したがっているのかを外から追える
 - artifact index と `/artifacts` 表示は `deepen / preserve / steady` の順に grouped され、materialize 先のディレクトリ構造もそれに対応する

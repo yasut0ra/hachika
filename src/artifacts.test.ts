@@ -100,6 +100,7 @@ test("syncArtifacts writes markdown files and index", async () => {
 
     const artifactBody = await readFile(result.files[0]!.absolutePath, "utf8");
     const indexBody = await readFile(join(tempDir, "index.md"), "utf8");
+    const steadyIndexBody = await readFile(join(tempDir, "steady", "index.md"), "utf8");
 
     assert.match(artifactBody, /Kind: decision/);
     assert.match(artifactBody, /Status: resolved/);
@@ -110,11 +111,16 @@ test("syncArtifacts writes markdown files and index", async () => {
     assert.match(artifactBody, /Effective Stale At: none/);
     assert.match(artifactBody, /## Decisions/);
     assert.match(artifactBody, /記録として保存した/);
+    assert.match(indexBody, /Sections:/);
+    assert.match(indexBody, /- deepen\/index\.md/);
     assert.match(indexBody, /## Steady/);
     assert.match(indexBody, /設計 \(decision\/resolved\) -> steady\/trace-/);
     assert.match(indexBody, /last action: resolved/);
     assert.match(indexBody, /tending: steady/);
     assert.match(indexBody, /confidence: 0.94/);
+    assert.match(steadyIndexBody, /^# Hachika Artifacts: Steady/m);
+    assert.match(steadyIndexBody, /Root Index: \.\.\/index\.md/);
+    assert.match(steadyIndexBody, /設計 \(decision\/resolved\) -> trace-/);
   } finally {
     await rm(tempDir, { recursive: true, force: true });
   }
@@ -226,6 +232,27 @@ test("syncArtifacts groups the index by tending order", async () => {
     assert.ok(deepenHeading < steadyHeading);
     assert.ok(deepenEntry > deepenHeading);
     assert.ok(steadyEntry > steadyHeading);
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("syncArtifacts writes per-tending index files even when a section is empty", async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), "hachika-artifacts-"));
+
+  try {
+    const snapshot = createInitialSnapshot();
+    snapshot.lastInteractionAt = "2026-03-19T02:00:00.000Z";
+
+    await syncArtifacts(snapshot, tempDir);
+
+    const deepenIndexBody = await readFile(join(tempDir, "deepen", "index.md"), "utf8");
+    const preserveIndexBody = await readFile(join(tempDir, "preserve", "index.md"), "utf8");
+    const steadyIndexBody = await readFile(join(tempDir, "steady", "index.md"), "utf8");
+
+    assert.match(deepenIndexBody, /No deepen artifacts right now\./);
+    assert.match(preserveIndexBody, /No preserve artifacts right now\./);
+    assert.match(steadyIndexBody, /No steady artifacts right now\./);
   } finally {
     await rm(tempDir, { recursive: true, force: true });
   }

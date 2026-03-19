@@ -96,6 +96,18 @@ export async function syncArtifacts(
 
   await writeFile(join(root, INDEX_FILE_NAME), renderArtifactIndex(snapshot, files), "utf8");
 
+  for (const tending of TENDING_ORDER) {
+    const tendingDir = join(root, tending);
+    const tendingFiles = files.filter((file) => file.tending === tending);
+
+    await mkdir(tendingDir, { recursive: true });
+    await writeFile(
+      join(tendingDir, INDEX_FILE_NAME),
+      renderTendingArtifactIndex(snapshot, tending, tendingFiles),
+      "utf8",
+    );
+  }
+
   const removedFiles: string[] = [];
   const existingRelativePaths = await listMaterializedTracePaths(root);
 
@@ -129,6 +141,11 @@ function renderArtifactIndex(
 
   lines.push(`Updated: ${snapshot.lastInteractionAt ?? "unknown"}`);
   lines.push("");
+  lines.push("Sections:");
+  for (const tending of TENDING_ORDER) {
+    lines.push(`- ${tending}/index.md`);
+  }
+  lines.push("");
 
   for (const tending of TENDING_ORDER) {
     const sectionFiles = files.filter((file) => file.tending === tending);
@@ -147,32 +164,69 @@ function renderArtifactIndex(
         continue;
       }
 
-      lines.push(
-        `- ${trace.topic} (${trace.kind}/${trace.status}) -> ${file.relativePath}`,
-      );
-      lines.push(`  - last action: ${trace.lastAction}`);
-      lines.push(`  - tending: ${file.tending}`);
-      lines.push(`  - focus: ${trace.work.focus ?? "none"}`);
-      lines.push(`  - confidence: ${trace.work.confidence.toFixed(2)}`);
-      if (trace.work.blockers.length > 0) {
-        lines.push(`  - blockers: ${trace.work.blockers.join(" / ")}`);
-      }
-      lines.push(`  - ${trace.summary}`);
-      if (trace.artifact.nextSteps[0]) {
-        lines.push(`  - pending next step: ${trace.artifact.nextSteps[0]}`);
-      }
-      if (trace.work.staleAt) {
-        lines.push(`  - stale at: ${trace.work.staleAt}`);
-      }
-      if (file.effectiveStaleAt && file.effectiveStaleAt !== trace.work.staleAt) {
-        lines.push(`  - effective stale at: ${file.effectiveStaleAt}`);
-      }
+      appendArtifactIndexEntry(lines, trace, file, file.relativePath);
     }
 
     lines.push("");
   }
 
   return `${lines.join("\n")}\n`;
+}
+
+function renderTendingArtifactIndex(
+  snapshot: HachikaSnapshot,
+  tending: TraceTendingMode,
+  files: ArtifactFile[],
+): string {
+  const lines = [`# Hachika Artifacts: ${formatTendingHeading(tending)}`, ""];
+
+  lines.push(`Updated: ${snapshot.lastInteractionAt ?? "unknown"}`);
+  lines.push("Root Index: ../index.md");
+  lines.push("");
+
+  if (files.length === 0) {
+    lines.push(`No ${tending} artifacts right now.`);
+    lines.push("");
+    return `${lines.join("\n")}\n`;
+  }
+
+  for (const file of files) {
+    const trace = snapshot.traces[file.topic];
+
+    if (!trace) {
+      continue;
+    }
+
+    appendArtifactIndexEntry(lines, trace, file, file.fileName);
+  }
+
+  return `${lines.join("\n")}\n`;
+}
+
+function appendArtifactIndexEntry(
+  lines: string[],
+  trace: TraceEntry,
+  file: ArtifactFile,
+  pathLabel: string,
+): void {
+  lines.push(`- ${trace.topic} (${trace.kind}/${trace.status}) -> ${pathLabel}`);
+  lines.push(`  - last action: ${trace.lastAction}`);
+  lines.push(`  - tending: ${file.tending}`);
+  lines.push(`  - focus: ${trace.work.focus ?? "none"}`);
+  lines.push(`  - confidence: ${trace.work.confidence.toFixed(2)}`);
+  if (trace.work.blockers.length > 0) {
+    lines.push(`  - blockers: ${trace.work.blockers.join(" / ")}`);
+  }
+  lines.push(`  - ${trace.summary}`);
+  if (trace.artifact.nextSteps[0]) {
+    lines.push(`  - pending next step: ${trace.artifact.nextSteps[0]}`);
+  }
+  if (trace.work.staleAt) {
+    lines.push(`  - stale at: ${trace.work.staleAt}`);
+  }
+  if (file.effectiveStaleAt && file.effectiveStaleAt !== trace.work.staleAt) {
+    lines.push(`  - effective stale at: ${file.effectiveStaleAt}`);
+  }
 }
 
 async function listMaterializedTracePaths(
