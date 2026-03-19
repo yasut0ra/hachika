@@ -1,7 +1,11 @@
 import { mkdir, readdir, unlink, writeFile } from "node:fs/promises";
 import { basename, join, relative, resolve } from "node:path";
 
-import { deriveTraceTendingMode, sortedTraces } from "./traces.js";
+import {
+  deriveEffectiveTraceStaleAt,
+  deriveTraceTendingMode,
+  sortedTraces,
+} from "./traces.js";
 import type {
   HachikaSnapshot,
   TraceAction,
@@ -24,6 +28,7 @@ export interface ArtifactFile {
   blockers: string[];
   pendingNextStep: string | null;
   staleAt: string | null;
+  effectiveStaleAt: string | null;
   updatedAt: string;
   fileName: string;
   absolutePath: string;
@@ -56,6 +61,7 @@ export function describeArtifactFiles(
       blockers: trace.work.blockers,
       pendingNextStep: trace.artifact.nextSteps[0] ?? null,
       staleAt: trace.work.staleAt,
+      effectiveStaleAt: deriveEffectiveTraceStaleAt(snapshot, trace),
       updatedAt: trace.lastUpdatedAt,
       fileName,
       absolutePath,
@@ -152,6 +158,9 @@ function renderArtifactIndex(
     if (trace.work.staleAt) {
       lines.push(`  - stale at: ${trace.work.staleAt}`);
     }
+    if (file.effectiveStaleAt && file.effectiveStaleAt !== trace.work.staleAt) {
+      lines.push(`  - effective stale at: ${file.effectiveStaleAt}`);
+    }
   }
 
   return `${lines.join("\n")}\n`;
@@ -178,6 +187,7 @@ export function renderArtifactDocument(
   lines.push(`- Updated: ${trace.lastUpdatedAt}`);
   lines.push(`- Pending Next Step: ${trace.artifact.nextSteps[0] ?? "none"}`);
   lines.push(`- Stale At: ${trace.work.staleAt ?? "none"}`);
+  lines.push(`- Effective Stale At: ${deriveEffectiveTraceStaleAt(snapshot, trace) ?? "none"}`);
   lines.push("");
   lines.push("## Summary");
   lines.push(trace.summary);

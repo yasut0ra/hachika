@@ -51,6 +51,7 @@ test("renderArtifactDocument includes structured sections", () => {
   assert.match(markdown, /Blockers: 境界が曖昧/);
   assert.match(markdown, /Pending Next Step: 責務ごとに整理する/);
   assert.match(markdown, /Stale At: 2026-03-21T01:00:00.000Z/);
+  assert.match(markdown, /Effective Stale At: 2026-03-21T03:00:00.000Z/);
   assert.match(markdown, /## Summary/);
   assert.match(markdown, /## Memo/);
   assert.match(markdown, /## Fragments/);
@@ -105,6 +106,7 @@ test("syncArtifacts writes markdown files and index", async () => {
     assert.match(artifactBody, /Tending: steady/);
     assert.match(artifactBody, /Focus: 記録として保存した/);
     assert.match(artifactBody, /Confidence: 0.94/);
+    assert.match(artifactBody, /Effective Stale At: none/);
     assert.match(artifactBody, /## Decisions/);
     assert.match(artifactBody, /記録として保存した/);
     assert.match(indexBody, /設計 \(decision\/resolved\)/);
@@ -148,6 +150,7 @@ test("describeArtifactFiles surfaces a deepening tending mode", () => {
   const files = describeArtifactFiles(snapshot, join(tmpdir(), "hachika-artifacts-preview"));
 
   assert.equal(files[0]?.tending, "deepen");
+  assert.equal(files[0]?.effectiveStaleAt, "2026-03-17T17:00:00.000Z");
 });
 
 test("syncArtifacts removes stale materialized files", async () => {

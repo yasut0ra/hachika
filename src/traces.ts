@@ -222,12 +222,35 @@ export function deriveTraceTendingMode(
     (trace.kind === "spec_fragment" ||
       trace.kind === "continuity_marker" ||
       trace.work.blockers.length > 0 ||
-      isTraceStale(trace, snapshot))
+      isBaseTraceStale(trace, snapshot))
   ) {
     return "deepen";
   }
 
   return "steady";
+}
+
+export function deriveEffectiveTraceStaleAt(
+  snapshot: HachikaSnapshot,
+  trace: TraceEntry,
+): string | null {
+  if (trace.work.staleAt === null) {
+    return null;
+  }
+
+  const tending = deriveTraceTendingMode(snapshot, trace);
+  const shiftHours =
+    tending === "deepen"
+      ? trace.kind === "continuity_marker"
+        ? -10
+        : -8
+      : tending === "preserve"
+        ? trace.kind === "continuity_marker"
+          ? 4
+          : 2
+        : 0;
+
+  return addHoursToTimestamp(trace.work.staleAt, shiftHours) ?? trace.work.staleAt;
 }
 
 export function tendTraceFromInitiative(
@@ -590,6 +613,7 @@ function tracePriorityScore(
   const loneliness = snapshot.body.loneliness;
   const boredom =
     snapshot.body.energy > 0.28 ? snapshot.body.boredom : snapshot.body.boredom * 0.5;
+  const tending = deriveTraceTendingMode(snapshot, trace);
   const isStale = isTraceStale(trace, snapshot);
   const unresolved = trace.status !== "resolved";
 
@@ -624,16 +648,38 @@ function tracePriorityScore(
     trace.work.blockers.length * 0.06
   );
 
+  score +=
+    tending === "deepen"
+      ? 0.14 +
+        (trace.kind === "spec_fragment" ? 0.08 : trace.kind === "continuity_marker" ? 0.05 : 0) +
+        (trace.work.blockers.length > 0 ? 0.06 : 0) +
+        (isStale ? 0.04 : 0)
+      : tending === "preserve"
+        ? (trace.kind === "continuity_marker" ? 0.1 : 0.04) +
+          (trace.sourceMotive === "seek_continuity" || trace.sourceMotive === "leave_trace" ? 0.05 : 0)
+        : 0;
+
   return score;
 }
 
-function isTraceStale(
+function isBaseTraceStale(
   trace: TraceEntry,
   snapshot: HachikaSnapshot,
 ): boolean {
   return (
     trace.work.staleAt !== null &&
     trace.work.staleAt.localeCompare(snapshot.lastInteractionAt ?? trace.lastUpdatedAt) <= 0
+  );
+}
+
+function isTraceStale(
+  trace: TraceEntry,
+  snapshot: HachikaSnapshot,
+): boolean {
+  const effectiveStaleAt = deriveEffectiveTraceStaleAt(snapshot, trace);
+  return (
+    effectiveStaleAt !== null &&
+    effectiveStaleAt.localeCompare(snapshot.lastInteractionAt ?? trace.lastUpdatedAt) <= 0
   );
 }
 

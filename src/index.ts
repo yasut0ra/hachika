@@ -11,7 +11,7 @@ import {
 } from "./memory.js";
 import { loadSnapshot, saveSnapshot } from "./persistence.js";
 import { createInitialSnapshot, formatBodyState, formatDriveState } from "./state.js";
-import { deriveTraceTendingMode, sortedTraces } from "./traces.js";
+import { deriveEffectiveTraceStaleAt, deriveTraceTendingMode, sortedTraces } from "./traces.js";
 import type { ResolvedPurpose } from "./types.js";
 
 const snapshotPath = resolve(process.cwd(), "data/hachika-state.json");
@@ -187,6 +187,10 @@ function printTraces(currentEngine: HachikaEngine): void {
     if (trace.work.staleAt) {
       console.log(`  staleAt: ${trace.work.staleAt}`);
     }
+    const effectiveStaleAt = deriveEffectiveTraceStaleAt(snapshot, trace);
+    if (effectiveStaleAt && effectiveStaleAt !== trace.work.staleAt) {
+      console.log(`  effectiveStaleAt: ${effectiveStaleAt}`);
+    }
     printTraceArtifactGroup("blocker", trace.work.blockers);
     printTraceArtifactGroup("memo", trace.artifact.memo);
     printTraceArtifactGroup("fragments", trace.artifact.fragments);
@@ -205,7 +209,7 @@ function printArtifacts(currentEngine: HachikaEngine): void {
 
   for (const file of files) {
     console.log(
-      `${file.topic} ${file.kind}/${file.status} action:${file.lastAction} tending:${file.tending} focus:${file.focus ?? "none"} confidence:${file.confidence.toFixed(2)} blockers:${file.blockers.length} next:${file.pendingNextStep ?? "none"} stale:${file.staleAt ?? "none"} ${file.relativePath}`,
+      `${file.topic} ${file.kind}/${file.status} action:${file.lastAction} tending:${file.tending} focus:${file.focus ?? "none"} confidence:${file.confidence.toFixed(2)} blockers:${file.blockers.length} next:${file.pendingNextStep ?? "none"} stale:${file.staleAt ?? "none"} effectiveStale:${file.effectiveStaleAt ?? "none"} ${file.relativePath}`,
     );
   }
 }
