@@ -226,6 +226,7 @@ Hachika は、単に有用なだけでなく、
 - trace は `data/artifacts/` 以下の Markdown ファイルにも materialize され、会話の外に実際の痕跡を残す
 - 能動行動は発話だけでなく trace maintenance も行い、必要なら `nextSteps` を補完し、fulfilled な topic は `decision` へ昇格できる
 - artifact Markdown には `status / lastAction / pending next step / tending / effective stale` が含まれ、今どの段階の痕跡で、整えているのか掘っているのか、どれくらい早く掘り返したがっているのかを外から追える
+- artifact index と `/artifacts` 表示は `deepen / preserve / steady` の順に grouped され、今もっとも掘り返したがっているものが上に出る
 - 各 trace はさらに `focus / confidence / blockers / staleAt` を持ち、「今どこで止まっているか」を作業状態として保持する
 - 能動行動は unresolved blocker を優先して選び、必要ならその blocker を解くための `next step` へ変換する
 - trace maintenance 自体も身体状態の影響を受け、低 energy では保存寄りに、高 boredom では掘り下げ寄りに振れる

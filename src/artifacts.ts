@@ -16,6 +16,7 @@ import type {
 
 const INDEX_FILE_NAME = "index.md";
 const TRACE_FILE_PREFIX = "trace-";
+const TENDING_ORDER: readonly TraceTendingMode[] = ["deepen", "preserve", "steady"];
 
 export interface ArtifactFile {
   topic: string;
@@ -134,33 +135,46 @@ function renderArtifactIndex(
   lines.push(`Updated: ${snapshot.lastInteractionAt ?? "unknown"}`);
   lines.push("");
 
-  for (const file of files) {
-    const trace = snapshot.traces[file.topic];
+  for (const tending of TENDING_ORDER) {
+    const sectionFiles = files.filter((file) => file.tending === tending);
 
-    if (!trace) {
+    if (sectionFiles.length === 0) {
       continue;
     }
 
-    lines.push(
-      `- ${trace.topic} (${trace.kind}/${trace.status}) -> ${basename(file.relativePath)}`,
-    );
-    lines.push(`  - last action: ${trace.lastAction}`);
-    lines.push(`  - tending: ${file.tending}`);
-    lines.push(`  - focus: ${trace.work.focus ?? "none"}`);
-    lines.push(`  - confidence: ${trace.work.confidence.toFixed(2)}`);
-    if (trace.work.blockers.length > 0) {
-      lines.push(`  - blockers: ${trace.work.blockers.join(" / ")}`);
+    lines.push(`## ${formatTendingHeading(tending)}`);
+    lines.push("");
+
+    for (const file of sectionFiles) {
+      const trace = snapshot.traces[file.topic];
+
+      if (!trace) {
+        continue;
+      }
+
+      lines.push(
+        `- ${trace.topic} (${trace.kind}/${trace.status}) -> ${basename(file.relativePath)}`,
+      );
+      lines.push(`  - last action: ${trace.lastAction}`);
+      lines.push(`  - tending: ${file.tending}`);
+      lines.push(`  - focus: ${trace.work.focus ?? "none"}`);
+      lines.push(`  - confidence: ${trace.work.confidence.toFixed(2)}`);
+      if (trace.work.blockers.length > 0) {
+        lines.push(`  - blockers: ${trace.work.blockers.join(" / ")}`);
+      }
+      lines.push(`  - ${trace.summary}`);
+      if (trace.artifact.nextSteps[0]) {
+        lines.push(`  - pending next step: ${trace.artifact.nextSteps[0]}`);
+      }
+      if (trace.work.staleAt) {
+        lines.push(`  - stale at: ${trace.work.staleAt}`);
+      }
+      if (file.effectiveStaleAt && file.effectiveStaleAt !== trace.work.staleAt) {
+        lines.push(`  - effective stale at: ${file.effectiveStaleAt}`);
+      }
     }
-    lines.push(`  - ${trace.summary}`);
-    if (trace.artifact.nextSteps[0]) {
-      lines.push(`  - pending next step: ${trace.artifact.nextSteps[0]}`);
-    }
-    if (trace.work.staleAt) {
-      lines.push(`  - stale at: ${trace.work.staleAt}`);
-    }
-    if (file.effectiveStaleAt && file.effectiveStaleAt !== trace.work.staleAt) {
-      lines.push(`  - effective stale at: ${file.effectiveStaleAt}`);
-    }
+
+    lines.push("");
   }
 
   return `${lines.join("\n")}\n`;
@@ -225,6 +239,17 @@ function buildTraceFileName(trace: TraceEntry): string {
   const suffix = slug.length > 0 ? `${slug}-${hash}` : hash;
 
   return `${TRACE_FILE_PREFIX}${suffix}.md`;
+}
+
+function formatTendingHeading(tending: TraceTendingMode): string {
+  switch (tending) {
+    case "deepen":
+      return "Deepen";
+    case "preserve":
+      return "Preserve";
+    case "steady":
+      return "Steady";
+  }
 }
 
 function slugifyTopic(topic: string): string {

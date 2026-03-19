@@ -207,10 +207,20 @@ function printArtifacts(currentEngine: HachikaEngine): void {
     return;
   }
 
-  for (const file of files) {
-    console.log(
-      `${file.topic} ${file.kind}/${file.status} action:${file.lastAction} tending:${file.tending} focus:${file.focus ?? "none"} confidence:${file.confidence.toFixed(2)} blockers:${file.blockers.length} next:${file.pendingNextStep ?? "none"} stale:${file.staleAt ?? "none"} effectiveStale:${file.effectiveStaleAt ?? "none"} ${file.relativePath}`,
-    );
+  for (const tending of ["deepen", "preserve", "steady"] as const) {
+    const sectionFiles = files.filter((file) => file.tending === tending);
+
+    if (sectionFiles.length === 0) {
+      continue;
+    }
+
+    console.log(`${tending}:`);
+
+    for (const file of sectionFiles) {
+      console.log(
+        `  ${file.topic} ${file.kind}/${file.status} action:${file.lastAction} tending:${file.tending} focus:${file.focus ?? "none"} confidence:${file.confidence.toFixed(2)} blockers:${file.blockers.length} next:${file.pendingNextStep ?? "none"} stale:${file.staleAt ?? "none"} effectiveStale:${file.effectiveStaleAt ?? "none"} ${file.relativePath}`,
+      );
+    }
   }
 }
 
