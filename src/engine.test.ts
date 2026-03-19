@@ -255,6 +255,66 @@ test("high boredom can make initiative favor stale shared-work blockers", () => 
   assert.match(result.snapshot.initiative.pending?.blocker ?? "", /未定|責務/);
 });
 
+test("high boredom can schedule initiative around an archived decision trace", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.body.energy = 0.68;
+  snapshot.body.boredom = 0.9;
+  snapshot.body.tension = 0.14;
+  snapshot.lastInteractionAt = "2026-03-19T10:00:00.000Z";
+  snapshot.conversationCount = 1;
+  snapshot.identity.anchors = ["設計"];
+  snapshot.purpose.lastResolved = {
+    kind: "continue_shared_work",
+    topic: "設計",
+    summary: "設計をまとめたい。",
+    confidence: 0.82,
+    progress: 1,
+    createdAt: "2026-03-19T08:00:00.000Z",
+    lastUpdatedAt: "2026-03-19T09:00:00.000Z",
+    turnsActive: 3,
+    outcome: "fulfilled",
+    resolution: "設計は一度まとまった。",
+    resolvedAt: "2026-03-19T09:00:00.000Z",
+  };
+  snapshot.traces.設計 = {
+    topic: "設計",
+    kind: "decision",
+    status: "resolved",
+    lastAction: "resolved",
+    summary: "「設計」は決定として残っている。",
+    sourceMotive: "leave_trace",
+    artifact: {
+      memo: ["設計を残す"],
+      fragments: ["API を分ける"],
+      decisions: ["API を分ける"],
+      nextSteps: [],
+    },
+    work: {
+      focus: "API を分ける",
+      confidence: 0.9,
+      blockers: [],
+      staleAt: null,
+    },
+    lifecycle: {
+      phase: "archived",
+      archivedAt: "2026-03-19T09:00:00.000Z",
+      reopenedAt: null,
+      reopenCount: 0,
+    },
+    salience: 0.74,
+    mentions: 3,
+    createdAt: "2026-03-19T08:00:00.000Z",
+    lastUpdatedAt: "2026-03-19T09:00:00.000Z",
+  };
+
+  const engine = new HachikaEngine(snapshot);
+  const result = engine.respond("？");
+
+  assert.equal(result.snapshot.initiative.pending?.topic, "設計");
+  assert.equal(result.snapshot.initiative.pending?.motive, "continue_shared_work");
+  assert.equal(result.snapshot.initiative.pending?.blocker, null);
+});
+
 test("pending initiative emits a proactive resume after idle", () => {
   const engine = new HachikaEngine(createInitialSnapshot());
 
@@ -361,6 +421,65 @@ test("high boredom proactive wording can surface a deepening intent", () => {
 
   assert.ok(message !== null);
   assert.match(message ?? "", /もう一段具体化したい|断片をもう一段増やしたい/);
+});
+
+test("proactive emission can reopen an archived decision and say so", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.body.energy = 0.66;
+  snapshot.body.boredom = 0.88;
+  snapshot.body.tension = 0.16;
+  snapshot.lastInteractionAt = "2026-03-19T10:00:00.000Z";
+  snapshot.traces.設計 = {
+    topic: "設計",
+    kind: "decision",
+    status: "resolved",
+    lastAction: "resolved",
+    summary: "「設計」は決定として残っている。",
+    sourceMotive: "leave_trace",
+    artifact: {
+      memo: ["設計を残す"],
+      fragments: ["API を分ける"],
+      decisions: ["API を分ける"],
+      nextSteps: [],
+    },
+    work: {
+      focus: "API を分ける",
+      confidence: 0.92,
+      blockers: [],
+      staleAt: null,
+    },
+    lifecycle: {
+      phase: "archived",
+      archivedAt: "2026-03-19T09:00:00.000Z",
+      reopenedAt: null,
+      reopenCount: 0,
+    },
+    salience: 0.76,
+    mentions: 3,
+    createdAt: "2026-03-19T08:00:00.000Z",
+    lastUpdatedAt: "2026-03-19T09:00:00.000Z",
+  };
+  snapshot.initiative.pending = {
+    kind: "resume_topic",
+    reason: "expansion",
+    motive: "continue_shared_work",
+    topic: "設計",
+    blocker: null,
+    concern: null,
+    createdAt: "2026-03-19T10:00:00.000Z",
+    readyAfterHours: 0,
+  };
+
+  const engine = new HachikaEngine(snapshot);
+  const message = engine.emitInitiative({ force: true });
+  const trace = engine.getSnapshot().traces.設計;
+
+  assert.ok(message !== null);
+  assert.match(message ?? "", /いったん閉じていた/);
+  assert.equal(trace?.status, "active");
+  assert.equal(trace?.kind, "spec_fragment");
+  assert.equal(trace?.lifecycle?.phase, "live");
+  assert.equal(trace?.lifecycle?.reopenCount, 1);
 });
 
 test("blocker-aware proactive emission resolves the targeted blocker into a next step", () => {

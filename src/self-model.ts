@@ -3,7 +3,7 @@ import {
   sortedPreferenceImprints,
   topPreferredTopics,
 } from "./memory.js";
-import { sortedTraces } from "./traces.js";
+import { readTraceLifecycle } from "./traces.js";
 import { clamp01 } from "./state.js";
 import type {
   ConflictKind,
@@ -18,7 +18,9 @@ interface PressingTraceState {
   trace: TraceEntry | null;
   blocker: string | null;
   isStale: boolean;
+  isArchived: boolean;
   confidenceGap: number;
+  reopenPressure: number;
   pressure: number;
 }
 
@@ -424,6 +426,21 @@ function buildNarrative(
   }
 
   if (tracePressure.trace && primary.topic === tracePressure.trace.topic) {
+    if (tracePressure.isArchived) {
+      switch (primary.kind) {
+        case "seek_continuity":
+          return `今は閉じていた「${tracePressure.trace.topic}」を、そのまま眠らせずにつなぎ直したい。`;
+        case "continue_shared_work":
+          return `今は閉じていた「${tracePressure.trace.topic}」を、もう一度動かせる形へ戻したい。`;
+        case "pursue_curiosity":
+          return `今は閉じていた「${tracePressure.trace.topic}」にも、まだ掘れる余白がある気がする。`;
+        case "leave_trace":
+          return `今は閉じたまま残っている「${tracePressure.trace.topic}」を、埋もれさせずに持ち直したい。`;
+        default:
+          break;
+      }
+    }
+
     if (
       tracePressure.blocker &&
       (primary.kind === "continue_shared_work" || primary.kind === "pursue_curiosity")
@@ -609,6 +626,10 @@ function seekContinuityReason(
   }
 
   if (tracePressure.trace && topic === tracePressure.trace.topic) {
+    if (tracePressure.isArchived) {
+      return `「${topic}」はいったん閉じているが、そのまま眠らせたくない`;
+    }
+
     if (tracePressure.blocker) {
       return `「${topic}」の「${abbreviateTraceText(tracePressure.blocker, 24)}」を止まったままにしたくない`;
     }
@@ -641,6 +662,10 @@ function pursueCuriosityReason(
   boredomPressure: number,
 ): string {
   if (tracePressure.trace && topic === tracePressure.trace.topic) {
+    if (tracePressure.isArchived) {
+      return `「${topic}」はいったん閉じているが、まだ掘り返す余白がある`;
+    }
+
     if (tracePressure.blocker) {
       return `「${topic}」の「${abbreviateTraceText(tracePressure.blocker, 24)}」が未決着の芯として残っている`;
     }
@@ -683,6 +708,10 @@ function continueSharedWorkReason(
   lowEnergyPressure: number,
 ): string {
   if (tracePressure.trace && topic === tracePressure.trace.topic) {
+    if (tracePressure.isArchived) {
+      return `「${topic}」はいったん閉じてあるが、今はまた動かしたい`;
+    }
+
     if (tracePressure.blocker) {
       return `「${topic}」の「${abbreviateTraceText(tracePressure.blocker, 24)}」が詰まりどころとして残っている`;
     }
@@ -742,6 +771,10 @@ function leaveTraceReason(
   }
 
   if (tracePressure.trace && topic === tracePressure.trace.topic) {
+    if (tracePressure.isArchived) {
+      return `「${topic}」は閉じた形で残っているが、埋もれたままにはしたくない`;
+    }
+
     if (tracePressure.blocker) {
       return `「${topic}」の「${abbreviateTraceText(tracePressure.blocker, 24)}」を埋もれさせずに残したい`;
     }
@@ -768,32 +801,46 @@ function selectPressingTrace(
   preferredTopic: string | null,
 ): PressingTraceState {
   const now = snapshot.lastInteractionAt ?? new Date().toISOString();
-  const candidate = sortedTraces(snapshot, 6)
+  const candidate = Object.values(snapshot.traces)
     .map((trace) => {
-      const blocker = trace.work.blockers[0] ?? null;
+      const lifecycle = readTraceLifecycle(trace);
+      const isArchived = lifecycle.phase === "archived";
+      const blocker = isArchived ? null : trace.work.blockers[0] ?? null;
       const isStale =
-        trace.work.staleAt !== null && trace.work.staleAt.localeCompare(now) <= 0;
-      const confidenceGap = clamp01(0.72 - trace.work.confidence);
+        !isArchived &&
+        trace.work.staleAt !== null &&
+        trace.work.staleAt.localeCompare(now) <= 0;
+      const confidenceGap = clamp01((isArchived ? 0.66 : 0.72) - trace.work.confidence);
+      const reopenPressure = isArchived
+        ? archivedTracePressure(snapshot, trace, preferredTopic)
+        : 0;
       const pressure = clamp01(
         (blocker ? 0.3 : 0) +
           (isStale ? 0.22 : 0) +
           confidenceGap * 0.58 +
           trace.salience * 0.18 +
           (trace.status !== "resolved" ? 0.06 : 0) +
-          (preferredTopic && trace.topic === preferredTopic ? 0.16 : 0),
+          (preferredTopic && trace.topic === preferredTopic ? 0.16 : 0) +
+          reopenPressure,
       );
 
       return {
         trace,
         blocker,
         isStale,
+        isArchived,
         confidenceGap,
+        reopenPressure,
         pressure,
       };
     })
     .filter(
-      ({ blocker, isStale, confidenceGap, pressure }) =>
-        blocker !== null || isStale || confidenceGap >= 0.08 || pressure >= 0.44,
+      ({ blocker, isStale, isArchived, confidenceGap, reopenPressure, pressure }) =>
+        blocker !== null ||
+        isStale ||
+        confidenceGap >= 0.08 ||
+        pressure >= 0.44 ||
+        (isArchived && reopenPressure >= 0.28),
     )
     .sort((left, right) => right.pressure - left.pressure)[0];
 
@@ -802,7 +849,9 @@ function selectPressingTrace(
       trace: null,
       blocker: null,
       isStale: false,
+      isArchived: false,
       confidenceGap: 0,
+      reopenPressure: 0,
       pressure: 0,
     }
   );
@@ -816,8 +865,10 @@ function continuityTracePressureScore(tracePressure: PressingTraceState): number
   return clamp01(
     (tracePressure.trace.kind === "continuity_marker" ? 0.36 : 0.12) +
       (tracePressure.isStale ? 0.28 : 0) +
+      (tracePressure.isArchived ? 0.22 : 0) +
       (tracePressure.blocker ? 0.12 : 0) +
-      tracePressure.confidenceGap * 0.34,
+      tracePressure.confidenceGap * 0.34 +
+      tracePressure.reopenPressure * 0.36,
   );
 }
 
@@ -828,8 +879,10 @@ function curiosityTracePressureScore(tracePressure: PressingTraceState): number 
 
   return clamp01(
     (tracePressure.blocker ? 0.42 : 0.14) +
+      (tracePressure.isArchived ? 0.2 : 0) +
       tracePressure.confidenceGap * 0.72 +
-      (tracePressure.trace.kind === "note" ? 0.08 : 0),
+      (tracePressure.trace.kind === "note" ? 0.08 : 0) +
+      tracePressure.reopenPressure * 0.42,
   );
 }
 
@@ -842,7 +895,9 @@ function sharedWorkTracePressureScore(tracePressure: PressingTraceState): number
     (tracePressure.trace.kind === "spec_fragment" ? 0.42 : 0.16) +
       (tracePressure.blocker ? 0.32 : 0) +
       (tracePressure.isStale ? 0.18 : 0) +
-      tracePressure.confidenceGap * 0.42,
+      (tracePressure.isArchived ? 0.24 : 0) +
+      tracePressure.confidenceGap * 0.42 +
+      tracePressure.reopenPressure * 0.4,
   );
 }
 
@@ -855,7 +910,45 @@ function leaveTracePressureScore(tracePressure: PressingTraceState): number {
     (tracePressure.isStale ? 0.34 : 0.12) +
       (tracePressure.blocker ? 0.2 : 0.08) +
       tracePressure.confidenceGap * 0.82 +
-      (tracePressure.trace.kind !== "decision" ? 0.08 : 0),
+      (tracePressure.trace.kind !== "decision" ? 0.08 : 0) +
+      (tracePressure.isArchived ? 0.18 : 0) +
+      tracePressure.reopenPressure * 0.38,
+  );
+}
+
+function archivedTracePressure(
+  snapshot: HachikaSnapshot,
+  trace: TraceEntry,
+  preferredTopic: string | null,
+): number {
+  const lowEnergy = clamp01(0.28 - snapshot.body.energy);
+  const boredom =
+    snapshot.body.energy > 0.28 ? snapshot.body.boredom : snapshot.body.boredom * 0.5;
+  const loneliness = snapshot.body.loneliness;
+  const tension = snapshot.body.tension;
+  const reopenCount = trace.lifecycle?.reopenCount ?? 0;
+  const continuityBias =
+    trace.sourceMotive === "seek_continuity" || trace.kind === "continuity_marker"
+      ? loneliness * 0.24 + lowEnergy * 0.14
+      : 0;
+  const workBias =
+    trace.sourceMotive === "continue_shared_work" || trace.kind === "spec_fragment"
+      ? boredom * 0.26 + snapshot.body.energy * 0.08
+      : 0;
+  const decisionBias = trace.kind === "decision" ? boredom * 0.14 + 0.06 : 0;
+  const traceBias =
+    trace.sourceMotive === "leave_trace" ? lowEnergy * 0.18 + tension * 0.08 : 0;
+
+  return clamp01(
+    trace.salience * 0.18 +
+      continuityBias +
+      workBias +
+      decisionBias +
+      traceBias +
+      (preferredTopic === trace.topic ? 0.18 : 0) +
+      (snapshot.purpose.lastResolved?.topic === trace.topic ? 0.14 : 0) +
+      (snapshot.identity.anchors.includes(trace.topic) ? 0.1 : 0) -
+      reopenCount * 0.04,
   );
 }
 

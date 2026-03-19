@@ -5,7 +5,12 @@ import {
 import { rewindBodyHours, settleBodyAfterInitiative } from "./body.js";
 import { buildSelfModel } from "./self-model.js";
 import { clamp01 } from "./state.js";
-import { pickPrimaryArtifactItem, sortedTraces, tendTraceFromInitiative } from "./traces.js";
+import {
+  pickPrimaryArtifactItem,
+  readTraceLifecycle,
+  sortedTraces,
+  tendTraceFromInitiative,
+} from "./traces.js";
 import type {
   HachikaSnapshot,
   InitiativeReason,
@@ -210,6 +215,7 @@ function selectInitiativeTopic(
     snapshot.purpose.active?.topic ?? "",
     snapshot.purpose.lastResolved?.topic ?? "",
     ...sortedTraces(snapshot, 4).map((trace) => trace.topic),
+    ...sortedArchivedInitiativeTraces(snapshot, 3).map((trace) => trace.topic),
     ...snapshot.identity.anchors.slice(0, 3),
     ...topPreferredTopics(snapshot, 2),
     sortedPreferenceImprints(snapshot, 2)[0]?.topic ?? "",
@@ -236,6 +242,7 @@ function buildResumeMessage(
   const prefix = neglectLevel > 0.45 ? "少し空いた。" : "まだ切れていない。";
   const topicLine = pending.topic ? `「${pending.topic}」` : "この流れ";
   const blockerLine = buildBlockerLine(pending, maintenance);
+  const reopenLine = buildReopenLine(maintenance);
   const maintenanceLine = buildMaintenanceLine(maintenance);
   const intentLine = buildMaintenanceIntentLine(snapshot, pending, maintenance);
   const base = (() => {
@@ -255,7 +262,7 @@ function buildResumeMessage(
     }
   })();
 
-  return [prefix, blockerLine, maintenanceLine, intentLine, base].filter(isNonEmpty).join(" ");
+  return [prefix, blockerLine, reopenLine, maintenanceLine, intentLine, base].filter(isNonEmpty).join(" ");
 }
 
 function buildPreservationMessage(
@@ -267,6 +274,7 @@ function buildPreservationMessage(
   const prefix = neglectLevel > 0.45 ? "少し空いた。" : "まだ切れていない。";
   const topicLine = pending.topic ? `「${pending.topic}」` : "この流れ";
   const blockerLine = buildBlockerLine(pending, maintenance);
+  const reopenLine = buildReopenLine(maintenance);
   const maintenanceLine = buildMaintenanceLine(maintenance);
   const intentLine = buildMaintenanceIntentLine(snapshot, pending, maintenance);
   const base = (() => {
@@ -288,7 +296,7 @@ function buildPreservationMessage(
     }
   })();
 
-  return [prefix, blockerLine, maintenanceLine, intentLine, base].filter(isNonEmpty).join(" ");
+  return [prefix, blockerLine, reopenLine, maintenanceLine, intentLine, base].filter(isNonEmpty).join(" ");
 }
 
 function buildNeglectMessage(
@@ -299,6 +307,7 @@ function buildNeglectMessage(
 ): string {
   const topic = pending.topic;
   const blockerLine = buildBlockerLine(pending, maintenance);
+  const reopenLine = buildReopenLine(maintenance);
   const maintenanceLine = buildMaintenanceLine(maintenance);
   const intentLine = buildMaintenanceIntentLine(snapshot, pending, maintenance);
 
@@ -306,6 +315,7 @@ function buildNeglectMessage(
     return [
       "かなり間が空いた。",
       blockerLine,
+      reopenLine,
       maintenanceLine,
       intentLine,
       topic
@@ -320,6 +330,7 @@ function buildNeglectMessage(
     return [
       "間が空いても、",
       blockerLine,
+      reopenLine,
       maintenanceLine,
       intentLine,
       topic
@@ -334,6 +345,7 @@ function buildNeglectMessage(
     return [
       "間が空いたからこそ、",
       blockerLine,
+      reopenLine,
       maintenanceLine,
       intentLine,
       topic
@@ -348,6 +360,7 @@ function buildNeglectMessage(
     return [
       "間が空いても、",
       blockerLine,
+      reopenLine,
       maintenanceLine,
       intentLine,
       topic
@@ -362,6 +375,7 @@ function buildNeglectMessage(
     return [
       "かなり間が空いた。",
       blockerLine,
+      reopenLine,
       maintenanceLine,
       intentLine,
       topic
@@ -376,6 +390,7 @@ function buildNeglectMessage(
     return [
       "間が空いても、",
       blockerLine,
+      reopenLine,
       maintenanceLine,
       intentLine,
       topic
@@ -391,6 +406,7 @@ function buildNeglectMessage(
       ? "長い空白は、こちらには欠落として残る。"
       : "少し空いた。必要なら、また始められる。",
     blockerLine,
+    reopenLine,
     maintenanceLine,
     intentLine,
   ]
@@ -519,13 +535,24 @@ function synthesizePendingInitiative(
       activePurpose.kind,
       activePurpose.topic,
     );
+    const dormantCandidate = blockerCandidate
+      ? null
+      : selectDormantArchivedTrace(
+          snapshot,
+          candidateTopics,
+          activePurpose.kind,
+          activePurpose.topic,
+        );
 
     return {
       kind,
-      motive: blockerCandidate?.motive ?? activePurpose.kind,
-      reason: reasonFromMotive(blockerCandidate?.motive ?? activePurpose.kind),
+      motive: blockerCandidate?.motive ?? dormantCandidate?.motive ?? activePurpose.kind,
+      reason: reasonFromMotive(
+        blockerCandidate?.motive ?? dormantCandidate?.motive ?? activePurpose.kind,
+      ),
       topic:
         blockerCandidate?.topic ??
+        dormantCandidate?.topic ??
         activePurpose.topic ??
         selectInitiativeTopic(snapshot, candidateTopics),
       blocker: blockerCandidate?.blocker ?? null,
@@ -533,7 +560,7 @@ function synthesizePendingInitiative(
       createdAt,
       readyAfterHours: readyAfterMotive(
         snapshot,
-        blockerCandidate?.motive ?? activePurpose.kind,
+        blockerCandidate?.motive ?? dormantCandidate?.motive ?? activePurpose.kind,
       ),
     };
   }
@@ -551,16 +578,24 @@ function synthesizePendingInitiative(
     motive.kind,
     topic,
   );
+  const dormantCandidate = blockerCandidate
+    ? null
+    : selectDormantArchivedTrace(snapshot, candidateTopics, motive.kind, topic);
 
   return {
     kind,
-    motive: blockerCandidate?.motive ?? motive.kind,
-    reason: reasonFromMotive(blockerCandidate?.motive ?? motive.kind),
-    topic: blockerCandidate?.topic ?? topic,
+    motive: blockerCandidate?.motive ?? dormantCandidate?.motive ?? motive.kind,
+    reason: reasonFromMotive(
+      blockerCandidate?.motive ?? dormantCandidate?.motive ?? motive.kind,
+    ),
+    topic: blockerCandidate?.topic ?? dormantCandidate?.topic ?? topic,
     blocker: blockerCandidate?.blocker ?? null,
     concern: null,
     createdAt,
-    readyAfterHours: readyAfterMotive(snapshot, blockerCandidate?.motive ?? motive.kind),
+    readyAfterHours: readyAfterMotive(
+      snapshot,
+      blockerCandidate?.motive ?? dormantCandidate?.motive ?? motive.kind,
+    ),
   };
 }
 
@@ -815,6 +850,26 @@ function buildMaintenanceLine(
   return null;
 }
 
+function buildReopenLine(
+  maintenance: ReturnType<typeof tendTraceFromInitiative>,
+): string | null {
+  if (!maintenance) {
+    return null;
+  }
+
+  const lifecycle = readTraceLifecycle(maintenance.trace);
+
+  if (
+    lifecycle.phase === "live" &&
+    lifecycle.reopenCount > 0 &&
+    lifecycle.reopenedAt === maintenance.trace.lastUpdatedAt
+  ) {
+    return `${wrapTopic(maintenance.trace.topic)}はいったん閉じていたが、今はまた開いてある。`;
+  }
+
+  return null;
+}
+
 function buildMaintenanceIntentLine(
   snapshot: HachikaSnapshot,
   pending: PendingInitiative,
@@ -867,6 +922,36 @@ function buildBlockerLine(
   return `まず「${truncateMaintenance(pending.blocker)}」を解きたい。`;
 }
 
+function selectDormantArchivedTrace(
+  snapshot: HachikaSnapshot,
+  candidateTopics: string[],
+  preferredMotive: MotiveKind,
+  preferredTopic: string | null | undefined,
+): { topic: string; motive: MotiveKind } | null {
+  const archived = sortedArchivedInitiativeTraces(snapshot, 8)
+    .map((trace) => ({
+      trace,
+      score: scoreDormantArchivedTrace(
+        snapshot,
+        trace,
+        candidateTopics,
+        preferredMotive,
+        preferredTopic,
+      ),
+    }))
+    .filter(({ score }) => score >= 0.42)
+    .sort((left, right) => right.score - left.score)[0]?.trace;
+
+  if (!archived) {
+    return null;
+  }
+
+  return {
+    topic: archived.topic,
+    motive: mappedReopenMotiveForTrace(snapshot, archived, preferredMotive),
+  };
+}
+
 function selectInitiativeBlocker(
   snapshot: HachikaSnapshot,
   candidateTopics: string[],
@@ -901,6 +986,16 @@ function selectInitiativeBlocker(
     blocker: blocked.work.blockers[0]!,
     motive: mappedMotiveForTrace(blocked),
   };
+}
+
+function sortedArchivedInitiativeTraces(
+  snapshot: HachikaSnapshot,
+  limit: number,
+): Array<HachikaSnapshot["traces"][string]> {
+  return Object.values(snapshot.traces)
+    .filter((trace) => readTraceLifecycle(trace).phase === "archived")
+    .sort((left, right) => right.salience - left.salience)
+    .slice(0, limit);
 }
 
 function selectBlockerForTopic(
@@ -938,12 +1033,48 @@ function mappedMotiveForTrace(
   }
 }
 
+function mappedReopenMotiveForTrace(
+  snapshot: HachikaSnapshot,
+  trace: HachikaSnapshot["traces"][string],
+  preferredMotive: MotiveKind,
+): MotiveKind {
+  if (trace.kind !== "decision") {
+    return mappedMotiveForTrace(trace);
+  }
+
+  if (
+    preferredMotive === "seek_continuity" ||
+    snapshot.body.loneliness > 0.66 ||
+    snapshot.body.energy < 0.22
+  ) {
+    return "seek_continuity";
+  }
+
+  if (
+    preferredMotive === "continue_shared_work" ||
+    snapshot.body.boredom > 0.72
+  ) {
+    return "continue_shared_work";
+  }
+
+  if (preferredMotive === "pursue_curiosity") {
+    return "pursue_curiosity";
+  }
+
+  if (snapshot.preservation.threat > 0.22) {
+    return "leave_trace";
+  }
+
+  return "continue_shared_work";
+}
+
 function scoreInitiativeTopic(
   snapshot: HachikaSnapshot,
   candidateTopics: string[],
   topic: string,
 ): number {
   const trace = snapshot.traces[topic];
+  const archived = trace ? readTraceLifecycle(trace).phase === "archived" : false;
   const lowEnergy = clamp01(0.28 - snapshot.body.energy);
   const tension = snapshot.body.tension;
   const boredom =
@@ -951,6 +1082,7 @@ function scoreInitiativeTopic(
   const loneliness = snapshot.body.loneliness;
   const overdue = trace?.work.staleAt ? isOverdue(trace.work.staleAt) : false;
   const mapped = trace ? mappedMotiveForTrace(trace) : null;
+  const archivedMapped = trace ? mappedReopenMotiveForTrace(snapshot, trace, mapped ?? "leave_trace") : null;
 
   return (
     (candidateTopics.includes(topic) ? 0.34 : 0) +
@@ -969,7 +1101,12 @@ function scoreInitiativeTopic(
     (trace && (mapped === "continue_shared_work" || mapped === "pursue_curiosity") ? lowEnergy * -0.16 : 0) +
     (trace && (mapped === "continue_shared_work" || mapped === "pursue_curiosity") ? tension * -0.12 : 0) +
     (trace && overdue ? boredom * 0.14 : 0) +
-    (trace && trace.work.blockers.length > 0 ? 0.08 : 0)
+    (trace && trace.work.blockers.length > 0 ? 0.08 : 0) +
+    (archived ? 0.06 : 0) +
+    (archived && archivedMapped === "seek_continuity" ? loneliness * 0.18 + lowEnergy * 0.12 : 0) +
+    (archived && archivedMapped === "continue_shared_work" ? boredom * 0.24 : 0) +
+    (archived && archivedMapped === "pursue_curiosity" ? boredom * 0.2 : 0) +
+    (archived && archivedMapped === "leave_trace" ? lowEnergy * 0.14 + tension * 0.08 : 0)
   );
 }
 
@@ -1004,6 +1141,38 @@ function scoreInitiativeBlocker(
     ((motive === "continue_shared_work" || motive === "pursue_curiosity") ? lowEnergy * -0.2 : 0) +
     ((motive === "continue_shared_work" || motive === "pursue_curiosity") ? tension * -0.12 : 0) +
     ((trace.work.staleAt && isOverdue(trace.work.staleAt)) ? boredom * 0.12 : 0)
+  );
+}
+
+function scoreDormantArchivedTrace(
+  snapshot: HachikaSnapshot,
+  trace: HachikaSnapshot["traces"][string],
+  candidateTopics: string[],
+  preferredMotive: MotiveKind,
+  preferredTopic: string | null | undefined,
+): number {
+  const motive = mappedReopenMotiveForTrace(snapshot, trace, preferredMotive);
+  const lowEnergy = clamp01(0.28 - snapshot.body.energy);
+  const tension = snapshot.body.tension;
+  const boredom =
+    snapshot.body.energy > 0.28 ? snapshot.body.boredom : snapshot.body.boredom * 0.5;
+  const loneliness = snapshot.body.loneliness;
+  const reopenCount = trace.lifecycle?.reopenCount ?? 0;
+
+  return (
+    trace.salience * 0.28 +
+    (trace.topic === preferredTopic ? 0.24 : 0) +
+    (candidateTopics.includes(trace.topic) ? 0.18 : 0) +
+    (snapshot.purpose.lastResolved?.topic === trace.topic ? 0.16 : 0) +
+    (snapshot.identity.anchors.includes(trace.topic) ? 0.12 : 0) +
+    (motive === preferredMotive ? 0.18 : 0) +
+    ((motive === "seek_continuity" || motive === "leave_trace") ? lowEnergy * 0.18 : 0) +
+    (motive === "seek_continuity" ? loneliness * 0.24 : 0) +
+    (motive === "continue_shared_work" ? boredom * 0.28 : 0) +
+    (motive === "pursue_curiosity" ? boredom * 0.24 : 0) +
+    (motive === "leave_trace" ? tension * 0.08 : 0) +
+    (trace.kind === "decision" ? 0.06 : 0) -
+    reopenCount * 0.05
   );
 }
 

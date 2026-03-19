@@ -226,6 +226,7 @@ Hachika は、単に有用なだけでなく、
 - trace は `data/artifacts/deepen|preserve|steady/` 以下の Markdown ファイルにも materialize され、会話の外に実際の痕跡を残す
   - 各ディレクトリには専用の `index.md` も生成され、その tending の痕跡だけを局所的に追える
 - resolved で open work のない trace は `archive/` へ退避され、会話や能動行動で再び動きが出れば live trace として reopen される
+- archived trace は boredom / continuity / identity anchor の影響で self-model と initiative に再浮上し、自分から掘り返されることがある
 - 能動行動は発話だけでなく trace maintenance も行い、必要なら `nextSteps` を補完し、fulfilled な topic は `decision` へ昇格できる
 - artifact Markdown には `status / lifecycle / lastAction / pending next step / tending / effective stale` が含まれ、今どの段階の痕跡で、archive 済みか再開中か、整えているのか掘っているのか、どれくらい早く掘り返したがっているのかを外から追える
 - artifact index と `/artifacts` 表示は `deepen / preserve / steady` の順に grouped され、materialize 先のディレクトリ構造もそれに対応する
