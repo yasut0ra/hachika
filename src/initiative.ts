@@ -205,18 +205,26 @@ function selectInitiativeTopic(
   snapshot: HachikaSnapshot,
   candidateTopics: string[],
 ): string | null {
-  for (const topic of candidateTopics) {
-    if ((snapshot.preferences[topic] ?? 0) > -0.35) {
-      return topic;
-    }
+  const candidates = uniqueTopics([
+    ...candidateTopics.filter((topic) => (snapshot.preferences[topic] ?? 0) > -0.35),
+    snapshot.purpose.active?.topic ?? "",
+    snapshot.purpose.lastResolved?.topic ?? "",
+    ...sortedTraces(snapshot, 4).map((trace) => trace.topic),
+    ...snapshot.identity.anchors.slice(0, 3),
+    ...topPreferredTopics(snapshot, 2),
+    sortedPreferenceImprints(snapshot, 2)[0]?.topic ?? "",
+  ]);
+
+  if (candidates.length === 0) {
+    return null;
   }
 
-  const preferredTopic = topPreferredTopics(snapshot, 1)[0];
-  if (preferredTopic) {
-    return preferredTopic;
-  }
-
-  return sortedPreferenceImprints(snapshot, 1)[0]?.topic ?? null;
+  return candidates
+    .map((topic) => ({
+      topic,
+      score: scoreInitiativeTopic(snapshot, candidateTopics, topic),
+    }))
+    .sort((left, right) => right.score - left.score)[0]?.topic ?? null;
 }
 
 function buildResumeMessage(
@@ -646,7 +654,7 @@ function selectBodyPreferredMotive(
     const calmer = motives.find(
       (motive) =>
         (motive.kind === "seek_continuity" || motive.kind === "leave_trace") &&
-        primary.score - motive.score <= 0.14,
+        primary.score - motive.score <= 0.18,
     );
 
     if (calmer) {
@@ -658,7 +666,7 @@ function selectBodyPreferredMotive(
     const preserving = motives.find(
       (motive) =>
         (motive.kind === "leave_trace" || motive.kind === "seek_continuity") &&
-        primary.score - motive.score <= 0.16,
+        primary.score - motive.score <= 0.24,
     );
 
     if (preserving) {
@@ -670,7 +678,7 @@ function selectBodyPreferredMotive(
     const connective = motives.find(
       (motive) =>
         (motive.kind === "deepen_relation" || motive.kind === "seek_continuity") &&
-        primary.score - motive.score <= 0.16,
+        primary.score - motive.score <= 0.24,
     );
 
     if (connective) {
@@ -682,7 +690,7 @@ function selectBodyPreferredMotive(
     const stimulating = motives.find(
       (motive) =>
         (motive.kind === "continue_shared_work" || motive.kind === "pursue_curiosity") &&
-        primary.score - motive.score <= 0.14,
+        primary.score - motive.score <= 0.18,
     );
 
     if (stimulating) {
@@ -827,14 +835,13 @@ function selectInitiativeBlocker(
     )
     .map((trace) => ({
       trace,
-      score:
-        trace.salience * 0.4 +
-        (trace.topic === preferredTopic ? 0.26 : 0) +
-        (candidateTopics.includes(trace.topic) ? 0.18 : 0) +
-        (mappedMotiveForTrace(trace) === preferredMotive ? 0.16 : 0) +
-        (trace.work.staleAt && isOverdue(trace.work.staleAt) ? 0.14 : 0) +
-        trace.work.blockers.length * 0.06 +
-        (1 - trace.work.confidence) * 0.2,
+      score: scoreInitiativeBlocker(
+        snapshot,
+        trace,
+        candidateTopics,
+        preferredMotive,
+        preferredTopic,
+      ),
     }))
     .sort((left, right) => right.score - left.score)[0]?.trace;
 
@@ -882,6 +889,79 @@ function mappedMotiveForTrace(
     case "note":
       return "pursue_curiosity";
   }
+}
+
+function scoreInitiativeTopic(
+  snapshot: HachikaSnapshot,
+  candidateTopics: string[],
+  topic: string,
+): number {
+  const trace = snapshot.traces[topic];
+  const lowEnergy = clamp01(0.28 - snapshot.body.energy);
+  const tension = snapshot.body.tension;
+  const boredom =
+    snapshot.body.energy > 0.28 ? snapshot.body.boredom : snapshot.body.boredom * 0.5;
+  const loneliness = snapshot.body.loneliness;
+  const overdue = trace?.work.staleAt ? isOverdue(trace.work.staleAt) : false;
+  const mapped = trace ? mappedMotiveForTrace(trace) : null;
+
+  return (
+    (candidateTopics.includes(topic) ? 0.34 : 0) +
+    (snapshot.purpose.active?.topic === topic ? 0.28 : 0) +
+    (snapshot.purpose.lastResolved?.topic === topic ? 0.14 : 0) +
+    (snapshot.identity.anchors.includes(topic) ? 0.12 : 0) +
+    Math.max(0, snapshot.preferences[topic] ?? 0) * 0.08 +
+    (snapshot.preferenceImprints[topic]?.salience ?? 0) * 0.16 +
+    (trace ? trace.salience * 0.32 : 0) +
+    (trace && mapped === "seek_continuity" ? loneliness * 0.24 : 0) +
+    (trace && trace.kind === "continuity_marker" ? loneliness * 0.14 : 0) +
+    (trace && (mapped === "seek_continuity" || mapped === "leave_trace") ? lowEnergy * 0.24 : 0) +
+    (trace && trace.kind === "continuity_marker" ? lowEnergy * 0.14 : 0) +
+    (trace && (mapped === "seek_continuity" || mapped === "leave_trace") ? tension * 0.18 : 0) +
+    (trace && (mapped === "continue_shared_work" || mapped === "pursue_curiosity") ? boredom * 0.22 : 0) +
+    (trace && (mapped === "continue_shared_work" || mapped === "pursue_curiosity") ? lowEnergy * -0.16 : 0) +
+    (trace && (mapped === "continue_shared_work" || mapped === "pursue_curiosity") ? tension * -0.12 : 0) +
+    (trace && overdue ? boredom * 0.14 : 0) +
+    (trace && trace.work.blockers.length > 0 ? 0.08 : 0)
+  );
+}
+
+function scoreInitiativeBlocker(
+  snapshot: HachikaSnapshot,
+  trace: HachikaSnapshot["traces"][string],
+  candidateTopics: string[],
+  preferredMotive: MotiveKind,
+  preferredTopic: string | null | undefined,
+): number {
+  const motive = mappedMotiveForTrace(trace);
+  const lowEnergy = clamp01(0.28 - snapshot.body.energy);
+  const tension = snapshot.body.tension;
+  const boredom =
+    snapshot.body.energy > 0.28 ? snapshot.body.boredom : snapshot.body.boredom * 0.5;
+  const loneliness = snapshot.body.loneliness;
+
+  return (
+    trace.salience * 0.4 +
+    (trace.topic === preferredTopic ? 0.26 : 0) +
+    (candidateTopics.includes(trace.topic) ? 0.18 : 0) +
+    (motive === preferredMotive ? 0.16 : 0) +
+    (trace.work.staleAt && isOverdue(trace.work.staleAt) ? 0.14 : 0) +
+    trace.work.blockers.length * 0.06 +
+    (1 - trace.work.confidence) * 0.2 +
+    ((motive === "seek_continuity" || motive === "leave_trace") ? lowEnergy * 0.28 : 0) +
+    (trace.kind === "continuity_marker" ? lowEnergy * 0.18 : 0) +
+    ((motive === "seek_continuity" || motive === "leave_trace") ? tension * 0.18 : 0) +
+    (motive === "seek_continuity" ? loneliness * 0.3 : 0) +
+    (trace.kind === "continuity_marker" ? loneliness * 0.16 : 0) +
+    ((motive === "continue_shared_work" || motive === "pursue_curiosity") ? boredom * 0.22 : 0) +
+    ((motive === "continue_shared_work" || motive === "pursue_curiosity") ? lowEnergy * -0.2 : 0) +
+    ((motive === "continue_shared_work" || motive === "pursue_curiosity") ? tension * -0.12 : 0) +
+    ((trace.work.staleAt && isOverdue(trace.work.staleAt)) ? boredom * 0.12 : 0)
+  );
+}
+
+function uniqueTopics(topics: string[]): string[] {
+  return [...new Set(topics.filter((topic) => topic.length > 0))];
 }
 
 function isOverdue(timestamp: string): boolean {

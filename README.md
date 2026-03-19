@@ -230,7 +230,7 @@ Hachika は、単に有用なだけでなく、
 - 能動行動は unresolved blocker を優先して選び、必要ならその blocker を解くための `next step` へ変換する
 - 通常の self-model と応答生成も `blockers / staleAt / confidence` を参照し、能動行動時だけでなく平常時の motive と発話にも未解決作業がにじむ
 - 身体状態は会話と放置で変化し、mood / motive / proactive timing / 通常応答に影響する
-- identity summary / current arc と initiative motive selection も身体状態の影響を受ける
+- identity summary / current arc と initiative motive / topic / blocker selection も身体状態の影響を受ける
 - trace の優先順位と artifact の surfaced order も身体状態の影響を受け、低 energy では残しやすい痕跡が、高 boredom では stale な未完了が前に出やすくなる
 - 内部状態に応じて応答のトーンと内容を変化させる
 - `data/hachika-state.json` に状態を保存し、セッションをまたいで継続性を残す

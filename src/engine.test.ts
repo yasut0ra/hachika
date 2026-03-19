@@ -124,6 +124,137 @@ test("blocked trace schedules a blocker-aware initiative", () => {
   assert.ok((pending?.blocker ?? "").includes("未定") || (pending?.blocker ?? "").includes("曖昧"));
 });
 
+test("low energy can make initiative favor continuity blockers", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.body.energy = 0.08;
+  snapshot.body.tension = 0.26;
+  snapshot.body.loneliness = 0.82;
+  snapshot.lastInteractionAt = "2026-03-19T10:00:00.000Z";
+  snapshot.conversationCount = 1;
+  snapshot.traces.設計 = {
+    topic: "設計",
+    kind: "continuity_marker",
+    status: "active",
+    lastAction: "continued",
+    summary: "「設計」は続きの目印として残っている。",
+    sourceMotive: "seek_continuity",
+    artifact: {
+      memo: ["設計の続き"],
+      fragments: [],
+      decisions: [],
+      nextSteps: ["設計をつなぎ直す"],
+    },
+    work: {
+      focus: "設計をつなぎ直す",
+      confidence: 0.68,
+      blockers: ["どこから戻るかが曖昧"],
+      staleAt: "2026-03-20T10:00:00.000Z",
+    },
+    salience: 0.58,
+    mentions: 2,
+    createdAt: "2026-03-19T08:00:00.000Z",
+    lastUpdatedAt: "2026-03-19T09:00:00.000Z",
+  };
+  snapshot.traces.実験 = {
+    topic: "実験",
+    kind: "spec_fragment",
+    status: "active",
+    lastAction: "expanded",
+    summary: "「実験」は断片として残っている。",
+    sourceMotive: "continue_shared_work",
+    artifact: {
+      memo: ["実験を進める"],
+      fragments: ["仮説を広げる"],
+      decisions: [],
+      nextSteps: ["仮説を広げる"],
+    },
+    work: {
+      focus: "仮説を広げる",
+      confidence: 0.4,
+      blockers: ["仮説の方向が未定"],
+      staleAt: "2026-03-20T12:00:00.000Z",
+    },
+    salience: 0.72,
+    mentions: 2,
+    createdAt: "2026-03-19T08:30:00.000Z",
+    lastUpdatedAt: "2026-03-19T09:30:00.000Z",
+  };
+
+  const engine = new HachikaEngine(snapshot);
+  const result = engine.respond("？");
+
+  assert.equal(result.snapshot.initiative.pending?.topic, "設計");
+  assert.equal(result.snapshot.initiative.pending?.motive, "seek_continuity");
+  assert.match(result.snapshot.initiative.pending?.blocker ?? "", /曖昧|戻る/);
+});
+
+test("high boredom can make initiative favor stale shared-work blockers", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.body.energy = 0.66;
+  snapshot.body.boredom = 0.86;
+  snapshot.lastInteractionAt = "2026-03-19T10:00:00.000Z";
+  snapshot.conversationCount = 1;
+  snapshot.traces.設計 = {
+    topic: "設計",
+    kind: "continuity_marker",
+    status: "active",
+    lastAction: "continued",
+    summary: "「設計」は続きの目印として残っている。",
+    sourceMotive: "seek_continuity",
+    artifact: {
+      memo: ["設計の続き"],
+      fragments: [],
+      decisions: [],
+      nextSteps: ["設計をつなぎ直す"],
+    },
+    work: {
+      focus: "設計をつなぎ直す",
+      confidence: 0.64,
+      blockers: ["前の流れが少し曖昧"],
+      staleAt: "2026-03-20T10:00:00.000Z",
+    },
+    salience: 0.72,
+    mentions: 2,
+    createdAt: "2026-03-19T08:00:00.000Z",
+    lastUpdatedAt: "2026-03-19T09:00:00.000Z",
+  };
+  snapshot.traces.仕様 = {
+    topic: "仕様",
+    kind: "spec_fragment",
+    status: "active",
+    lastAction: "expanded",
+    summary: "「仕様」は断片として残っている。",
+    sourceMotive: "continue_shared_work",
+    artifact: {
+      memo: ["仕様を詰める"],
+      fragments: ["境界を整理する"],
+      decisions: [],
+      nextSteps: ["責務を切り分ける"],
+    },
+    work: {
+      focus: "責務を切り分ける",
+      confidence: 0.44,
+      blockers: ["責務が未定"],
+      staleAt: "2026-03-18T10:00:00.000Z",
+    },
+    salience: 0.6,
+    mentions: 2,
+    createdAt: "2026-03-19T08:30:00.000Z",
+    lastUpdatedAt: "2026-03-19T09:30:00.000Z",
+  };
+
+  const engine = new HachikaEngine(snapshot);
+  const result = engine.respond("？");
+
+  assert.equal(result.snapshot.initiative.pending?.topic, "仕様");
+  assert.equal(
+    result.snapshot.initiative.pending?.motive === "continue_shared_work" ||
+      result.snapshot.initiative.pending?.motive === "pursue_curiosity",
+    true,
+  );
+  assert.match(result.snapshot.initiative.pending?.blocker ?? "", /未定|責務/);
+});
+
 test("pending initiative emits a proactive resume after idle", () => {
   const engine = new HachikaEngine(createInitialSnapshot());
 
