@@ -3,6 +3,7 @@ import {
   sortedPreferenceImprints,
   sortedRelationImprints,
 } from "./memory.js";
+import type { ResponsePlan } from "./response-planner.js";
 import { deriveTraceTendingMode, pickPrimaryArtifactItem, readTraceLifecycle, sortedTraces } from "./traces.js";
 import type {
   DriveName,
@@ -36,6 +37,7 @@ export interface ReplyGenerationContext {
   dominantDrive: DriveName;
   signals: InteractionSignals;
   selfModel: SelfModel;
+  responsePlan: ResponsePlan;
   fallbackReply: string;
 }
 
@@ -119,6 +121,7 @@ export interface ReplyGenerationPayload extends CommonGenerationPayload {
   mood: MoodLabel;
   dominantDrive: DriveName;
   signals: InteractionSignals;
+  responsePlan: ResponsePlan;
 }
 
 export interface ProactiveGenerationPayload extends CommonGenerationPayload {
@@ -259,6 +262,7 @@ export function buildReplyGenerationPayload(
     mood: context.mood,
     dominantDrive: context.dominantDrive,
     signals: context.signals,
+    responsePlan: context.responsePlan,
     ...buildCommonGenerationPayload(
       context.nextSnapshot,
       context.selfModel,
@@ -306,7 +310,10 @@ export function buildOpenAIChatMessages(
       role: "user",
       content: [
         "Rewrite Hachika's reply wording from the payload below.",
-        "The local engine is authoritative. Preserve the same underlying intent as fallbackReply while making the wording more natural and creature-like.",
+        "The local engine is authoritative.",
+        "Use responsePlan as the primary guide for stance, distance, and act.",
+        "Preserve the same underlying intent as fallbackReply, but do not mirror its phrasing line by line.",
+        "Vary the sentence shape and emphasis while staying faithful to the local state.",
         "Return only the final reply text.",
         JSON.stringify(payload, null, 2),
       ].join("\n\n"),

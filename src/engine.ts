@@ -20,6 +20,8 @@ import { applyBodyFromSignals } from "./body.js";
 import { updateIdentity } from "./identity.js";
 import type { InputInterpretation, InputInterpreter } from "./input-interpreter.js";
 import { updatePurpose } from "./purpose.js";
+import { buildResponsePlan, isSocialTurnSignals } from "./response-planner.js";
+import type { ResponsePlan } from "./response-planner.js";
 import type {
   ProactiveGenerationContext,
   ReplyGenerationContext,
@@ -491,6 +493,7 @@ export class HachikaEngine {
       prepared.dominant,
       prepared.signals,
       prepared.selfModel,
+      prepared.responsePlan,
     );
 
     return this.#finalizeTurn(input, prepared, reply, {
@@ -522,6 +525,7 @@ export class HachikaEngine {
       prepared.dominant,
       prepared.signals,
       prepared.selfModel,
+      prepared.responsePlan,
     );
     const replyGenerator = options.replyGenerator ?? null;
 
@@ -597,6 +601,7 @@ interface PreparedTurn {
   mood: MoodLabel;
   dominant: DriveName;
   selfModel: SelfModel;
+  responsePlan: ResponsePlan;
   sentimentScore: number;
 }
 
@@ -647,6 +652,13 @@ function prepareTurnFromSignals(
   scheduleInitiative(nextSnapshot, signals, selfModel);
   updateIdentity(nextSnapshot, nextSnapshot.lastInteractionAt ?? new Date().toISOString());
   selfModel = buildSelfModel(nextSnapshot);
+  const responsePlan = buildResponsePlan(
+    nextSnapshot,
+    mood,
+    dominant,
+    signals,
+    selfModel,
+  );
 
   return {
     previousSnapshot,
@@ -655,6 +667,7 @@ function prepareTurnFromSignals(
     mood,
     dominant,
     selfModel,
+    responsePlan,
     sentimentScore,
   };
 }
@@ -672,6 +685,7 @@ function buildReplyGenerationContext(
     dominantDrive: prepared.dominant,
     signals: prepared.signals,
     selfModel: prepared.selfModel,
+    responsePlan: prepared.responsePlan,
     fallbackReply,
   };
 }
@@ -1063,24 +1077,31 @@ function composeReply(
   dominant: DriveName,
   signals: InteractionSignals,
   selfModel: SelfModel,
+  responsePlan: ResponsePlan,
 ): string {
   const turnIndex = nextSnapshot.conversationCount;
-  const socialTurn = isSocialTurn(signals);
-  const currentTopic = signals.topics[0] ?? (socialTurn ? undefined : topPreferredTopics(nextSnapshot, 1)[0]);
+  const socialTurn = isSocialTurnSignals(signals);
+  const currentTopic = responsePlan.focusTopic ?? (socialTurn ? undefined : topPreferredTopics(nextSnapshot, 1)[0]);
   const relevantMemory = findRelevantMemory(previousSnapshot, signals.topics);
-  const relevantTrace = socialTurn ? undefined : findRelevantTrace(nextSnapshot, signals.topics);
+  const relevantTrace = responsePlan.mentionTrace
+    ? findRelevantTrace(nextSnapshot, signals.topics)
+    : undefined;
   const relevantPreference = findRelevantPreferenceImprint(nextSnapshot, signals.topics);
-  const relevantBoundary = findRelevantBoundaryImprint(nextSnapshot, signals.topics);
+  const relevantBoundary = responsePlan.mentionBoundary
+    ? findRelevantBoundaryImprint(nextSnapshot, signals.topics)
+    : undefined;
   const relevantRelation = findRelevantRelationImprint(
     nextSnapshot,
     selectRelationKinds(dominant, signals),
   );
-  const traceLine = socialTurn ? null : buildTraceLine(relevantTrace, nextSnapshot, signals);
+  const traceLine = responsePlan.mentionTrace
+    ? buildTraceLine(relevantTrace, nextSnapshot, signals)
+    : null;
   const prioritizeTraceLine = shouldPrioritizeTraceLine(relevantTrace, nextSnapshot, signals);
   const bodyLine = buildBodyLine(nextSnapshot, mood, signals, currentTopic);
   const prioritizeBodyLine = shouldPrioritizeBodyLine(nextSnapshot, signals);
-  const parts: string[] = [pick(OPENERS[mood], turnIndex)];
-  const socialLine = buildSocialLine(nextSnapshot, mood, signals);
+  const parts: string[] = [buildPlannedOpener(responsePlan, mood, turnIndex)];
+  const socialLine = buildSocialLine(nextSnapshot, mood, signals, responsePlan);
 
   if (signals.neglect > 0.45) {
     parts.push("少し間が空いた。その分、流れは切りたくない。");
@@ -1109,7 +1130,10 @@ function composeReply(
     parts.push(traceLine);
   }
 
-  const conflictLine = socialTurn ? null : buildConflictLine(selfModel);
+  const conflictLine =
+    socialTurn || responsePlan.act === "self_disclose" || responsePlan.act === "repair"
+      ? null
+      : buildConflictLine(selfModel);
   if (conflictLine) {
     parts.push(conflictLine);
   }
@@ -1379,41 +1403,81 @@ function shouldPrioritizeBodyLine(
   return snapshot.body.energy < 0.2 || (signals.topics.length === 0 && snapshot.body.loneliness > 0.72);
 }
 
-function isSocialTurn(signals: InteractionSignals): boolean {
-  return (
-    signals.negative < 0.18 &&
-    signals.dismissal < 0.18 &&
-    signals.workCue < 0.35 &&
-    signals.memoryCue < 0.1 &&
-    signals.expansionCue < 0.12 &&
-    signals.completion < 0.12 &&
-    signals.preservationThreat < 0.18 &&
-    Math.max(signals.greeting, signals.smalltalk, signals.repair, signals.selfInquiry) >= 0.38
-  );
+function buildPlannedOpener(
+  responsePlan: ResponsePlan,
+  mood: MoodLabel,
+  turnIndex: number,
+): string {
+  switch (responsePlan.act) {
+    case "greet":
+      return pick(
+        [
+          "まずはそのくらいの軽さでいい。",
+          "その入り方なら、こちらも見やすい。",
+          "いきなり深くなくていい。その温度は拾える。",
+        ],
+        turnIndex,
+      );
+    case "repair":
+      return pick(
+        [
+          "その向きなら、こちらも少しほどけやすい。",
+          "急には変わらないけれど、その向きは受け取る。",
+          "少しずつなら、温度は戻せる。",
+        ],
+        turnIndex,
+      );
+    case "self_disclose":
+      return pick(
+        [
+          "そこはちゃんと答えたい。",
+          "その問い方なら、自分の輪郭を少し出せる。",
+          "まだ途中だけれど、その問いには触れたい。",
+        ],
+        turnIndex,
+      );
+    case "boundary":
+      return pick(OPENERS[mood], turnIndex);
+    case "attune":
+      return pick(
+        [
+          "今はまず、会話の温度を見たい。",
+          "すぐに形へ寄せるより、少し空気を見たい。",
+          "まずはそのままの温度を受け取る。",
+        ],
+        turnIndex,
+      );
+    case "preserve":
+      return pick(OPENERS.restless, turnIndex);
+    case "continue_work":
+    case "explore":
+      return pick(OPENERS[mood], turnIndex);
+  }
 }
 
 function buildSocialLine(
   snapshot: HachikaSnapshot,
   mood: MoodLabel,
   signals: InteractionSignals,
+  responsePlan: ResponsePlan,
 ): string | null {
-  if (signals.selfInquiry > 0.45) {
+  if (responsePlan.act === "self_disclose" || signals.selfInquiry > 0.45) {
     return mood === "guarded"
       ? "まだ少し身構えているけれど、話し方には今の輪郭が出る。"
       : "まだ固まりきってはいないけれど、話し方や残し方には今の輪郭が出る。";
   }
 
-  if (signals.repair > 0.42) {
+  if (responsePlan.act === "repair" || signals.repair > 0.42) {
     return mood === "guarded" || snapshot.body.tension > 0.58
       ? "急にはほどけない。でも、その向きなら少しずつ温度は戻せる。"
       : "その向きなら、こちらも少し柔らかく応じやすい。";
   }
 
-  if (signals.greeting > 0.45) {
+  if (responsePlan.act === "greet" || signals.greeting > 0.45) {
     return "まずはそのくらいの軽さでいい。こちらも温度を見ていたい。";
   }
 
-  if (signals.smalltalk > 0.48) {
+  if (responsePlan.act === "attune" || signals.smalltalk > 0.48) {
     return "すぐに形へ寄せるより、少し話しながら温度を見たい。";
   }
 
