@@ -6,9 +6,11 @@ import {
 import { deriveTraceTendingMode, pickPrimaryArtifactItem, readTraceLifecycle, sortedTraces } from "./traces.js";
 import type {
   DriveName,
+  GeneratedTextDebug,
   HachikaSnapshot,
   InteractionSignals,
   MoodLabel,
+  PendingInitiative,
   SelfConflict,
   SelfModel,
 } from "./types.js";
@@ -37,12 +39,18 @@ export interface ReplyGenerationContext {
   fallbackReply: string;
 }
 
-export interface ReplyGenerationPayload {
-  input: string;
-  fallbackReply: string;
+export interface ProactiveGenerationContext {
+  previousSnapshot: HachikaSnapshot;
+  nextSnapshot: HachikaSnapshot;
+  selfModel: SelfModel;
+  pending: PendingInitiative;
+  topics: string[];
+  neglectLevel: number;
+  fallbackMessage: string;
+}
+
+interface CommonGenerationPayload {
   currentTopic: string | null;
-  mood: MoodLabel;
-  dominantDrive: DriveName;
   state: {
     drives: HachikaSnapshot["state"];
     body: HachikaSnapshot["body"];
@@ -60,7 +68,6 @@ export interface ReplyGenerationPayload {
   initiative: {
     pending: HachikaSnapshot["initiative"]["pending"];
   };
-  signals: InteractionSignals;
   selfModel: {
     narrative: string;
     topMotives: SelfModel["topMotives"];
@@ -105,6 +112,23 @@ export interface ReplyGenerationPayload {
   };
 }
 
+export interface ReplyGenerationPayload extends CommonGenerationPayload {
+  mode: "reply";
+  input: string;
+  fallbackReply: string;
+  mood: MoodLabel;
+  dominantDrive: DriveName;
+  signals: InteractionSignals;
+}
+
+export interface ProactiveGenerationPayload extends CommonGenerationPayload {
+  mode: "proactive";
+  fallbackMessage: string;
+  neglectLevel: number;
+  pending: PendingInitiative;
+  topics: string[];
+}
+
 export interface ReplyGenerationResult {
   reply: string;
   provider: string;
@@ -114,6 +138,9 @@ export interface ReplyGenerationResult {
 export interface ReplyGenerator {
   readonly name: string;
   generateReply(context: ReplyGenerationContext): Promise<ReplyGenerationResult | null>;
+  generateProactive?(
+    context: ProactiveGenerationContext,
+  ): Promise<ReplyGenerationResult | null>;
 }
 
 interface OpenAIReplyGeneratorOptions {
@@ -147,6 +174,18 @@ export class OpenAIReplyGenerator implements ReplyGenerator {
   async generateReply(
     context: ReplyGenerationContext,
   ): Promise<ReplyGenerationResult | null> {
+    return this.#generateText(buildOpenAIChatMessages(context));
+  }
+
+  async generateProactive(
+    context: ProactiveGenerationContext,
+  ): Promise<ReplyGenerationResult | null> {
+    return this.#generateText(buildOpenAIProactiveMessages(context));
+  }
+
+  async #generateText(
+    messages: Array<{ role: "system" | "user"; content: string }>,
+  ): Promise<ReplyGenerationResult | null> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.#timeoutMs);
 
@@ -161,7 +200,7 @@ export class OpenAIReplyGenerator implements ReplyGenerator {
         },
         body: JSON.stringify({
           model: this.#model,
-          messages: buildOpenAIChatMessages(context),
+          messages,
         }),
         signal: controller.signal,
       });
@@ -213,82 +252,43 @@ export function describeReplyGenerator(generator: ReplyGenerator | null): string
 export function buildReplyGenerationPayload(
   context: ReplyGenerationContext,
 ): ReplyGenerationPayload {
-  const currentTopic =
-    context.signals.topics[0] ??
-    context.selfModel.topMotives[0]?.topic ??
-    context.nextSnapshot.purpose.active?.topic ??
-    context.nextSnapshot.identity.anchors[0] ??
-    null;
-
   return {
+    mode: "reply",
     input: context.input,
     fallbackReply: context.fallbackReply,
-    currentTopic,
     mood: context.mood,
     dominantDrive: context.dominantDrive,
-    state: {
-      drives: context.nextSnapshot.state,
-      body: context.nextSnapshot.body,
-      attachment: context.nextSnapshot.attachment,
-      preservation: context.nextSnapshot.preservation,
-    },
-    identity: {
-      summary: context.nextSnapshot.identity.summary,
-      currentArc: context.nextSnapshot.identity.currentArc,
-      traits: context.nextSnapshot.identity.traits,
-      anchors: context.nextSnapshot.identity.anchors,
-      coherence: context.nextSnapshot.identity.coherence,
-    },
-    purpose: {
-      active: context.nextSnapshot.purpose.active,
-      lastResolved: context.nextSnapshot.purpose.lastResolved,
-    },
-    initiative: {
-      pending: context.nextSnapshot.initiative.pending,
-    },
     signals: context.signals,
-    selfModel: {
-      narrative: context.selfModel.narrative,
-      topMotives: context.selfModel.topMotives.slice(0, 3),
-      dominantConflict: context.selfModel.dominantConflict,
-    },
-    recentMemories: context.nextSnapshot.memories.slice(-4).map((memory) => ({
-      role: memory.role,
-      text: memory.text,
-      topics: memory.topics,
-      sentiment: memory.sentiment,
-    })),
-    traces: sortedTraces(context.nextSnapshot, 3).map((trace) => ({
-      topic: trace.topic,
-      kind: trace.kind,
-      status: trace.status,
-      lifecycle: readTraceLifecycle(trace).phase,
-      sourceMotive: trace.sourceMotive,
-      summary: trace.summary,
-      primaryItem: pickPrimaryArtifactItem(trace),
-      blockers: trace.work.blockers.slice(0, 2),
-      nextSteps: trace.artifact.nextSteps.slice(0, 2),
-      tending: deriveTraceTendingMode(context.nextSnapshot, trace),
-      confidence: trace.work.confidence,
-    })),
-    imprints: {
-      preference: sortedPreferenceImprints(context.nextSnapshot, 3).map((imprint) => ({
-        topic: imprint.topic,
-        salience: imprint.salience,
-        affinity: imprint.affinity,
-      })),
-      boundary: sortedBoundaryImprints(context.nextSnapshot, 2).map((imprint) => ({
-        kind: imprint.kind,
-        topic: imprint.topic,
-        salience: imprint.salience,
-        intensity: imprint.intensity,
-      })),
-      relation: sortedRelationImprints(context.nextSnapshot, 3).map((imprint) => ({
-        kind: imprint.kind,
-        salience: imprint.salience,
-        closeness: imprint.closeness,
-      })),
-    },
+    ...buildCommonGenerationPayload(
+      context.nextSnapshot,
+      context.selfModel,
+      context.signals.topics[0] ??
+        context.selfModel.topMotives[0]?.topic ??
+        context.nextSnapshot.purpose.active?.topic ??
+        context.nextSnapshot.identity.anchors[0] ??
+        null,
+    ),
+  };
+}
+
+export function buildProactiveGenerationPayload(
+  context: ProactiveGenerationContext,
+): ProactiveGenerationPayload {
+  return {
+    mode: "proactive",
+    fallbackMessage: context.fallbackMessage,
+    neglectLevel: context.neglectLevel,
+    pending: context.pending,
+    topics: context.topics,
+    ...buildCommonGenerationPayload(
+      context.nextSnapshot,
+      context.selfModel,
+      context.pending.topic ??
+        context.topics[0] ??
+        context.selfModel.topMotives[0]?.topic ??
+        context.nextSnapshot.identity.anchors[0] ??
+        null,
+    ),
   };
 }
 
@@ -312,6 +312,100 @@ export function buildOpenAIChatMessages(
       ].join("\n\n"),
     },
   ];
+}
+
+export function buildOpenAIProactiveMessages(
+  context: ProactiveGenerationContext,
+): Array<{ role: "system" | "user"; content: string }> {
+  const payload = buildProactiveGenerationPayload(context);
+
+  return [
+    {
+      role: "system",
+      content: HACHIKA_REPLY_SYSTEM_PROMPT,
+    },
+    {
+      role: "user",
+      content: [
+        "Rewrite Hachika's proactive utterance wording from the payload below.",
+        "The local engine is authoritative. Preserve the same underlying intent as fallbackMessage while making the wording more natural and creature-like.",
+        "Return only the final utterance text.",
+        JSON.stringify(payload, null, 2),
+      ].join("\n\n"),
+    },
+  ];
+}
+
+function buildCommonGenerationPayload(
+  snapshot: HachikaSnapshot,
+  selfModel: SelfModel,
+  currentTopic: string | null,
+): CommonGenerationPayload {
+  return {
+    currentTopic,
+    state: {
+      drives: snapshot.state,
+      body: snapshot.body,
+      attachment: snapshot.attachment,
+      preservation: snapshot.preservation,
+    },
+    identity: {
+      summary: snapshot.identity.summary,
+      currentArc: snapshot.identity.currentArc,
+      traits: snapshot.identity.traits,
+      anchors: snapshot.identity.anchors,
+      coherence: snapshot.identity.coherence,
+    },
+    purpose: {
+      active: snapshot.purpose.active,
+      lastResolved: snapshot.purpose.lastResolved,
+    },
+    initiative: {
+      pending: snapshot.initiative.pending,
+    },
+    selfModel: {
+      narrative: selfModel.narrative,
+      topMotives: selfModel.topMotives.slice(0, 3),
+      dominantConflict: selfModel.dominantConflict,
+    },
+    recentMemories: snapshot.memories.slice(-4).map((memory) => ({
+      role: memory.role,
+      text: memory.text,
+      topics: memory.topics,
+      sentiment: memory.sentiment,
+    })),
+    traces: sortedTraces(snapshot, 3).map((trace) => ({
+      topic: trace.topic,
+      kind: trace.kind,
+      status: trace.status,
+      lifecycle: readTraceLifecycle(trace).phase,
+      sourceMotive: trace.sourceMotive,
+      summary: trace.summary,
+      primaryItem: pickPrimaryArtifactItem(trace),
+      blockers: trace.work.blockers.slice(0, 2),
+      nextSteps: trace.artifact.nextSteps.slice(0, 2),
+      tending: deriveTraceTendingMode(snapshot, trace),
+      confidence: trace.work.confidence,
+    })),
+    imprints: {
+      preference: sortedPreferenceImprints(snapshot, 3).map((imprint) => ({
+        topic: imprint.topic,
+        salience: imprint.salience,
+        affinity: imprint.affinity,
+      })),
+      boundary: sortedBoundaryImprints(snapshot, 2).map((imprint) => ({
+        kind: imprint.kind,
+        topic: imprint.topic,
+        salience: imprint.salience,
+        intensity: imprint.intensity,
+      })),
+      relation: sortedRelationImprints(snapshot, 3).map((imprint) => ({
+        kind: imprint.kind,
+        salience: imprint.salience,
+        closeness: imprint.closeness,
+      })),
+    },
+  };
 }
 
 function extractOpenAIReplyText(payload: unknown): string | null {

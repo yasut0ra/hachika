@@ -3,7 +3,11 @@ import test from "node:test";
 
 import { HachikaEngine } from "./engine.js";
 import { createInitialSnapshot } from "./state.js";
-import type { ReplyGenerationContext, ReplyGenerator } from "./reply-generator.js";
+import type {
+  ProactiveGenerationContext,
+  ReplyGenerationContext,
+  ReplyGenerator,
+} from "./reply-generator.js";
 
 test("positive interaction increases relation and pleasure", () => {
   const engine = new HachikaEngine(createInitialSnapshot());
@@ -918,6 +922,7 @@ test("respond stores the last local reply diagnostics on the engine", () => {
   engine.respond("仕様は？");
 
   assert.deepEqual(engine.getLastReplyDebug(), {
+    mode: "reply",
     source: "rule",
     provider: null,
     model: null,
@@ -953,6 +958,7 @@ test("respondAsync can use an external reply generator while keeping local state
   }
   const receivedContext = capturedContext as ReplyGenerationContext;
   assert.match(receivedContext.fallbackReply, /応じ|気分|乗りやすい|進めたい/);
+  assert.equal(result.debug.reply.mode, "reply");
   assert.equal(result.debug.reply.source, "llm");
   assert.equal(result.debug.reply.provider, "test-llm");
   assert.equal(result.debug.reply.model, "stub");
@@ -979,6 +985,7 @@ test("respondAsync falls back to the rule reply when the generator fails", async
   const result = await engine.respondAsync("仕様は？", { replyGenerator });
 
   assert.equal(result.reply, ruleResult.reply);
+  assert.equal(result.debug.reply.mode, "reply");
   assert.equal(result.debug.reply.source, "rule");
   assert.equal(result.debug.reply.provider, "test-llm");
   assert.equal(result.debug.reply.fallbackUsed, true);
@@ -996,4 +1003,69 @@ test("reset clears the last reply diagnostics", async () => {
   engine.reset(createInitialSnapshot());
 
   assert.equal(engine.getLastReplyDebug(), null);
+});
+
+test("emitInitiativeAsync can use an external generator for proactive wording", async () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+  let capturedContext: ProactiveGenerationContext | null = null;
+
+  engine.respond("設計を記録として残したい。");
+  engine.rewindIdleHours(8);
+
+  const replyGenerator: ReplyGenerator = {
+    name: "test-llm",
+    async generateReply() {
+      return null;
+    },
+    async generateProactive(context) {
+      capturedContext = context;
+      return {
+        reply: "まだ切れていない。設計はこのまま消すより、ひとつ形にして残しておきたい。",
+        provider: "test-llm",
+        model: "stub",
+      };
+    },
+  };
+
+  const message = await engine.emitInitiativeAsync({ replyGenerator });
+
+  assert.ok(message !== null);
+  if (capturedContext === null) {
+    throw new Error("proactive generator did not receive context");
+  }
+  const proactiveContext = capturedContext as ProactiveGenerationContext;
+  assert.match(proactiveContext.fallbackMessage, /止めたまま|形にしたい|残して/);
+  assert.equal(proactiveContext.pending.kind, "resume_topic");
+  assert.equal(engine.getLastReplyDebug()?.mode, "proactive");
+  assert.equal(engine.getLastReplyDebug()?.source, "llm");
+  assert.equal(engine.getLastReplyDebug()?.provider, "test-llm");
+});
+
+test("emitInitiativeAsync falls back to rule wording when proactive generation fails", async () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+
+  engine.respond("仕様の流れを残したい。");
+  engine.rewindIdleHours(8);
+  const ruleMessage = engine.emitInitiative();
+  engine.reset(createInitialSnapshot());
+  engine.respond("仕様の流れを残したい。");
+  engine.rewindIdleHours(8);
+
+  const replyGenerator: ReplyGenerator = {
+    name: "test-llm",
+    async generateReply() {
+      return null;
+    },
+    async generateProactive() {
+      throw new Error("proactive adapter offline");
+    },
+  };
+
+  const message = await engine.emitInitiativeAsync({ replyGenerator });
+
+  assert.equal(message, ruleMessage);
+  assert.equal(engine.getLastReplyDebug()?.mode, "proactive");
+  assert.equal(engine.getLastReplyDebug()?.source, "rule");
+  assert.equal(engine.getLastReplyDebug()?.fallbackUsed, true);
+  assert.match(engine.getLastReplyDebug()?.error ?? "", /proactive adapter offline/);
 });

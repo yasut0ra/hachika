@@ -15,10 +15,15 @@ import {
   rewindSnapshotHours,
   scheduleInitiative,
 } from "./initiative.js";
+import type { ProactiveEmission } from "./initiative.js";
 import { applyBodyFromSignals } from "./body.js";
 import { updateIdentity } from "./identity.js";
 import { updatePurpose } from "./purpose.js";
-import type { ReplyGenerationContext, ReplyGenerationResult, ReplyGenerator } from "./reply-generator.js";
+import type {
+  ProactiveGenerationContext,
+  ReplyGenerationContext,
+  ReplyGenerator,
+} from "./reply-generator.js";
 import { buildSelfModel } from "./self-model.js";
 import {
   clamp01,
@@ -29,6 +34,7 @@ import {
 import { findRelevantTrace, pickPrimaryArtifactItem, updateTraces } from "./traces.js";
 import type {
   DriveName,
+  GeneratedTextDebug,
   HachikaSnapshot,
   InteractionSignals,
   MoodLabel,
@@ -262,7 +268,7 @@ const BOUNDARY_LINES = [
 
 export class HachikaEngine {
   #snapshot: HachikaSnapshot;
-  #lastReplyDebug: TurnResult["debug"]["reply"] | null = null;
+  #lastReplyDebug: GeneratedTextDebug | null = null;
 
   constructor(snapshot: HachikaSnapshot = createInitialSnapshot()) {
     this.#snapshot = structuredClone(snapshot);
@@ -294,6 +300,7 @@ export class HachikaEngine {
   }
 
   emitInitiative(options: { force?: boolean; now?: Date } = {}): string | null {
+    const previousSnapshot = structuredClone(this.#snapshot);
     const nextSnapshot = structuredClone(this.#snapshot);
     const emission = emitInitiative(nextSnapshot, options);
 
@@ -301,14 +308,89 @@ export class HachikaEngine {
       return null;
     }
 
-    remember(nextSnapshot, "hachika", emission.message, emission.topics, "neutral");
+    return this.#finalizeProactiveEmission(previousSnapshot, nextSnapshot, emission.message, emission.topics, {
+      mode: "proactive",
+      source: "rule",
+      provider: null,
+      model: null,
+      fallbackUsed: false,
+      error: null,
+    });
+  }
+
+  async emitInitiativeAsync(
+    options: { force?: boolean; now?: Date; replyGenerator?: ReplyGenerator | null } = {},
+  ): Promise<string | null> {
+    const previousSnapshot = structuredClone(this.#snapshot);
+    const nextSnapshot = structuredClone(this.#snapshot);
+    const emission = emitInitiative(nextSnapshot, options);
+
+    if (!emission) {
+      return null;
+    }
+
+    const replyGenerator = options.replyGenerator ?? null;
+    const fallbackMessage = emission.message;
+
+    if (!replyGenerator?.generateProactive) {
+      return this.#finalizeProactiveEmission(
+        previousSnapshot,
+        nextSnapshot,
+        fallbackMessage,
+        emission.topics,
+        {
+          mode: "proactive",
+          source: "rule",
+          provider: replyGenerator?.name ?? null,
+          model: null,
+          fallbackUsed: false,
+          error: null,
+        },
+      );
+    }
+
+    try {
+      const generated = await replyGenerator.generateProactive(
+        buildProactiveGenerationContext(previousSnapshot, nextSnapshot, emission),
+      );
+      const message = normalizeReplyCandidate(generated?.reply) ?? fallbackMessage;
+
+      return this.#finalizeProactiveEmission(previousSnapshot, nextSnapshot, message, emission.topics, {
+        mode: "proactive",
+        source: message === fallbackMessage ? "rule" : "llm",
+        provider: generated?.provider ?? replyGenerator.name,
+        model: generated?.model ?? null,
+        fallbackUsed: message === fallbackMessage,
+        error: message === fallbackMessage ? "empty_reply" : null,
+      });
+    } catch (error) {
+      return this.#finalizeProactiveEmission(previousSnapshot, nextSnapshot, fallbackMessage, emission.topics, {
+        mode: "proactive",
+        source: "rule",
+        provider: replyGenerator.name,
+        model: null,
+        fallbackUsed: true,
+        error: formatReplyGenerationError(error),
+      });
+    }
+  }
+
+  #finalizeProactiveEmission(
+    _previousSnapshot: HachikaSnapshot,
+    nextSnapshot: HachikaSnapshot,
+    message: string,
+    topics: string[],
+    replyDebug: GeneratedTextDebug,
+  ): string {
+    remember(nextSnapshot, "hachika", message, topics, "neutral");
     updateIdentity(
       nextSnapshot,
       nextSnapshot.initiative.lastProactiveAt ?? new Date().toISOString(),
     );
     this.#snapshot = nextSnapshot;
+    this.#lastReplyDebug = { ...replyDebug };
 
-    return emission.message;
+    return message;
   }
 
   rewindIdleHours(hours: number): void {
@@ -330,6 +412,7 @@ export class HachikaEngine {
     );
 
     return this.#finalizeTurn(input, prepared, reply, {
+      mode: "reply",
       source: "rule",
       provider: null,
       model: null,
@@ -355,6 +438,7 @@ export class HachikaEngine {
 
     if (!replyGenerator) {
       return this.#finalizeTurn(input, prepared, fallbackReply, {
+        mode: "reply",
         source: "rule",
         provider: null,
         model: null,
@@ -370,6 +454,7 @@ export class HachikaEngine {
       const reply = normalizeReplyCandidate(generated?.reply) ?? fallbackReply;
 
       return this.#finalizeTurn(input, prepared, reply, {
+        mode: "reply",
         source: reply === fallbackReply ? "rule" : "llm",
         provider: generated?.provider ?? replyGenerator.name,
         model: generated?.model ?? null,
@@ -378,6 +463,7 @@ export class HachikaEngine {
       });
     } catch (error) {
       return this.#finalizeTurn(input, prepared, fallbackReply, {
+        mode: "reply",
         source: "rule",
         provider: replyGenerator.name,
         model: null,
@@ -391,7 +477,7 @@ export class HachikaEngine {
     input: string,
     prepared: PreparedTurn,
     reply: string,
-    replyDebug: TurnResult["debug"]["reply"],
+    replyDebug: GeneratedTextDebug,
   ): TurnResult {
     const sentiment = classifySentiment(prepared.sentimentScore);
 
@@ -481,6 +567,22 @@ function buildReplyGenerationContext(
     signals: prepared.signals,
     selfModel: prepared.selfModel,
     fallbackReply,
+  };
+}
+
+function buildProactiveGenerationContext(
+  previousSnapshot: HachikaSnapshot,
+  nextSnapshot: HachikaSnapshot,
+  emission: ProactiveEmission,
+): ProactiveGenerationContext {
+  return {
+    previousSnapshot,
+    nextSnapshot,
+    selfModel: buildSelfModel(nextSnapshot),
+    pending: emission.pending,
+    topics: emission.topics,
+    neglectLevel: emission.neglectLevel,
+    fallbackMessage: emission.message,
   };
 }
 

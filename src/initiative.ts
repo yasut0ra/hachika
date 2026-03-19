@@ -11,6 +11,7 @@ import {
   sortedTraces,
   tendTraceFromInitiative,
 } from "./traces.js";
+import type { TraceMaintenance } from "./traces.js";
 import type {
   HachikaSnapshot,
   InitiativeReason,
@@ -24,6 +25,9 @@ import type {
 export interface ProactiveEmission {
   message: string;
   topics: string[];
+  pending: PendingInitiative;
+  neglectLevel: number;
+  maintenance: TraceMaintenance | null;
 }
 
 export function scheduleInitiative(
@@ -103,6 +107,9 @@ export function emitInitiative(
         : pending.topic
           ? [pending.topic]
           : [],
+      pending,
+      neglectLevel,
+      maintenance,
     };
   }
 
@@ -125,6 +132,9 @@ export function emitInitiative(
         : neglectInitiative.topic
           ? [neglectInitiative.topic]
           : [],
+      pending: neglectInitiative,
+      neglectLevel,
+      maintenance,
     };
   }
 
@@ -167,6 +177,9 @@ export function emitInitiative(
         : synthesized.topic
           ? [synthesized.topic]
           : [],
+      pending: synthesized,
+      neglectLevel,
+      maintenance,
     };
   }
 

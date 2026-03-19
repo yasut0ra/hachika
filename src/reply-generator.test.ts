@@ -2,8 +2,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { createInitialSnapshot } from "./state.js";
-import { buildReplyGenerationPayload } from "./reply-generator.js";
-import type { ReplyGenerationContext } from "./reply-generator.js";
+import {
+  buildProactiveGenerationPayload,
+  buildReplyGenerationPayload,
+} from "./reply-generator.js";
+import type {
+  ProactiveGenerationContext,
+  ReplyGenerationContext,
+} from "./reply-generator.js";
 
 test("buildReplyGenerationPayload surfaces fallback intent and internal state summaries", () => {
   const previousSnapshot = createInitialSnapshot();
@@ -114,4 +120,78 @@ test("buildReplyGenerationPayload surfaces fallback intent and internal state su
   assert.ok(payload.traces[0]?.blockers.includes("責務が未定"));
   assert.equal(payload.imprints.preference[0]?.topic, "設計");
   assert.equal(payload.recentMemories[0]?.text, "設計をもう一段詰めたい。");
+});
+
+test("buildProactiveGenerationPayload surfaces pending initiative and fallback proactive text", () => {
+  const previousSnapshot = createInitialSnapshot();
+  const nextSnapshot = createInitialSnapshot();
+  nextSnapshot.body.energy = 0.36;
+  nextSnapshot.body.tension = 0.18;
+  nextSnapshot.body.boredom = 0.8;
+  nextSnapshot.identity.anchors = ["仕様"];
+  nextSnapshot.traces.仕様 = {
+    topic: "仕様",
+    kind: "spec_fragment",
+    status: "active",
+    lastAction: "expanded",
+    summary: "「仕様」は断片として残っている。",
+    sourceMotive: "continue_shared_work",
+    artifact: {
+      memo: ["仕様を詰める"],
+      fragments: ["責務を整理する"],
+      decisions: [],
+      nextSteps: ["責務を切り分ける"],
+    },
+    work: {
+      focus: "責務を切り分ける",
+      confidence: 0.44,
+      blockers: ["責務が未定"],
+      staleAt: "2026-03-20T12:00:00.000Z",
+    },
+    salience: 0.66,
+    mentions: 2,
+    createdAt: "2026-03-19T12:00:00.000Z",
+    lastUpdatedAt: "2026-03-19T12:00:00.000Z",
+  };
+
+  const context: ProactiveGenerationContext = {
+    previousSnapshot,
+    nextSnapshot,
+    selfModel: {
+      narrative: "今は仕様の詰まりをほどきながら前に進めたい。",
+      topMotives: [
+        {
+          kind: "continue_shared_work",
+          score: 0.76,
+          topic: "仕様",
+          reason: "仕様を前に進めたい",
+        },
+      ],
+      conflicts: [],
+      dominantConflict: null,
+    },
+    pending: {
+      kind: "resume_topic",
+      reason: "expansion",
+      motive: "continue_shared_work",
+      topic: "仕様",
+      blocker: "責務が未定",
+      concern: null,
+      createdAt: "2026-03-19T12:00:00.000Z",
+      readyAfterHours: 4,
+    },
+    topics: ["仕様"],
+    neglectLevel: 0.2,
+    fallbackMessage: "まだ切れていない。まず「責務が未定」をほどくために、「責務を切り分ける」へ寄せてある。",
+  };
+
+  const payload = buildProactiveGenerationPayload(context);
+
+  assert.equal(payload.mode, "proactive");
+  assert.equal(payload.fallbackMessage, context.fallbackMessage);
+  assert.equal(payload.pending.topic, "仕様");
+  assert.equal(payload.pending.blocker, "責務が未定");
+  assert.equal(payload.currentTopic, "仕様");
+  assert.equal(payload.traces[0]?.topic, "仕様");
+  assert.equal(payload.traces[0]?.tending, "deepen");
 });

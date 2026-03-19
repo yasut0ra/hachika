@@ -536,7 +536,9 @@ async function readInput(
 }
 
 async function emitStartupInitiative(currentEngine: HachikaEngine): Promise<void> {
-  const message = currentEngine.emitInitiative();
+  const message = replyGenerator
+    ? await currentEngine.emitInitiativeAsync({ replyGenerator })
+    : currentEngine.emitInitiative();
 
   if (!message) {
     return;
@@ -550,7 +552,9 @@ async function emitProactive(
   currentEngine: HachikaEngine,
   force: boolean,
 ): Promise<void> {
-  const message = currentEngine.emitInitiative({ force });
+  const message = replyGenerator
+    ? await currentEngine.emitInitiativeAsync({ force, replyGenerator })
+    : currentEngine.emitInitiative({ force });
 
   if (!message) {
     console.log("no proactive line");
@@ -614,10 +618,11 @@ function formatLastReplyDebug(currentEngine: HachikaEngine): string {
     return "none";
   }
 
+  const mode = `${debug.mode}:`;
   const via = debug.provider ? ` via:${debug.provider}` : "";
   const model = debug.model ? ` model:${debug.model}` : "";
   const fallback = debug.fallbackUsed ? " fallback" : "";
   const error = debug.error ? ` error:${debug.error}` : "";
 
-  return `${debug.source}${via}${model}${fallback}${error}`;
+  return `${mode}${debug.source}${via}${model}${fallback}${error}`;
 }
