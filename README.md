@@ -238,6 +238,8 @@ Hachika は、単に有用なだけでなく、
 - 身体状態は会話と放置で変化し、mood / motive / proactive timing / 通常応答に影響する
 - identity summary / current arc と initiative motive / topic / blocker selection も身体状態の影響を受ける
 - trace の優先順位と artifact の surfaced order も身体状態の影響を受け、低 energy では残しやすい痕跡が、高 boredom では stale な未完了が前に出やすくなる
+- `scenario harness` により、複数ターンの対話シナリオを fixture として検証できる
+  - active purpose の継続と解決、blocker maintenance、archive/reopen、preservation threat、body drift による wording 変化を長めの回帰テストとして固定している
 - 内部状態に応じて応答のトーンと内容を変化させる
 - `data/hachika-state.json` に状態を保存し、セッションをまたいで継続性を残す
 
@@ -275,3 +277,5 @@ npm run dev
 npm run build
 npm test
 ```
+
+`npm test` では個別の unit test に加えて、複数ターンの scenario test も実行されます。
