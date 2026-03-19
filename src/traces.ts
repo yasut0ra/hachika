@@ -11,6 +11,7 @@ import type {
   TraceEntry,
   TraceKind,
   TraceStatus,
+  TraceTendingMode,
   TraceWorkState,
 } from "./types.js";
 
@@ -198,6 +199,35 @@ export function findRelevantTrace(
   }
 
   return sortedTraces(snapshot, 1)[0];
+}
+
+export function deriveTraceTendingMode(
+  snapshot: HachikaSnapshot,
+  trace: TraceEntry,
+): TraceTendingMode {
+  if (
+    trace.kind !== "decision" &&
+    (snapshot.body.energy < 0.22 ||
+      snapshot.body.tension > 0.7 ||
+      snapshot.preservation.threat > 0.24)
+  ) {
+    return "preserve";
+  }
+
+  if (
+    trace.kind !== "decision" &&
+    snapshot.body.boredom > 0.74 &&
+    snapshot.body.energy > 0.3 &&
+    snapshot.body.tension < 0.68 &&
+    (trace.kind === "spec_fragment" ||
+      trace.kind === "continuity_marker" ||
+      trace.work.blockers.length > 0 ||
+      isTraceStale(trace, snapshot))
+  ) {
+    return "deepen";
+  }
+
+  return "steady";
 }
 
 export function tendTraceFromInitiative(
@@ -560,9 +590,7 @@ function tracePriorityScore(
   const loneliness = snapshot.body.loneliness;
   const boredom =
     snapshot.body.energy > 0.28 ? snapshot.body.boredom : snapshot.body.boredom * 0.5;
-  const isStale =
-    trace.work.staleAt !== null &&
-    trace.work.staleAt.localeCompare(snapshot.lastInteractionAt ?? trace.lastUpdatedAt) <= 0;
+  const isStale = isTraceStale(trace, snapshot);
   const unresolved = trace.status !== "resolved";
 
   let score = trace.salience;
@@ -597,6 +625,16 @@ function tracePriorityScore(
   );
 
   return score;
+}
+
+function isTraceStale(
+  trace: TraceEntry,
+  snapshot: HachikaSnapshot,
+): boolean {
+  return (
+    trace.work.staleAt !== null &&
+    trace.work.staleAt.localeCompare(snapshot.lastInteractionAt ?? trace.lastUpdatedAt) <= 0
+  );
 }
 
 function scoreTraceTopicCandidate(

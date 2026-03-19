@@ -11,7 +11,7 @@ import {
 } from "./memory.js";
 import { loadSnapshot, saveSnapshot } from "./persistence.js";
 import { createInitialSnapshot, formatBodyState, formatDriveState } from "./state.js";
-import { sortedTraces } from "./traces.js";
+import { deriveTraceTendingMode, sortedTraces } from "./traces.js";
 import type { ResolvedPurpose } from "./types.js";
 
 const snapshotPath = resolve(process.cwd(), "data/hachika-state.json");
@@ -172,7 +172,8 @@ function printBody(currentEngine: HachikaEngine): void {
 }
 
 function printTraces(currentEngine: HachikaEngine): void {
-  const traces = sortedTraces(currentEngine.getSnapshot(), 8);
+  const snapshot = currentEngine.getSnapshot();
+  const traces = sortedTraces(snapshot, 8);
 
   if (traces.length === 0) {
     console.log("no traces");
@@ -181,7 +182,7 @@ function printTraces(currentEngine: HachikaEngine): void {
 
   for (const trace of traces) {
     console.log(
-      `${trace.topic} ${trace.kind}/${trace.status} action:${trace.lastAction} focus:${trace.work.focus ?? "none"} confidence:${trace.work.confidence.toFixed(2)} blockers:${trace.work.blockers.length} salience:${trace.salience.toFixed(2)} mentions:${trace.mentions} motive:${trace.sourceMotive} ${trace.summary}`,
+      `${trace.topic} ${trace.kind}/${trace.status} action:${trace.lastAction} tending:${deriveTraceTendingMode(snapshot, trace)} focus:${trace.work.focus ?? "none"} confidence:${trace.work.confidence.toFixed(2)} blockers:${trace.work.blockers.length} salience:${trace.salience.toFixed(2)} mentions:${trace.mentions} motive:${trace.sourceMotive} ${trace.summary}`,
     );
     if (trace.work.staleAt) {
       console.log(`  staleAt: ${trace.work.staleAt}`);
@@ -204,7 +205,7 @@ function printArtifacts(currentEngine: HachikaEngine): void {
 
   for (const file of files) {
     console.log(
-      `${file.topic} ${file.kind}/${file.status} action:${file.lastAction} focus:${file.focus ?? "none"} confidence:${file.confidence.toFixed(2)} blockers:${file.blockers.length} next:${file.pendingNextStep ?? "none"} stale:${file.staleAt ?? "none"} ${file.relativePath}`,
+      `${file.topic} ${file.kind}/${file.status} action:${file.lastAction} tending:${file.tending} focus:${file.focus ?? "none"} confidence:${file.confidence.toFixed(2)} blockers:${file.blockers.length} next:${file.pendingNextStep ?? "none"} stale:${file.staleAt ?? "none"} ${file.relativePath}`,
     );
   }
 }

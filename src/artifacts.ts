@@ -1,8 +1,14 @@
 import { mkdir, readdir, unlink, writeFile } from "node:fs/promises";
 import { basename, join, relative, resolve } from "node:path";
 
-import { sortedTraces } from "./traces.js";
-import type { HachikaSnapshot, TraceAction, TraceEntry, TraceStatus } from "./types.js";
+import { deriveTraceTendingMode, sortedTraces } from "./traces.js";
+import type {
+  HachikaSnapshot,
+  TraceAction,
+  TraceEntry,
+  TraceStatus,
+  TraceTendingMode,
+} from "./types.js";
 
 const INDEX_FILE_NAME = "index.md";
 const TRACE_FILE_PREFIX = "trace-";
@@ -12,6 +18,7 @@ export interface ArtifactFile {
   kind: TraceEntry["kind"];
   status: TraceStatus;
   lastAction: TraceAction;
+  tending: TraceTendingMode;
   focus: string | null;
   confidence: number;
   blockers: string[];
@@ -43,6 +50,7 @@ export function describeArtifactFiles(
       kind: trace.kind,
       status: trace.status,
       lastAction: trace.lastAction,
+      tending: deriveTraceTendingMode(snapshot, trace),
       focus: trace.work.focus,
       confidence: trace.work.confidence,
       blockers: trace.work.blockers,
@@ -73,7 +81,7 @@ export async function syncArtifacts(
       continue;
     }
 
-    await writeFile(file.absolutePath, renderArtifactDocument(trace), "utf8");
+    await writeFile(file.absolutePath, renderArtifactDocument(snapshot, trace), "utf8");
   }
 
   await writeFile(join(root, INDEX_FILE_NAME), renderArtifactIndex(snapshot, files), "utf8");
@@ -131,6 +139,7 @@ function renderArtifactIndex(
       `- ${trace.topic} (${trace.kind}/${trace.status}) -> ${basename(file.relativePath)}`,
     );
     lines.push(`  - last action: ${trace.lastAction}`);
+    lines.push(`  - tending: ${file.tending}`);
     lines.push(`  - focus: ${trace.work.focus ?? "none"}`);
     lines.push(`  - confidence: ${trace.work.confidence.toFixed(2)}`);
     if (trace.work.blockers.length > 0) {
@@ -148,12 +157,17 @@ function renderArtifactIndex(
   return `${lines.join("\n")}\n`;
 }
 
-export function renderArtifactDocument(trace: TraceEntry): string {
+export function renderArtifactDocument(
+  snapshot: HachikaSnapshot,
+  trace: TraceEntry,
+): string {
   const lines = [`# ${trace.topic}`, ""];
+  const tending = deriveTraceTendingMode(snapshot, trace);
 
   lines.push(`- Kind: ${trace.kind}`);
   lines.push(`- Status: ${trace.status}`);
   lines.push(`- Last Action: ${trace.lastAction}`);
+  lines.push(`- Tending: ${tending}`);
   lines.push(`- Source Motive: ${trace.sourceMotive}`);
   lines.push(`- Focus: ${trace.work.focus ?? "none"}`);
   lines.push(`- Confidence: ${trace.work.confidence.toFixed(2)}`);

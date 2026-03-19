@@ -13,6 +13,8 @@ import { createInitialSnapshot } from "./state.js";
 import type { HachikaSnapshot, TraceEntry } from "./types.js";
 
 test("renderArtifactDocument includes structured sections", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.body.energy = 0.08;
   const trace: TraceEntry = {
     topic: "設計",
     kind: "spec_fragment",
@@ -38,11 +40,12 @@ test("renderArtifactDocument includes structured sections", () => {
     lastUpdatedAt: "2026-03-19T01:00:00.000Z",
   };
 
-  const markdown = renderArtifactDocument(trace);
+  const markdown = renderArtifactDocument(snapshot, trace);
 
   assert.match(markdown, /^# 設計/m);
   assert.match(markdown, /Status: active/);
   assert.match(markdown, /Last Action: expanded/);
+  assert.match(markdown, /Tending: preserve/);
   assert.match(markdown, /Focus: 責務ごとに整理する/);
   assert.match(markdown, /Confidence: 0.68/);
   assert.match(markdown, /Blockers: 境界が曖昧/);
@@ -83,12 +86,15 @@ test("syncArtifacts writes markdown files and index", async () => {
       createdAt: "2026-03-19T00:00:00.000Z",
       lastUpdatedAt: "2026-03-19T02:00:00.000Z",
     });
+    snapshot.body.energy = 0.66;
+    snapshot.body.boredom = 0.84;
 
     const result = await syncArtifacts(snapshot, tempDir);
     const described = describeArtifactFiles(snapshot, tempDir);
 
     assert.equal(result.files.length, 1);
     assert.equal(described.length, 1);
+    assert.equal(described[0]?.tending, "steady");
 
     const artifactBody = await readFile(result.files[0]!.absolutePath, "utf8");
     const indexBody = await readFile(join(tempDir, "index.md"), "utf8");
@@ -96,16 +102,52 @@ test("syncArtifacts writes markdown files and index", async () => {
     assert.match(artifactBody, /Kind: decision/);
     assert.match(artifactBody, /Status: resolved/);
     assert.match(artifactBody, /Last Action: resolved/);
+    assert.match(artifactBody, /Tending: steady/);
     assert.match(artifactBody, /Focus: 記録として保存した/);
     assert.match(artifactBody, /Confidence: 0.94/);
     assert.match(artifactBody, /## Decisions/);
     assert.match(artifactBody, /記録として保存した/);
     assert.match(indexBody, /設計 \(decision\/resolved\)/);
     assert.match(indexBody, /last action: resolved/);
+    assert.match(indexBody, /tending: steady/);
     assert.match(indexBody, /confidence: 0.94/);
   } finally {
     await rm(tempDir, { recursive: true, force: true });
   }
+});
+
+test("describeArtifactFiles surfaces a deepening tending mode", () => {
+  const snapshot = withTrace(createInitialSnapshot(), {
+    topic: "仕様",
+    kind: "spec_fragment",
+    status: "active",
+    lastAction: "expanded",
+    summary: "「仕様」は断片として残っている。",
+    sourceMotive: "continue_shared_work",
+    artifact: {
+      memo: ["仕様を詰める"],
+      fragments: ["境界を整理する"],
+      decisions: [],
+      nextSteps: ["責務を切り分ける"],
+    },
+    work: {
+      focus: "責務を切り分ける",
+      confidence: 0.48,
+      blockers: ["責務が未定"],
+      staleAt: "2026-03-18T01:00:00.000Z",
+    },
+    salience: 0.62,
+    mentions: 2,
+    createdAt: "2026-03-19T00:00:00.000Z",
+    lastUpdatedAt: "2026-03-19T01:00:00.000Z",
+  });
+  snapshot.body.energy = 0.66;
+  snapshot.body.boredom = 0.86;
+  snapshot.body.tension = 0.16;
+
+  const files = describeArtifactFiles(snapshot, join(tmpdir(), "hachika-artifacts-preview"));
+
+  assert.equal(files[0]?.tending, "deepen");
 });
 
 test("syncArtifacts removes stale materialized files", async () => {

@@ -100,6 +100,8 @@ export type TraceKind =
 
 export type TraceStatus = "forming" | "active" | "resolved";
 
+export type TraceTendingMode = "preserve" | "steady" | "deepen";
+
 export type TraceAction =
   | "captured"
   | "refined"
