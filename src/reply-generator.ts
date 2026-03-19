@@ -3,7 +3,7 @@ import {
   sortedPreferenceImprints,
   sortedRelationImprints,
 } from "./memory.js";
-import type { ResponsePlan } from "./response-planner.js";
+import type { ProactivePlan, ResponsePlan } from "./response-planner.js";
 import { deriveTraceTendingMode, pickPrimaryArtifactItem, readTraceLifecycle, sortedTraces } from "./traces.js";
 import type {
   DriveName,
@@ -46,6 +46,7 @@ export interface ProactiveGenerationContext {
   nextSnapshot: HachikaSnapshot;
   selfModel: SelfModel;
   pending: PendingInitiative;
+  proactivePlan: ProactivePlan;
   topics: string[];
   neglectLevel: number;
   fallbackMessage: string;
@@ -129,6 +130,7 @@ export interface ProactiveGenerationPayload extends CommonGenerationPayload {
   fallbackMessage: string;
   neglectLevel: number;
   pending: PendingInitiative;
+  proactivePlan: ProactivePlan;
   topics: string[];
 }
 
@@ -283,6 +285,7 @@ export function buildProactiveGenerationPayload(
     fallbackMessage: context.fallbackMessage,
     neglectLevel: context.neglectLevel,
     pending: context.pending,
+    proactivePlan: context.proactivePlan,
     topics: context.topics,
     ...buildCommonGenerationPayload(
       context.nextSnapshot,
@@ -335,7 +338,10 @@ export function buildOpenAIProactiveMessages(
       role: "user",
       content: [
         "Rewrite Hachika's proactive utterance wording from the payload below.",
-        "The local engine is authoritative. Preserve the same underlying intent as fallbackMessage while making the wording more natural and creature-like.",
+        "The local engine is authoritative.",
+        "Use proactivePlan as the primary guide for stance, distance, act, and emphasis.",
+        "Preserve the same underlying intent as fallbackMessage, but do not mirror its phrasing line by line.",
+        "Vary the sentence shape and emphasis while staying faithful to the local state.",
         "Return only the final utterance text.",
         JSON.stringify(payload, null, 2),
       ].join("\n\n"),

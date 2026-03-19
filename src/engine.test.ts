@@ -1102,6 +1102,8 @@ test("emitInitiativeAsync can use an external generator for proactive wording", 
   const proactiveContext = capturedContext as ProactiveGenerationContext;
   assert.match(proactiveContext.fallbackMessage, /止めたまま|形にしたい|残して/);
   assert.equal(proactiveContext.pending.kind, "resume_topic");
+  assert.ok(proactiveContext.proactivePlan.act === "leave_trace" || proactiveContext.proactivePlan.act === "continue_work");
+  assert.equal(proactiveContext.proactivePlan.focusTopic, proactiveContext.pending.topic);
   assert.equal(engine.getLastReplyDebug()?.mode, "proactive");
   assert.equal(engine.getLastReplyDebug()?.source, "llm");
   assert.equal(engine.getLastReplyDebug()?.provider, "test-llm");

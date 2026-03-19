@@ -198,6 +198,19 @@ test("buildProactiveGenerationPayload surfaces pending initiative and fallback p
       createdAt: "2026-03-19T12:00:00.000Z",
       readyAfterHours: 4,
     },
+    proactivePlan: {
+      act: "untangle",
+      stance: "measured",
+      distance: "measured",
+      focusTopic: "仕様",
+      emphasis: "blocker",
+      mentionBlocker: true,
+      mentionReopen: false,
+      mentionMaintenance: true,
+      mentionIntent: true,
+      variation: "textured",
+      summary: "untangle/measured/measured/blocker on 仕様",
+    },
     topics: ["仕様"],
     neglectLevel: 0.2,
     fallbackMessage: "まだ切れていない。まず「責務が未定」をほどくために、「責務を切り分ける」へ寄せてある。",
@@ -209,6 +222,7 @@ test("buildProactiveGenerationPayload surfaces pending initiative and fallback p
   assert.equal(payload.fallbackMessage, context.fallbackMessage);
   assert.equal(payload.pending.topic, "仕様");
   assert.equal(payload.pending.blocker, "責務が未定");
+  assert.equal(payload.proactivePlan.act, "untangle");
   assert.equal(payload.currentTopic, "仕様");
   assert.equal(payload.traces[0]?.topic, "仕様");
   assert.equal(payload.traces[0]?.tending, "deepen");

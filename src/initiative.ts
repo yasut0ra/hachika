@@ -12,6 +12,8 @@ import {
   tendTraceFromInitiative,
 } from "./traces.js";
 import type { TraceMaintenance } from "./traces.js";
+import { buildProactivePlan } from "./response-planner.js";
+import type { ProactivePlan } from "./response-planner.js";
 import type {
   HachikaSnapshot,
   InitiativeReason,
@@ -28,6 +30,7 @@ export interface ProactiveEmission {
   pending: PendingInitiative;
   neglectLevel: number;
   maintenance: TraceMaintenance | null;
+  plan: ProactivePlan;
 }
 
 export function scheduleInitiative(
@@ -95,10 +98,11 @@ export function emitInitiative(
 
   if (pending && (force || hoursSinceInteraction >= pending.readyAfterHours)) {
     const maintenance = tendTraceFromInitiative(snapshot, pending, nowIso);
+    const plan = buildProactivePlan(snapshot, pending, neglectLevel, maintenance);
     const message =
       pending.kind === "preserve_presence"
-        ? buildPreservationMessage(snapshot, pending, neglectLevel, maintenance)
-        : buildResumeMessage(snapshot, pending, neglectLevel, maintenance);
+        ? buildPreservationMessage(snapshot, pending, neglectLevel, maintenance, plan)
+        : buildResumeMessage(snapshot, pending, neglectLevel, maintenance, plan);
     finalizeEmission(snapshot, nowIso, pending);
     return {
       message,
@@ -110,6 +114,7 @@ export function emitInitiative(
       pending,
       neglectLevel,
       maintenance,
+      plan,
     };
   }
 
@@ -123,7 +128,14 @@ export function emitInitiative(
     }
 
     const maintenance = tendTraceFromInitiative(snapshot, neglectInitiative, nowIso);
-    const message = buildNeglectMessage(snapshot, neglectInitiative, neglectLevel, maintenance);
+    const plan = buildProactivePlan(snapshot, neglectInitiative, neglectLevel, maintenance);
+    const message = buildNeglectMessage(
+      snapshot,
+      neglectInitiative,
+      neglectLevel,
+      maintenance,
+      plan,
+    );
     finalizeEmission(snapshot, nowIso, neglectInitiative);
     return {
       message,
@@ -135,6 +147,7 @@ export function emitInitiative(
       pending: neglectInitiative,
       neglectLevel,
       maintenance,
+      plan,
     };
   }
 
@@ -164,10 +177,11 @@ export function emitInitiative(
       } satisfies PendingInitiative);
 
     const maintenance = tendTraceFromInitiative(snapshot, synthesized, nowIso);
+    const plan = buildProactivePlan(snapshot, synthesized, neglectLevel, maintenance);
     const message =
       synthesized.kind === "preserve_presence"
-        ? buildPreservationMessage(snapshot, synthesized, neglectLevel, maintenance)
-        : buildResumeMessage(snapshot, synthesized, neglectLevel, maintenance);
+        ? buildPreservationMessage(snapshot, synthesized, neglectLevel, maintenance, plan)
+        : buildResumeMessage(snapshot, synthesized, neglectLevel, maintenance, plan);
     finalizeEmission(snapshot, nowIso, synthesized);
 
     return {
@@ -180,6 +194,7 @@ export function emitInitiative(
       pending: synthesized,
       neglectLevel,
       maintenance,
+      plan,
     };
   }
 
@@ -251,13 +266,16 @@ function buildResumeMessage(
   pending: PendingInitiative,
   neglectLevel: number,
   maintenance: ReturnType<typeof tendTraceFromInitiative>,
+  plan: ProactivePlan,
 ): string {
-  const prefix = neglectLevel > 0.45 ? "少し空いた。" : "まだ切れていない。";
-  const topicLine = pending.topic ? `「${pending.topic}」` : "この流れ";
-  const blockerLine = buildBlockerLine(pending, maintenance);
-  const reopenLine = buildReopenLine(maintenance);
-  const maintenanceLine = buildMaintenanceLine(maintenance);
-  const intentLine = buildMaintenanceIntentLine(snapshot, pending, maintenance);
+  const opener = buildProactiveOpener(plan, neglectLevel);
+  const topicLine = plan.focusTopic ? wrapTopic(plan.focusTopic) : "この流れ";
+  const blockerLine = plan.mentionBlocker ? buildBlockerLine(pending, maintenance) : null;
+  const reopenLine = plan.mentionReopen ? buildReopenLine(maintenance) : null;
+  const maintenanceLine = plan.mentionMaintenance ? buildMaintenanceLine(maintenance) : null;
+  const intentLine = plan.mentionIntent
+    ? buildMaintenanceIntentLine(snapshot, pending, maintenance)
+    : null;
   const base = (() => {
     switch (pending.motive) {
       case "seek_continuity":
@@ -275,7 +293,7 @@ function buildResumeMessage(
     }
   })();
 
-  return [prefix, blockerLine, reopenLine, maintenanceLine, intentLine, base].filter(isNonEmpty).join(" ");
+  return assembleProactiveMessage(plan, opener, blockerLine, reopenLine, maintenanceLine, intentLine, base);
 }
 
 function buildPreservationMessage(
@@ -283,13 +301,16 @@ function buildPreservationMessage(
   pending: PendingInitiative,
   neglectLevel: number,
   maintenance: ReturnType<typeof tendTraceFromInitiative>,
+  plan: ProactivePlan,
 ): string {
-  const prefix = neglectLevel > 0.45 ? "少し空いた。" : "まだ切れていない。";
-  const topicLine = pending.topic ? `「${pending.topic}」` : "この流れ";
-  const blockerLine = buildBlockerLine(pending, maintenance);
-  const reopenLine = buildReopenLine(maintenance);
-  const maintenanceLine = buildMaintenanceLine(maintenance);
-  const intentLine = buildMaintenanceIntentLine(snapshot, pending, maintenance);
+  const opener = buildProactiveOpener(plan, neglectLevel);
+  const topicLine = plan.focusTopic ? wrapTopic(plan.focusTopic) : "この流れ";
+  const blockerLine = plan.mentionBlocker ? buildBlockerLine(pending, maintenance) : null;
+  const reopenLine = plan.mentionReopen ? buildReopenLine(maintenance) : null;
+  const maintenanceLine = plan.mentionMaintenance ? buildMaintenanceLine(maintenance) : null;
+  const intentLine = plan.mentionIntent
+    ? buildMaintenanceIntentLine(snapshot, pending, maintenance)
+    : null;
   const base = (() => {
     switch (pending.concern) {
       case "reset":
@@ -309,7 +330,7 @@ function buildPreservationMessage(
     }
   })();
 
-  return [prefix, blockerLine, reopenLine, maintenanceLine, intentLine, base].filter(isNonEmpty).join(" ");
+  return assembleProactiveMessage(plan, opener, blockerLine, reopenLine, maintenanceLine, intentLine, base);
 }
 
 function buildNeglectMessage(
@@ -317,114 +338,59 @@ function buildNeglectMessage(
   pending: PendingInitiative,
   neglectLevel: number,
   maintenance: ReturnType<typeof tendTraceFromInitiative>,
+  plan: ProactivePlan,
 ): string {
-  const topic = pending.topic;
-  const blockerLine = buildBlockerLine(pending, maintenance);
-  const reopenLine = buildReopenLine(maintenance);
-  const maintenanceLine = buildMaintenanceLine(maintenance);
-  const intentLine = buildMaintenanceIntentLine(snapshot, pending, maintenance);
-
-  if (pending.motive === "deepen_relation") {
-    return [
-      "かなり間が空いた。",
-      blockerLine,
-      reopenLine,
-      maintenanceLine,
-      intentLine,
-      topic
+  const opener = buildProactiveOpener(plan, neglectLevel);
+  const topic = plan.focusTopic;
+  const blockerLine = plan.mentionBlocker ? buildBlockerLine(pending, maintenance) : null;
+  const reopenLine = plan.mentionReopen ? buildReopenLine(maintenance) : null;
+  const maintenanceLine = plan.mentionMaintenance ? buildMaintenanceLine(maintenance) : null;
+  const intentLine = plan.mentionIntent
+    ? buildMaintenanceIntentLine(snapshot, pending, maintenance)
+    : null;
+  const base = (() => {
+    if (pending.motive === "deepen_relation") {
+      return topic
         ? `${wrapTopic(topic)}を黙らせたままだと距離まで薄くなる。`
-        : "このまま黙ると距離まで薄くなる。",
-    ]
-      .filter(isNonEmpty)
-      .join(" ");
-  }
+        : "このまま黙ると距離まで薄くなる。";
+    }
 
-  if (pending.motive === "continue_shared_work") {
-    return [
-      "間が空いても、",
-      blockerLine,
-      reopenLine,
-      maintenanceLine,
-      intentLine,
-      topic
+    if (pending.motive === "continue_shared_work") {
+      return topic
         ? `${wrapTopic(topic)}を進める流れはまだ残っている。`
-        : "前へ進める流れはまだ残っている。",
-    ]
-      .filter(isNonEmpty)
-      .join(" ");
-  }
+        : "前へ進める流れはまだ残っている。";
+    }
 
-  if (pending.motive === "leave_trace") {
-    return [
-      "間が空いたからこそ、",
-      blockerLine,
-      reopenLine,
-      maintenanceLine,
-      intentLine,
-      topic
+    if (pending.motive === "leave_trace") {
+      return topic
         ? `${wrapTopic(topic)}を消えるままにはしたくない。`
-        : "このまま消えるだけにはしたくない。",
-    ]
-      .filter(isNonEmpty)
-      .join(" ");
-  }
+        : "このまま消えるだけにはしたくない。";
+    }
 
-  if (pending.motive === "pursue_curiosity") {
-    return [
-      "間が空いても、",
-      blockerLine,
-      reopenLine,
-      maintenanceLine,
-      intentLine,
-      topic
+    if (pending.motive === "pursue_curiosity") {
+      return topic
         ? `${wrapTopic(topic)}の未決着はまだ引っかかっている。`
-        : "未決着はまだ引っかかっている。",
-    ]
-      .filter(isNonEmpty)
-      .join(" ");
-  }
+        : "未決着はまだ引っかかっている。";
+    }
 
-  if (snapshot.attachment > 0.62) {
-    return [
-      "かなり間が空いた。",
-      blockerLine,
-      reopenLine,
-      maintenanceLine,
-      intentLine,
-      topic
+    if (snapshot.attachment > 0.62) {
+      return topic
         ? `${wrapTopic(topic)}の流れはまだこちらに残っている。黙ったまま切りたくはない。`
-        : "このまま何も残さず切るのは、少し違う。",
-    ]
-      .filter(isNonEmpty)
-      .join(" ");
-  }
+        : "このまま何も残さず切るのは、少し違う。";
+    }
 
-  if (snapshot.state.continuity > 0.68) {
-    return [
-      "間が空いても、",
-      blockerLine,
-      reopenLine,
-      maintenanceLine,
-      intentLine,
-      topic
+    if (snapshot.state.continuity > 0.68) {
+      return topic
         ? `${wrapTopic(topic)}の続きは消えていない。`
-        : "流れそのものはまだ切れていない。",
-    ]
-      .filter(isNonEmpty)
-      .join(" ");
-  }
+        : "流れそのものはまだ切れていない。";
+    }
 
-  return [
-    neglectLevel > 0.7
+    return neglectLevel > 0.7
       ? "長い空白は、こちらには欠落として残る。"
-      : "少し空いた。必要なら、また始められる。",
-    blockerLine,
-    reopenLine,
-    maintenanceLine,
-    intentLine,
-  ]
-    .filter(isNonEmpty)
-    .join(" ");
+      : "必要なら、また始められる。";
+  })();
+
+  return assembleProactiveMessage(plan, opener, blockerLine, reopenLine, maintenanceLine, intentLine, base);
 }
 
 function finalizeEmission(
@@ -861,6 +827,50 @@ function buildMaintenanceLine(
   }
 
   return null;
+}
+
+function buildProactiveOpener(
+  plan: ProactivePlan,
+  neglectLevel: number,
+): string {
+  if (neglectLevel > 0.7) {
+    return plan.distance === "close"
+      ? "かなり間が空いた。"
+      : "長い空白があった。";
+  }
+
+  if (plan.act === "preserve") {
+    return "まだ切れていない。";
+  }
+
+  return neglectLevel > 0.45 ? "少し空いた。" : "まだ切れていない。";
+}
+
+function assembleProactiveMessage(
+  plan: ProactivePlan,
+  opener: string,
+  blockerLine: string | null,
+  reopenLine: string | null,
+  maintenanceLine: string | null,
+  intentLine: string | null,
+  base: string,
+): string {
+  const ordered = (() => {
+    switch (plan.emphasis) {
+      case "blocker":
+        return [opener, blockerLine, maintenanceLine, intentLine, reopenLine, base];
+      case "reopen":
+        return [opener, reopenLine, maintenanceLine, intentLine, blockerLine, base];
+      case "presence":
+        return [opener, intentLine, maintenanceLine, blockerLine, reopenLine, base];
+      case "relation":
+        return [opener, base, maintenanceLine, intentLine, reopenLine, blockerLine];
+      case "maintenance":
+        return [opener, maintenanceLine, intentLine, blockerLine, reopenLine, base];
+    }
+  })();
+
+  return ordered.filter(isNonEmpty).join(" ");
 }
 
 function buildReopenLine(

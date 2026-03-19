@@ -700,6 +700,7 @@ function buildProactiveGenerationContext(
     nextSnapshot,
     selfModel: buildSelfModel(nextSnapshot),
     pending: emission.pending,
+    proactivePlan: emission.plan,
     topics: emission.topics,
     neglectLevel: emission.neglectLevel,
     fallbackMessage: emission.message,

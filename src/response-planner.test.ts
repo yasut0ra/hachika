@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { buildResponsePlan, isSocialTurnSignals } from "./response-planner.js";
+import { buildProactivePlan, buildResponsePlan, isSocialTurnSignals } from "./response-planner.js";
 import { createInitialSnapshot } from "./state.js";
-import type { InteractionSignals, SelfModel } from "./types.js";
+import type { InteractionSignals, PendingInitiative, SelfModel, TraceEntry } from "./types.js";
 
 test("response planner treats greetings as social and suppresses trace focus", () => {
   const snapshot = createInitialSnapshot();
@@ -37,6 +37,52 @@ test("response planner prefers self disclosure for self inquiry", () => {
   assert.equal(plan.act, "self_disclose");
   assert.equal(plan.mentionIdentity, true);
   assert.equal(plan.mentionTrace, false);
+});
+
+test("proactive planner prioritizes blocker repair when a blocker is pending", () => {
+  const snapshot = createInitialSnapshot();
+  const pending = createPending({
+    motive: "continue_shared_work",
+    topic: "仕様",
+    blocker: "責務が未定",
+  });
+  const maintenance = {
+    action: "added_next_step" as const,
+    trace: createTrace("仕様", "spec_fragment"),
+  };
+
+  const plan = buildProactivePlan(snapshot, pending, 0.2, maintenance);
+
+  assert.equal(plan.act, "untangle");
+  assert.equal(plan.emphasis, "blocker");
+  assert.equal(plan.mentionBlocker, true);
+  assert.equal(plan.mentionMaintenance, true);
+});
+
+test("proactive planner treats reopened archived work as reopen-first", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.body.boredom = 0.82;
+  const pending = createPending({
+    motive: "continue_shared_work",
+    topic: "設計",
+  });
+  const trace = createTrace("設計", "spec_fragment");
+  trace.lastUpdatedAt = "2026-03-20T12:00:00.000Z";
+  trace.lifecycle = {
+    phase: "live",
+    archivedAt: "2026-03-19T12:00:00.000Z",
+    reopenedAt: "2026-03-20T12:00:00.000Z",
+    reopenCount: 1,
+  };
+
+  const plan = buildProactivePlan(snapshot, pending, 0.55, {
+    action: "stabilized_fragment",
+    trace,
+  });
+
+  assert.equal(plan.act, "reopen");
+  assert.equal(plan.emphasis, "reopen");
+  assert.equal(plan.mentionReopen, true);
 });
 
 function createSignals(
@@ -83,5 +129,51 @@ function createSelfModel(
     ],
     conflicts: [],
     dominantConflict: null,
+  };
+}
+
+function createPending(
+  overrides: Partial<PendingInitiative> = {},
+): PendingInitiative {
+  return {
+    kind: "resume_topic",
+    reason: "expansion",
+    motive: "continue_shared_work",
+    topic: "仕様",
+    blocker: null,
+    concern: null,
+    createdAt: "2026-03-20T10:00:00.000Z",
+    readyAfterHours: 4,
+    ...overrides,
+  };
+}
+
+function createTrace(
+  topic: string,
+  kind: TraceEntry["kind"],
+): TraceEntry {
+  return {
+    topic,
+    kind,
+    status: "active",
+    lastAction: "expanded",
+    summary: `「${topic}」は痕跡として残っている。`,
+    sourceMotive: "continue_shared_work",
+    artifact: {
+      memo: [topic],
+      fragments: [],
+      decisions: [],
+      nextSteps: ["次を決める"],
+    },
+    work: {
+      focus: "次を決める",
+      confidence: 0.46,
+      blockers: [],
+      staleAt: "2026-03-21T10:00:00.000Z",
+    },
+    salience: 0.68,
+    mentions: 2,
+    createdAt: "2026-03-20T10:00:00.000Z",
+    lastUpdatedAt: "2026-03-20T10:00:00.000Z",
   };
 }
