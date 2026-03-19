@@ -352,7 +352,9 @@ const BOUNDARY_LINES = [
 
 export class HachikaEngine {
   #snapshot: HachikaSnapshot;
-  #lastReplyDebug: GeneratedTextDebug | null = null;
+  #lastGeneratedDebug: GeneratedTextDebug | null = null;
+  #lastResponseDebug: GeneratedTextDebug | null = null;
+  #lastProactiveDebug: GeneratedTextDebug | null = null;
 
   constructor(snapshot: HachikaSnapshot = createInitialSnapshot()) {
     this.#snapshot = structuredClone(snapshot);
@@ -364,7 +366,9 @@ export class HachikaEngine {
 
   reset(snapshot: HachikaSnapshot = createInitialSnapshot()): void {
     this.#snapshot = structuredClone(snapshot);
-    this.#lastReplyDebug = null;
+    this.#lastGeneratedDebug = null;
+    this.#lastResponseDebug = null;
+    this.#lastProactiveDebug = null;
   }
 
   getSelfModel(): SelfModel {
@@ -380,7 +384,15 @@ export class HachikaEngine {
   }
 
   getLastReplyDebug(): TurnResult["debug"]["reply"] | null {
-    return this.#lastReplyDebug ? { ...this.#lastReplyDebug } : null;
+    return this.#lastGeneratedDebug ? { ...this.#lastGeneratedDebug } : null;
+  }
+
+  getLastResponseDebug(): TurnResult["debug"]["reply"] | null {
+    return this.#lastResponseDebug ? { ...this.#lastResponseDebug } : null;
+  }
+
+  getLastProactiveDebug(): TurnResult["debug"]["reply"] | null {
+    return this.#lastProactiveDebug ? { ...this.#lastProactiveDebug } : null;
   }
 
   emitInitiative(options: { force?: boolean; now?: Date } = {}): string | null {
@@ -399,6 +411,7 @@ export class HachikaEngine {
       model: null,
       fallbackUsed: false,
       error: null,
+      plan: emission.plan.summary,
     });
   }
 
@@ -429,6 +442,7 @@ export class HachikaEngine {
           model: null,
           fallbackUsed: false,
           error: null,
+          plan: emission.plan.summary,
         },
       );
     }
@@ -446,6 +460,7 @@ export class HachikaEngine {
         model: generated?.model ?? null,
         fallbackUsed: message === fallbackMessage,
         error: message === fallbackMessage ? "empty_reply" : null,
+        plan: emission.plan.summary,
       });
     } catch (error) {
       return this.#finalizeProactiveEmission(previousSnapshot, nextSnapshot, fallbackMessage, emission.topics, {
@@ -455,6 +470,7 @@ export class HachikaEngine {
         model: null,
         fallbackUsed: true,
         error: formatReplyGenerationError(error),
+        plan: emission.plan.summary,
       });
     }
   }
@@ -472,7 +488,8 @@ export class HachikaEngine {
       nextSnapshot.initiative.lastProactiveAt ?? new Date().toISOString(),
     );
     this.#snapshot = nextSnapshot;
-    this.#lastReplyDebug = { ...replyDebug };
+    this.#lastGeneratedDebug = { ...replyDebug };
+    this.#lastProactiveDebug = { ...replyDebug };
 
     return message;
   }
@@ -503,6 +520,7 @@ export class HachikaEngine {
       model: null,
       fallbackUsed: false,
       error: null,
+      plan: prepared.responsePlan.summary,
     });
   }
 
@@ -537,6 +555,7 @@ export class HachikaEngine {
         model: null,
         fallbackUsed: false,
         error: null,
+        plan: prepared.responsePlan.summary,
       });
     }
 
@@ -553,6 +572,7 @@ export class HachikaEngine {
         model: generated?.model ?? null,
         fallbackUsed: reply === fallbackReply,
         error: reply === fallbackReply ? "empty_reply" : null,
+        plan: prepared.responsePlan.summary,
       });
     } catch (error) {
       return this.#finalizeTurn(input, prepared, fallbackReply, {
@@ -562,6 +582,7 @@ export class HachikaEngine {
         model: null,
         fallbackUsed: true,
         error: formatReplyGenerationError(error),
+        plan: prepared.responsePlan.summary,
       });
     }
   }
@@ -578,7 +599,8 @@ export class HachikaEngine {
     remember(prepared.nextSnapshot, "hachika", reply, prepared.signals.topics, "neutral");
 
     this.#snapshot = prepared.nextSnapshot;
-    this.#lastReplyDebug = { ...replyDebug };
+    this.#lastGeneratedDebug = { ...replyDebug };
+    this.#lastResponseDebug = { ...replyDebug };
 
     return {
       reply,

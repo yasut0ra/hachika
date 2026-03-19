@@ -13,6 +13,7 @@ import {
 } from "./memory.js";
 import { loadSnapshot, saveSnapshot } from "./persistence.js";
 import { createReplyGeneratorFromEnv, describeReplyGenerator } from "./reply-generator.js";
+import { buildProactivePlan } from "./response-planner.js";
 import { createInitialSnapshot, formatBodyState, formatDriveState } from "./state.js";
 import {
   deriveEffectiveTraceStaleAt,
@@ -197,6 +198,8 @@ function printReplyGeneratorStatus(): void {
   console.log(`reply:${describeReplyGenerator(replyGenerator)}`);
   console.log(`interpret:${describeInputInterpreter(inputInterpreter)}`);
   console.log(`last reply:${formatLastReplyDebug(engine)}`);
+  console.log(`last response:${formatGeneratedDebug(engine.getLastResponseDebug())}`);
+  console.log(`last proactive:${formatGeneratedDebug(engine.getLastProactiveDebug())}`);
 }
 
 function printTraces(currentEngine: HachikaEngine): void {
@@ -333,6 +336,8 @@ function printDebug(currentEngine: HachikaEngine): void {
   console.log(`reply generator: ${describeReplyGenerator(replyGenerator)}`);
   console.log(`input interpreter: ${describeInputInterpreter(inputInterpreter)}`);
   console.log(`last reply: ${formatLastReplyDebug(currentEngine)}`);
+  console.log(`last response: ${formatGeneratedDebug(currentEngine.getLastResponseDebug())}`);
+  console.log(`last proactive: ${formatGeneratedDebug(currentEngine.getLastProactiveDebug())}`);
   console.log(
     `preservation: ${snapshot.preservation.threat.toFixed(2)}${snapshot.preservation.concern ? `/${snapshot.preservation.concern}` : ""}`,
   );
@@ -352,6 +357,11 @@ function printDebug(currentEngine: HachikaEngine): void {
     snapshot.initiative.pending
       ? `pending initiative: ${snapshot.initiative.pending.kind}/${snapshot.initiative.pending.motive}/${snapshot.initiative.pending.reason}${snapshot.initiative.pending.topic ? `/${snapshot.initiative.pending.topic}` : ""}${snapshot.initiative.pending.blocker ? `/${snapshot.initiative.pending.blocker}` : ""}`
       : "pending initiative: none",
+  );
+  console.log(
+    snapshot.initiative.pending
+      ? `pending plan: ${buildProactivePlan(snapshot, snapshot.initiative.pending, calculateNeglectLevelForDisplay(snapshot.lastInteractionAt), null).summary}`
+      : "pending plan: none",
   );
   if (lastReply?.error) {
     console.log(`last reply error: ${lastReply.error}`);
@@ -617,7 +627,12 @@ function printTraceArtifactGroup(label: string, items: string[]): void {
 }
 
 function formatLastReplyDebug(currentEngine: HachikaEngine): string {
-  const debug = currentEngine.getLastReplyDebug();
+  return formatGeneratedDebug(currentEngine.getLastReplyDebug());
+}
+
+function formatGeneratedDebug(
+  debug: ReturnType<HachikaEngine["getLastReplyDebug"]>,
+): string {
 
   if (!debug) {
     return "none";
@@ -628,6 +643,28 @@ function formatLastReplyDebug(currentEngine: HachikaEngine): string {
   const model = debug.model ? ` model:${debug.model}` : "";
   const fallback = debug.fallbackUsed ? " fallback" : "";
   const error = debug.error ? ` error:${debug.error}` : "";
+  const plan = debug.plan ? ` plan:${debug.plan}` : "";
 
-  return `${mode}${debug.source}${via}${model}${fallback}${error}`;
+  return `${mode}${debug.source}${via}${model}${fallback}${error}${plan}`;
+}
+
+function calculateNeglectLevelForDisplay(
+  lastInteractionAt: string | null,
+  now: Date = new Date(),
+): number {
+  if (!lastInteractionAt) {
+    return 0;
+  }
+
+  const lastTime = new Date(lastInteractionAt).getTime();
+  if (Number.isNaN(lastTime)) {
+    return 0;
+  }
+
+  const hours = Math.max(0, (now.getTime() - lastTime) / (1000 * 60 * 60));
+  if (hours <= 6) {
+    return 0;
+  }
+
+  return Math.min(1, Math.max(0, (hours - 6) / 48));
 }

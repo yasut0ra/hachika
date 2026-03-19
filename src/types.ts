@@ -294,4 +294,5 @@ export interface GeneratedTextDebug {
   model: string | null;
   fallbackUsed: boolean;
   error: string | null;
+  plan: string | null;
 }

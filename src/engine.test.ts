@@ -922,14 +922,13 @@ test("respond stores the last local reply diagnostics on the engine", () => {
 
   engine.respond("仕様は？");
 
-  assert.deepEqual(engine.getLastReplyDebug(), {
-    mode: "reply",
-    source: "rule",
-    provider: null,
-    model: null,
-    fallbackUsed: false,
-    error: null,
-  });
+  assert.equal(engine.getLastReplyDebug()?.mode, "reply");
+  assert.equal(engine.getLastReplyDebug()?.source, "rule");
+  assert.equal(engine.getLastReplyDebug()?.provider, null);
+  assert.equal(engine.getLastReplyDebug()?.model, null);
+  assert.equal(engine.getLastReplyDebug()?.fallbackUsed, false);
+  assert.equal(engine.getLastReplyDebug()?.error, null);
+  assert.ok((engine.getLastReplyDebug()?.plan ?? "").length > 0);
 });
 
 test("respondAsync can use an external reply generator while keeping local state updates", async () => {
@@ -964,8 +963,10 @@ test("respondAsync can use an external reply generator while keeping local state
   assert.equal(result.debug.reply.provider, "test-llm");
   assert.equal(result.debug.reply.model, "stub");
   assert.equal(result.debug.reply.fallbackUsed, false);
+  assert.ok((result.debug.reply.plan ?? "").length > 0);
   assert.equal(engine.getLastReplyDebug()?.source, "llm");
   assert.equal(engine.getLastReplyDebug()?.provider, "test-llm");
+  assert.ok((engine.getLastReplyDebug()?.plan ?? "").startsWith("continue_work/") || (engine.getLastReplyDebug()?.plan ?? "").startsWith("explore/") || (engine.getLastReplyDebug()?.plan ?? "").startsWith("attune/"));
   assert.ok(result.snapshot.state.relation > before.state.relation);
   assert.ok(result.snapshot.attachment > before.attachment);
 });
@@ -1065,10 +1066,30 @@ test("reset clears the last reply diagnostics", async () => {
 
   await engine.respondAsync("仕様は？");
   assert.ok(engine.getLastReplyDebug() !== null);
+  assert.ok(engine.getLastResponseDebug() !== null);
 
   engine.reset(createInitialSnapshot());
 
   assert.equal(engine.getLastReplyDebug(), null);
+  assert.equal(engine.getLastResponseDebug(), null);
+  assert.equal(engine.getLastProactiveDebug(), null);
+});
+
+test("response and proactive diagnostics are preserved separately", () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+
+  engine.respond("仕様を記録として残したい。");
+  const responseDebug = engine.getLastResponseDebug();
+  assert.equal(responseDebug?.mode, "reply");
+
+  engine.rewindIdleHours(8);
+  engine.emitInitiative();
+
+  assert.equal(engine.getLastReplyDebug()?.mode, "proactive");
+  assert.equal(engine.getLastResponseDebug()?.mode, "reply");
+  assert.equal(engine.getLastProactiveDebug()?.mode, "proactive");
+  assert.ok((engine.getLastResponseDebug()?.plan ?? "").length > 0);
+  assert.ok((engine.getLastProactiveDebug()?.plan ?? "").length > 0);
 });
 
 test("emitInitiativeAsync can use an external generator for proactive wording", async () => {
@@ -1107,6 +1128,7 @@ test("emitInitiativeAsync can use an external generator for proactive wording", 
   assert.equal(engine.getLastReplyDebug()?.mode, "proactive");
   assert.equal(engine.getLastReplyDebug()?.source, "llm");
   assert.equal(engine.getLastReplyDebug()?.provider, "test-llm");
+  assert.ok((engine.getLastReplyDebug()?.plan ?? "").length > 0);
 });
 
 test("emitInitiativeAsync falls back to rule wording when proactive generation fails", async () => {

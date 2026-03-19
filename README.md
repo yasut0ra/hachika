@@ -251,7 +251,7 @@ Hachika は、単に有用なだけでなく、
   - 通常応答では `responsePlan` を payload に含め、fallback 文面の言い換えだけでなく「どういう向きで返すか」も LLM に渡している
   - 能動発話でも `proactivePlan` を payload に含め、blocker を前に出すのか、reopen を前に出すのか、保存寄りに切り出すのかを LLM に共有している
   - adapter が失敗した場合や空文字を返した場合は rule-based wording に fallback する
-  - 直近の生成が `reply` か `proactive` か、`llm` か `rule` か、どの provider / model を使ったか、fallback したかも CLI から確認できる
+  - 直近の生成が `reply` か `proactive` か、`llm` か `rule` か、どの provider / model を使ったか、fallback したか、どの `plan` で出したかも CLI から確認できる
 - 内部状態に応じて応答のトーンと内容を変化させる
 - `data/hachika-state.json` に状態を保存し、セッションをまたいで継続性を残す
 
@@ -279,6 +279,8 @@ cp .env.example .env
 - `/help` コマンド一覧を表示
 - `/proactive` 能動発話を強制的に出す
 - `/llm` 現在の reply generator / input interpreter と直近の `reply/proactive` diagnostics を表示
+- `/debug` では `pending initiative` に加えて、その時点の `pending plan` も表示する
+  - 直近の通常応答と直近の能動発話の diagnostics / plan は別々に保持される
 - `/idle <hours>` 指定時間だけ放置された状態をシミュレートする
 - `/state` 現在の drive 状態を表示
 - `/body` 現在の body 状態を表示
