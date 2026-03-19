@@ -349,6 +349,16 @@ function shouldCreateTrace(
   selfModel: SelfModel,
   topic: string,
 ): boolean {
+  if (
+    signals.topics.length === 0 &&
+    signals.memoryCue < 0.1 &&
+    signals.expansionCue < 0.12 &&
+    signals.completion < 0.12 &&
+    signals.preservationThreat < 0.18
+  ) {
+    return false;
+  }
+
   const traceMotive = selectTraceMotive(selfModel, signals);
   const topicScore =
     (snapshot.topicCounts[topic] ?? 0) * 0.04 +

@@ -154,6 +154,64 @@ test("blocker-aware proactive emission resolves the targeted blocker into a next
   assert.match(message ?? "", /ほどく|整理/);
 });
 
+test("ordinary reply can surface unresolved trace work", () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+
+  engine.respond("仕様の境界が未定で曖昧だ。まだ進められない。");
+  const result = engine.respond("？");
+
+  assert.match(result.reply, /詰まりどころ|先に解きたい|曖昧なところ/);
+  assert.equal(
+    result.debug.selfModel.topMotives.some(
+      (motive) =>
+        motive.topic === "仕様" &&
+        /詰まりどころ|未決着の芯|止まったまま|輪郭が曖昧/.test(motive.reason),
+    ),
+    true,
+  );
+});
+
+test("ordinary reply can surface stale trace continuity", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.lastInteractionAt = "2026-03-19T12:00:00.000Z";
+  snapshot.conversationCount = 1;
+  snapshot.traces.設計 = {
+    topic: "設計",
+    kind: "continuity_marker",
+    status: "active",
+    lastAction: "continued",
+    summary: "「設計」は続きの目印として残っている。",
+    sourceMotive: "seek_continuity",
+    artifact: {
+      memo: ["設計の続き"],
+      fragments: ["設計の続き"],
+      decisions: [],
+      nextSteps: ["設計を続ける"],
+    },
+    work: {
+      focus: "設計を続ける",
+      confidence: 0.48,
+      blockers: [],
+      staleAt: "2026-03-18T12:00:00.000Z",
+    },
+    salience: 0.5,
+    mentions: 2,
+    createdAt: "2026-03-17T12:00:00.000Z",
+    lastUpdatedAt: "2026-03-17T12:00:00.000Z",
+  };
+
+  const engine = new HachikaEngine(snapshot);
+  const result = engine.respond("？");
+
+  assert.match(result.reply, /止まったまま|つなぎ直したい/);
+  assert.equal(
+    result.debug.selfModel.topMotives.some(
+      (motive) => motive.topic === "設計" && /止まったまま|流れを切らず/.test(motive.reason),
+    ),
+    true,
+  );
+});
+
 test("continuity threat raises preservation and schedules self-protective initiative", () => {
   const engine = new HachikaEngine(createInitialSnapshot());
 

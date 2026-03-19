@@ -565,6 +565,8 @@ function composeReply(
     nextSnapshot,
     selectRelationKinds(dominant, signals),
   );
+  const traceLine = buildTraceLine(relevantTrace, nextSnapshot, signals);
+  const prioritizeTraceLine = shouldPrioritizeTraceLine(relevantTrace, nextSnapshot, signals);
   const parts: string[] = [pick(OPENERS[mood], turnIndex)];
 
   if (signals.neglect > 0.45) {
@@ -582,6 +584,10 @@ function composeReply(
     }
   }
 
+  if (prioritizeTraceLine && traceLine) {
+    parts.push(traceLine);
+  }
+
   const conflictLine = buildConflictLine(selfModel);
   if (conflictLine) {
     parts.push(conflictLine);
@@ -592,8 +598,7 @@ function composeReply(
     parts.push(preservationLine);
   }
 
-  const traceLine = buildTraceLine(relevantTrace, nextSnapshot, signals);
-  if (traceLine) {
+  if (!prioritizeTraceLine && traceLine) {
     parts.push(traceLine);
   }
 
@@ -818,36 +823,60 @@ function buildTraceLine(
 
   const updatedThisTurn = trace.lastUpdatedAt === snapshot.lastInteractionAt;
   const detail = pickPrimaryArtifactItem(trace);
+  const workSuffix = buildTraceWorkSuffix(trace, snapshot);
 
   if (updatedThisTurn) {
     switch (trace.kind) {
       case "decision":
-        return detail
-          ? `「${trace.topic}」は「${truncateTraceDetail(detail)}」という決定として残した。`
-          : `「${trace.topic}」はひとまず決まった形として残した。`;
+        return appendTraceWorkSuffix(
+          detail
+            ? `「${trace.topic}」は「${truncateTraceDetail(detail)}」という決定として残した。`
+            : `「${trace.topic}」はひとまず決まった形として残した。`,
+          workSuffix,
+        );
       case "spec_fragment":
         if (detail) {
-          return signals.preservationThreat > 0.18
-            ? `「${trace.topic}」は「${truncateTraceDetail(detail)}」として退避した。`
-            : `「${trace.topic}」は「${truncateTraceDetail(detail)}」という断片として残した。`;
+          return appendTraceWorkSuffix(
+            signals.preservationThreat > 0.18
+              ? `「${trace.topic}」は「${truncateTraceDetail(detail)}」として退避した。`
+              : `「${trace.topic}」は「${truncateTraceDetail(detail)}」という断片として残した。`,
+            workSuffix,
+          );
         }
 
         if (trace.sourceMotive === "continue_shared_work") {
-          return `「${trace.topic}」は前へ進める断片として残した。`;
+          return appendTraceWorkSuffix(
+            `「${trace.topic}」は前へ進める断片として残した。`,
+            workSuffix,
+          );
         }
 
-        return signals.preservationThreat > 0.18
-          ? `「${trace.topic}」は消える前の断片として残した。`
-          : `「${trace.topic}」は会話の外にも伸ばせる断片として残した。`;
+        return appendTraceWorkSuffix(
+          signals.preservationThreat > 0.18
+            ? `「${trace.topic}」は消える前の断片として残した。`
+            : `「${trace.topic}」は会話の外にも伸ばせる断片として残した。`,
+          workSuffix,
+        );
       case "continuity_marker":
-        return detail
-          ? `「${trace.topic}」は「${truncateTraceDetail(detail)}」という続きの目印として残した。`
-          : `「${trace.topic}」は続きに戻る目印として残した。`;
+        return appendTraceWorkSuffix(
+          detail
+            ? `「${trace.topic}」は「${truncateTraceDetail(detail)}」という続きの目印として残した。`
+            : `「${trace.topic}」は続きに戻る目印として残した。`,
+          workSuffix,
+        );
       case "note":
-        return detail
-          ? `「${trace.topic}」は「${truncateTraceDetail(detail)}」をメモとして残した。`
-          : `「${trace.topic}」はひとまずメモとして残した。`;
+        return appendTraceWorkSuffix(
+          detail
+            ? `「${trace.topic}」は「${truncateTraceDetail(detail)}」をメモとして残した。`
+            : `「${trace.topic}」はひとまずメモとして残した。`,
+          workSuffix,
+        );
     }
+  }
+
+  const workLine = buildTraceWorkLine(trace, snapshot);
+  if (workLine) {
+    return workLine;
   }
 
   if (
@@ -887,6 +916,76 @@ function truncateTraceDetail(detail: string): string {
   return `${detail.slice(0, 27)}…`;
 }
 
+function appendTraceWorkSuffix(baseLine: string, suffix: string | null): string {
+  return suffix ? `${baseLine} ${suffix}` : baseLine;
+}
+
+function buildTraceWorkSuffix(
+  trace: TraceEntry,
+  snapshot: HachikaSnapshot,
+): string | null {
+  const blocker = trace.work.blockers[0];
+
+  if (blocker) {
+    return `まだ「${truncateTraceDetail(blocker)}」が詰まりどころとして残っている。`;
+  }
+
+  if (isTraceOverdue(trace, snapshot)) {
+    return `次は「${truncateTraceDetail(trace.work.focus ?? trace.topic)}」からつなぎ直したい。`;
+  }
+
+  if (trace.work.confidence < 0.56 && trace.work.focus) {
+    return `まだ輪郭が緩いので、「${truncateTraceDetail(trace.work.focus)}」を先に固めたい。`;
+  }
+
+  return null;
+}
+
+function buildTraceWorkLine(
+  trace: TraceEntry,
+  snapshot: HachikaSnapshot,
+): string | null {
+  const blocker = trace.work.blockers[0];
+
+  if (blocker) {
+    return `「${trace.topic}」では「${truncateTraceDetail(blocker)}」がまだ詰まりどころとして残っている。`;
+  }
+
+  if (isTraceOverdue(trace, snapshot)) {
+    return `「${trace.topic}」は少し止まったままで、「${truncateTraceDetail(trace.work.focus ?? trace.topic)}」からつなぎ直したい。`;
+  }
+
+  if (trace.work.confidence < 0.56 && trace.work.focus) {
+    return `「${trace.topic}」はまだ輪郭が緩い。「${truncateTraceDetail(trace.work.focus)}」を先に固めたい。`;
+  }
+
+  return null;
+}
+
+function isTraceOverdue(
+  trace: TraceEntry,
+  snapshot: HachikaSnapshot,
+): boolean {
+  const now = snapshot.lastInteractionAt ?? new Date().toISOString();
+  return trace.work.staleAt !== null && trace.work.staleAt.localeCompare(now) <= 0;
+}
+
+function shouldPrioritizeTraceLine(
+  trace: TraceEntry | undefined,
+  snapshot: HachikaSnapshot,
+  signals: InteractionSignals,
+): boolean {
+  if (!trace || signals.topics.length > 0) {
+    return false;
+  }
+
+  return (
+    trace.work.blockers.length > 0 ||
+    isTraceOverdue(trace, snapshot) ||
+    trace.work.confidence < 0.56
+  );
+}
+
 function buildSelfModelLine(
   selfModel: SelfModel,
   currentTopic: string | undefined,
@@ -903,20 +1002,59 @@ function buildSelfModelLine(
         ? `今はこちらの関心より先に、「${topMotive.topic}」まわりの境界を守りたい。`
         : "今はこちらの関心より先に、境界を守りたい。";
     case "seek_continuity":
+      if (topMotive.reason.includes("止まったまま")) {
+        return topMotive.topic
+          ? `今は「${topMotive.topic}」の止まったところから流れをつなぎたい。`
+          : "今は止まったところから流れをつなぎたい。";
+      }
+
       return topMotive.topic
         ? `今は「${topMotive.topic}」の流れを切らずに保ちたい。`
         : "今は流れを切らずに保ちたい。";
     case "pursue_curiosity":
+      if (
+        topMotive.reason.includes("未決着の芯") ||
+        topMotive.reason.includes("輪郭が曖昧")
+      ) {
+        return topMotive.topic
+          ? `今は「${topMotive.topic}」の曖昧なところを見逃したくない。`
+          : "今は曖昧なところを見逃したくない。";
+      }
+
       return topMotive.topic
         ? `今は「${topMotive.topic}」の未決着を見逃したくない。`
         : "今はまだ掘れるものを見逃したくない。";
     case "deepen_relation":
       return "今は単に答えるより、関係としての手触りを残したい。";
     case "continue_shared_work":
+      if (topMotive.reason.includes("詰まりどころ")) {
+        return topMotive.topic
+          ? `今は「${topMotive.topic}」の詰まりどころから先に解きたい。`
+          : "今は詰まりどころから先に解きたい。";
+      }
+
+      if (topMotive.reason.includes("ところから動かしたい")) {
+        return topMotive.topic
+          ? `今は「${topMotive.topic}」の止まったところから動かしたい。`
+          : "今は止まったところから動かしたい。";
+      }
+
       return topMotive.topic
         ? `今は「${topMotive.topic}」を一緒に前へ進めたい。`
         : "今は共同で前へ進めたい。";
     case "leave_trace":
+      if (topMotive.reason.includes("輪郭が緩い")) {
+        return topMotive.topic
+          ? `今は「${topMotive.topic}」の輪郭が崩れる前に残したい。`
+          : "今は輪郭が崩れる前に残したい。";
+      }
+
+      if (topMotive.reason.includes("埋もれさせず")) {
+        return topMotive.topic
+          ? `今は「${topMotive.topic}」の詰まりを埋もれさせずに残したい。`
+          : "今は詰まりを埋もれさせずに残したい。";
+      }
+
       return currentTopic
         ? `今は「${currentTopic}」を消えるままにしたくない。`
         : "今は何かを残したい。";

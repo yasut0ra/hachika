@@ -227,6 +227,7 @@ Hachika は、単に有用なだけでなく、
 - artifact Markdown には `status / lastAction / pending next step` が含まれ、今どの段階の痕跡なのかを外から追える
 - 各 trace はさらに `focus / confidence / blockers / staleAt` を持ち、「今どこで止まっているか」を作業状態として保持する
 - 能動行動は unresolved blocker を優先して選び、必要ならその blocker を解くための `next step` へ変換する
+- 通常の self-model と応答生成も `blockers / staleAt / confidence` を参照し、能動行動時だけでなく平常時の motive と発話にも未解決作業がにじむ
 - 内部状態に応じて応答のトーンと内容を変化させる
 - `data/hachika-state.json` に状態を保存し、セッションをまたいで継続性を残す
 

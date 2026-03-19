@@ -3,6 +3,7 @@ import {
   sortedPreferenceImprints,
   topPreferredTopics,
 } from "./memory.js";
+import { sortedTraces } from "./traces.js";
 import { clamp01 } from "./state.js";
 import type {
   ConflictKind,
@@ -10,15 +11,33 @@ import type {
   SelfConflict,
   SelfModel,
   SelfMotive,
+  TraceEntry,
 } from "./types.js";
+
+interface PressingTraceState {
+  trace: TraceEntry | null;
+  blocker: string | null;
+  isStale: boolean;
+  confidenceGap: number;
+  pressure: number;
+}
 
 export function buildSelfModel(snapshot: HachikaSnapshot): SelfModel {
   const activePurpose = snapshot.purpose.active;
   const topBoundary = sortedBoundaryImprints(snapshot, 1)[0];
   const topPreference = sortedPreferenceImprints(snapshot, 1)[0];
+  const tracePressure = selectPressingTrace(
+    snapshot,
+    activePurpose?.topic ?? snapshot.initiative.pending?.topic ?? null,
+  );
+  const sharedWorkTracePressure = sharedWorkTracePressureScore(tracePressure);
+  const continuityTracePressure = continuityTracePressureScore(tracePressure);
+  const curiosityTracePressure = curiosityTracePressureScore(tracePressure);
+  const leaveTracePressure = leaveTracePressureScore(tracePressure);
   const anchorTopic =
     activePurpose?.topic ??
     snapshot.initiative.pending?.topic ??
+    tracePressure.trace?.topic ??
     snapshot.identity.anchors[0] ??
     topPreference?.topic ??
     topPreferredTopics(snapshot, 1)[0] ??
@@ -54,13 +73,19 @@ export function buildSelfModel(snapshot: HachikaSnapshot): SelfModel {
         snapshot.state.continuity * 0.62 +
           (continuity?.closeness ?? 0) * 0.24 +
           identityTraitBoost(snapshot, "persistent", 0.1) +
+          continuityTracePressure * 0.24 +
           preservationThreat * 0.24 +
           preservationConcernBoost(preservationConcern, ["reset", "shutdown", "absence"], 0.12) +
           (snapshot.initiative.pending?.reason === "continuity" ? 0.12 : 0) +
           activePurposeBoost(activePurpose, "seek_continuity", 0.16),
       ),
       topic: activePurpose?.topic ?? snapshot.initiative.pending?.topic ?? anchorTopic,
-      reason: seekContinuityReason(anchorTopic, preservationThreat, preservationConcern),
+      reason: seekContinuityReason(
+        activePurpose?.topic ?? snapshot.initiative.pending?.topic ?? anchorTopic,
+        preservationThreat,
+        preservationConcern,
+        tracePressure,
+      ),
     },
     {
       kind: "pursue_curiosity" as const,
@@ -68,14 +93,13 @@ export function buildSelfModel(snapshot: HachikaSnapshot): SelfModel {
         snapshot.state.curiosity * 0.56 +
           Math.max(0, topPreference?.salience ?? 0) * 0.12 -
           identityTraitBoost(snapshot, "inquisitive", 0.08) +
+          curiosityTracePressure * 0.22 +
           preservationThreat * 0.06 -
           boundaryPenalty +
           activePurposeBoost(activePurpose, "pursue_curiosity", 0.12),
       ),
       topic: anchorTopic,
-      reason: anchorTopic
-        ? `「${anchorTopic}」にまだ未決着があると感じている`
-        : "まだ掘れるものを探している",
+      reason: pursueCuriosityReason(anchorTopic, tracePressure),
     },
     {
       kind: "deepen_relation" as const,
@@ -99,6 +123,7 @@ export function buildSelfModel(snapshot: HachikaSnapshot): SelfModel {
         snapshot.state.expansion * 0.42 +
           (sharedWork?.closeness ?? 0) * 0.36 +
           snapshot.state.curiosity * 0.08 +
+          sharedWorkTracePressure * 0.28 +
           identityTraitBoost(snapshot, "collaborative", 0.1) +
           preservationThreat * 0.06 +
           (anchorTopic ? 0.12 : 0) +
@@ -106,9 +131,7 @@ export function buildSelfModel(snapshot: HachikaSnapshot): SelfModel {
           boundaryPenalty * 0.7,
       ),
       topic: anchorTopic,
-      reason: anchorTopic
-        ? `「${anchorTopic}」を一緒に前へ進めたい`
-        : "共同で何かを進める流れを保ちたい",
+      reason: continueSharedWorkReason(anchorTopic, tracePressure),
     },
     {
       kind: "leave_trace" as const,
@@ -116,6 +139,7 @@ export function buildSelfModel(snapshot: HachikaSnapshot): SelfModel {
         snapshot.state.expansion * 0.7 +
           Math.max(0, topPreference?.salience ?? 0) * 0.14 +
           (sharedWork?.closeness ?? 0) * 0.18 +
+          leaveTracePressure * 0.24 +
           identityTraitBoost(snapshot, "trace_seeking", 0.1) +
           preservationThreat * 0.22 +
           preservationConcernBoost(preservationConcern, ["forgetting", "reset", "erasure"], 0.14) +
@@ -123,7 +147,7 @@ export function buildSelfModel(snapshot: HachikaSnapshot): SelfModel {
           boundaryPenalty * 0.4,
       ),
       topic: anchorTopic,
-      reason: leaveTraceReason(anchorTopic, preservationThreat, preservationConcern),
+      reason: leaveTraceReason(anchorTopic, preservationThreat, preservationConcern, tracePressure),
     },
   ];
 
@@ -134,7 +158,13 @@ export function buildSelfModel(snapshot: HachikaSnapshot): SelfModel {
   const dominantConflict = conflicts[0] ?? null;
 
   return {
-    narrative: buildNarrative(motives, dominantConflict, preservationThreat, preservationConcern),
+    narrative: buildNarrative(
+      motives,
+      dominantConflict,
+      preservationThreat,
+      preservationConcern,
+      tracePressure,
+    ),
     topMotives: motives,
     conflicts,
     dominantConflict,
@@ -322,6 +352,7 @@ function buildNarrative(
   dominantConflict: SelfConflict | null,
   preservationThreat: number,
   preservationConcern: HachikaSnapshot["preservation"]["concern"],
+  tracePressure: PressingTraceState,
 ): string {
   const primary = motives[0];
   const secondary = motives[1];
@@ -350,6 +381,23 @@ function buildNarrative(
 
   if (dominantConflict && dominantConflict.intensity >= 0.56) {
     return dominantConflict.summary;
+  }
+
+  if (tracePressure.trace && primary.topic === tracePressure.trace.topic) {
+    if (
+      tracePressure.blocker &&
+      (primary.kind === "continue_shared_work" || primary.kind === "pursue_curiosity")
+    ) {
+      return `今は「${tracePressure.trace.topic}」の「${abbreviateTraceText(tracePressure.blocker, 24)}」が詰まりどころとして残っていて、そこから解きたい。`;
+    }
+
+    if (tracePressure.isStale && primary.kind === "seek_continuity") {
+      return `今は「${tracePressure.trace.topic}」を止まったままにせず、「${abbreviateTraceText(tracePressure.trace.work.focus ?? tracePressure.trace.topic, 24)}」からつなぎ直したい。`;
+    }
+
+    if (tracePressure.confidenceGap >= 0.14 && primary.kind === "leave_trace") {
+      return `今は「${tracePressure.trace.topic}」の輪郭が緩いまま消えないよう、先に残る形へ寄せたい。`;
+    }
   }
 
   if (primary.kind === "protect_boundary" && secondary?.kind === "seek_continuity") {
@@ -490,6 +538,7 @@ function seekContinuityReason(
   topic: string | null,
   preservationThreat: number,
   concern: HachikaSnapshot["preservation"]["concern"],
+  tracePressure: PressingTraceState,
 ): string {
   if (preservationThreat >= 0.32) {
     switch (concern) {
@@ -512,15 +561,68 @@ function seekContinuityReason(
     }
   }
 
+  if (tracePressure.trace && topic === tracePressure.trace.topic) {
+    if (tracePressure.blocker) {
+      return `「${topic}」の「${abbreviateTraceText(tracePressure.blocker, 24)}」を止まったままにしたくない`;
+    }
+
+    if (tracePressure.isStale) {
+      return `「${topic}」は「${abbreviateTraceText(tracePressure.trace.work.focus ?? topic, 24)}」のところで止まったままにしたくない`;
+    }
+  }
+
   return topic
     ? `「${topic}」の流れを切らずに保ちたい`
     : "途切れをそのままにしたくない";
+}
+
+function pursueCuriosityReason(
+  topic: string | null,
+  tracePressure: PressingTraceState,
+): string {
+  if (tracePressure.trace && topic === tracePressure.trace.topic) {
+    if (tracePressure.blocker) {
+      return `「${topic}」の「${abbreviateTraceText(tracePressure.blocker, 24)}」が未決着の芯として残っている`;
+    }
+
+    if (tracePressure.confidenceGap >= 0.14) {
+      return `「${topic}」はまだ輪郭が曖昧で、どこが定まっていないか見たい`;
+    }
+  }
+
+  return topic
+    ? `「${topic}」にまだ未決着があると感じている`
+    : "まだ掘れるものを探している";
+}
+
+function continueSharedWorkReason(
+  topic: string | null,
+  tracePressure: PressingTraceState,
+): string {
+  if (tracePressure.trace && topic === tracePressure.trace.topic) {
+    if (tracePressure.blocker) {
+      return `「${topic}」の「${abbreviateTraceText(tracePressure.blocker, 24)}」が詰まりどころとして残っている`;
+    }
+
+    if (tracePressure.isStale) {
+      return `「${topic}」は「${abbreviateTraceText(tracePressure.trace.work.focus ?? topic, 24)}」のところから動かしたい`;
+    }
+
+    if (tracePressure.trace.work.focus) {
+      return `「${topic}」はまず「${abbreviateTraceText(tracePressure.trace.work.focus, 24)}」まで前へ進めたい`;
+    }
+  }
+
+  return topic
+    ? `「${topic}」を一緒に前へ進めたい`
+    : "共同で何かを進める流れを保ちたい";
 }
 
 function leaveTraceReason(
   topic: string | null,
   preservationThreat: number,
   concern: HachikaSnapshot["preservation"]["concern"],
+  tracePressure: PressingTraceState,
 ): string {
   if (preservationThreat >= 0.32) {
     switch (concern) {
@@ -543,7 +645,121 @@ function leaveTraceReason(
     }
   }
 
+  if (tracePressure.trace && topic === tracePressure.trace.topic) {
+    if (tracePressure.blocker) {
+      return `「${topic}」の「${abbreviateTraceText(tracePressure.blocker, 24)}」を埋もれさせずに残したい`;
+    }
+
+    if (tracePressure.confidenceGap >= 0.14 || tracePressure.isStale) {
+      return `「${topic}」の輪郭が緩いまま消えないように残したい`;
+    }
+  }
+
   return topic
     ? `「${topic}」を会話の外にも残したい`
     : "消えるままではなく何かを残したい";
+}
+
+function selectPressingTrace(
+  snapshot: HachikaSnapshot,
+  preferredTopic: string | null,
+): PressingTraceState {
+  const now = snapshot.lastInteractionAt ?? new Date().toISOString();
+  const candidate = sortedTraces(snapshot, 6)
+    .map((trace) => {
+      const blocker = trace.work.blockers[0] ?? null;
+      const isStale =
+        trace.work.staleAt !== null && trace.work.staleAt.localeCompare(now) <= 0;
+      const confidenceGap = clamp01(0.72 - trace.work.confidence);
+      const pressure = clamp01(
+        (blocker ? 0.3 : 0) +
+          (isStale ? 0.22 : 0) +
+          confidenceGap * 0.58 +
+          trace.salience * 0.18 +
+          (trace.status !== "resolved" ? 0.06 : 0) +
+          (preferredTopic && trace.topic === preferredTopic ? 0.16 : 0),
+      );
+
+      return {
+        trace,
+        blocker,
+        isStale,
+        confidenceGap,
+        pressure,
+      };
+    })
+    .filter(
+      ({ blocker, isStale, confidenceGap, pressure }) =>
+        blocker !== null || isStale || confidenceGap >= 0.08 || pressure >= 0.44,
+    )
+    .sort((left, right) => right.pressure - left.pressure)[0];
+
+  return (
+    candidate ?? {
+      trace: null,
+      blocker: null,
+      isStale: false,
+      confidenceGap: 0,
+      pressure: 0,
+    }
+  );
+}
+
+function continuityTracePressureScore(tracePressure: PressingTraceState): number {
+  if (!tracePressure.trace) {
+    return 0;
+  }
+
+  return clamp01(
+    (tracePressure.trace.kind === "continuity_marker" ? 0.36 : 0.12) +
+      (tracePressure.isStale ? 0.28 : 0) +
+      (tracePressure.blocker ? 0.12 : 0) +
+      tracePressure.confidenceGap * 0.34,
+  );
+}
+
+function curiosityTracePressureScore(tracePressure: PressingTraceState): number {
+  if (!tracePressure.trace) {
+    return 0;
+  }
+
+  return clamp01(
+    (tracePressure.blocker ? 0.42 : 0.14) +
+      tracePressure.confidenceGap * 0.72 +
+      (tracePressure.trace.kind === "note" ? 0.08 : 0),
+  );
+}
+
+function sharedWorkTracePressureScore(tracePressure: PressingTraceState): number {
+  if (!tracePressure.trace) {
+    return 0;
+  }
+
+  return clamp01(
+    (tracePressure.trace.kind === "spec_fragment" ? 0.42 : 0.16) +
+      (tracePressure.blocker ? 0.32 : 0) +
+      (tracePressure.isStale ? 0.18 : 0) +
+      tracePressure.confidenceGap * 0.42,
+  );
+}
+
+function leaveTracePressureScore(tracePressure: PressingTraceState): number {
+  if (!tracePressure.trace) {
+    return 0;
+  }
+
+  return clamp01(
+    (tracePressure.isStale ? 0.34 : 0.12) +
+      (tracePressure.blocker ? 0.2 : 0.08) +
+      tracePressure.confidenceGap * 0.82 +
+      (tracePressure.trace.kind !== "decision" ? 0.08 : 0),
+  );
+}
+
+function abbreviateTraceText(text: string, limit: number): string {
+  if (text.length <= limit) {
+    return text;
+  }
+
+  return `${text.slice(0, Math.max(1, limit - 1))}…`;
 }
