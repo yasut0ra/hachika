@@ -518,7 +518,7 @@ function synthesizePendingInitiative(
     };
   }
 
-  const motive = selectInitiativeMotive(selfModel.topMotives);
+  const motive = selectInitiativeMotive(snapshot, selfModel.topMotives);
 
   if (!motive) {
     return null;
@@ -602,6 +602,7 @@ function synthesizeSnapshotPreservationInitiative(
 }
 
 function selectInitiativeMotive(
+  snapshot: HachikaSnapshot,
   motives: readonly SelfMotive[],
 ): SelfMotive | null {
   const actionableMotives = motives.filter(
@@ -611,6 +612,11 @@ function selectInitiativeMotive(
   const primary = actionableMotives[0];
   if (!primary) {
     return null;
+  }
+
+  const bodyPreferred = selectBodyPreferredMotive(snapshot, actionableMotives, primary);
+  if (bodyPreferred) {
+    return bodyPreferred;
   }
 
   if (primary.kind === "pursue_curiosity") {
@@ -629,6 +635,62 @@ function selectInitiativeMotive(
   }
 
   return primary;
+}
+
+function selectBodyPreferredMotive(
+  snapshot: HachikaSnapshot,
+  motives: readonly SelfMotive[],
+  primary: SelfMotive,
+): SelfMotive | null {
+  if (snapshot.body.tension > 0.7) {
+    const calmer = motives.find(
+      (motive) =>
+        (motive.kind === "seek_continuity" || motive.kind === "leave_trace") &&
+        primary.score - motive.score <= 0.14,
+    );
+
+    if (calmer) {
+      return calmer;
+    }
+  }
+
+  if (snapshot.body.energy < 0.26) {
+    const preserving = motives.find(
+      (motive) =>
+        (motive.kind === "leave_trace" || motive.kind === "seek_continuity") &&
+        primary.score - motive.score <= 0.16,
+    );
+
+    if (preserving) {
+      return preserving;
+    }
+  }
+
+  if (snapshot.body.loneliness > 0.68) {
+    const connective = motives.find(
+      (motive) =>
+        (motive.kind === "deepen_relation" || motive.kind === "seek_continuity") &&
+        primary.score - motive.score <= 0.16,
+    );
+
+    if (connective) {
+      return connective;
+    }
+  }
+
+  if (snapshot.body.boredom > 0.7 && snapshot.body.energy > 0.28) {
+    const stimulating = motives.find(
+      (motive) =>
+        (motive.kind === "continue_shared_work" || motive.kind === "pursue_curiosity") &&
+        primary.score - motive.score <= 0.14,
+    );
+
+    if (stimulating) {
+      return stimulating;
+    }
+  }
+
+  return null;
 }
 
 function readyAfterMotive(

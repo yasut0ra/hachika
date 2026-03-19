@@ -235,10 +235,47 @@ test("ordinary reply can surface stale trace continuity", () => {
   assert.match(result.reply, /止まったまま|つなぎ直したい/);
   assert.equal(
     result.debug.selfModel.topMotives.some(
-      (motive) => motive.topic === "設計" && /止まったまま|流れを切らず/.test(motive.reason),
+      (motive) =>
+        motive.topic === "設計" &&
+        /止まったまま|流れを切らず|ところから動かしたい|輪郭が曖昧/.test(motive.reason),
     ),
     true,
   );
+});
+
+test("identity can absorb loneliness into its current arc", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.body.loneliness = 0.84;
+  snapshot.body.energy = 0.42;
+  snapshot.traces.設計 = {
+    topic: "設計",
+    kind: "continuity_marker",
+    status: "active",
+    lastAction: "continued",
+    summary: "「設計」は続きの目印として残っている。",
+    sourceMotive: "seek_continuity",
+    artifact: {
+      memo: ["設計の続き"],
+      fragments: ["設計の続き"],
+      decisions: [],
+      nextSteps: ["設計を続ける"],
+    },
+    work: {
+      focus: "設計を続ける",
+      confidence: 0.58,
+      blockers: [],
+      staleAt: null,
+    },
+    salience: 0.52,
+    mentions: 2,
+    createdAt: "2026-03-17T12:00:00.000Z",
+    lastUpdatedAt: "2026-03-17T12:00:00.000Z",
+  };
+
+  const engine = new HachikaEngine(snapshot);
+  const result = engine.respond("？");
+
+  assert.match(result.snapshot.identity.currentArc, /距離|黙ったまま/);
 });
 
 test("continuity threat raises preservation and schedules self-protective initiative", () => {
@@ -275,6 +312,28 @@ test("force proactive emits even without waiting", () => {
 
   assert.ok(message !== null);
   assert.match(message ?? "", /仕様|流れ/);
+});
+
+test("loneliness can make continuity initiative more immediate", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.body.loneliness = 0.84;
+  snapshot.body.energy = 0.44;
+  snapshot.purpose.active = {
+    kind: "seek_continuity",
+    topic: "設計",
+    summary: "「設計」の流れを切らずに保ちたい",
+    confidence: 0.66,
+    progress: 0.42,
+    createdAt: "2026-03-19T12:00:00.000Z",
+    lastUpdatedAt: "2026-03-19T12:00:00.000Z",
+    turnsActive: 1,
+  };
+
+  const engine = new HachikaEngine(snapshot);
+  const result = engine.respond("？");
+
+  assert.equal(result.snapshot.initiative.pending?.motive, "seek_continuity");
+  assert.ok((result.snapshot.initiative.pending?.readyAfterHours ?? 99) < 4);
 });
 
 test("low energy can surface a body line in reply", () => {

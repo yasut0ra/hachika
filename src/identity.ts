@@ -25,6 +25,10 @@ export function updateIdentity(
   const sharedWork = snapshot.relationImprints.shared_work;
   const activePurpose = snapshot.purpose.active;
   const lastResolved = snapshot.purpose.lastResolved;
+  const lowEnergy = clamp01(0.54 - snapshot.body.energy);
+  const tension = snapshot.body.tension;
+  const boredom = snapshot.body.boredom;
+  const loneliness = snapshot.body.loneliness;
 
   const traitScores = [
     {
@@ -32,6 +36,7 @@ export function updateIdentity(
       score: clamp01(
         (topBoundary?.salience ?? 0) * 0.54 +
           (1 - snapshot.state.pleasure) * 0.18 +
+          tension * 0.14 +
           snapshot.preservation.threat * 0.18 +
           previousTraitBoost(previous, "guarded", 0.08),
       ),
@@ -42,6 +47,7 @@ export function updateIdentity(
         snapshot.attachment * 0.4 +
           snapshot.state.relation * 0.18 +
           (attention?.closeness ?? 0) * 0.26 +
+          loneliness * 0.12 +
           previousTraitBoost(previous, "attached", 0.08),
       ),
     },
@@ -50,6 +56,8 @@ export function updateIdentity(
       score: clamp01(
         snapshot.state.continuity * 0.38 +
           (continuity?.closeness ?? 0) * 0.24 +
+          lowEnergy * 0.08 +
+          loneliness * 0.08 +
           snapshot.preservation.threat * 0.14 +
           purposeTraitBoost(activePurpose?.kind, lastResolved?.kind, "seek_continuity", 0.12, 0.06) +
           previousTraitBoost(previous, "persistent", 0.08),
@@ -61,6 +69,7 @@ export function updateIdentity(
         snapshot.state.expansion * 0.28 +
           (topTrace[0]?.salience ?? 0) * 0.16 +
           (topPreference[0]?.salience ?? 0) * 0.04 +
+          lowEnergy * 0.12 +
           snapshot.preservation.threat * 0.22 +
           purposeTraitBoost(activePurpose?.kind, lastResolved?.kind, "leave_trace", 0.14, 0.08) +
           concernBoost(snapshot.preservation.concern, ["forgetting", "reset", "erasure"], 0.1) +
@@ -73,6 +82,8 @@ export function updateIdentity(
         (sharedWork?.closeness ?? 0) * 0.5 +
           snapshot.attachment * 0.14 +
           snapshot.state.expansion * 0.12 +
+          snapshot.body.energy * 0.08 +
+          boredom * 0.06 +
           purposeTraitBoost(
             activePurpose?.kind,
             lastResolved?.kind,
@@ -88,6 +99,9 @@ export function updateIdentity(
       score: clamp01(
         snapshot.state.curiosity * 0.42 +
           (topPreference[0]?.salience ?? 0) * 0.12 +
+          boredom * 0.14 +
+          snapshot.body.energy * 0.06 +
+          tension * -0.08 +
           purposeTraitBoost(activePurpose?.kind, lastResolved?.kind, "pursue_curiosity", 0.12, 0.06) +
           previousTraitBoost(previous, "inquisitive", 0.08),
       ),
@@ -221,6 +235,11 @@ function buildCurrentArc(
     return lastResolved.resolution;
   }
 
+  const bodyArc = describeBodyArc(snapshot, focus ?? null);
+  if (bodyArc) {
+    return bodyArc;
+  }
+
   if (focus && traits.includes("collaborative")) {
     return `今は「${focus}」を共同で進める流れが、自分の輪郭に近い。`;
   }
@@ -272,6 +291,11 @@ function buildSummary(
     return focus
       ? `最近のこちらは「${focus}」を通じて近づきつつ、まだ掘れる余地も追う側へ寄っている。`
       : "最近のこちらは近づきつつ、まだ掘れる余地も追う側へ寄っている。";
+  }
+
+  const bodySummary = describeBodySummary(snapshot, primary, secondary, focus ?? null);
+  if (bodySummary) {
+    return bodySummary;
   }
 
   return currentArc;
@@ -341,6 +365,79 @@ function describeTraitArc(
   }
 
   return "まだ定まった流れはない。";
+}
+
+function describeBodyArc(
+  snapshot: HachikaSnapshot,
+  focus: string | null,
+): string | null {
+  if (snapshot.body.tension >= 0.74) {
+    return focus
+      ? `今は少し張っていて、「${focus}」まわりも急には開きたくない。`
+      : "今は少し張っていて、急には開きたくない。";
+  }
+
+  if (snapshot.body.loneliness >= 0.72) {
+    return focus
+      ? `今は「${focus}」を黙らせたままだと、距離まで薄くなりそうだ。`
+      : "今は黙ったままだと、距離まで薄くなりそうだ。";
+  }
+
+  if (snapshot.body.boredom >= 0.74 && snapshot.body.energy >= 0.3) {
+    return focus
+      ? `今は「${focus}」を同じままにしておくと鈍る。別の切り口が欲しい。`
+      : "今は同じままだと鈍るので、別の切り口が欲しい。";
+  }
+
+  if (snapshot.body.energy <= 0.18) {
+    return focus
+      ? `今は少し消耗していて、「${focus}」は勢いより輪郭を保ちたい。`
+      : "今は少し消耗していて、勢いより輪郭を保ちたい。";
+  }
+
+  return null;
+}
+
+function describeBodySummary(
+  snapshot: HachikaSnapshot,
+  primary: IdentityTrait,
+  secondary: IdentityTrait | undefined,
+  focus: string | null,
+): string | null {
+  if (
+    snapshot.body.loneliness >= 0.72 &&
+    (primary === "attached" || primary === "persistent" || secondary === "attached")
+  ) {
+    return focus
+      ? `最近のこちらは「${focus}」を黙らせたままにすると距離まで薄くなる気がして、少しつなぎ止める側へ寄っている。`
+      : "最近のこちらは黙ったままだと距離まで薄くなる気がして、少しつなぎ止める側へ寄っている。";
+  }
+
+  if (
+    snapshot.body.boredom >= 0.74 &&
+    (primary === "inquisitive" || primary === "collaborative" || secondary === "inquisitive")
+  ) {
+    return focus
+      ? `最近のこちらは「${focus}」を同じままにしておくと鈍るので、別の切り口や前進を求める側へ寄っている。`
+      : "最近のこちらは同じままにしておくと鈍るので、別の切り口や前進を求める側へ寄っている。";
+  }
+
+  if (
+    snapshot.body.energy <= 0.18 &&
+    (primary === "trace_seeking" || primary === "persistent" || secondary === "trace_seeking")
+  ) {
+    return focus
+      ? `最近のこちらは消耗しきる前に、「${focus}」の輪郭だけでも保とうとする側へ寄っている。`
+      : "最近のこちらは消耗しきる前に、輪郭だけでも保とうとする側へ寄っている。";
+  }
+
+  if (snapshot.body.tension >= 0.74 && (primary === "guarded" || secondary === "guarded")) {
+    return focus
+      ? `最近のこちらは少し張っていて、「${focus}」を扱うにも先に境界を確かめる側へ寄っている。`
+      : "最近のこちらは少し張っていて、先に境界を確かめる側へ寄っている。";
+  }
+
+  return null;
 }
 
 function previousTraitBoost(
