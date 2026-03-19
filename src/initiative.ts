@@ -2,6 +2,7 @@ import {
   sortedPreferenceImprints,
   topPreferredTopics,
 } from "./memory.js";
+import { rewindBodyHours, settleBodyAfterInitiative } from "./body.js";
 import { buildSelfModel } from "./self-model.js";
 import { clamp01 } from "./state.js";
 import { pickPrimaryArtifactItem, sortedTraces, tendTraceFromInitiative } from "./traces.js";
@@ -66,6 +67,15 @@ export function emitInitiative(
   const hoursSinceProactive = elapsedHours(snapshot.initiative.lastProactiveAt, now);
   const neglectLevel = calculateNeglectLevel(snapshot.lastInteractionAt, now);
   const selfModel = buildSelfModel(snapshot);
+
+  if (
+    !force &&
+    snapshot.body.energy < 0.18 &&
+    snapshot.body.loneliness < 0.62 &&
+    snapshot.preservation.threat < 0.22
+  ) {
+    return null;
+  }
 
   if (!force && snapshot.initiative.lastProactiveAt !== null && hoursSinceProactive < 4) {
     return null;
@@ -180,6 +190,8 @@ export function rewindSnapshotHours(
       lastThreatAt: snapshot.preservation.lastThreatAt,
     };
   }
+
+  rewindBodyHours(snapshot, hours);
 
   if (snapshot.initiative.pending) {
     snapshot.initiative.pending = {
@@ -383,6 +395,8 @@ function finalizeEmission(
     snapshot.preservation.lastThreatAt = emittedAt;
   }
 
+  settleBodyAfterInitiative(snapshot, pending);
+
   if (pending.motive === "continue_shared_work" || pending.motive === "leave_trace") {
     const sharedWork = snapshot.relationImprints.shared_work;
     if (sharedWork) {
@@ -497,7 +511,10 @@ function synthesizePendingInitiative(
       blocker: blockerCandidate?.blocker ?? null,
       concern: null,
       createdAt,
-      readyAfterHours: readyAfterMotive(blockerCandidate?.motive ?? activePurpose.kind),
+      readyAfterHours: readyAfterMotive(
+        snapshot,
+        blockerCandidate?.motive ?? activePurpose.kind,
+      ),
     };
   }
 
@@ -523,7 +540,7 @@ function synthesizePendingInitiative(
     blocker: blockerCandidate?.blocker ?? null,
     concern: null,
     createdAt,
-    readyAfterHours: readyAfterMotive(blockerCandidate?.motive ?? motive.kind),
+    readyAfterHours: readyAfterMotive(snapshot, blockerCandidate?.motive ?? motive.kind),
   };
 }
 
@@ -614,21 +631,56 @@ function selectInitiativeMotive(
   return primary;
 }
 
-function readyAfterMotive(motive: MotiveKind): number {
+function readyAfterMotive(
+  snapshot: HachikaSnapshot,
+  motive: MotiveKind,
+): number {
+  let readyAfter: number;
+
   switch (motive) {
     case "seek_continuity":
-      return 4;
+      readyAfter = 4;
+      break;
     case "continue_shared_work":
-      return 4;
+      readyAfter = 4;
+      break;
     case "leave_trace":
-      return 5;
+      readyAfter = 5;
+      break;
     case "deepen_relation":
-      return 6;
+      readyAfter = 6;
+      break;
     case "pursue_curiosity":
-      return 8;
+      readyAfter = 8;
+      break;
     case "protect_boundary":
-      return 8;
+      readyAfter = 8;
+      break;
   }
+
+  if (snapshot.body.energy < 0.3) {
+    readyAfter += 2;
+  }
+
+  if (
+    snapshot.body.boredom > 0.64 &&
+    (motive === "pursue_curiosity" || motive === "continue_shared_work")
+  ) {
+    readyAfter -= 1.5;
+  }
+
+  if (
+    snapshot.body.loneliness > 0.62 &&
+    (motive === "deepen_relation" || motive === "seek_continuity")
+  ) {
+    readyAfter -= 1;
+  }
+
+  if (snapshot.body.tension > 0.68 && motive === "deepen_relation") {
+    readyAfter += 1.5;
+  }
+
+  return Math.max(0.5, Math.round(readyAfter * 10) / 10);
 }
 
 function reasonFromMotive(motive: MotiveKind): InitiativeReason {

@@ -15,6 +15,13 @@ export interface DriveState {
   expansion: number;
 }
 
+export interface BodyState {
+  energy: number;
+  tension: number;
+  boredom: number;
+  loneliness: number;
+}
+
 export interface MemoryEntry {
   role: "user" | "hachika";
   text: string;
@@ -179,6 +186,7 @@ export interface PurposeState {
 export interface HachikaSnapshot {
   version: number;
   state: DriveState;
+  body: BodyState;
   attachment: number;
   preferences: Record<string, number>;
   topicCounts: Record<string, number>;

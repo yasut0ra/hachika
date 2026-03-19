@@ -10,7 +10,7 @@ import {
   sortedRelationImprints,
 } from "./memory.js";
 import { loadSnapshot, saveSnapshot } from "./persistence.js";
-import { createInitialSnapshot, formatDriveState } from "./state.js";
+import { createInitialSnapshot, formatBodyState, formatDriveState } from "./state.js";
 import { sortedTraces } from "./traces.js";
 import type { ResolvedPurpose } from "./types.js";
 
@@ -65,6 +65,11 @@ try {
 
     if (text === "/purpose") {
       printPurpose(engine);
+      continue;
+    }
+
+    if (text === "/body") {
+      printBody(engine);
       continue;
     }
 
@@ -123,6 +128,7 @@ async function printIntro(currentEngine: HachikaEngine): Promise<void> {
   console.log("Hachika v0 CLI");
   console.log("`/help` でコマンドを表示します。");
   console.log(formatDriveState(currentEngine.getSnapshot().state));
+  console.log(formatBodyState(currentEngine.getBody()));
   console.log(`attachment:${currentEngine.getSnapshot().attachment.toFixed(2)}`);
   console.log(`identity:${currentEngine.getIdentity().summary}`);
   console.log(`artifacts:${describeArtifactFiles(currentEngine.getSnapshot(), artifactsDir).length}`);
@@ -133,6 +139,7 @@ function printHelp(): void {
   console.log("/proactive force a proactive line now");
   console.log("/idle N simulate N hours of inactivity");
   console.log("/state  print current drives");
+  console.log("/body   print current body state");
   console.log("/purpose print active purpose");
   console.log("/self   print current self-model");
   console.log("/identity print current identity");
@@ -158,6 +165,10 @@ function printMemories(currentEngine: HachikaEngine): void {
       `[${memory.role}] ${memory.text}${memory.topics.length > 0 ? ` [${memory.topics.join(", ")}]` : ""}`,
     );
   }
+}
+
+function printBody(currentEngine: HachikaEngine): void {
+  console.log(formatBodyState(currentEngine.getBody()));
 }
 
 function printTraces(currentEngine: HachikaEngine): void {
@@ -259,6 +270,7 @@ function printDebug(currentEngine: HachikaEngine): void {
   const traces = sortedTraces(snapshot, 6);
 
   console.log(formatDriveState(snapshot.state));
+  console.log(formatBodyState(snapshot.body));
   console.log(`attachment: ${snapshot.attachment.toFixed(2)}`);
   console.log(
     `preservation: ${snapshot.preservation.threat.toFixed(2)}${snapshot.preservation.concern ? `/${snapshot.preservation.concern}` : ""}`,

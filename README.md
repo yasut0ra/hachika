@@ -207,6 +207,7 @@ Hachika は、単に有用なだけでなく、
 現時点では、v0 の最小プロトタイプとして Node.js + TypeScript の CLI を実装しています。
 
 - `continuity / pleasure / curiosity / relation / expansion` の内部状態を保持する
+- `energy / tension / boredom / loneliness` の身体的な内部状態を保持する
 - `attachment` を長期的な関係指標として保持する
 - ユーザー入力を簡易的な相互作用イベントに変換し、状態を更新する
 - トピックごとの好み、短期記憶、長期記憶の痕跡を保持する
@@ -228,6 +229,7 @@ Hachika は、単に有用なだけでなく、
 - 各 trace はさらに `focus / confidence / blockers / staleAt` を持ち、「今どこで止まっているか」を作業状態として保持する
 - 能動行動は unresolved blocker を優先して選び、必要ならその blocker を解くための `next step` へ変換する
 - 通常の self-model と応答生成も `blockers / staleAt / confidence` を参照し、能動行動時だけでなく平常時の motive と発話にも未解決作業がにじむ
+- 身体状態は会話と放置で変化し、mood / motive / proactive timing / 通常応答に影響する
 - 内部状態に応じて応答のトーンと内容を変化させる
 - `data/hachika-state.json` に状態を保存し、セッションをまたいで継続性を残す
 
@@ -247,6 +249,7 @@ npm run dev
 - `/proactive` 能動発話を強制的に出す
 - `/idle <hours>` 指定時間だけ放置された状態をシミュレートする
 - `/state` 現在の drive 状態を表示
+- `/body` 現在の body 状態を表示
 - `/purpose` 現在の active purpose と直近の解決済み purpose を表示
 - `/self` 現在の self-model、motive、conflict を表示
 - `/identity` 現在の identity summary / arc / traits / anchors を表示

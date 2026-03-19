@@ -1,4 +1,4 @@
-import type { DriveName, DriveState, HachikaSnapshot } from "./types.js";
+import type { BodyState, DriveName, DriveState, HachikaSnapshot } from "./types.js";
 
 export const DRIVE_KEYS = [
   "continuity",
@@ -16,6 +16,13 @@ const INITIAL_STATE: DriveState = {
   expansion: 0.46,
 };
 
+const INITIAL_BODY: BodyState = {
+  energy: 0.56,
+  tension: 0.22,
+  boredom: 0.18,
+  loneliness: 0.2,
+};
+
 export function clamp01(value: number): number {
   return Math.min(1, Math.max(0, round(value)));
 }
@@ -26,8 +33,9 @@ export function clampSigned(value: number): number {
 
 export function createInitialSnapshot(): HachikaSnapshot {
   return {
-    version: 13,
+    version: 14,
     state: { ...INITIAL_STATE },
+    body: { ...INITIAL_BODY },
     attachment: 0.4,
     preferences: {},
     topicCounts: {},
@@ -77,6 +85,15 @@ export function dominantDrive(state: DriveState): DriveName {
 
 export function formatDriveState(state: DriveState): string {
   return DRIVE_KEYS.map((drive) => `${drive}:${state[drive].toFixed(2)}`).join(" | ");
+}
+
+export function formatBodyState(body: BodyState): string {
+  return [
+    `energy:${body.energy.toFixed(2)}`,
+    `tension:${body.tension.toFixed(2)}`,
+    `boredom:${body.boredom.toFixed(2)}`,
+    `loneliness:${body.loneliness.toFixed(2)}`,
+  ].join(" | ");
 }
 
 function round(value: number): number {

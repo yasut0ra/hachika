@@ -5,6 +5,7 @@ import { clamp01, clampSigned, createInitialSnapshot } from "./state.js";
 import type {
   ActivePurpose,
   BoundaryImprint,
+  BodyState,
   DriveState,
   HachikaSnapshot,
   IdentityState,
@@ -50,8 +51,9 @@ function hydrateSnapshot(raw: unknown): HachikaSnapshot {
   }
 
   return {
-    version: 13,
+    version: 14,
     state: hydrateState(raw.state),
+    body: hydrateBody(raw.body),
     attachment:
       typeof raw.attachment === "number" ? clamp01(raw.attachment) : initial.attachment,
     preferences: hydrateNumberRecord(raw.preferences, clampSigned),
@@ -88,6 +90,22 @@ function hydrateState(raw: unknown): DriveState {
     curiosity: typeof raw.curiosity === "number" ? clamp01(raw.curiosity) : initial.curiosity,
     relation: typeof raw.relation === "number" ? clamp01(raw.relation) : initial.relation,
     expansion: typeof raw.expansion === "number" ? clamp01(raw.expansion) : initial.expansion,
+  };
+}
+
+function hydrateBody(raw: unknown): BodyState {
+  const initial = createInitialSnapshot().body;
+
+  if (!isRecord(raw)) {
+    return initial;
+  }
+
+  return {
+    energy: typeof raw.energy === "number" ? clamp01(raw.energy) : initial.energy,
+    tension: typeof raw.tension === "number" ? clamp01(raw.tension) : initial.tension,
+    boredom: typeof raw.boredom === "number" ? clamp01(raw.boredom) : initial.boredom,
+    loneliness:
+      typeof raw.loneliness === "number" ? clamp01(raw.loneliness) : initial.loneliness,
   };
 }
 

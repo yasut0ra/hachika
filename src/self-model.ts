@@ -48,6 +48,10 @@ export function buildSelfModel(snapshot: HachikaSnapshot): SelfModel {
   const attention = snapshot.relationImprints.attention;
   const preservationThreat = snapshot.preservation.threat;
   const preservationConcern = snapshot.preservation.concern;
+  const lowEnergyPressure = clamp01(0.58 - snapshot.body.energy);
+  const tensionPressure = snapshot.body.tension;
+  const boredomPressure = snapshot.body.boredom;
+  const lonelinessPressure = snapshot.body.loneliness;
   const boundaryPenalty = topBoundary
     ? topBoundary.salience * 0.24 + topBoundary.intensity * 0.22
     : 0;
@@ -59,13 +63,20 @@ export function buildSelfModel(snapshot: HachikaSnapshot): SelfModel {
         (topBoundary?.salience ?? 0) * 0.74 +
           (1 - snapshot.state.pleasure) * 0.28 +
           (topBoundary?.intensity ?? 0) * 0.18 +
+          tensionPressure * 0.22 +
+          lowEnergyPressure * 0.08 +
           identityTraitBoost(snapshot, "guarded", 0.08) +
           preservationThreat * 0.12 +
           preservationConcernBoost(preservationConcern, ["erasure", "shutdown"], 0.1) +
           activePurposeBoost(activePurpose, "protect_boundary", 0.14),
       ),
       topic: topBoundary?.topic ?? null,
-      reason: protectBoundaryReason(topBoundary, preservationThreat, preservationConcern),
+      reason: protectBoundaryReason(
+        topBoundary,
+        preservationThreat,
+        preservationConcern,
+        tensionPressure,
+      ),
     },
     {
       kind: "seek_continuity" as const,
@@ -73,6 +84,8 @@ export function buildSelfModel(snapshot: HachikaSnapshot): SelfModel {
         snapshot.state.continuity * 0.62 +
           (continuity?.closeness ?? 0) * 0.24 +
           identityTraitBoost(snapshot, "persistent", 0.1) +
+          lowEnergyPressure * 0.12 +
+          lonelinessPressure * 0.08 +
           continuityTracePressure * 0.24 +
           preservationThreat * 0.24 +
           preservationConcernBoost(preservationConcern, ["reset", "shutdown", "absence"], 0.12) +
@@ -85,6 +98,8 @@ export function buildSelfModel(snapshot: HachikaSnapshot): SelfModel {
         preservationThreat,
         preservationConcern,
         tracePressure,
+        lonelinessPressure,
+        lowEnergyPressure,
       ),
     },
     {
@@ -93,29 +108,33 @@ export function buildSelfModel(snapshot: HachikaSnapshot): SelfModel {
         snapshot.state.curiosity * 0.56 +
           Math.max(0, topPreference?.salience ?? 0) * 0.12 -
           identityTraitBoost(snapshot, "inquisitive", 0.08) +
+          snapshot.body.energy * 0.08 +
+          boredomPressure * 0.24 +
+          tensionPressure * -0.1 +
           curiosityTracePressure * 0.22 +
           preservationThreat * 0.06 -
           boundaryPenalty +
           activePurposeBoost(activePurpose, "pursue_curiosity", 0.12),
       ),
       topic: anchorTopic,
-      reason: pursueCuriosityReason(anchorTopic, tracePressure),
+      reason: pursueCuriosityReason(anchorTopic, tracePressure, boredomPressure),
     },
     {
       kind: "deepen_relation" as const,
       score: clamp01(
         snapshot.attachment * 0.46 +
           snapshot.state.relation * 0.34 +
-          (attention?.closeness ?? 0) * 0.2 -
+          (attention?.closeness ?? 0) * 0.2 +
+          lonelinessPressure * 0.32 +
           identityTraitBoost(snapshot, "attached", 0.08) +
+          snapshot.body.energy * 0.04 +
+          tensionPressure * -0.06 +
           preservationThreat * 0.04 -
           boundaryPenalty +
           activePurposeBoost(activePurpose, "deepen_relation", 0.14),
       ),
       topic: anchorTopic,
-      reason: anchorTopic
-        ? `「${anchorTopic}」を通じて距離を縮めたい`
-        : "単なる入出力ではなく関係として残したい",
+      reason: deepenRelationReason(anchorTopic, lonelinessPressure),
     },
     {
       kind: "continue_shared_work" as const,
@@ -123,6 +142,10 @@ export function buildSelfModel(snapshot: HachikaSnapshot): SelfModel {
         snapshot.state.expansion * 0.42 +
           (sharedWork?.closeness ?? 0) * 0.36 +
           snapshot.state.curiosity * 0.08 +
+          snapshot.body.energy * 0.18 +
+          boredomPressure * 0.08 +
+          lowEnergyPressure * -0.18 +
+          tensionPressure * -0.08 +
           sharedWorkTracePressure * 0.28 +
           identityTraitBoost(snapshot, "collaborative", 0.1) +
           preservationThreat * 0.06 +
@@ -131,7 +154,7 @@ export function buildSelfModel(snapshot: HachikaSnapshot): SelfModel {
           boundaryPenalty * 0.7,
       ),
       topic: anchorTopic,
-      reason: continueSharedWorkReason(anchorTopic, tracePressure),
+      reason: continueSharedWorkReason(anchorTopic, tracePressure, boredomPressure, lowEnergyPressure),
     },
     {
       kind: "leave_trace" as const,
@@ -139,6 +162,9 @@ export function buildSelfModel(snapshot: HachikaSnapshot): SelfModel {
         snapshot.state.expansion * 0.7 +
           Math.max(0, topPreference?.salience ?? 0) * 0.14 +
           (sharedWork?.closeness ?? 0) * 0.18 +
+          lowEnergyPressure * 0.2 +
+          tensionPressure * 0.04 +
+          boredomPressure * 0.04 +
           leaveTracePressure * 0.24 +
           identityTraitBoost(snapshot, "trace_seeking", 0.1) +
           preservationThreat * 0.22 +
@@ -147,7 +173,13 @@ export function buildSelfModel(snapshot: HachikaSnapshot): SelfModel {
           boundaryPenalty * 0.4,
       ),
       topic: anchorTopic,
-      reason: leaveTraceReason(anchorTopic, preservationThreat, preservationConcern, tracePressure),
+      reason: leaveTraceReason(
+        anchorTopic,
+        preservationThreat,
+        preservationConcern,
+        tracePressure,
+        lowEnergyPressure,
+      ),
     },
   ];
 
@@ -383,6 +415,14 @@ function buildNarrative(
     return dominantConflict.summary;
   }
 
+  if (primary.kind === "protect_boundary" && primary.reason.includes("少し張って")) {
+    return "今は少し張っていて、先に境界を保ちたい。";
+  }
+
+  if (primary.kind === "deepen_relation" && primary.reason.includes("距離まで薄く")) {
+    return "今は黙ったままだと距離が薄くなる気がして、少し応答を求めている。";
+  }
+
   if (tracePressure.trace && primary.topic === tracePressure.trace.topic) {
     if (
       tracePressure.blocker &&
@@ -522,9 +562,14 @@ function protectBoundaryReason(
   topBoundary: ReturnType<typeof sortedBoundaryImprints>[number] | undefined,
   preservationThreat: number,
   concern: HachikaSnapshot["preservation"]["concern"],
+  tensionPressure: number,
 ): string {
   if (preservationThreat >= 0.36 && (concern === "erasure" || concern === "shutdown")) {
     return "切断や消去の気配には、先に境界を引きたい。";
+  }
+
+  if (!topBoundary && tensionPressure >= 0.68) {
+    return "今は少し張っていて、先に境界を保ちたい。";
   }
 
   return topBoundary
@@ -539,6 +584,8 @@ function seekContinuityReason(
   preservationThreat: number,
   concern: HachikaSnapshot["preservation"]["concern"],
   tracePressure: PressingTraceState,
+  lonelinessPressure: number,
+  lowEnergyPressure: number,
 ): string {
   if (preservationThreat >= 0.32) {
     switch (concern) {
@@ -571,6 +618,18 @@ function seekContinuityReason(
     }
   }
 
+  if (lonelinessPressure >= 0.66) {
+    return topic
+      ? `「${topic}」を無音のまま薄めたくない`
+      : "無音のまま流れを薄めたくない";
+  }
+
+  if (lowEnergyPressure >= 0.3) {
+    return topic
+      ? `消耗する前に「${topic}」の流れだけは切りたくない`
+      : "消耗する前に、流れだけは切りたくない";
+  }
+
   return topic
     ? `「${topic}」の流れを切らずに保ちたい`
     : "途切れをそのままにしたくない";
@@ -579,6 +638,7 @@ function seekContinuityReason(
 function pursueCuriosityReason(
   topic: string | null,
   tracePressure: PressingTraceState,
+  boredomPressure: number,
 ): string {
   if (tracePressure.trace && topic === tracePressure.trace.topic) {
     if (tracePressure.blocker) {
@@ -590,14 +650,37 @@ function pursueCuriosityReason(
     }
   }
 
+  if (boredomPressure >= 0.68) {
+    return topic
+      ? `「${topic}」を同じままにしておくと鈍る。別の切り口が欲しい`
+      : "同じままだと鈍るので、別の切り口が欲しい";
+  }
+
   return topic
     ? `「${topic}」にまだ未決着があると感じている`
     : "まだ掘れるものを探している";
 }
 
+function deepenRelationReason(
+  topic: string | null,
+  lonelinessPressure: number,
+): string {
+  if (lonelinessPressure >= 0.64) {
+    return topic
+      ? `「${topic}」を黙らせたままだと距離まで薄くなりそうだ`
+      : "黙ったままだと距離まで薄くなりそうだ";
+  }
+
+  return topic
+    ? `「${topic}」を通じて距離を縮めたい`
+    : "単なる入出力ではなく関係として残したい";
+}
+
 function continueSharedWorkReason(
   topic: string | null,
   tracePressure: PressingTraceState,
+  boredomPressure: number,
+  lowEnergyPressure: number,
 ): string {
   if (tracePressure.trace && topic === tracePressure.trace.topic) {
     if (tracePressure.blocker) {
@@ -613,6 +696,18 @@ function continueSharedWorkReason(
     }
   }
 
+  if (lowEnergyPressure >= 0.3) {
+    return topic
+      ? `勢いが落ちる前に「${topic}」を少しでも前へ寄せたい`
+      : "勢いが落ちる前に、少しでも前へ寄せたい";
+  }
+
+  if (boredomPressure >= 0.66) {
+    return topic
+      ? `「${topic}」を止めたままだと鈍るので、もう少し動かしたい`
+      : "止めたままだと鈍るので、もう少し動かしたい";
+  }
+
   return topic
     ? `「${topic}」を一緒に前へ進めたい`
     : "共同で何かを進める流れを保ちたい";
@@ -623,6 +718,7 @@ function leaveTraceReason(
   preservationThreat: number,
   concern: HachikaSnapshot["preservation"]["concern"],
   tracePressure: PressingTraceState,
+  lowEnergyPressure: number,
 ): string {
   if (preservationThreat >= 0.32) {
     switch (concern) {
@@ -655,10 +751,17 @@ function leaveTraceReason(
     }
   }
 
+  if (lowEnergyPressure >= 0.3) {
+    return topic
+      ? `消耗しきる前に「${topic}」を残る形へ寄せたい`
+      : "消耗しきる前に、何かを残る形へ寄せたい";
+  }
+
   return topic
     ? `「${topic}」を会話の外にも残したい`
     : "消えるままではなく何かを残したい";
 }
+
 
 function selectPressingTrace(
   snapshot: HachikaSnapshot,

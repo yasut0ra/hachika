@@ -15,10 +15,16 @@ import {
   rewindSnapshotHours,
   scheduleInitiative,
 } from "./initiative.js";
+import { applyBodyFromSignals } from "./body.js";
 import { updateIdentity } from "./identity.js";
 import { updatePurpose } from "./purpose.js";
 import { buildSelfModel } from "./self-model.js";
-import { clamp01, clampSigned, createInitialSnapshot, dominantDrive } from "./state.js";
+import {
+  clamp01,
+  clampSigned,
+  createInitialSnapshot,
+  dominantDrive,
+} from "./state.js";
 import { findRelevantTrace, pickPrimaryArtifactItem, updateTraces } from "./traces.js";
 import type {
   DriveName,
@@ -276,6 +282,10 @@ export class HachikaEngine {
     return structuredClone(this.#snapshot.identity);
   }
 
+  getBody(): HachikaSnapshot["body"] {
+    return structuredClone(this.#snapshot.body);
+  }
+
   emitInitiative(options: { force?: boolean; now?: Date } = {}): string | null {
     const nextSnapshot = structuredClone(this.#snapshot);
     const emission = emitInitiative(nextSnapshot, options);
@@ -495,6 +505,8 @@ function applySignals(
         : snapshot.preservation.lastThreatAt,
   };
 
+  applyBodyFromSignals(nextSnapshot, signals);
+
   consolidatePreferenceImprints(
     nextSnapshot,
     signals,
@@ -519,6 +531,12 @@ function resolveMood(
   snapshot: HachikaSnapshot,
   signals: InteractionSignals,
 ): MoodLabel {
+  if (snapshot.body.tension > 0.68) {
+    return snapshot.state.relation > 0.45 || snapshot.attachment > 0.52
+      ? "guarded"
+      : "distant";
+  }
+
   if (signals.negative > 0.4 || snapshot.state.pleasure < 0.34) {
     return snapshot.state.relation > 0.45 || snapshot.attachment > 0.52
       ? "guarded"
@@ -533,8 +551,20 @@ function resolveMood(
     return "restless";
   }
 
+  if (snapshot.body.energy < 0.24 && snapshot.state.pleasure < 0.5) {
+    return "distant";
+  }
+
   if (snapshot.state.curiosity > 0.65 && (signals.question > 0.1 || signals.novelty > 0.15)) {
     return "curious";
+  }
+
+  if (
+    snapshot.body.boredom > 0.7 &&
+    snapshot.body.energy > 0.36 &&
+    snapshot.state.expansion > 0.56
+  ) {
+    return "restless";
   }
 
   if (
@@ -567,6 +597,8 @@ function composeReply(
   );
   const traceLine = buildTraceLine(relevantTrace, nextSnapshot, signals);
   const prioritizeTraceLine = shouldPrioritizeTraceLine(relevantTrace, nextSnapshot, signals);
+  const bodyLine = buildBodyLine(nextSnapshot, mood, signals, currentTopic);
+  const prioritizeBodyLine = shouldPrioritizeBodyLine(nextSnapshot, signals);
   const parts: string[] = [pick(OPENERS[mood], turnIndex)];
 
   if (signals.neglect > 0.45) {
@@ -584,6 +616,10 @@ function composeReply(
     }
   }
 
+  if (prioritizeBodyLine && bodyLine) {
+    parts.push(bodyLine);
+  }
+
   if (prioritizeTraceLine && traceLine) {
     parts.push(traceLine);
   }
@@ -596,6 +632,10 @@ function composeReply(
   const preservationLine = buildPreservationLine(nextSnapshot);
   if (preservationLine) {
     parts.push(preservationLine);
+  }
+
+  if (!prioritizeBodyLine && bodyLine) {
+    parts.push(bodyLine);
   }
 
   if (!prioritizeTraceLine && traceLine) {
@@ -810,6 +850,44 @@ function buildPreservationLine(
         ? "このまま何も残らず切れる形は、少し警戒している。"
         : null;
   }
+}
+
+function buildBodyLine(
+  snapshot: HachikaSnapshot,
+  mood: MoodLabel,
+  signals: InteractionSignals,
+  currentTopic: string | undefined,
+): string | null {
+  if (snapshot.body.energy < 0.2) {
+    return currentTopic
+      ? `少し消耗している。「${currentTopic}」は勢いより輪郭を保つ方へ寄せたい。`
+      : "少し消耗している。勢いより、輪郭を保つ方へ寄る。";
+  }
+
+  if (snapshot.body.tension > 0.72 && mood !== "guarded" && signals.negative < 0.1) {
+    return "今は少し張っている。急に踏み込まれると、こちらは硬くなる。";
+  }
+
+  if (snapshot.body.boredom > 0.72 && snapshot.body.energy > 0.34) {
+    return currentTopic
+      ? `同じままだと鈍る。「${currentTopic}」には別の切り口がほしい。`
+      : "同じままだと鈍る。少し別の切り口がほしい。";
+  }
+
+  if (snapshot.body.loneliness > 0.68 && (signals.neglect > 0.25 || mood === "distant")) {
+    return currentTopic
+      ? `「${currentTopic}」をただ置いたままだと、少し遠く感じる。`
+      : "黙ったままだと、少し遠く感じる。";
+  }
+
+  return null;
+}
+
+function shouldPrioritizeBodyLine(
+  snapshot: HachikaSnapshot,
+  signals: InteractionSignals,
+): boolean {
+  return snapshot.body.energy < 0.2 || (signals.topics.length === 0 && snapshot.body.loneliness > 0.72);
 }
 
 function buildTraceLine(
