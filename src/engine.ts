@@ -18,6 +18,7 @@ import {
 import { applyBodyFromSignals } from "./body.js";
 import { updateIdentity } from "./identity.js";
 import { updatePurpose } from "./purpose.js";
+import type { ReplyGenerationContext, ReplyGenerationResult, ReplyGenerator } from "./reply-generator.js";
 import { buildSelfModel } from "./self-model.js";
 import {
   clamp01,
@@ -312,57 +313,185 @@ export class HachikaEngine {
   }
 
   respond(input: string): TurnResult {
-    const signals = analyzeInteraction(input, this.#snapshot);
-    const sentimentScore = scoreSentiment(signals);
-    const nextSnapshot = applySignals(this.#snapshot, signals, sentimentScore);
-    const mood = resolveMood(nextSnapshot, signals);
-    const dominant = dominantDrive(nextSnapshot.state);
-    const preliminarySelfModel = buildSelfModel(nextSnapshot);
-    updatePurpose(
-      nextSnapshot,
-      preliminarySelfModel,
-      signals,
-      nextSnapshot.lastInteractionAt ?? new Date().toISOString(),
-    );
-    let selfModel = buildSelfModel(nextSnapshot);
-    updateTraces(
-      nextSnapshot,
-      input,
-      signals,
-      selfModel,
-      nextSnapshot.lastInteractionAt ?? new Date().toISOString(),
-    );
-    updateIdentity(nextSnapshot, nextSnapshot.lastInteractionAt ?? new Date().toISOString());
-    selfModel = buildSelfModel(nextSnapshot);
-    scheduleInitiative(nextSnapshot, signals, selfModel);
-    updateIdentity(nextSnapshot, nextSnapshot.lastInteractionAt ?? new Date().toISOString());
-    selfModel = buildSelfModel(nextSnapshot);
+    const prepared = prepareTurn(this.#snapshot, input);
     const reply = composeReply(
-      this.#snapshot,
-      nextSnapshot,
-      mood,
-      dominant,
-      signals,
-      selfModel,
+      prepared.previousSnapshot,
+      prepared.nextSnapshot,
+      prepared.mood,
+      prepared.dominant,
+      prepared.signals,
+      prepared.selfModel,
     );
-    const sentiment = classifySentiment(sentimentScore);
 
-    remember(nextSnapshot, "user", input, signals.topics, sentiment);
-    remember(nextSnapshot, "hachika", reply, signals.topics, "neutral");
+    return this.#finalizeTurn(input, prepared, reply, {
+      source: "rule",
+      provider: null,
+      model: null,
+      fallbackUsed: false,
+      error: null,
+    });
+  }
 
-    this.#snapshot = nextSnapshot;
+  async respondAsync(
+    input: string,
+    options: { replyGenerator?: ReplyGenerator | null } = {},
+  ): Promise<TurnResult> {
+    const prepared = prepareTurn(this.#snapshot, input);
+    const fallbackReply = composeReply(
+      prepared.previousSnapshot,
+      prepared.nextSnapshot,
+      prepared.mood,
+      prepared.dominant,
+      prepared.signals,
+      prepared.selfModel,
+    );
+    const replyGenerator = options.replyGenerator ?? null;
+
+    if (!replyGenerator) {
+      return this.#finalizeTurn(input, prepared, fallbackReply, {
+        source: "rule",
+        provider: null,
+        model: null,
+        fallbackUsed: false,
+        error: null,
+      });
+    }
+
+    try {
+      const generated = await replyGenerator.generateReply(
+        buildReplyGenerationContext(input, prepared, fallbackReply),
+      );
+      const reply = normalizeReplyCandidate(generated?.reply) ?? fallbackReply;
+
+      return this.#finalizeTurn(input, prepared, reply, {
+        source: reply === fallbackReply ? "rule" : "llm",
+        provider: generated?.provider ?? replyGenerator.name,
+        model: generated?.model ?? null,
+        fallbackUsed: reply === fallbackReply,
+        error: reply === fallbackReply ? "empty_reply" : null,
+      });
+    } catch (error) {
+      return this.#finalizeTurn(input, prepared, fallbackReply, {
+        source: "rule",
+        provider: replyGenerator.name,
+        model: null,
+        fallbackUsed: true,
+        error: formatReplyGenerationError(error),
+      });
+    }
+  }
+
+  #finalizeTurn(
+    input: string,
+    prepared: PreparedTurn,
+    reply: string,
+    replyDebug: TurnResult["debug"]["reply"],
+  ): TurnResult {
+    const sentiment = classifySentiment(prepared.sentimentScore);
+
+    remember(prepared.nextSnapshot, "user", input, prepared.signals.topics, sentiment);
+    remember(prepared.nextSnapshot, "hachika", reply, prepared.signals.topics, "neutral");
+
+    this.#snapshot = prepared.nextSnapshot;
 
     return {
       reply,
-      snapshot: structuredClone(nextSnapshot),
+      snapshot: structuredClone(prepared.nextSnapshot),
       debug: {
-        dominantDrive: dominant,
-        mood,
-        signals,
-        selfModel,
+        dominantDrive: prepared.dominant,
+        mood: prepared.mood,
+        signals: prepared.signals,
+        selfModel: prepared.selfModel,
+        reply: replyDebug,
       },
     };
   }
+}
+
+interface PreparedTurn {
+  previousSnapshot: HachikaSnapshot;
+  nextSnapshot: HachikaSnapshot;
+  signals: InteractionSignals;
+  mood: MoodLabel;
+  dominant: DriveName;
+  selfModel: SelfModel;
+  sentimentScore: number;
+}
+
+function prepareTurn(
+  snapshot: HachikaSnapshot,
+  input: string,
+): PreparedTurn {
+  const previousSnapshot = structuredClone(snapshot);
+  const signals = analyzeInteraction(input, snapshot);
+  const sentimentScore = scoreSentiment(signals);
+  const nextSnapshot = applySignals(snapshot, signals, sentimentScore);
+  const mood = resolveMood(nextSnapshot, signals);
+  const dominant = dominantDrive(nextSnapshot.state);
+  const preliminarySelfModel = buildSelfModel(nextSnapshot);
+  updatePurpose(
+    nextSnapshot,
+    preliminarySelfModel,
+    signals,
+    nextSnapshot.lastInteractionAt ?? new Date().toISOString(),
+  );
+  let selfModel = buildSelfModel(nextSnapshot);
+  updateTraces(
+    nextSnapshot,
+    input,
+    signals,
+    selfModel,
+    nextSnapshot.lastInteractionAt ?? new Date().toISOString(),
+  );
+  updateIdentity(nextSnapshot, nextSnapshot.lastInteractionAt ?? new Date().toISOString());
+  selfModel = buildSelfModel(nextSnapshot);
+  scheduleInitiative(nextSnapshot, signals, selfModel);
+  updateIdentity(nextSnapshot, nextSnapshot.lastInteractionAt ?? new Date().toISOString());
+  selfModel = buildSelfModel(nextSnapshot);
+
+  return {
+    previousSnapshot,
+    nextSnapshot,
+    signals,
+    mood,
+    dominant,
+    selfModel,
+    sentimentScore,
+  };
+}
+
+function buildReplyGenerationContext(
+  input: string,
+  prepared: PreparedTurn,
+  fallbackReply: string,
+): ReplyGenerationContext {
+  return {
+    input,
+    previousSnapshot: prepared.previousSnapshot,
+    nextSnapshot: prepared.nextSnapshot,
+    mood: prepared.mood,
+    dominantDrive: prepared.dominant,
+    signals: prepared.signals,
+    selfModel: prepared.selfModel,
+    fallbackReply,
+  };
+}
+
+function normalizeReplyCandidate(reply: string | undefined): string | null {
+  if (!reply) {
+    return null;
+  }
+
+  const normalized = reply.replace(/\s+/g, " ").trim();
+  return normalized.length > 0 ? normalized : null;
+}
+
+function formatReplyGenerationError(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return "reply_generation_failed";
 }
 
 function analyzeInteraction(

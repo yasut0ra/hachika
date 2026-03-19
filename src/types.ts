@@ -278,5 +278,12 @@ export interface TurnResult {
     mood: MoodLabel;
     signals: InteractionSignals;
     selfModel: SelfModel;
+    reply: {
+      source: "rule" | "llm";
+      provider: string | null;
+      model: string | null;
+      fallbackUsed: boolean;
+      error: string | null;
+    };
   };
 }
