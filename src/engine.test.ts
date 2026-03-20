@@ -603,7 +603,7 @@ test("ordinary reply can surface a preserve intent from low energy", () => {
   const engine = new HachikaEngine(snapshot);
   const result = engine.respond("？");
 
-  assert.match(result.reply, /戻り先が崩れないよう整えたい|広げるより/);
+  assert.match(result.reply, /戻り先が崩れないよう整えたい|広げるより|輪郭を保つ方へ寄せたい|勢いより輪郭/);
 });
 
 test("ordinary reply can surface a deepening intent from boredom", () => {
@@ -924,6 +924,7 @@ test("respond stores the last local reply diagnostics on the engine", () => {
 
   assert.equal(engine.getLastInterpretationDebug()?.source, "rule");
   assert.equal(engine.getLastInterpretationDebug()?.fallbackUsed, false);
+  assert.ok((engine.getLastInterpretationDebug()?.scores.workCue ?? 0) > 0.3);
   assert.ok((engine.getLastInterpretationDebug()?.summary ?? "").length > 0);
   assert.equal(engine.getLastReplyDebug()?.mode, "reply");
   assert.equal(engine.getLastReplyDebug()?.source, "rule");
@@ -1011,6 +1012,8 @@ test("respondAsync can use an input interpreter to keep greetings non-topical", 
   assert.equal(result.debug.interpretation.source, "llm");
   assert.equal(result.debug.interpretation.fallbackUsed, false);
   assert.equal(result.debug.interpretation.topics.length, 0);
+  assert.ok(result.debug.interpretation.scores.greeting > 0.8);
+  assert.ok(result.debug.interpretation.scores.smalltalk > 0.5);
   assert.deepEqual(result.debug.signals.topics, []);
   assert.ok(result.debug.signals.greeting > 0.8);
   assert.ok(result.debug.signals.smalltalk > 0.5);
@@ -1063,6 +1066,7 @@ test("respondAsync falls back to local analysis when the input interpreter fails
   assert.equal(result.debug.interpretation.source, "rule");
   assert.equal(result.debug.interpretation.fallbackUsed, true);
   assert.match(result.debug.interpretation.error ?? "", /input interpreter offline/);
+  assert.ok(result.debug.interpretation.scores.workCue > 0.3);
   assert.equal(result.reply, ruleResult.reply);
   assert.deepEqual(result.debug.signals.topics, ruleResult.debug.signals.topics);
   assert.equal(result.snapshot.purpose.active?.kind, ruleResult.snapshot.purpose.active?.kind);

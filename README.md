@@ -281,7 +281,7 @@ cp .env.example .env
 - `/llm` 現在の reply generator / input interpreter と直近の `reply/proactive` diagnostics を表示
 - `/debug` では `pending initiative` に加えて、その時点の `pending plan` も表示する
   - 直近の通常応答と直近の能動発話の diagnostics / plan は別々に保持される
-  - 直近の `input interpretation` も `rule / llm / fallback / topics` 付きで確認できる
+  - 直近の `input interpretation` も `rule / llm / fallback / topics` に加えて、主要 score 付きで確認できる
 - `/idle <hours>` 指定時間だけ放置された状態をシミュレートする
 - `/state` 現在の drive 状態を表示
 - `/body` 現在の body 状態を表示

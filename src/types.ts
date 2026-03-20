@@ -296,7 +296,23 @@ export interface InterpretationDebug {
   error: string | null;
   localTopics: string[];
   topics: string[];
+  scores: InterpretationScoresDebug;
   summary: string;
+}
+
+export interface InterpretationScoresDebug {
+  greeting: number;
+  smalltalk: number;
+  repair: number;
+  selfInquiry: number;
+  workCue: number;
+  memoryCue: number;
+  expansionCue: number;
+  completion: number;
+  abandonment: number;
+  preservationThreat: number;
+  negative: number;
+  dismissal: number;
 }
 
 export interface GeneratedTextDebug {

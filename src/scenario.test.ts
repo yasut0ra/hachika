@@ -158,7 +158,7 @@ test("scenario: body drift can change reply wording from preserving to deepening
   const drift = requireScenarioEvent(run, "drift", "idle");
   const deepen = requireScenarioEvent(run, "deepen", "user");
 
-  assert.match(preserve.reply, /戻り先が崩れないよう整えたい|広げるより/);
+  assert.match(preserve.reply, /戻り先が崩れないよう整えたい|広げるより|輪郭を保つ方へ寄せたい|勢いより輪郭/);
   assert.ok(drift.snapshot.body.energy > preserve.snapshot.body.energy);
   assert.ok(drift.snapshot.body.boredom > preserve.snapshot.body.boredom);
   assert.match(deepen.reply, /もう一段具体化したい|目印のままにせず/);

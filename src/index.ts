@@ -665,8 +665,37 @@ function formatInterpretationDebug(
   const localTopics =
     debug.localTopics.length > 0 ? ` local:${debug.localTopics.join(",")}` : " local:none";
   const topics = debug.topics.length > 0 ? ` topics:${debug.topics.join(",")}` : " topics:none";
+  const scores = formatInterpretationScores(debug.scores);
 
-  return `${debug.source}${via}${model}${fallback}${error} ${debug.summary}${localTopics}${topics}`;
+  return `${debug.source}${via}${model}${fallback}${error} ${debug.summary}${scores}${localTopics}${topics}`;
+}
+
+function formatInterpretationScores(
+  scores: NonNullable<ReturnType<HachikaEngine["getLastInterpretationDebug"]>>["scores"],
+): string {
+  const ordered: Array<[string, number]> = [
+    ["greeting", scores.greeting],
+    ["smalltalk", scores.smalltalk],
+    ["repair", scores.repair],
+    ["self", scores.selfInquiry],
+    ["work", scores.workCue],
+    ["memory", scores.memoryCue],
+    ["expand", scores.expansionCue],
+    ["complete", scores.completion],
+    ["abandon", scores.abandonment],
+    ["preserve", scores.preservationThreat],
+    ["negative", scores.negative],
+    ["dismiss", scores.dismissal],
+  ];
+
+  const visible = ordered.filter(([, score]) => score >= 0.15).slice(0, 6);
+  if (visible.length === 0) {
+    return " scores:none";
+  }
+
+  return ` scores:${visible
+    .map(([label, score]) => `${label}:${score.toFixed(2)}`)
+    .join("/")}`;
 }
 
 function calculateNeglectLevelForDisplay(

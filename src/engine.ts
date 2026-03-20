@@ -851,6 +851,7 @@ function buildRuleInterpretationDebug(
     error: null,
     localTopics: [...signals.topics],
     topics: [...signals.topics],
+    scores: pickInterpretationScores(signals),
     summary: summarizeInterpretation(signals),
   };
 }
@@ -868,6 +869,7 @@ function buildInterpreterInterpretationDebug(
     error: null,
     localTopics: [...localSignals.topics],
     topics: [...mergedSignals.topics],
+    scores: pickInterpretationScores(mergedSignals),
     summary: summarizeInterpretation(mergedSignals),
   };
 }
@@ -885,7 +887,27 @@ function buildFallbackInterpretationDebug(
     error,
     localTopics: [...signals.topics],
     topics: [...signals.topics],
+    scores: pickInterpretationScores(signals),
     summary: summarizeInterpretation(signals),
+  };
+}
+
+function pickInterpretationScores(
+  signals: InteractionSignals,
+): InterpretationDebug["scores"] {
+  return {
+    greeting: signals.greeting,
+    smalltalk: signals.smalltalk,
+    repair: signals.repair,
+    selfInquiry: signals.selfInquiry,
+    workCue: signals.workCue,
+    memoryCue: signals.memoryCue,
+    expansionCue: signals.expansionCue,
+    completion: signals.completion,
+    abandonment: signals.abandonment,
+    preservationThreat: signals.preservationThreat,
+    negative: signals.negative,
+    dismissal: signals.dismissal,
   };
 }
 
