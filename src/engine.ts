@@ -851,6 +851,8 @@ function buildRuleInterpretationDebug(
     error: null,
     localTopics: [...signals.topics],
     topics: [...signals.topics],
+    adoptedTopics: [],
+    droppedTopics: [],
     scores: pickInterpretationScores(signals),
     summary: summarizeInterpretation(signals),
   };
@@ -869,6 +871,8 @@ function buildInterpreterInterpretationDebug(
     error: null,
     localTopics: [...localSignals.topics],
     topics: [...mergedSignals.topics],
+    adoptedTopics: diffTopics(mergedSignals.topics, localSignals.topics),
+    droppedTopics: diffTopics(localSignals.topics, mergedSignals.topics),
     scores: pickInterpretationScores(mergedSignals),
     summary: summarizeInterpretation(mergedSignals),
   };
@@ -887,9 +891,19 @@ function buildFallbackInterpretationDebug(
     error,
     localTopics: [...signals.topics],
     topics: [...signals.topics],
+    adoptedTopics: [],
+    droppedTopics: [],
     scores: pickInterpretationScores(signals),
     summary: summarizeInterpretation(signals),
   };
+}
+
+function diffTopics(
+  left: readonly string[],
+  right: readonly string[],
+): string[] {
+  const rightSet = new Set(right);
+  return left.filter((topic, index) => rightSet.has(topic) === false && left.indexOf(topic) === index);
 }
 
 function pickInterpretationScores(

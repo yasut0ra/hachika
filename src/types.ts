@@ -296,6 +296,8 @@ export interface InterpretationDebug {
   error: string | null;
   localTopics: string[];
   topics: string[];
+  adoptedTopics: string[];
+  droppedTopics: string[];
   scores: InterpretationScoresDebug;
   summary: string;
 }

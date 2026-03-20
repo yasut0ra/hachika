@@ -975,7 +975,7 @@ test("respondAsync can use an external reply generator while keeping local state
   assert.ok(result.snapshot.attachment > before.attachment);
 });
 
-test("respondAsync can use an input interpreter to keep greetings non-topical", async () => {
+test("respondAsync can use an input interpreter to keep greetings non-topical and record dropped local topics", async () => {
   const engine = new HachikaEngine(createInitialSnapshot());
 
   const inputInterpreter: InputInterpreter = {
@@ -1007,11 +1007,14 @@ test("respondAsync can use an input interpreter to keep greetings non-topical", 
     },
   };
 
-  const result = await engine.respondAsync("こんにちは", { inputInterpreter });
+  const result = await engine.respondAsync("設計", { inputInterpreter });
 
   assert.equal(result.debug.interpretation.source, "llm");
   assert.equal(result.debug.interpretation.fallbackUsed, false);
   assert.equal(result.debug.interpretation.topics.length, 0);
+  assert.ok(result.debug.interpretation.localTopics.includes("設計"));
+  assert.ok(result.debug.interpretation.droppedTopics.includes("設計"));
+  assert.deepEqual(result.debug.interpretation.adoptedTopics, []);
   assert.ok(result.debug.interpretation.scores.greeting > 0.8);
   assert.ok(result.debug.interpretation.scores.smalltalk > 0.5);
   assert.deepEqual(result.debug.signals.topics, []);

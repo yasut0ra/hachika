@@ -664,10 +664,14 @@ function formatInterpretationDebug(
   const error = debug.error ? ` error:${debug.error}` : "";
   const localTopics =
     debug.localTopics.length > 0 ? ` local:${debug.localTopics.join(",")}` : " local:none";
-  const topics = debug.topics.length > 0 ? ` topics:${debug.topics.join(",")}` : " topics:none";
+  const topics = debug.topics.length > 0 ? ` final:${debug.topics.join(",")}` : " final:none";
+  const adopted =
+    debug.adoptedTopics.length > 0 ? ` add:${debug.adoptedTopics.join(",")}` : " add:none";
+  const dropped =
+    debug.droppedTopics.length > 0 ? ` drop:${debug.droppedTopics.join(",")}` : " drop:none";
   const scores = formatInterpretationScores(debug.scores);
 
-  return `${debug.source}${via}${model}${fallback}${error} ${debug.summary}${scores}${localTopics}${topics}`;
+  return `${debug.source}${via}${model}${fallback}${error} ${debug.summary}${scores}${localTopics}${topics}${adopted}${dropped}`;
 }
 
 function formatInterpretationScores(
