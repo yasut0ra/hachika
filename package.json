@@ -7,7 +7,7 @@
     "dev": "tsx src/index.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
-    "test": "tsx --test src/**/*.test.ts"
+    "test": "tsx --test src/*.test.ts"
   },
   "devDependencies": {
     "@types/node": "^24.6.0",
