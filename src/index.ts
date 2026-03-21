@@ -13,7 +13,11 @@ import {
 } from "./memory.js";
 import { loadSnapshot, saveSnapshot } from "./persistence.js";
 import { createReplyGeneratorFromEnv, describeReplyGenerator } from "./reply-generator.js";
-import { formatResidentLoopStatus, loadResidentLoopStatusSync } from "./resident-monitor.js";
+import {
+  deriveResidentLoopHealth,
+  formatResidentLoopStatus,
+  loadResidentLoopStatusSync,
+} from "./resident-monitor.js";
 import {
   buildProactivePlan,
   createResponsePlannerFromEnv,
@@ -277,10 +281,18 @@ function printResidentLoop(): void {
     return;
   }
 
+  const health = deriveResidentLoopHealth(status);
   console.log(`resident loop: ${formatResidentLoopStatus(status)}`);
+  console.log(`health: ${health?.state ?? "none"}`);
   console.log(`pid: ${status.pid ?? "none"}`);
   console.log(`started: ${status.startedAt ?? "none"}`);
   console.log(`heartbeat: ${status.heartbeatAt ?? "none"}`);
+  console.log(
+    `heartbeat age: ${health?.heartbeatAgeMs !== null && health?.heartbeatAgeMs !== undefined ? formatDurationMs(health.heartbeatAgeMs) : "unknown"}`,
+  );
+  console.log(
+    `stale after: ${health?.staleAfterMs !== null && health?.staleAfterMs !== undefined ? formatDurationMs(health.staleAfterMs) : "none"}`,
+  );
   console.log(`last tick: ${status.lastTickAt ?? "none"}`);
   console.log(`last activity: ${status.lastActivityAt ?? "none"}`);
   console.log(`last proactive: ${status.lastProactiveAt ?? "none"}`);
@@ -933,4 +945,20 @@ function calculateNeglectLevelForDisplay(
   }
 
   return Math.min(1, Math.max(0, (hours - 6) / 48));
+}
+
+function formatDurationMs(ms: number): string {
+  if (ms < 1000) {
+    return `${ms}ms`;
+  }
+
+  if (ms < 60_000) {
+    return `${(ms / 1000).toFixed(1)}s`;
+  }
+
+  if (ms < 3_600_000) {
+    return `${(ms / 60_000).toFixed(1)}m`;
+  }
+
+  return `${(ms / 3_600_000).toFixed(1)}h`;
 }

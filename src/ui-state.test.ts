@@ -57,10 +57,16 @@ test("buildUiState includes resident loop status when a status file exists", () 
     "utf8",
   );
 
-  const ui = buildUiState(engine, artifactsDir, residentStatusPath);
+  const ui = buildUiState(
+    engine,
+    artifactsDir,
+    residentStatusPath,
+    new Date("2026-03-22T00:06:10.000Z"),
+  );
 
   assert.equal(ui.summary.residentLoop?.active, true);
   assert.equal(ui.summary.residentLoop?.pid, 4242);
+  assert.equal(ui.summary.residentLoopHealth?.state, "stale");
   assert.deepEqual(ui.summary.residentLoop?.lastActivities, [
     "idle_consolidation/continuity 仕様を温め直した",
   ]);

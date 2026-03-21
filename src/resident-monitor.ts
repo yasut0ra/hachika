@@ -20,6 +20,13 @@ export interface ResidentLoopStatus {
   stoppedAt: string | null;
 }
 
+export interface ResidentLoopHealth {
+  state: "active" | "stale" | "inactive";
+  stale: boolean;
+  heartbeatAgeMs: number | null;
+  staleAfterMs: number | null;
+}
+
 export interface ResidentLoopLock {
   path: string;
   pid: number;
@@ -128,12 +135,54 @@ export function formatResidentLoopStatus(
     return "none";
   }
 
-  const state = status.active ? "active" : "inactive";
+  const health = deriveResidentLoopHealth(status);
+  const state = health?.state ?? (status.active ? "active" : "inactive");
   const pid = status.pid !== null ? ` pid:${status.pid}` : "";
   const heartbeat = status.heartbeatAt ? ` heartbeat:${status.heartbeatAt}` : "";
   const proactive = status.lastProactiveAt ? ` proactive:${status.lastProactiveAt}` : "";
   const error = status.lastError ? ` error:${status.lastError}` : "";
   return `${state}${pid}${heartbeat}${proactive}${error}`;
+}
+
+export function deriveResidentLoopHealth(
+  status: ResidentLoopStatus | null,
+  now: Date = new Date(),
+): ResidentLoopHealth | null {
+  if (!status) {
+    return null;
+  }
+
+  if (!status.active) {
+    return {
+      state: "inactive",
+      stale: false,
+      heartbeatAgeMs: calculateHeartbeatAgeMs(status.heartbeatAt, now),
+      staleAfterMs: deriveResidentLoopStaleAfterMs(status),
+    };
+  }
+
+  const heartbeatAgeMs = calculateHeartbeatAgeMs(status.heartbeatAt, now);
+  const staleAfterMs = deriveResidentLoopStaleAfterMs(status);
+  const stale =
+    heartbeatAgeMs === null || (staleAfterMs !== null && heartbeatAgeMs > staleAfterMs);
+
+  return {
+    state: stale ? "stale" : "active",
+    stale,
+    heartbeatAgeMs,
+    staleAfterMs,
+  };
+}
+
+export function deriveResidentLoopStaleAfterMs(
+  status: ResidentLoopStatus | null,
+): number | null {
+  const intervalMs = status?.config?.intervalMs;
+  if (typeof intervalMs !== "number" || !Number.isFinite(intervalMs) || intervalMs <= 0) {
+    return 45_000;
+  }
+
+  return Math.max(Math.round(intervalMs * 3), 45_000);
 }
 
 async function readResidentLoopLock(
@@ -196,6 +245,22 @@ function parseResidentLoopStatus(raw: unknown): ResidentLoopStatus | null {
         : null,
     stoppedAt: typeof raw.stoppedAt === "string" ? raw.stoppedAt : null,
   };
+}
+
+function calculateHeartbeatAgeMs(
+  heartbeatAt: string | null,
+  now: Date,
+): number | null {
+  if (!heartbeatAt) {
+    return null;
+  }
+
+  const heartbeatMs = Date.parse(heartbeatAt);
+  if (Number.isNaN(heartbeatMs)) {
+    return null;
+  }
+
+  return Math.max(0, now.getTime() - heartbeatMs);
 }
 
 function isProcessAlive(pid: number): boolean {

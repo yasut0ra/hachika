@@ -329,7 +329,7 @@ cp .env.example .env
 - `/help` コマンド一覧を表示
 - `/proactive` 能動発話を強制的に出す
 - `/llm` 現在の reply generator / input interpreter / response planner / trace extractor と直近の `reply/proactive/trace` diagnostics を表示
-- `/loop` resident loop の `heartbeat / last tick / last activity / last proactive / error / recent activity` を表示
+- `/loop` resident loop の `heartbeat / stale 判定 / last tick / last activity / last proactive / error / recent activity` を表示
 - `/debug` では `pending initiative` に加えて、その時点の `pending plan` も表示する
   - 直近の通常応答と直近の能動発話の diagnostics / plan は別々に保持される
   - 直近の `input interpretation` も `rule / llm / fallback / topics` に加えて、主要 score と `local -> final` の topic 差分付きで確認できる

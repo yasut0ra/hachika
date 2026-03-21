@@ -6,6 +6,7 @@ import test from "node:test";
 
 import {
   acquireResidentLoopLock,
+  deriveResidentLoopHealth,
   formatResidentLoopStatus,
   loadResidentLoopStatusSync,
   releaseResidentLoopLock,
@@ -55,4 +56,59 @@ test("loadResidentLoopStatusSync reads a saved status and formats it", async () 
   assert.equal(status?.active, true);
   assert.equal(status?.pid, 4321);
   assert.match(formatResidentLoopStatus(status), /active pid:4321/);
+});
+
+test("deriveResidentLoopHealth marks an active loop stale after the heartbeat threshold", () => {
+  const health = deriveResidentLoopHealth(
+    {
+      active: true,
+      pid: 4321,
+      startedAt: "2026-03-22T00:00:00.000Z",
+      heartbeatAt: "2026-03-22T00:00:00.000Z",
+      lastTickAt: "2026-03-22T00:00:00.000Z",
+      lastActivityAt: null,
+      lastProactiveAt: null,
+      lastError: null,
+      lastActivities: [],
+      reply: "openai",
+      config: {
+        intervalMs: 5_000,
+        idleHoursPerTick: 0.5,
+      },
+      stoppedAt: null,
+    },
+    new Date("2026-03-22T00:01:10.000Z"),
+  );
+
+  assert.equal(health?.state, "stale");
+  assert.equal(health?.stale, true);
+  assert.equal(health?.staleAfterMs, 45_000);
+  assert.equal(health?.heartbeatAgeMs, 70_000);
+});
+
+test("deriveResidentLoopHealth keeps an inactive loop non-stale", () => {
+  const health = deriveResidentLoopHealth(
+    {
+      active: false,
+      pid: 4321,
+      startedAt: "2026-03-22T00:00:00.000Z",
+      heartbeatAt: "2026-03-22T00:00:00.000Z",
+      lastTickAt: "2026-03-22T00:00:00.000Z",
+      lastActivityAt: null,
+      lastProactiveAt: null,
+      lastError: "stopped:SIGINT",
+      lastActivities: [],
+      reply: "openai",
+      config: {
+        intervalMs: 5_000,
+        idleHoursPerTick: 0.5,
+      },
+      stoppedAt: "2026-03-22T00:00:01.000Z",
+    },
+    new Date("2026-03-22T00:05:00.000Z"),
+  );
+
+  assert.equal(health?.state, "inactive");
+  assert.equal(health?.stale, false);
+  assert.equal(health?.heartbeatAgeMs, 300_000);
 });
