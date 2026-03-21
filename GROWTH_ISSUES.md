@@ -199,7 +199,8 @@
 ### ステータス
 - 部分完了
 - scenario harness と長めの回帰はある
-- 専用 metrics doc と growth comparison の標準手順はまだない
+- `docs/growth-metrics.md` と metrics helper は追加済み
+- まだ足りないのは canonical scenario の拡張と、Issue 1-3 の回帰判定をもっと明示的に結びつけること
 
 ### 背景
 - 成長や生物性の改善は、体感だけで進めるとすぐに評価不能になる。
@@ -225,9 +226,9 @@
 - identity drift visibility
 
 ### 次にやる部分
-- `docs/growth-metrics.md` のような専用 doc を追加する
 - 既存 scenario の中から growth 比較に使う canonical scenario を 4-6 本選ぶ
 - wording ではなく snapshot / debug payload ベースの assertion を定義する
+- 必要なら metrics を scenario test 出力へ軽く載せられるようにする
 
 ### 実装メモ
 - まずは README ではなく専用 doc に置く

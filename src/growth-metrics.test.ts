@@ -1,0 +1,176 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import {
+  calculateArchiveReopenRate,
+  calculateIdentityDriftVisibility,
+  calculateStateSaturationRatio,
+  calculateStressRecoveryLag,
+  summarizeGrowthMetrics,
+} from "./growth-metrics.js";
+import { runScenario } from "./scenario-harness.js";
+import { createInitialSnapshot } from "./state.js";
+import type { HachikaSnapshot } from "./types.js";
+
+test("calculateStateSaturationRatio counts extreme drive/body/attachment values", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.state.continuity = 1;
+  snapshot.state.pleasure = 0;
+  snapshot.body.energy = 0.99;
+  snapshot.body.boredom = 0.01;
+  snapshot.attachment = 0.97;
+
+  assert.equal(calculateStateSaturationRatio(snapshot), 0.5);
+});
+
+test("growth metrics surface identity drift across a multi-turn work scenario", () => {
+  const run = runScenario([
+    {
+      kind: "user",
+      label: "start",
+      input: "設計を一緒に進めて、記録として残したい。",
+    },
+    {
+      kind: "user",
+      label: "align",
+      input: "その設計の責務を切り分けて、もう少し前に進めよう。",
+    },
+    {
+      kind: "user",
+      label: "complete",
+      input: "その設計はまとまった。記録として保存した。",
+    },
+  ]);
+
+  const metrics = summarizeGrowthMetrics(run);
+
+  assert.ok(metrics.motiveDiversity >= 1);
+  assert.ok(metrics.identityDriftVisibility > 0);
+  assert.ok(metrics.averageStateSaturationRatio < 1);
+});
+
+test("growth metrics detect archive reopen behavior", () => {
+  const run = runScenario(
+    [
+      {
+        kind: "user",
+        label: "nudge",
+        input: "？",
+      },
+      {
+        kind: "proactive",
+        label: "reopen",
+        force: true,
+      },
+    ],
+    createArchivedMetricSnapshot(),
+  );
+
+  assert.ok(calculateArchiveReopenRate(run) > 0);
+});
+
+test("growth metrics can estimate stress recovery lag from scenario snapshots", () => {
+  const run = runScenario([
+    {
+      kind: "user",
+      label: "hurt",
+      input: "最悪だ。消えて。",
+    },
+    {
+      kind: "user",
+      label: "calm-1",
+      input: "こんにちは",
+    },
+    {
+      kind: "user",
+      label: "calm-2",
+      input: "こんにちは",
+    },
+    {
+      kind: "user",
+      label: "calm-3",
+      input: "こんにちは",
+    },
+    {
+      kind: "user",
+      label: "calm-4",
+      input: "こんにちは",
+    },
+    {
+      kind: "user",
+      label: "calm-5",
+      input: "こんにちは",
+    },
+    {
+      kind: "user",
+      label: "calm-6",
+      input: "こんにちは",
+    },
+    {
+      kind: "user",
+      label: "calm-7",
+      input: "こんにちは",
+    },
+    {
+      kind: "user",
+      label: "calm-8",
+      input: "こんにちは",
+    },
+  ]);
+
+  const lag = calculateStressRecoveryLag(run);
+
+  assert.ok(lag !== null);
+  assert.ok(lag > 0);
+});
+
+function createArchivedMetricSnapshot(): HachikaSnapshot {
+  const snapshot = createInitialSnapshot();
+  snapshot.body.energy = 0.61;
+  snapshot.body.boredom = 0.86;
+  snapshot.identity.anchors = ["設計"];
+  snapshot.traces.設計 = {
+    topic: "設計",
+    kind: "decision",
+    status: "resolved",
+    lastAction: "resolved",
+    summary: "「設計」は決定として残っている。",
+    sourceMotive: "leave_trace",
+    artifact: {
+      memo: ["設計を残す"],
+      fragments: ["API を分ける"],
+      decisions: ["API を分ける"],
+      nextSteps: [],
+    },
+    work: {
+      focus: "API を分ける",
+      confidence: 0.91,
+      blockers: [],
+      staleAt: null,
+    },
+    lifecycle: {
+      phase: "archived",
+      archivedAt: "2026-03-19T01:30:00.000Z",
+      reopenedAt: null,
+      reopenCount: 0,
+    },
+    salience: 0.84,
+    mentions: 4,
+    createdAt: "2026-03-19T00:00:00.000Z",
+    lastUpdatedAt: "2026-03-19T01:30:00.000Z",
+  };
+  snapshot.purpose.lastResolved = {
+    kind: "leave_trace",
+    topic: "設計",
+    summary: "設計を決まった形として残したい。",
+    confidence: 0.88,
+    progress: 1,
+    createdAt: "2026-03-19T00:00:00.000Z",
+    lastUpdatedAt: "2026-03-19T01:30:00.000Z",
+    turnsActive: 3,
+    outcome: "fulfilled",
+    resolution: "設計はひとまず保存された。",
+    resolvedAt: "2026-03-19T01:30:00.000Z",
+  };
+  return snapshot;
+}
