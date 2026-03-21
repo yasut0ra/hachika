@@ -1906,6 +1906,7 @@ test("respondAsync falls back to local analysis when the input interpreter fails
 
 test("respondAsync can use a trace extractor to shape concrete trace work", async () => {
   const engine = new HachikaEngine(createInitialSnapshot());
+  let capturedContext: ReplyGenerationContext | null = null;
 
   const traceExtractor: TraceExtractor = {
     name: "test-trace",
@@ -1927,13 +1928,35 @@ test("respondAsync can use a trace extractor to shape concrete trace work", asyn
     },
   };
 
+  const replyGenerator: ReplyGenerator = {
+    name: "test-llm",
+    async generateReply(context) {
+      capturedContext = context;
+      return {
+        reply: "仕様の境界なら、まず責務の切り分けから触れたい。",
+        provider: "test-llm",
+        model: "stub",
+      };
+    },
+  };
+
   const result = await engine.respondAsync("仕様の境界が曖昧で、責務がまだ決まっていない。", {
     traceExtractor,
+    replyGenerator,
   });
 
+  if (capturedContext === null) {
+    throw new Error("reply generator did not receive trace-shaped context");
+  }
+
+  const receivedContext = capturedContext as ReplyGenerationContext;
   assert.equal(result.debug.traceExtraction.source, "llm");
   assert.equal(result.debug.traceExtraction.provider, "test-trace");
   assert.equal(result.debug.traceExtraction.kindHint, "spec_fragment");
+  assert.ok(result.debug.traceExtraction.topics.includes("仕様の境界"));
+  assert.equal(receivedContext.responsePlan.focusTopic, "仕様の境界");
+  assert.equal(receivedContext.replySelection.currentTopic, "仕様の境界");
+  assert.equal(receivedContext.signals.topics[0], "仕様の境界");
   assert.ok(result.debug.traceExtraction.blockers.includes("責務が未定"));
   assert.ok(result.snapshot.traces["仕様の境界"] !== undefined);
   assert.ok(result.snapshot.traces["仕様の境界"]?.work.blockers.includes("責務が未定"));

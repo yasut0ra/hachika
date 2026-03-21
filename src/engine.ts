@@ -596,7 +596,7 @@ export class HachikaEngine {
       prepared.nextSnapshot,
       prepared.mood,
       prepared.dominant,
-      prepared.signals,
+      prepared.responseSignals,
       prepared.selfModel,
       prepared.responsePlan,
       prepared.replySelection,
@@ -641,7 +641,7 @@ export class HachikaEngine {
       prepared.nextSnapshot,
       prepared.mood,
       prepared.dominant,
-      prepared.signals,
+      prepared.responseSignals,
       prepared.selfModel,
       prepared.responsePlan,
       prepared.replySelection,
@@ -746,6 +746,7 @@ interface PreparedTurn {
   previousSnapshot: HachikaSnapshot;
   nextSnapshot: HachikaSnapshot;
   signals: InteractionSignals;
+  responseSignals: InteractionSignals;
   interpretationDebug: InterpretationDebug;
   traceExtraction: StructuredTraceExtraction | null;
   traceExtractionDebug: TraceExtractionDebug;
@@ -854,19 +855,21 @@ function prepareTurnFromSignals(
   scheduleInitiative(nextSnapshot, signals, selfModel);
   updateIdentity(nextSnapshot, nextSnapshot.lastInteractionAt ?? new Date().toISOString());
   selfModel = buildSelfModel(nextSnapshot);
+  const responseSignals = deriveResponseSignals(signals, traceExtraction);
   const responsePlan = buildResponsePlan(
     nextSnapshot,
     mood,
     dominant,
-    signals,
+    responseSignals,
     selfModel,
   );
-  const replySelection = resolveReplySelection(nextSnapshot, signals, responsePlan);
+  const replySelection = resolveReplySelection(nextSnapshot, responseSignals, responsePlan);
 
   return {
     previousSnapshot,
     nextSnapshot,
     signals,
+    responseSignals,
     interpretationDebug,
     traceExtraction,
     traceExtractionDebug,
@@ -897,7 +900,7 @@ async function applyResponsePlanner(
     nextSnapshot: prepared.nextSnapshot,
     mood: prepared.mood,
     dominantDrive: prepared.dominant,
-    signals: prepared.signals,
+    signals: prepared.responseSignals,
     selfModel: prepared.selfModel,
     rulePlan: prepared.responsePlan,
   };
@@ -931,7 +934,7 @@ async function applyResponsePlanner(
       },
       replySelection: resolveReplySelection(
         prepared.nextSnapshot,
-        prepared.signals,
+        prepared.responseSignals,
         responsePlan,
       ),
     };
@@ -960,7 +963,7 @@ function buildReplyGenerationContext(
     nextSnapshot: prepared.nextSnapshot,
     mood: prepared.mood,
     dominantDrive: prepared.dominant,
-    signals: prepared.signals,
+    signals: prepared.responseSignals,
     selfModel: prepared.selfModel,
     responsePlan: prepared.responsePlan,
     replySelection: prepared.replySelection.debug,
@@ -1380,6 +1383,49 @@ function summarizeTraceExtractionDebug(
   }
 
   return tags.length > 0 ? tags.join("/") : "none";
+}
+
+function deriveResponseSignals(
+  signals: InteractionSignals,
+  traceExtraction: StructuredTraceExtraction | null,
+): InteractionSignals {
+  const extractedTopics = traceExtraction?.topics ?? [];
+
+  if (extractedTopics.length === 0) {
+    return signals;
+  }
+
+  const socialTurn =
+    signals.negative < 0.18 &&
+    signals.dismissal < 0.18 &&
+    signals.workCue < 0.35 &&
+    Math.max(signals.greeting, signals.smalltalk, signals.repair, signals.selfInquiry) >= 0.38;
+  const hasConcreteTraceCue =
+    traceExtraction !== null &&
+    (
+      traceExtraction.blockers.length > 0 ||
+      traceExtraction.fragments.length > 0 ||
+      traceExtraction.decisions.length > 0 ||
+      traceExtraction.nextSteps.length > 0 ||
+      traceExtraction.memo.length > 0 ||
+      traceExtraction.completion > 0.12 ||
+      signals.workCue > 0.28 ||
+      signals.memoryCue > 0.12 ||
+      signals.expansionCue > 0.14
+    );
+
+  if (socialTurn || !hasConcreteTraceCue) {
+    return signals;
+  }
+
+  return {
+    ...signals,
+    topics: uniqueTopics([...extractedTopics, ...signals.topics]).slice(0, 4),
+  };
+}
+
+function uniqueTopics(topics: string[]): string[] {
+  return Array.from(new Set(topics.filter((topic) => topic.length > 0)));
 }
 
 function analyzeInteraction(
