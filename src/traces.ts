@@ -1386,7 +1386,7 @@ function splitTraceClauses(input: string): string[] {
   ).slice(0, 8);
 }
 
-function isInformativeTraceClause(clause: string, topic: string): boolean {
+export function isInformativeTraceClause(clause: string, topic: string): boolean {
   const normalized = clause.normalize("NFKC").trim().toLowerCase();
   const containsTopic = clause.includes(topic);
   const hasStructuredCue =

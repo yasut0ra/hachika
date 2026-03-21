@@ -264,6 +264,7 @@ Hachika は、単に有用なだけでなく、
   - 直近の生成が `reply` か `proactive` か、`llm` か `rule` か、どの provider / model を使ったか、fallback したか、どの `plan` で出したかも CLI から確認できる
 - 内部状態に応じて応答のトーンと内容を変化させる
 - `data/hachika-state.json` に状態を保存し、セッションをまたいで継続性を残す
+  - snapshot の load/save 時には低情報 topic、汚れた trace artifact、弱い focus / blocker を自動で正規化し、古い会話ログ由来のノイズが次回起動まで残り続けにくくしている
 
 デフォルトでは reply は rule-based ですが、環境変数を設定すれば wording だけ LLM に任せられます。  
 state 更新と内面ロジックはローカル実装のままです。

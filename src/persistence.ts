@@ -1,7 +1,9 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
+import { extractTopics, isMeaningfulTopic } from "./memory.js";
 import { clamp01, clampSigned, createInitialSnapshot } from "./state.js";
+import { isInformativeTraceClause } from "./traces.js";
 import type {
   ActivePurpose,
   BoundaryImprint,
@@ -30,7 +32,7 @@ import type {
 export async function loadSnapshot(filePath: string): Promise<HachikaSnapshot> {
   try {
     const raw = await readFile(filePath, "utf8");
-    return hydrateSnapshot(JSON.parse(raw));
+    return sanitizeSnapshot(hydrateSnapshot(JSON.parse(raw)));
   } catch {
     return createInitialSnapshot();
   }
@@ -40,9 +42,15 @@ export async function saveSnapshot(
   filePath: string,
   snapshot: HachikaSnapshot,
 ): Promise<void> {
+  sanitizeSnapshot(snapshot);
   await mkdir(dirname(filePath), { recursive: true });
   await writeFile(filePath, `${JSON.stringify(snapshot, null, 2)}\n`, "utf8");
 }
+
+const LOW_SIGNAL_ARTIFACT_PATTERNS = [
+  /^次は[、。!！?？\s]*$/u,
+  /(?:納得|深い話でもする|いい始まり方|ちゃんと芯は持てそう|そうなんだ|うれしい|よかった|頑張れ|お疲れ)/u,
+] as const;
 
 function hydrateSnapshot(raw: unknown): HachikaSnapshot {
   const initial = createInitialSnapshot();
@@ -76,6 +84,27 @@ function hydrateSnapshot(raw: unknown): HachikaSnapshot {
         ? Math.max(0, Math.round(raw.conversationCount))
         : 0,
   };
+}
+
+export function sanitizeSnapshot(snapshot: HachikaSnapshot): HachikaSnapshot {
+  snapshot.preferences = sanitizeNumberRecord(snapshot.preferences, clampSigned);
+  snapshot.topicCounts = sanitizeNumberRecord(snapshot.topicCounts, (value) =>
+    Math.max(0, Math.round(value)),
+  );
+  snapshot.memories = snapshot.memories
+    .map((memory) => ({
+      ...memory,
+      topics: unique(memory.topics.filter((topic) => isMeaningfulTopic(topic))).slice(0, 6),
+    }))
+    .slice(-24);
+  snapshot.preferenceImprints = sanitizePreferenceImprints(snapshot.preferenceImprints);
+  snapshot.boundaryImprints = sanitizeBoundaryImprints(snapshot.boundaryImprints);
+  snapshot.identity = sanitizeIdentity(snapshot.identity);
+  snapshot.traces = sanitizeTraces(snapshot.traces);
+  snapshot.purpose = sanitizePurpose(snapshot.purpose);
+  snapshot.initiative = sanitizeInitiative(snapshot.initiative);
+
+  return snapshot;
 }
 
 function hydrateState(raw: unknown): DriveState {
@@ -721,6 +750,323 @@ function hydratePendingInitiative(raw: unknown): PendingInitiative | null {
         ? Math.max(0, raw.readyAfterHours)
         : 6,
   };
+}
+
+function sanitizeNumberRecord(
+  record: Record<string, number>,
+  normalize: (value: number) => number,
+): Record<string, number> {
+  return Object.fromEntries(
+    Object.entries(record)
+      .filter(([topic]) => isMeaningfulTopic(topic))
+      .map(([topic, value]) => [topic, normalize(value)]),
+  );
+}
+
+function sanitizePreferenceImprints(
+  record: Record<string, PreferenceImprint>,
+): Record<string, PreferenceImprint> {
+  const result: Record<string, PreferenceImprint> = {};
+
+  for (const [topic, imprint] of Object.entries(record)) {
+    if (!isMeaningfulTopic(topic)) {
+      continue;
+    }
+
+    result[topic] = {
+      ...imprint,
+      topic,
+      salience: clamp01(imprint.salience),
+      affinity: clampSigned(imprint.affinity),
+      mentions: Math.max(1, Math.round(imprint.mentions)),
+    };
+  }
+
+  return result;
+}
+
+function sanitizeBoundaryImprints(
+  record: Record<string, BoundaryImprint>,
+): Record<string, BoundaryImprint> {
+  const result: Record<string, BoundaryImprint> = {};
+
+  for (const imprint of Object.values(record)) {
+    const topic = imprint.topic && isMeaningfulTopic(imprint.topic) ? imprint.topic : null;
+    const key = topic ? `${imprint.kind}:${topic}` : imprint.kind;
+
+    result[key] = {
+      ...imprint,
+      topic,
+      salience: clamp01(imprint.salience),
+      intensity: clamp01(imprint.intensity),
+      violations: Math.max(1, Math.round(imprint.violations)),
+    };
+  }
+
+  return result;
+}
+
+function sanitizeIdentity(identity: IdentityState): IdentityState {
+  return {
+    ...identity,
+    anchors: unique(identity.anchors.filter((anchor) => isMeaningfulTopic(anchor))).slice(0, 4),
+  };
+}
+
+function sanitizePurpose(purpose: PurposeState): PurposeState {
+  return {
+    ...purpose,
+    active: purpose.active ? sanitizeActivePurpose(purpose.active) : null,
+    lastResolved: purpose.lastResolved ? sanitizeResolvedPurpose(purpose.lastResolved) : null,
+  };
+}
+
+function sanitizeInitiative(initiative: InitiativeState): InitiativeState {
+  if (!initiative.pending) {
+    return initiative;
+  }
+
+  return {
+    ...initiative,
+    pending: {
+      ...initiative.pending,
+      topic:
+        initiative.pending.topic && isMeaningfulTopic(initiative.pending.topic)
+          ? initiative.pending.topic
+          : null,
+      blocker: sanitizeLooseText(initiative.pending.blocker),
+    },
+  };
+}
+
+function sanitizeActivePurpose(active: ActivePurpose): ActivePurpose {
+  return {
+    ...active,
+    topic: active.topic && isMeaningfulTopic(active.topic) ? active.topic : null,
+  };
+}
+
+function sanitizeResolvedPurpose(resolved: ResolvedPurpose): ResolvedPurpose {
+  return {
+    ...sanitizeActivePurpose(resolved),
+    outcome: resolved.outcome,
+    resolution: resolved.resolution,
+    resolvedAt: resolved.resolvedAt,
+  };
+}
+
+function sanitizeTraces(record: Record<string, TraceEntry>): Record<string, TraceEntry> {
+  const result: Record<string, TraceEntry> = {};
+
+  for (const [topic, trace] of Object.entries(record)) {
+    if (!isMeaningfulTopic(topic)) {
+      continue;
+    }
+
+    const artifact = sanitizeTraceArtifact(trace.artifact, topic, trace.kind);
+    const work = sanitizeTraceWork(trace.work, topic, trace.kind, artifact);
+    const status = sanitizeTraceStatus(trace.status, trace.kind, artifact, work);
+
+    result[topic] = {
+      ...trace,
+      topic,
+      status,
+      summary: buildSanitizedTraceSummary(topic, trace.kind, artifact),
+      artifact,
+      work,
+      lifecycle: hydrateTraceLifecycle(trace.lifecycle, {
+        status,
+        artifact,
+        work,
+      }),
+    };
+  }
+
+  return result;
+}
+
+function sanitizeTraceArtifact(
+  artifact: TraceArtifact,
+  topic: string,
+  kind: TraceEntry["kind"],
+): TraceArtifact {
+  const fallback = inferLegacyTraceArtifact(topic, kind);
+  const memo = sanitizeArtifactItems(artifact.memo, topic, "memo");
+  const fragments = sanitizeArtifactItems(artifact.fragments, topic, "fragments");
+  const decisions = sanitizeArtifactItems(artifact.decisions, topic, "decisions");
+  const nextSteps = sanitizeArtifactItems(artifact.nextSteps, topic, "nextSteps");
+
+  return {
+    memo: memo.length > 0 ? memo : kind === "note" ? fallback.memo : [],
+    fragments: fragments.length > 0 ? fragments : kind === "spec_fragment" ? fallback.fragments : [],
+    decisions: decisions.length > 0 ? decisions : kind === "decision" ? fallback.decisions : [],
+    nextSteps:
+      nextSteps.length > 0 ? nextSteps : kind === "continuity_marker" ? fallback.nextSteps : [],
+  };
+}
+
+function sanitizeTraceWork(
+  work: TraceWorkState,
+  topic: string,
+  kind: TraceEntry["kind"],
+  artifact: TraceArtifact,
+): TraceWorkState {
+  const fallback = inferLegacyTraceWork(topic, kind);
+  const focus =
+    isUsefulArtifactText(work.focus, topic, "focus")
+      ? (work.focus ?? "").trim()
+      : selectArtifactFocus(topic, kind, artifact) ?? fallback.focus;
+  const blockers = sanitizeArtifactItems(work.blockers, topic, "blockers");
+
+  return {
+    focus,
+    confidence: clamp01(work.confidence),
+    blockers,
+    staleAt: blockers.length === 0 && kind === "decision" ? null : work.staleAt,
+  };
+}
+
+function sanitizeTraceStatus(
+  status: TraceStatus,
+  kind: TraceEntry["kind"],
+  artifact: TraceArtifact,
+  work: TraceWorkState,
+): TraceStatus {
+  if (kind === "decision" && artifact.nextSteps.length === 0 && work.blockers.length === 0) {
+    return "resolved";
+  }
+
+  if (kind === "note") {
+    return "forming";
+  }
+
+  return status === "resolved" ? "active" : status;
+}
+
+function buildSanitizedTraceSummary(
+  topic: string,
+  kind: TraceEntry["kind"],
+  artifact: TraceArtifact,
+): string {
+  const detail =
+    artifact.decisions[0] ??
+    artifact.fragments[0] ??
+    artifact.nextSteps[0] ??
+    artifact.memo[0] ??
+    null;
+
+  if (kind === "decision") {
+    return detail
+      ? `「${topic}」は${formatArtifactQuote(detail)}という決定として残す。`
+      : `「${topic}」はひとまず決まった形として残す。`;
+  }
+
+  if (kind === "spec_fragment") {
+    return detail
+      ? `「${topic}」は${formatArtifactQuote(detail)}という前進用の断片として残す。`
+      : `「${topic}」は前へ進める断片として残す。`;
+  }
+
+  if (kind === "continuity_marker") {
+    return detail
+      ? `「${topic}」は${formatArtifactQuote(detail)}という続きの目印として残す。`
+      : `「${topic}」は続きに戻るための目印として残す。`;
+  }
+
+  return detail
+    ? `「${topic}」は${formatArtifactQuote(detail)}というメモとして残す。`
+    : `「${topic}」はひとまずメモとして残す。`;
+}
+
+function formatArtifactQuote(value: string): string {
+  return `「${value}」`;
+}
+
+function selectArtifactFocus(
+  topic: string,
+  kind: TraceEntry["kind"],
+  artifact: TraceArtifact,
+): string | null {
+  if (kind === "decision") {
+    return artifact.decisions[0] ?? artifact.fragments[0] ?? inferLegacyTraceWork(topic, kind).focus;
+  }
+
+  if (kind === "spec_fragment") {
+    return artifact.nextSteps[0] ?? artifact.fragments[0] ?? inferLegacyTraceWork(topic, kind).focus;
+  }
+
+  if (kind === "continuity_marker") {
+    return artifact.nextSteps[0] ?? inferLegacyTraceWork(topic, kind).focus;
+  }
+
+  return artifact.memo[0] ?? inferLegacyTraceWork(topic, kind).focus;
+}
+
+function sanitizeArtifactItems(
+  items: string[],
+  topic: string,
+  section: "memo" | "fragments" | "decisions" | "nextSteps" | "blockers" | "focus",
+): string[] {
+  return unique(
+    items
+      .map((item) => item.trim())
+      .filter((item) => isUsefulArtifactText(item, topic, section)),
+  ).slice(0, 4);
+}
+
+function isUsefulArtifactText(
+  text: string | null,
+  topic: string,
+  section: "memo" | "fragments" | "decisions" | "nextSteps" | "blockers" | "focus",
+): boolean {
+  if (typeof text !== "string") {
+    return false;
+  }
+
+  const normalized = text.normalize("NFKC").trim().toLowerCase();
+
+  if (!normalized) {
+    return false;
+  }
+
+  if (LOW_SIGNAL_ARTIFACT_PATTERNS.some((pattern) => pattern.test(normalized))) {
+    return false;
+  }
+
+  if (
+    section === "decisions" &&
+    /(?:だね|しよう|しようか|いいかな|気がする|かもしれない)$/.test(normalized) &&
+    !normalized.includes(topic)
+  ) {
+    return false;
+  }
+
+  if (!isInformativeTraceClause(text, topic)) {
+    return false;
+  }
+
+  if (text.includes(topic)) {
+    return true;
+  }
+
+  return extractTopics(text).length > 0 || section === "focus" || section === "nextSteps";
+}
+
+function sanitizeLooseText(value: string | null): string | null {
+  if (!value) {
+    return null;
+  }
+
+  const normalized = value.normalize("NFKC").trim();
+  if (!normalized) {
+    return null;
+  }
+
+  return extractTopics(normalized).length > 0 || normalized.length >= 8 ? normalized : null;
+}
+
+function unique(values: string[]): string[] {
+  return values.filter((value, index) => values.indexOf(value) === index);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
