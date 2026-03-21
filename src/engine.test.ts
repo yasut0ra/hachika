@@ -366,10 +366,15 @@ test("idle consolidation can compress long-tail memories while preserving reinfo
   const engine = new HachikaEngine(snapshot);
   engine.rewindIdleHours(24);
   const after = engine.getSnapshot();
+  const consolidated = after.memories.find(
+    (memory) => memory.kind === "consolidated" && memory.topics.includes("海辺"),
+  );
 
   assert.ok(after.memories.length < beforeCount);
   assert.ok(after.memories.some((memory) => memory.topics.includes("海辺")));
   assert.ok(after.memories.length <= 18);
+  assert.ok(consolidated !== undefined);
+  assert.ok((consolidated?.weight ?? 1) >= 2);
 });
 
 test("idle consolidation can reprioritize identity anchors toward recurring recent topics", () => {

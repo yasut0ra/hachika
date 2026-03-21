@@ -43,6 +43,8 @@ export interface MemoryEntry {
   timestamp: string;
   topics: string[];
   sentiment: "positive" | "negative" | "neutral";
+  kind?: "turn" | "consolidated";
+  weight?: number;
 }
 
 export interface PreferenceImprint {

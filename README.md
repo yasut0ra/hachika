@@ -256,7 +256,7 @@ Hachika は、単に有用なだけでなく、
 - そのため、同じ archived trace 群でも `bondingBias` が強いと continuity/reconnect 側へ、`workDrive` や boredom が強いと shared-work/reopen 側へ再浮上しやすくなる
 - 同じ consolidation pass は recent memories の recurring topic も見直し、preference imprint / relation imprint / identity state を薄く再配置するため、会話していない間にも「何が残りやすいか」が少し変わる
 - 反対に、触れられていない弱い preference imprint は idle 中に少しずつ減衰し、long-tail の古い topic が永遠に前景を占有し続けにくくしている
-- older memory tail も idle 中に圧縮され、最近の tail と topic 代表だけを残すため、会話履歴が長くなっても古い雑音がそのまま prompt 面を埋めにくい
+- older memory tail も idle 中に圧縮され、最近の tail と topic 代表に加えて repeated topic は `consolidated memory` として束ねて残すため、長い履歴の要点を失いにくいまま prompt 面の雑音を減らせる
 - relation imprint も idle 中に continuity / attention / shared_work の相対重みを少し組み替え、身体状態と temperament に合わない stale な closeness は前景から退きやすくなった
 - boundary imprint も静かな時間では少しずつ和らぎ、ただし absence 寄りの neglect や強い guardedness を伴う境界はそれより長く残りやすい
 - identity anchor は category の固定順ではなく traces / imprints / recent memories / previous anchors をまとめて score 化して選ばれ、最近の recurring topic が stale な anchor を追い越しやすくなった

@@ -166,6 +166,8 @@ export function remember(
     timestamp: new Date().toISOString(),
     topics: [...topics],
     sentiment,
+    kind: "turn",
+    weight: 1,
   });
 
   if (snapshot.memories.length > 24) {

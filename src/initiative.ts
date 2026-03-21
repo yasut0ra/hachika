@@ -494,7 +494,6 @@ function compressIdleMemories(
     return;
   }
 
-  const selected = new Map<string, (typeof olderMemories)[number]>();
   const ranked = olderMemories
     .map((memory, index) => ({
       memory,
@@ -508,20 +507,21 @@ function compressIdleMemories(
       key: deriveIdleMemoryCompressionKey(memory),
     }))
     .sort((left, right) => right.score - left.score);
+  const grouped = new Map<string, typeof ranked>();
 
   for (const candidate of ranked) {
-    if (candidate.score < 0.42 || selected.has(candidate.key)) {
-      continue;
-    }
-
-    selected.set(candidate.key, candidate.memory);
-
-    if (selected.size >= 6) {
-      break;
-    }
+    const group = grouped.get(candidate.key) ?? [];
+    group.push(candidate);
+    grouped.set(candidate.key, group);
   }
 
-  snapshot.memories = [...selected.values(), ...recentTail]
+  const selectedOlder = [...grouped.entries()]
+    .map(([key, group]) => selectIdleMemoryRepresentative(key, group))
+    .filter((memory): memory is HachikaSnapshot["memories"][number] => memory !== null)
+    .sort((left, right) => left.timestamp.localeCompare(right.timestamp))
+    .slice(-6);
+
+  snapshot.memories = [...selectedOlder, ...recentTail]
     .sort((left, right) => left.timestamp.localeCompare(right.timestamp))
     .slice(-18);
 }
@@ -575,6 +575,59 @@ function deriveIdleMemoryCompressionKey(
   return `${memory.role}:${memory.sentiment}:${memory.text.normalize("NFKC").slice(0, 18)}`;
 }
 
+function selectIdleMemoryRepresentative(
+  key: string,
+  group: Array<{
+    memory: HachikaSnapshot["memories"][number];
+    score: number;
+    key: string;
+  }>,
+): HachikaSnapshot["memories"][number] | null {
+  const best = group[0];
+
+  if (!best || best.score < 0.42) {
+    return null;
+  }
+
+  if (key.startsWith("topic:") && group.length >= 2) {
+    return buildIdleConsolidatedMemory(key.slice("topic:".length), group);
+  }
+
+  return best.memory;
+}
+
+function buildIdleConsolidatedMemory(
+  topic: string,
+  group: Array<{
+    memory: HachikaSnapshot["memories"][number];
+    score: number;
+    key: string;
+  }>,
+): HachikaSnapshot["memories"][number] {
+  const positive = group.filter((entry) => entry.memory.sentiment === "positive").length;
+  const negative = group.filter((entry) => entry.memory.sentiment === "negative").length;
+  const sentiment = positive > negative ? "positive" : negative > positive ? "negative" : "neutral";
+  const latestTimestamp = [...group]
+    .sort((left, right) => right.memory.timestamp.localeCompare(left.memory.timestamp))[0]?.memory
+    .timestamp ?? new Date().toISOString();
+  const text =
+    sentiment === "negative"
+      ? `「${topic}」には前のやり取りから少し刺のあるまとまりが残っている。`
+      : sentiment === "positive"
+        ? `「${topic}」は前のやり取りからまとまった流れとして残っている。`
+        : `「${topic}」は前のやり取りからひとまとまりの記憶として残っている。`;
+
+  return {
+    role: "hachika",
+    text,
+    timestamp: latestTimestamp,
+    topics: [topic],
+    sentiment,
+    kind: "consolidated",
+    weight: Math.max(2, Math.min(6, group.length)),
+  };
+}
+
 function scoreIdleMemoryTopics(
   snapshot: HachikaSnapshot,
   prioritizedTopic: string | null,
@@ -587,13 +640,15 @@ function scoreIdleMemoryTopics(
     const roleWeight = memory.role === "user" ? 1 : 0.58;
     const sentimentWeight =
       memory.sentiment === "positive" ? 1.06 : memory.sentiment === "negative" ? 0.82 : 1;
+    const weight = 0.88 + Math.min(0.72, ((memory.weight ?? 1) - 1) * 0.22);
 
     for (const topic of memory.topics) {
       if (!isMeaningfulTopic(topic)) {
         continue;
       }
 
-      const next = (scores.get(topic) ?? 0) + recencyWeight * roleWeight * sentimentWeight;
+      const next =
+        (scores.get(topic) ?? 0) + recencyWeight * roleWeight * sentimentWeight * weight;
       scores.set(topic, next);
     }
   }

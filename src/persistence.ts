@@ -101,6 +101,11 @@ export function sanitizeSnapshot(snapshot: HachikaSnapshot): HachikaSnapshot {
     .map((memory) => ({
       ...memory,
       topics: unique(memory.topics.filter((topic) => isMeaningfulTopic(topic))).slice(0, 6),
+      kind: memory.kind === "consolidated" ? ("consolidated" as const) : ("turn" as const),
+      weight:
+        typeof memory.weight === "number" && Number.isFinite(memory.weight)
+          ? Math.max(1, Math.round(memory.weight))
+          : 1,
     }))
     .slice(-24);
   snapshot.preferenceImprints = sanitizePreferenceImprints(snapshot.preferenceImprints);
@@ -243,6 +248,11 @@ function hydrateMemories(raw: unknown): MemoryEntry[] {
         item.sentiment === "neutral"
           ? item.sentiment
           : "neutral",
+      kind: item.kind === "consolidated" ? "consolidated" : "turn",
+      weight:
+        typeof item.weight === "number" && Number.isFinite(item.weight)
+          ? Math.max(1, Math.round(item.weight))
+          : 1,
     });
   }
 

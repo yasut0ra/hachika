@@ -256,6 +256,7 @@ function scoreRecentMemoryAnchorTopics(snapshot: HachikaSnapshot): Map<string, n
     const roleWeight = memory.role === "user" ? 1.08 : 0.78;
     const sentimentWeight =
       memory.sentiment === "positive" ? 1.06 : memory.sentiment === "negative" ? 0.88 : 1;
+    const weight = 0.9 + Math.min(0.76, ((memory.weight ?? 1) - 1) * 0.24);
 
     for (const topic of memory.topics) {
       if (!isMeaningfulTopic(topic)) {
@@ -264,7 +265,7 @@ function scoreRecentMemoryAnchorTopics(snapshot: HachikaSnapshot): Map<string, n
 
       scores.set(
         topic,
-        (scores.get(topic) ?? 0) + recencyWeight * roleWeight * sentimentWeight,
+        (scores.get(topic) ?? 0) + recencyWeight * roleWeight * sentimentWeight * weight,
       );
     }
   }

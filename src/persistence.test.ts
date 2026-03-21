@@ -156,6 +156,36 @@ test("loadSnapshot and saveSnapshot apply sanitation to persisted files", async 
   }
 });
 
+test("sanitizeSnapshot keeps consolidated memories normalized", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.memories = [
+    {
+      role: "hachika",
+      text: "「海辺」は前のやり取りからまとまった流れとして残っている。",
+      timestamp: "2026-03-21T00:00:00.000Z",
+      topics: ["海辺", "かな"],
+      sentiment: "positive",
+      kind: "consolidated",
+      weight: 3,
+    },
+    {
+      role: "user",
+      text: "何がいいかな",
+      timestamp: "2026-03-21T01:00:00.000Z",
+      topics: ["かな"],
+      sentiment: "neutral",
+    },
+  ];
+
+  sanitizeSnapshot(snapshot);
+
+  assert.equal(snapshot.memories[0]?.kind, "consolidated");
+  assert.equal(snapshot.memories[0]?.weight, 3);
+  assert.deepEqual(snapshot.memories[0]?.topics, ["海辺"]);
+  assert.equal(snapshot.memories[1]?.kind, "turn");
+  assert.equal(snapshot.memories[1]?.weight, 1);
+});
+
 function pollutedTrace(topic: string): TraceEntry {
   return {
     topic,
