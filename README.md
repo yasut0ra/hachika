@@ -293,6 +293,15 @@ npm install
 npm run dev
 ```
 
+Web UI を試す場合:
+
+```bash
+npm run ui
+```
+
+デフォルトでは `http://127.0.0.1:3042` で起動します。  
+`HACHIKA_UI_HOST` と `HACHIKA_UI_PORT` で変更できます。
+
 LLM wording を有効にする場合:
 
 ```bash

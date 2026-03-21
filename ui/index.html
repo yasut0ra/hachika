@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Hachika Console</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="backdrop"></div>
+    <main class="shell">
+      <header class="hero">
+        <div>
+          <p class="eyebrow">Hachika Console</p>
+          <h1>内面を見ながら会話する。</h1>
+          <p class="lede">CLI の代わりではなく、状態と痕跡を観測しながら触るための最小 UI。</p>
+        </div>
+        <div class="status" id="connection-status">Loading…</div>
+      </header>
+
+      <section class="toolbar">
+        <button id="proactive-button" class="accent">Proactive</button>
+        <label class="idle-control">
+          <span>Idle</span>
+          <input id="idle-hours" type="number" min="1" step="1" value="8" />
+          <button id="idle-button">Run</button>
+        </label>
+        <button id="reset-button" class="danger">Reset</button>
+        <div class="flash" id="flash"></div>
+      </section>
+
+      <section class="layout">
+        <article class="panel panel-chat">
+          <div class="panel-head">
+            <h2>Conversation</h2>
+          </div>
+          <div class="messages" id="messages"></div>
+          <form id="composer" class="composer">
+            <textarea
+              id="message-input"
+              rows="3"
+              placeholder="Hachika に話しかける"
+            ></textarea>
+            <button type="submit" class="accent">Send</button>
+          </form>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head">
+            <h2>State</h2>
+          </div>
+          <div class="metrics" id="state-metrics"></div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head">
+            <h2>Identity</h2>
+          </div>
+          <div class="stack" id="identity-panel"></div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head">
+            <h2>Diagnostics</h2>
+          </div>
+          <div class="stack" id="diagnostics-panel"></div>
+        </article>
+
+        <article class="panel panel-wide">
+          <div class="panel-head">
+            <h2>Traces</h2>
+          </div>
+          <div class="trace-list" id="traces-panel"></div>
+        </article>
+
+        <article class="panel panel-wide">
+          <div class="panel-head">
+            <h2>Artifacts</h2>
+          </div>
+          <div class="artifact-list" id="artifacts-panel"></div>
+        </article>
+      </section>
+    </main>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

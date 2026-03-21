@@ -1,0 +1,336 @@
+const messagesNode = document.getElementById("messages");
+const stateNode = document.getElementById("state-metrics");
+const identityNode = document.getElementById("identity-panel");
+const diagnosticsNode = document.getElementById("diagnostics-panel");
+const tracesNode = document.getElementById("traces-panel");
+const artifactsNode = document.getElementById("artifacts-panel");
+const connectionNode = document.getElementById("connection-status");
+const flashNode = document.getElementById("flash");
+const composer = document.getElementById("composer");
+const messageInput = document.getElementById("message-input");
+const proactiveButton = document.getElementById("proactive-button");
+const idleButton = document.getElementById("idle-button");
+const idleHoursInput = document.getElementById("idle-hours");
+const resetButton = document.getElementById("reset-button");
+
+let currentUi = null;
+
+async function request(path, options = {}) {
+  const response = await fetch(path, {
+    headers: { "Content-Type": "application/json" },
+    ...options,
+  });
+
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload.error || "request_failed");
+  }
+
+  return payload;
+}
+
+function setFlash(text, kind = "info") {
+  flashNode.textContent = text;
+  flashNode.dataset.kind = kind;
+}
+
+function render(ui) {
+  currentUi = ui;
+  connectionNode.textContent = "Local UI online";
+  renderMessages(ui.memories);
+  renderState(ui.summary);
+  renderIdentity(ui.summary, ui.selfModel);
+  renderDiagnostics(ui.diagnostics);
+  renderTraces(ui.traces);
+  renderArtifacts(ui.artifacts);
+}
+
+function renderMessages(memories) {
+  messagesNode.innerHTML = "";
+
+  if (memories.length === 0) {
+    messagesNode.innerHTML = '<p class="empty">まだ会話はありません。</p>';
+    return;
+  }
+
+  for (const memory of memories.slice(-14)) {
+    const card = document.createElement("article");
+    card.className = `message ${memory.role}`;
+
+    const meta = document.createElement("div");
+    meta.className = "message-meta";
+    meta.textContent = `${memory.role === "hachika" ? "hachika" : "you"}${
+      memory.topics.length ? ` · ${memory.topics.join(", ")}` : ""
+    }`;
+
+    const body = document.createElement("p");
+    body.textContent = memory.text;
+
+    card.append(meta, body);
+    messagesNode.append(card);
+  }
+
+  messagesNode.scrollTop = messagesNode.scrollHeight;
+}
+
+function renderState(summary) {
+  const sections = [
+    ["Drive", summary.state],
+    ["Body", summary.body],
+    ["Reactivity", summary.reactivity],
+    ["Temperament", summary.temperament],
+  ];
+
+  stateNode.innerHTML = "";
+
+  for (const [label, values] of sections) {
+    const block = document.createElement("section");
+    block.className = "metric-block";
+    block.innerHTML = `<h3>${label}</h3>`;
+
+    for (const [key, value] of Object.entries(values)) {
+      const row = document.createElement("div");
+      row.className = "metric-row";
+      row.innerHTML = `<span>${key}</span><strong>${formatNumber(value)}</strong>`;
+      block.append(row);
+    }
+
+    stateNode.append(block);
+  }
+
+  const footer = document.createElement("section");
+  footer.className = "metric-block";
+  footer.innerHTML = `
+    <h3>Frame</h3>
+    <div class="metric-row"><span>attachment</span><strong>${formatNumber(summary.attachment)}</strong></div>
+    <div class="metric-row"><span>conversations</span><strong>${summary.conversationCount}</strong></div>
+    <div class="metric-row"><span>last interaction</span><strong>${summary.lastInteractionAt ?? "none"}</strong></div>
+  `;
+  stateNode.append(footer);
+}
+
+function renderIdentity(summary, selfModel) {
+  identityNode.innerHTML = "";
+  identityNode.append(
+    stackCard("Identity", summary.identity.summary),
+    stackCard("Arc", summary.identity.currentArc),
+    stackCard("Traits", summary.identity.traits.join(", ") || "none"),
+    stackCard("Anchors", summary.identity.anchors.join(", ") || "none"),
+    stackCard(
+      "Purpose",
+      summary.purpose.active
+        ? `${summary.purpose.active.kind}${summary.purpose.active.topic ? ` · ${summary.purpose.active.topic}` : ""}`
+        : "none",
+    ),
+    stackCard(
+      "Pending",
+      summary.pendingInitiative
+        ? `${summary.pendingInitiative.kind}${
+            summary.pendingInitiative.topic ? ` · ${summary.pendingInitiative.topic}` : ""
+          }`
+        : "none",
+    ),
+    stackCard("Narrative", selfModel.narrative),
+  );
+}
+
+function renderDiagnostics(diagnostics) {
+  diagnosticsNode.innerHTML = "";
+  diagnosticsNode.append(
+    stackCard("Last Reply", formatGenerated(diagnostics.lastReply)),
+    stackCard("Last Response", formatGenerated(diagnostics.lastResponse)),
+    stackCard("Last Proactive", formatGenerated(diagnostics.lastProactive)),
+    stackCard("Interpretation", formatInterpretation(diagnostics.lastInterpretation)),
+    stackCard("Trace", formatTrace(diagnostics.lastTrace)),
+  );
+}
+
+function renderTraces(traces) {
+  tracesNode.innerHTML = "";
+
+  if (traces.length === 0) {
+    tracesNode.innerHTML = '<p class="empty">trace はまだありません。</p>';
+    return;
+  }
+
+  for (const trace of traces) {
+    const card = document.createElement("article");
+    card.className = "trace-card";
+    card.innerHTML = `
+      <header>
+        <strong>${trace.topic}</strong>
+        <span>${trace.kind} / ${trace.status} / ${trace.tending}</span>
+      </header>
+      <p>${trace.summary}</p>
+      <div class="mini-grid">
+        <span>focus: ${trace.focus ?? "none"}</span>
+        <span>confidence: ${formatNumber(trace.confidence)}</span>
+        <span>lifecycle: ${trace.lifecycle}</span>
+        <span>stale: ${trace.effectiveStaleAt ?? trace.staleAt ?? "none"}</span>
+      </div>
+      <div class="chips">${trace.blockers.map((item) => `<span>${escapeHtml(item)}</span>`).join("")}</div>
+    `;
+    tracesNode.append(card);
+  }
+}
+
+function renderArtifacts(artifacts) {
+  artifactsNode.innerHTML = "";
+
+  if (artifacts.length === 0) {
+    artifactsNode.innerHTML = '<p class="empty">artifact はまだ materialize されていません。</p>';
+    return;
+  }
+
+  for (const artifact of artifacts.slice(0, 14)) {
+    const card = document.createElement("article");
+    card.className = "artifact-card";
+    card.innerHTML = `
+      <header>
+        <strong>${artifact.topic}</strong>
+        <span>${artifact.tending} / ${artifact.lifecyclePhase}</span>
+      </header>
+      <p>${artifact.relativePath}</p>
+      <div class="mini-grid">
+        <span>focus: ${artifact.focus ?? "none"}</span>
+        <span>confidence: ${formatNumber(artifact.confidence)}</span>
+        <span>pending: ${artifact.pendingNextStep ?? "none"}</span>
+        <span>updated: ${artifact.updatedAt}</span>
+      </div>
+    `;
+    artifactsNode.append(card);
+  }
+}
+
+function stackCard(label, value) {
+  const card = document.createElement("section");
+  card.className = "stack-card";
+  card.innerHTML = `<h3>${label}</h3><p>${value || "none"}</p>`;
+  return card;
+}
+
+function formatGenerated(debug) {
+  if (!debug) {
+    return "none";
+  }
+
+  const planner = `planner:${debug.plannerSource}`;
+  return `${debug.mode}:${debug.source}${debug.provider ? ` via:${debug.provider}` : ""}${
+    debug.fallbackUsed ? " fallback" : ""
+  }${debug.plan ? ` · ${debug.plan}` : ""} · ${planner}`;
+}
+
+function formatInterpretation(debug) {
+  if (!debug) {
+    return "none";
+  }
+
+  return `${debug.source}${debug.provider ? ` via:${debug.provider}` : ""} · ${
+    debug.summary
+  } · local:${debug.localTopics.join(", ") || "none"} · final:${debug.topics.join(", ") || "none"}`;
+}
+
+function formatTrace(debug) {
+  if (!debug) {
+    return "none";
+  }
+
+  return `${debug.source}${debug.provider ? ` via:${debug.provider}` : ""} · ${
+    debug.summary
+  } · extract:${debug.topics.join(", ") || "none"} · state:${
+    debug.stateTopics.join(", ") || "none"
+  }${debug.adoptedTopics.length ? ` · add:${debug.adoptedTopics.join(", ")}` : ""}${
+    debug.droppedTopics.length ? ` · drop:${debug.droppedTopics.join(", ")}` : ""
+  }`;
+}
+
+function formatNumber(value) {
+  return typeof value === "number" ? value.toFixed(2) : String(value);
+}
+
+function escapeHtml(value) {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+}
+
+composer.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const text = messageInput.value.trim();
+
+  if (!text) {
+    return;
+  }
+
+  setFlash("Sending…");
+
+  try {
+    const payload = await request("/api/message", {
+      method: "POST",
+      body: JSON.stringify({ text }),
+    });
+    render(payload.ui);
+    messageInput.value = "";
+    setFlash(`hachika> ${payload.reply}`);
+  } catch (error) {
+    setFlash(error instanceof Error ? error.message : "send_failed", "error");
+  }
+});
+
+proactiveButton.addEventListener("click", async () => {
+  setFlash("Emitting proactive line…");
+
+  try {
+    const payload = await request("/api/proactive", {
+      method: "POST",
+      body: JSON.stringify({ force: true }),
+    });
+    render(payload.ui);
+    setFlash(payload.message ? `hachika* ${payload.message}` : "no proactive line");
+  } catch (error) {
+    setFlash(error instanceof Error ? error.message : "proactive_failed", "error");
+  }
+});
+
+idleButton.addEventListener("click", async () => {
+  const hours = Number(idleHoursInput.value);
+  setFlash("Applying idle time…");
+
+  try {
+    const payload = await request("/api/idle", {
+      method: "POST",
+      body: JSON.stringify({ hours }),
+    });
+    render(payload.ui);
+    setFlash(
+      payload.proactive
+        ? `idled ${payload.hours}h · hachika* ${payload.proactive}`
+        : `idled ${payload.hours}h`,
+    );
+  } catch (error) {
+    setFlash(error instanceof Error ? error.message : "idle_failed", "error");
+  }
+});
+
+resetButton.addEventListener("click", async () => {
+  setFlash("Resetting state…");
+
+  try {
+    const payload = await request("/api/reset", {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+    render(payload.ui);
+    setFlash("state reset");
+  } catch (error) {
+    setFlash(error instanceof Error ? error.message : "reset_failed", "error");
+  }
+});
+
+request("/api/state")
+  .then(render)
+  .catch((error) => {
+    connectionNode.textContent = "Offline";
+    setFlash(error instanceof Error ? error.message : "initial_load_failed", "error");
+  });

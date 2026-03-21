@@ -1,0 +1,385 @@
+:root {
+  --bg: #f4eadc;
+  --bg-deep: #d8c4ab;
+  --panel: rgba(255, 250, 243, 0.86);
+  --panel-strong: rgba(255, 248, 239, 0.96);
+  --ink: #1f1a17;
+  --muted: #6c5b4d;
+  --line: rgba(65, 42, 28, 0.12);
+  --accent: #b5482e;
+  --accent-deep: #7e2917;
+  --accent-soft: #f3d6c7;
+  --danger: #7c1724;
+  --shadow: 0 24px 60px rgba(54, 29, 17, 0.12);
+  --radius: 24px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  color: var(--ink);
+  background:
+    radial-gradient(circle at top left, rgba(181, 72, 46, 0.22), transparent 28rem),
+    radial-gradient(circle at bottom right, rgba(47, 94, 82, 0.18), transparent 26rem),
+    linear-gradient(180deg, var(--bg) 0%, #efe1d1 100%);
+  font-family: "Avenir Next", "Hiragino Sans", "Yu Gothic", sans-serif;
+}
+
+.backdrop {
+  position: fixed;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(31, 26, 23, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(31, 26, 23, 0.03) 1px, transparent 1px);
+  background-size: 28px 28px;
+  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.42), transparent);
+  pointer-events: none;
+}
+
+.shell {
+  position: relative;
+  width: min(1440px, calc(100vw - 32px));
+  margin: 0 auto;
+  padding: 28px 0 40px;
+}
+
+.hero,
+.toolbar,
+.panel {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(16px);
+}
+
+.hero {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 28px;
+}
+
+.eyebrow {
+  margin: 0 0 10px;
+  color: var(--accent-deep);
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  font-size: 12px;
+}
+
+.hero h1 {
+  margin: 0;
+  font-family: "Iowan Old Style", "Hiragino Mincho ProN", serif;
+  font-size: clamp(34px, 5vw, 56px);
+  line-height: 0.95;
+}
+
+.lede {
+  max-width: 56ch;
+  margin: 12px 0 0;
+  color: var(--muted);
+}
+
+.status {
+  padding: 10px 14px;
+  border-radius: 999px;
+  background: var(--panel-strong);
+  color: var(--accent-deep);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px;
+  margin-top: 16px;
+}
+
+button,
+textarea,
+input {
+  font: inherit;
+}
+
+button {
+  border: 0;
+  border-radius: 999px;
+  padding: 10px 16px;
+  background: #eadbca;
+  color: var(--ink);
+  cursor: pointer;
+  transition: transform 120ms ease, background 120ms ease;
+}
+
+button:hover {
+  transform: translateY(-1px);
+}
+
+button.accent {
+  background: var(--accent);
+  color: white;
+}
+
+button.danger {
+  background: var(--danger);
+  color: white;
+}
+
+.idle-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px;
+  border-radius: 999px;
+  background: var(--panel-strong);
+}
+
+.idle-control input {
+  width: 72px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  text-align: center;
+}
+
+.flash {
+  min-height: 24px;
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.flash[data-kind="error"] {
+  color: var(--danger);
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: 1.35fr 0.85fr 0.85fr;
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.panel {
+  padding: 18px;
+}
+
+.panel-chat {
+  grid-row: span 2;
+  display: flex;
+  flex-direction: column;
+  min-height: 70vh;
+}
+
+.panel-wide {
+  grid-column: span 2;
+}
+
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.panel-head h2,
+.metric-block h3,
+.stack-card h3 {
+  margin: 0;
+  font-size: 14px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.messages {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.message {
+  padding: 14px 16px;
+  border-radius: 20px;
+  background: var(--panel-strong);
+  animation: rise 180ms ease;
+}
+
+.message.user {
+  margin-left: 8%;
+  border-top-right-radius: 8px;
+}
+
+.message.hachika {
+  margin-right: 8%;
+  border-top-left-radius: 8px;
+  background: #fff3ea;
+}
+
+.message-meta {
+  margin-bottom: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.message p,
+.stack-card p,
+.trace-card p,
+.artifact-card p {
+  margin: 0;
+  line-height: 1.5;
+}
+
+.composer {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.composer textarea {
+  resize: vertical;
+  min-height: 92px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 14px 16px;
+  background: var(--panel-strong);
+  outline: none;
+}
+
+.metrics,
+.stack,
+.trace-list,
+.artifact-list {
+  display: grid;
+  gap: 12px;
+}
+
+.metric-block,
+.stack-card,
+.trace-card,
+.artifact-card {
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--panel-strong);
+  padding: 14px;
+}
+
+.metric-row,
+.mini-grid {
+  display: grid;
+  gap: 6px;
+}
+
+.metric-row {
+  grid-template-columns: 1fr auto;
+  margin-top: 8px;
+}
+
+.mini-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.trace-card header,
+.artifact-card header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.trace-card header span,
+.artifact-card header span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.chips span {
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-deep);
+  font-size: 12px;
+}
+
+.empty {
+  color: var(--muted);
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (max-width: 1100px) {
+  .layout {
+    grid-template-columns: 1fr;
+  }
+
+  .panel-chat,
+  .panel-wide {
+    grid-row: auto;
+    grid-column: auto;
+  }
+
+  .panel-chat {
+    min-height: 56vh;
+  }
+}
+
+@media (max-width: 720px) {
+  .shell {
+    width: min(100vw - 16px, 1440px);
+    padding-top: 12px;
+  }
+
+  .hero,
+  .toolbar,
+  .panel {
+    border-radius: 20px;
+  }
+
+  .hero {
+    flex-direction: column;
+    align-items: start;
+  }
+
+  .toolbar {
+    flex-wrap: wrap;
+  }
+
+  .flash {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .composer {
+    grid-template-columns: 1fr;
+  }
+}
