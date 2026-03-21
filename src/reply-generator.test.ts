@@ -139,6 +139,11 @@ test("buildReplyGenerationPayload surfaces fallback intent and internal state su
   assert.equal(payload.currentTopic, "設計");
   assert.deepEqual(payload.expression.recentAssistantReplies, []);
   assert.deepEqual(payload.expression.avoidOpenings, []);
+  assert.equal(payload.expression.perspective.preferredAngle, "trace");
+  assert.equal(payload.expression.perspective.options[0]?.angle, "trace");
+  assert.ok(
+    payload.expression.perspective.options.some((option) => option.angle === "motive"),
+  );
   assert.equal(payload.responsePlan.act, "continue_work");
   assert.equal(payload.replySelection.currentTopic, "設計");
   assert.equal(payload.replySelection.relevantTraceTopic, "設計");
@@ -240,6 +245,8 @@ test("buildProactiveGenerationPayload surfaces pending initiative and fallback p
   assert.equal(payload.fallbackMessage, context.fallbackMessage);
   assert.deepEqual(payload.expression.recentAssistantReplies, []);
   assert.deepEqual(payload.expression.avoidOpenings, []);
+  assert.equal(payload.expression.perspective.preferredAngle, "trace");
+  assert.equal(payload.expression.perspective.options[0]?.angle, "trace");
   assert.equal(payload.pending.topic, "仕様");
   assert.equal(payload.pending.blocker, "責務が未定");
   assert.equal(payload.proactivePlan.act, "untangle");
@@ -331,6 +338,7 @@ test("buildReplyGenerationPayload includes recent assistant replies as expressio
 
   assert.equal(payload.expression.recentAssistantReplies.length, 2);
   assert.equal(payload.expression.avoidOpenings[0], "まずはそのくらいの軽さでいい");
+  assert.ok(payload.expression.perspective.options.length > 0);
   assert.ok(
     payload.expression.avoidOpenings.some((opening) =>
       opening.startsWith("すぐに形へ寄せるより、少し話しながら"),

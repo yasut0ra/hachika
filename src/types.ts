@@ -103,6 +103,14 @@ export type TraceStatus = "forming" | "active" | "resolved";
 export type TraceTendingMode = "preserve" | "steady" | "deepen";
 
 export type TraceLifecyclePhase = "live" | "archived";
+export type ExpressionAngle =
+  | "identity"
+  | "motive"
+  | "drive"
+  | "body"
+  | "relation"
+  | "trace"
+  | "preservation";
 
 export type TraceAction =
   | "captured"

@@ -3,7 +3,12 @@ import {
   sortedPreferenceImprints,
   sortedRelationImprints,
 } from "./memory.js";
-import { recentAssistantOpenings, recentAssistantReplies } from "./expression.js";
+import {
+  buildProactiveExpressionPerspective,
+  buildReplyExpressionPerspective,
+  recentAssistantOpenings,
+  recentAssistantReplies,
+} from "./expression.js";
 import type { ProactivePlan, ResponsePlan } from "./response-planner.js";
 import { deriveTraceTendingMode, pickPrimaryArtifactItem, readTraceLifecycle, sortedTraces } from "./traces.js";
 import type {
@@ -62,6 +67,13 @@ interface CommonGenerationPayload {
   expression: {
     recentAssistantReplies: string[];
     avoidOpenings: string[];
+    perspective: {
+      preferredAngle: string;
+      options: Array<{
+        angle: string;
+        summary: string;
+      }>;
+    };
   };
   state: {
     drives: HachikaSnapshot["state"];
@@ -268,6 +280,20 @@ export function describeReplyGenerator(generator: ReplyGenerator | null): string
 export function buildReplyGenerationPayload(
   context: ReplyGenerationContext,
 ): ReplyGenerationPayload {
+  const currentTopic =
+    context.signals.topics[0] ??
+    context.selfModel.topMotives[0]?.topic ??
+    context.nextSnapshot.purpose.active?.topic ??
+    context.nextSnapshot.identity.anchors[0] ??
+    null;
+  const perspective = buildReplyExpressionPerspective(
+    context.nextSnapshot,
+    context.selfModel,
+    context.responsePlan,
+    context.dominantDrive,
+    context.replySelection,
+  );
+
   return {
     mode: "reply",
     input: context.input,
@@ -280,11 +306,8 @@ export function buildReplyGenerationPayload(
     ...buildCommonGenerationPayload(
       context.nextSnapshot,
       context.selfModel,
-      context.signals.topics[0] ??
-        context.selfModel.topMotives[0]?.topic ??
-        context.nextSnapshot.purpose.active?.topic ??
-        context.nextSnapshot.identity.anchors[0] ??
-        null,
+      currentTopic,
+      perspective,
       context.previousSnapshot,
     ),
   };
@@ -293,6 +316,19 @@ export function buildReplyGenerationPayload(
 export function buildProactiveGenerationPayload(
   context: ProactiveGenerationContext,
 ): ProactiveGenerationPayload {
+  const currentTopic =
+    context.pending.topic ??
+    context.topics[0] ??
+    context.selfModel.topMotives[0]?.topic ??
+    context.nextSnapshot.identity.anchors[0] ??
+    null;
+  const perspective = buildProactiveExpressionPerspective(
+    context.nextSnapshot,
+    context.selfModel,
+    context.proactivePlan,
+    context.proactiveSelection,
+  );
+
   return {
     mode: "proactive",
     fallbackMessage: context.fallbackMessage,
@@ -304,11 +340,8 @@ export function buildProactiveGenerationPayload(
     ...buildCommonGenerationPayload(
       context.nextSnapshot,
       context.selfModel,
-      context.pending.topic ??
-        context.topics[0] ??
-        context.selfModel.topMotives[0]?.topic ??
-        context.nextSnapshot.identity.anchors[0] ??
-        null,
+      currentTopic,
+      perspective,
       context.previousSnapshot,
     ),
   };
@@ -331,6 +364,8 @@ export function buildOpenAIChatMessages(
         "The local engine is authoritative.",
         "Use responsePlan as the primary guide for stance, distance, and act.",
         "Use replySelection to stay faithful to the exact chosen focus, trace, boundary, and trace priority.",
+        "Use expression.perspective.preferredAngle as the main expressive lens.",
+        "You may lean on one nearby option from expression.perspective.options to vary emphasis, but do not contradict the local plan.",
         "Avoid reusing the same opening fragments or sentence skeletons found in expression.recentAssistantReplies unless the local state makes it unavoidable.",
         "Preserve the same underlying intent as fallbackReply, but do not mirror its phrasing line by line.",
         "Vary the sentence shape and emphasis while staying faithful to the local state.",
@@ -358,6 +393,8 @@ export function buildOpenAIProactiveMessages(
         "The local engine is authoritative.",
         "Use proactivePlan as the primary guide for stance, distance, act, and emphasis.",
         "Use proactiveSelection to stay faithful to the chosen focus topic, maintenance trace, blocker, and reopen state.",
+        "Use expression.perspective.preferredAngle as the main expressive lens.",
+        "You may lean on one nearby option from expression.perspective.options to vary emphasis, but do not contradict the local plan.",
         "Avoid reusing the same opening fragments or sentence skeletons found in expression.recentAssistantReplies unless the local state makes it unavoidable.",
         "Preserve the same underlying intent as fallbackMessage, but do not mirror its phrasing line by line.",
         "Vary the sentence shape and emphasis while staying faithful to the local state.",
@@ -372,6 +409,7 @@ function buildCommonGenerationPayload(
   snapshot: HachikaSnapshot,
   selfModel: SelfModel,
   currentTopic: string | null,
+  perspective: CommonGenerationPayload["expression"]["perspective"],
   expressionSnapshot: HachikaSnapshot = snapshot,
 ): CommonGenerationPayload {
   return {
@@ -379,6 +417,7 @@ function buildCommonGenerationPayload(
     expression: {
       recentAssistantReplies: recentAssistantReplies(expressionSnapshot, 3),
       avoidOpenings: recentAssistantOpenings(expressionSnapshot, 3),
+      perspective,
     },
     state: {
       drives: snapshot.state,

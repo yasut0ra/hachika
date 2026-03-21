@@ -216,6 +216,7 @@ Hachika は、単に有用なだけでなく、
   - greeting / repair / self-disclosure のような social turn では stale trace を引っ込め、関係の温度や自己開示を優先しやすくしている
   - `askBack / variation` も rule-based reply に反映され、雑談や explore では問い返しや文面の揺れ方が planner に従う
   - 能動発話でも `proactive plan` が `act / stance / distance / emphasis` を決め、rule-based proactive と LLM wording が同じ切り出し方を共有する
+  - wording 直前にはさらに `expression perspective` が `identity / motive / drive / body / relation / trace / preservation` のどこを前景化するかを選び、同じ state でも毎回同じ角度だけから喋り続けにくくしている
   - rule-based fallback でも直近の Hachika 発話を参照し、通常応答と能動発話の両方で同じ opener や social line を連続で繰り返しにくくしている
 - トピックごとの好み、短期記憶、長期記憶の痕跡を保持する
   - 長期記憶は `preference / boundary / relation` の3系統に分けて保持する
@@ -254,6 +255,7 @@ Hachika は、単に有用なだけでなく、
   - 通常応答ではさらに `replySelection` も payload に含め、どの topic / trace / boundary を参照して返しているかを LLM に共有している
   - 能動発話でも `proactivePlan` を payload に含め、blocker を前に出すのか、reopen を前に出すのか、保存寄りに切り出すのかを LLM に共有している
   - `expression.recentAssistantReplies / avoidOpenings` も payload に含め、直近の言い回しや入り方をそのままなぞりにくくしている
+  - `expression.perspective.preferredAngle / options` により、その返答で identity を前に出すのか、trace を前に出すのか、body や preservation を前に出すのかを LLM に共有している
   - adapter が失敗した場合や空文字を返した場合は rule-based wording に fallback する
   - 直近の生成が `reply` か `proactive` か、`llm` か `rule` か、どの provider / model を使ったか、fallback したか、どの `plan` で出したかも CLI から確認できる
 - 内部状態に応じて応答のトーンと内容を変化させる
