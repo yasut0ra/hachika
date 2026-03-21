@@ -68,6 +68,8 @@ try {
       break;
     }
 
+    await refreshEngine(engine);
+
     if (text === "/help") {
       printHelp();
       continue;
@@ -690,6 +692,10 @@ async function persistState(currentEngine: HachikaEngine): Promise<void> {
   const snapshot = currentEngine.getSnapshot();
   await saveSnapshot(snapshotPath, snapshot);
   await syncArtifacts(snapshot, artifactsDir);
+}
+
+async function refreshEngine(currentEngine: HachikaEngine): Promise<void> {
+  currentEngine.syncSnapshot(await loadSnapshot(snapshotPath));
 }
 
 function formatResolvedPurpose(

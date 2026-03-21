@@ -415,6 +415,10 @@ export class HachikaEngine {
     return structuredClone(this.#snapshot);
   }
 
+  syncSnapshot(snapshot: HachikaSnapshot): void {
+    this.#snapshot = structuredClone(snapshot);
+  }
+
   reset(snapshot: HachikaSnapshot = createInitialSnapshot()): void {
     this.#snapshot = structuredClone(snapshot);
     this.#lastGeneratedDebug = null;

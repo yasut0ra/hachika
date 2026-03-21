@@ -2057,6 +2057,24 @@ test("reset clears the last reply diagnostics", async () => {
   assert.equal(engine.getLastTraceExtractionDebug(), null);
 });
 
+test("syncSnapshot refreshes state without clearing local diagnostics", async () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+
+  await engine.respondAsync("仕様は？");
+  const external = createInitialSnapshot();
+  external.state.curiosity = 0.91;
+  external.body.boredom = 0.44;
+  external.conversationCount = 5;
+
+  engine.syncSnapshot(external);
+
+  assert.equal(engine.getSnapshot().state.curiosity, 0.91);
+  assert.equal(engine.getSnapshot().body.boredom, 0.44);
+  assert.equal(engine.getSnapshot().conversationCount, 5);
+  assert.equal(engine.getLastReplyDebug()?.mode, "reply");
+  assert.equal(engine.getLastInterpretationDebug()?.source, "rule");
+});
+
 test("response and proactive diagnostics are preserved separately", () => {
   const engine = new HachikaEngine(createInitialSnapshot());
 

@@ -31,6 +31,11 @@ await persistState(engine);
 const server = createServer(async (request, response) => {
   try {
     const url = new URL(request.url ?? "/", `http://${host}:${port}`);
+    const isApiRequest = url.pathname.startsWith("/api/");
+
+    if (isApiRequest) {
+      await refreshEngine(engine);
+    }
 
     if (url.pathname === "/api/state" && request.method === "GET") {
       return sendJson(response, 200, buildUiState(engine, artifactsDir));
@@ -125,6 +130,10 @@ async function persistState(currentEngine: HachikaEngine): Promise<void> {
   const currentSnapshot = currentEngine.getSnapshot();
   await saveSnapshot(snapshotPath, currentSnapshot);
   await syncArtifacts(currentSnapshot, artifactsDir);
+}
+
+async function refreshEngine(currentEngine: HachikaEngine): Promise<void> {
+  currentEngine.syncSnapshot(await loadSnapshot(snapshotPath));
 }
 
 async function readJsonBody(request: IncomingMessage): Promise<Record<string, unknown>> {
