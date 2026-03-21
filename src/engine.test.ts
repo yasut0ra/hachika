@@ -1940,7 +1940,7 @@ test("respondAsync can use a trace extractor to shape concrete trace work", asyn
     },
   };
 
-  const result = await engine.respondAsync("仕様の境界が曖昧で、責務がまだ決まっていない。", {
+  const result = await engine.respondAsync("仕様が曖昧で、責務がまだ決まっていない。", {
     traceExtractor,
     replyGenerator,
   });
@@ -1954,6 +1954,9 @@ test("respondAsync can use a trace extractor to shape concrete trace work", asyn
   assert.equal(result.debug.traceExtraction.provider, "test-trace");
   assert.equal(result.debug.traceExtraction.kindHint, "spec_fragment");
   assert.ok(result.debug.traceExtraction.topics.includes("仕様の境界"));
+  assert.equal(result.debug.traceExtraction.stateTopics[0], "仕様の境界");
+  assert.deepEqual(result.debug.traceExtraction.adoptedTopics, ["仕様の境界"]);
+  assert.deepEqual(result.debug.traceExtraction.droppedTopics, ["仕様"]);
   assert.equal(result.debug.signals.topics[0], "仕様の境界");
   assert.equal(receivedContext.responsePlan.focusTopic, "仕様の境界");
   assert.equal(receivedContext.replySelection.currentTopic, "仕様の境界");
@@ -2017,6 +2020,9 @@ test("respondAsync does not let trace extraction contaminate social turns", asyn
   });
 
   assert.deepEqual(result.debug.signals.topics, []);
+  assert.deepEqual(result.debug.traceExtraction.adoptedTopics, []);
+  assert.deepEqual(result.debug.traceExtraction.droppedTopics, []);
+  assert.deepEqual(result.debug.traceExtraction.stateTopics, []);
   assert.equal(result.snapshot.topicCounts["設計の境界"] ?? 0, 0);
   assert.deepEqual(result.snapshot.memories.at(-2)?.topics ?? [], []);
 });

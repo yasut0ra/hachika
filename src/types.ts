@@ -384,6 +384,9 @@ export interface TraceExtractionDebug {
   fallbackUsed: boolean;
   error: string | null;
   topics: string[];
+  stateTopics: string[];
+  adoptedTopics: string[];
+  droppedTopics: string[];
   blockers: string[];
   nextSteps: string[];
   kindHint: TraceKind | null;

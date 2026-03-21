@@ -746,7 +746,13 @@ function formatTraceExtractionDebug(
   const model = debug.model ? ` model:${debug.model}` : "";
   const fallback = debug.fallbackUsed ? " fallback" : "";
   const error = debug.error ? ` error:${debug.error}` : "";
-  const topics = debug.topics.length > 0 ? ` topics:${debug.topics.join(",")}` : " topics:none";
+  const topics = debug.topics.length > 0 ? ` extract:${debug.topics.join(",")}` : " extract:none";
+  const stateTopics =
+    debug.stateTopics.length > 0 ? ` state:${debug.stateTopics.join(",")}` : " state:none";
+  const adopted =
+    debug.adoptedTopics.length > 0 ? ` add:${debug.adoptedTopics.join(",")}` : " add:none";
+  const dropped =
+    debug.droppedTopics.length > 0 ? ` drop:${debug.droppedTopics.join(",")}` : " drop:none";
   const blockers =
     debug.blockers.length > 0 ? ` blockers:${debug.blockers.join(" | ")}` : " blockers:none";
   const next =
@@ -754,7 +760,7 @@ function formatTraceExtractionDebug(
   const kind = debug.kindHint ? ` kind:${debug.kindHint}` : " kind:none";
   const completion = debug.completion > 0 ? ` completion:${debug.completion.toFixed(2)}` : "";
 
-  return `${debug.source}${via}${model}${fallback}${error} ${debug.summary}${kind}${completion}${topics}${blockers}${next}`;
+  return `${debug.source}${via}${model}${fallback}${error} ${debug.summary}${kind}${completion}${topics}${stateTopics}${adopted}${dropped}${blockers}${next}`;
 }
 
 function formatInterpretationScores(

@@ -310,6 +310,7 @@ cp .env.example .env
 - `/debug` では `pending initiative` に加えて、その時点の `pending plan` も表示する
   - 直近の通常応答と直近の能動発話の diagnostics / plan は別々に保持される
   - 直近の `input interpretation` も `rule / llm / fallback / topics` に加えて、主要 score と `local -> final` の topic 差分付きで確認できる
+  - 直近の `trace extraction` も `extract -> state` の topic 差分と `add / drop` を含み、extractor の concrete topic が local state に採用されたかを確認できる
   - 直近の通常応答では `focus / trace / boundary / tracePriority` も diagnostics に含まれ、何を参照して返したかを追える
   - 直近の能動発話では `focus / trace / blocker / reopen / maintenance` も diagnostics に含まれ、何を見て再開したかを追える
 - `/idle <hours>` 指定時間だけ放置された状態をシミュレートする

@@ -832,6 +832,11 @@ function prepareTurnFromSignals(
 ): PreparedTurn {
   const previousSnapshot = structuredClone(snapshot);
   const stateSignals = deriveStateSignals(signals, traceExtraction);
+  const normalizedTraceExtractionDebug = finalizeTraceExtractionDebug(
+    traceExtractionDebug,
+    signals,
+    stateSignals,
+  );
   const sentimentScore = scoreSentiment(stateSignals);
   const nextSnapshot = applySignals(snapshot, stateSignals, sentimentScore);
   const mood = resolveMood(nextSnapshot, stateSignals);
@@ -874,7 +879,7 @@ function prepareTurnFromSignals(
     responseSignals,
     interpretationDebug,
     traceExtraction,
-    traceExtractionDebug,
+    traceExtractionDebug: normalizedTraceExtractionDebug,
     planningDebug: {
       source: "rule",
       provider: null,
@@ -1191,6 +1196,9 @@ function buildRuleTraceExtractionDebug(
     fallbackUsed: false,
     error: null,
     topics: [...signals.topics],
+    stateTopics: [...signals.topics],
+    adoptedTopics: [],
+    droppedTopics: [],
     blockers: [],
     nextSteps: [],
     kindHint: null,
@@ -1215,6 +1223,9 @@ function buildExtractorTraceExtractionDebug(
     fallbackUsed: false,
     error: null,
     topics: [...extracted.extraction.topics],
+    stateTopics: [],
+    adoptedTopics: [],
+    droppedTopics: [],
     blockers: [...extracted.extraction.blockers],
     nextSteps: [...extracted.extraction.nextSteps],
     kindHint: extracted.extraction.kindHint,
@@ -1235,6 +1246,9 @@ function buildFallbackTraceExtractionDebug(
     fallbackUsed: true,
     error,
     topics: [...signals.topics],
+    stateTopics: [...signals.topics],
+    adoptedTopics: [],
+    droppedTopics: [],
     blockers: [],
     nextSteps: [],
     kindHint: null,
@@ -1246,6 +1260,27 @@ function buildFallbackTraceExtractionDebug(
       kindHint: null,
       completion: signals.completion,
     }),
+  };
+}
+
+function finalizeTraceExtractionDebug(
+  debug: TraceExtractionDebug,
+  originalSignals: InteractionSignals,
+  stateSignals: InteractionSignals,
+): TraceExtractionDebug {
+  const adoptedTopics = stateSignals.topics.filter(
+    (topic) =>
+      debug.topics.includes(topic) && !originalSignals.topics.includes(topic),
+  );
+  const droppedTopics = originalSignals.topics.filter(
+    (topic) => !stateSignals.topics.includes(topic),
+  );
+
+  return {
+    ...debug,
+    stateTopics: [...stateSignals.topics],
+    adoptedTopics,
+    droppedTopics,
   };
 }
 
