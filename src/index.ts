@@ -14,7 +14,12 @@ import {
 import { loadSnapshot, saveSnapshot } from "./persistence.js";
 import { createReplyGeneratorFromEnv, describeReplyGenerator } from "./reply-generator.js";
 import { buildProactivePlan } from "./response-planner.js";
-import { createInitialSnapshot, formatBodyState, formatDriveState } from "./state.js";
+import {
+  createInitialSnapshot,
+  formatBodyState,
+  formatDriveState,
+  formatReactivityState,
+} from "./state.js";
 import {
   deriveEffectiveTraceStaleAt,
   deriveTraceTendingMode,
@@ -90,6 +95,11 @@ try {
       continue;
     }
 
+    if (text === "/reactivity") {
+      printReactivity(engine);
+      continue;
+    }
+
     if (text === "/self") {
       printSelfModel(engine);
       continue;
@@ -148,6 +158,7 @@ async function printIntro(currentEngine: HachikaEngine): Promise<void> {
   console.log("`/help` でコマンドを表示します。");
   console.log(formatDriveState(currentEngine.getSnapshot().state));
   console.log(formatBodyState(currentEngine.getBody()));
+  console.log(formatReactivityState(currentEngine.getSnapshot().reactivity));
   console.log(`attachment:${currentEngine.getSnapshot().attachment.toFixed(2)}`);
   console.log(`identity:${currentEngine.getIdentity().summary}`);
   console.log(`reply:${describeReplyGenerator(replyGenerator)}`);
@@ -164,6 +175,7 @@ function printHelp(): void {
   console.log("/idle N simulate N hours of inactivity");
   console.log("/state  print current drives");
   console.log("/body   print current body state");
+  console.log("/reactivity print current response sensitivity");
   console.log("/purpose print active purpose");
   console.log("/self   print current self-model");
   console.log("/identity print current identity");
@@ -193,6 +205,10 @@ function printMemories(currentEngine: HachikaEngine): void {
 
 function printBody(currentEngine: HachikaEngine): void {
   console.log(formatBodyState(currentEngine.getBody()));
+}
+
+function printReactivity(currentEngine: HachikaEngine): void {
+  console.log(formatReactivityState(currentEngine.getSnapshot().reactivity));
 }
 
 function printReplyGeneratorStatus(): void {
@@ -334,6 +350,7 @@ function printDebug(currentEngine: HachikaEngine): void {
 
   console.log(formatDriveState(snapshot.state));
   console.log(formatBodyState(snapshot.body));
+  console.log(formatReactivityState(snapshot.reactivity));
   console.log(`attachment: ${snapshot.attachment.toFixed(2)}`);
   console.log(`reply generator: ${describeReplyGenerator(replyGenerator)}`);
   console.log(`input interpreter: ${describeInputInterpreter(inputInterpreter)}`);

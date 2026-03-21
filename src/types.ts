@@ -22,6 +22,12 @@ export interface BodyState {
   loneliness: number;
 }
 
+export interface ReactivityState {
+  rewardSaturation: number;
+  stressLoad: number;
+  noveltyHunger: number;
+}
+
 export interface MemoryEntry {
   role: "user" | "hachika";
   text: string;
@@ -207,6 +213,7 @@ export interface HachikaSnapshot {
   version: number;
   state: DriveState;
   body: BodyState;
+  reactivity: ReactivityState;
   attachment: number;
   preferences: Record<string, number>;
   topicCounts: Record<string, number>;

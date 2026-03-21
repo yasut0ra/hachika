@@ -34,7 +34,8 @@
 ### ステータス
 - 部分完了
 - homeostasis と飽和抑制はすでに入っている
-- 未完了なのは「最近の履歴で効き方が変わる」部分
+- `rewardSaturation / stressLoad / noveltyHunger` による軽量な reaction sensitivity も入った
+- 未完了なのは、drive/body ごとの差をさらに細かくすることと、感度 state を learned temperament へ橋渡しすること
 
 ### 背景
 - 現状の snapshot では `state` と `attachment` が高値に張り付きやすく、会話が続くほど差分が出にくくなる。
@@ -51,10 +52,10 @@
 - replay しやすい regression test を追加
 
 ### 次にやる部分
-- `recent strain / recent repair / recent novelty` のような軽量な感度 state を追加する
-- 同じ `positive` でも直前が hostile なら relation/pleasure の戻り方を鈍くする
-- boredom と curiosity の効き方に recent repetition を入れる
+- drive/body ごとに sensitivity の効き方をもう少し分ける
+- `repair` と `hostility` の非対称性を強める
 - `attachment` に rebound と mistrust の差を持たせる
+- idle 後の continuity 変化にも reactivity をもう少し深く通す
 
 ### 実装メモ
 - `DriveState`/`BodyState` とは別に、反応感度を表す軽量 state を導入してよい

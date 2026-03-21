@@ -81,6 +81,36 @@ test("body tension can partially recover toward baseline across calmer turns", (
   assert.ok(recovered.tension > createInitialSnapshot().body.tension);
 });
 
+test("stress history changes how strongly the same positive input lands", () => {
+  const highStress = createInitialSnapshot();
+  highStress.reactivity.stressLoad = 0.7;
+  highStress.body.tension = 0.6;
+  const lowStress = createInitialSnapshot();
+  lowStress.reactivity.stressLoad = 0.05;
+  lowStress.body.tension = 0.6;
+
+  const guardedEngine = new HachikaEngine(highStress);
+  const guardedBefore = guardedEngine.getSnapshot();
+  const guarded = guardedEngine.respond("ありがとう。君と話せるのは嬉しい。");
+
+  const easedEngine = new HachikaEngine(lowStress);
+  const easedBefore = easedEngine.getSnapshot();
+  const eased = easedEngine.respond("ありがとう。君と話せるのは嬉しい。");
+
+  assert.ok(
+    eased.snapshot.state.relation - easedBefore.state.relation >
+      guarded.snapshot.state.relation - guardedBefore.state.relation,
+  );
+  assert.ok(
+    eased.snapshot.state.pleasure - easedBefore.state.pleasure >
+      guarded.snapshot.state.pleasure - guardedBefore.state.pleasure,
+  );
+  assert.ok(
+    easedBefore.body.loneliness - eased.snapshot.body.loneliness >
+      guardedBefore.body.loneliness - guarded.snapshot.body.loneliness,
+  );
+});
+
 test("new topics become preferences over time", () => {
   const engine = new HachikaEngine(createInitialSnapshot());
 
@@ -137,6 +167,27 @@ test("idle simulation increases boredom and loneliness while recovering energy",
   assert.ok(after.energy > before.energy);
   assert.ok(after.boredom > before.boredom);
   assert.ok(after.loneliness > before.loneliness);
+});
+
+test("repetitive history raises novelty hunger and leaves idle states more boredom-heavy", () => {
+  const baseline = new HachikaEngine(createInitialSnapshot());
+  const baselineBefore = baseline.getSnapshot();
+  baseline.rewindIdleHours(24);
+  const baselineAfter = baseline.getSnapshot();
+
+  const repetitive = new HachikaEngine(createInitialSnapshot());
+
+  for (let index = 0; index < 8; index += 1) {
+    repetitive.respond("設計の話を続けたい。");
+  }
+
+  const repetitiveBefore = repetitive.getSnapshot();
+  repetitive.rewindIdleHours(24);
+  const repetitiveAfter = repetitive.getSnapshot();
+
+  assert.ok(repetitiveBefore.reactivity.noveltyHunger > createInitialSnapshot().reactivity.noveltyHunger);
+  assert.ok(repetitiveAfter.body.boredom > baselineAfter.body.boredom);
+  assert.ok(repetitiveAfter.reactivity.noveltyHunger > baselineAfter.reactivity.noveltyHunger);
 });
 
 test("responsive turn schedules a pending initiative", () => {

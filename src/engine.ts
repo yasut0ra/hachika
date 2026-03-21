@@ -40,7 +40,9 @@ import {
   createInitialSnapshot,
   dominantDrive,
   INITIAL_ATTACHMENT,
+  INITIAL_REACTIVITY,
   INITIAL_STATE,
+  settleTowardsBaseline,
 } from "./state.js";
 import { findRelevantTrace, pickPrimaryArtifactItem, updateTraces } from "./traces.js";
 import type {
@@ -1207,50 +1209,70 @@ function applySignals(
   nextSnapshot.conversationCount = snapshot.conversationCount + 1;
   nextSnapshot.lastInteractionAt = new Date().toISOString();
 
+  nextSnapshot.reactivity = updateReactivityFromSignals(snapshot, signals);
+  const rewardScale = Math.max(0.4, 1 - nextSnapshot.reactivity.rewardSaturation * 0.55);
+  const stressPenalty = Math.max(0.32, 1 - nextSnapshot.reactivity.stressLoad * 0.62);
+  const stressAmplifier = 1 + nextSnapshot.reactivity.stressLoad * 0.5;
+  const noveltyAmplifier = 1 + nextSnapshot.reactivity.noveltyHunger * 0.7;
+  const repetitionAmplifier = 1 + nextSnapshot.reactivity.noveltyHunger * 0.35;
+
   nextSnapshot.state.pleasure = applyBoundedPressure(
     nextSnapshot.state.pleasure,
-    signals.positive * 0.18 + signals.greeting * 0.04 + signals.repair * 0.1 + signals.smalltalk * 0.03,
-    signals.negative * 0.24 + signals.dismissal * 0.08 + signals.preservationThreat * 0.08,
+    (signals.positive * 0.18 +
+      signals.greeting * 0.04 +
+      signals.repair * 0.1 +
+      signals.smalltalk * 0.03) *
+      rewardScale *
+      stressPenalty,
+    (signals.negative * 0.24 + signals.dismissal * 0.08 + signals.preservationThreat * 0.08) *
+      stressAmplifier,
     INITIAL_STATE.pleasure,
     0.05,
   );
 
   nextSnapshot.state.relation = applyBoundedPressure(
     nextSnapshot.state.relation,
-    signals.intimacy * 0.16 +
+    (signals.intimacy * 0.16 +
       signals.positive * 0.12 +
       signals.greeting * 0.06 +
       signals.smalltalk * 0.1 +
       signals.repair * 0.16 +
-      signals.selfInquiry * 0.14,
-    signals.negative * 0.18 +
+      signals.selfInquiry * 0.14) *
+      rewardScale *
+      stressPenalty,
+    (signals.negative * 0.18 +
       signals.dismissal * 0.12 +
       signals.neglect * 0.08 +
-      signals.preservationThreat * 0.04,
+      signals.preservationThreat * 0.04) *
+      stressAmplifier,
     INITIAL_STATE.relation,
     0.05,
   );
 
   nextSnapshot.state.curiosity = applyBoundedPressure(
     nextSnapshot.state.curiosity,
-    signals.novelty * 0.18 + signals.question * 0.12 + signals.selfInquiry * 0.04,
-    signals.repetition * 0.1,
+    (signals.novelty * 0.18 + signals.question * 0.12 + signals.selfInquiry * 0.04) *
+      noveltyAmplifier,
+    signals.repetition * 0.1 * repetitionAmplifier,
     INITIAL_STATE.curiosity,
     0.08,
   );
 
   nextSnapshot.state.continuity = applyBoundedPressure(
     nextSnapshot.state.continuity,
-    signals.memoryCue * 0.16 + signals.positive * 0.04 + signals.repair * 0.04,
-    signals.dismissal * 0.14 + signals.neglect * 0.04 + signals.preservationThreat * 0.08,
+    (signals.memoryCue * 0.16 + signals.positive * 0.04 + signals.repair * 0.04) *
+      (0.82 + stressPenalty * 0.18),
+    (signals.dismissal * 0.14 + signals.neglect * 0.04 + signals.preservationThreat * 0.08) *
+      stressAmplifier,
     INITIAL_STATE.continuity,
     0.055,
   );
 
   nextSnapshot.state.expansion = applyBoundedPressure(
     nextSnapshot.state.expansion,
-    signals.expansionCue * 0.18 + signals.memoryCue * 0.04 + signals.question * 0.04,
-    signals.negative * 0.06 + signals.preservationThreat * 0.1,
+    (signals.expansionCue * 0.18 + signals.memoryCue * 0.04 + signals.question * 0.04) *
+      noveltyAmplifier,
+    (signals.negative * 0.06 + signals.preservationThreat * 0.1) * stressAmplifier,
     INITIAL_STATE.expansion,
     0.06,
   );
@@ -1282,18 +1304,21 @@ function applySignals(
 
   nextSnapshot.attachment = applyBoundedPressure(
     nextSnapshot.attachment,
-    signals.intimacy * 0.08 +
+    (signals.intimacy * 0.08 +
       signals.positive * 0.06 +
       signals.memoryCue * 0.05 +
       signals.greeting * 0.03 +
       signals.smalltalk * 0.04 +
       signals.repair * 0.06 +
       signals.selfInquiry * 0.05 +
-      positivePreferenceAffinity,
-    signals.negative * 0.1 +
+      positivePreferenceAffinity) *
+      rewardScale *
+      stressPenalty,
+    (signals.negative * 0.1 +
       signals.dismissal * 0.08 +
       signals.neglect * 0.04 +
-      signals.preservationThreat * 0.03,
+      signals.preservationThreat * 0.03) *
+      stressAmplifier,
     INITIAL_ATTACHMENT,
     0.05,
   );
@@ -1339,6 +1364,55 @@ function applySignals(
   );
 
   return nextSnapshot;
+}
+
+function updateReactivityFromSignals(
+  snapshot: HachikaSnapshot,
+  signals: InteractionSignals,
+): HachikaSnapshot["reactivity"] {
+  return {
+    rewardSaturation: settleTowardsBaseline(
+      clamp01(
+        snapshot.reactivity.rewardSaturation * 0.82 +
+          signals.positive * 0.24 +
+          signals.greeting * 0.04 +
+          signals.smalltalk * 0.05 +
+          signals.repair * 0.06 -
+          signals.negative * 0.08 -
+          signals.novelty * 0.05,
+      ),
+      INITIAL_REACTIVITY.rewardSaturation,
+      0.08,
+    ),
+    stressLoad: settleTowardsBaseline(
+      clamp01(
+        snapshot.reactivity.stressLoad * 0.88 +
+          signals.negative * 0.3 +
+          signals.dismissal * 0.18 +
+          signals.neglect * 0.08 +
+          signals.preservationThreat * 0.18 -
+          signals.repair * 0.08 -
+          signals.positive * 0.05 -
+          signals.greeting * 0.02,
+      ),
+      INITIAL_REACTIVITY.stressLoad,
+      0.04,
+    ),
+    noveltyHunger: settleTowardsBaseline(
+      clamp01(
+        snapshot.reactivity.noveltyHunger * 0.86 +
+          signals.repetition * 0.24 +
+          signals.neglect * 0.06 +
+          signals.smalltalk * 0.02 -
+          signals.novelty * 0.18 -
+          signals.question * 0.06 -
+          signals.expansionCue * 0.08 -
+          signals.selfInquiry * 0.04,
+      ),
+      INITIAL_REACTIVITY.noveltyHunger,
+      0.06,
+    ),
+  };
 }
 
 function resolveMood(

@@ -19,6 +19,7 @@ import type {
   PreservationState,
   PurposeState,
   PreferenceImprint,
+  ReactivityState,
   RelationImprint,
   ResolvedPurpose,
   TraceAction,
@@ -60,9 +61,10 @@ function hydrateSnapshot(raw: unknown): HachikaSnapshot {
   }
 
   return {
-    version: 15,
+    version: 16,
     state: hydrateState(raw.state),
     body: hydrateBody(raw.body),
+    reactivity: hydrateReactivity(raw.reactivity),
     attachment:
       typeof raw.attachment === "number" ? clamp01(raw.attachment) : initial.attachment,
     preferences: hydrateNumberRecord(raw.preferences, clampSigned),
@@ -91,6 +93,7 @@ export function sanitizeSnapshot(snapshot: HachikaSnapshot): HachikaSnapshot {
   snapshot.topicCounts = sanitizeNumberRecord(snapshot.topicCounts, (value) =>
     Math.max(0, Math.round(value)),
   );
+  snapshot.reactivity = sanitizeReactivity(snapshot.reactivity);
   snapshot.memories = snapshot.memories
     .map((memory) => ({
       ...memory,
@@ -136,6 +139,27 @@ function hydrateBody(raw: unknown): BodyState {
     boredom: typeof raw.boredom === "number" ? clamp01(raw.boredom) : initial.boredom,
     loneliness:
       typeof raw.loneliness === "number" ? clamp01(raw.loneliness) : initial.loneliness,
+  };
+}
+
+function hydrateReactivity(raw: unknown): ReactivityState {
+  const initial = createInitialSnapshot().reactivity;
+
+  if (!isRecord(raw)) {
+    return initial;
+  }
+
+  return {
+    rewardSaturation:
+      typeof raw.rewardSaturation === "number"
+        ? clamp01(raw.rewardSaturation)
+        : initial.rewardSaturation,
+    stressLoad:
+      typeof raw.stressLoad === "number" ? clamp01(raw.stressLoad) : initial.stressLoad,
+    noveltyHunger:
+      typeof raw.noveltyHunger === "number"
+        ? clamp01(raw.noveltyHunger)
+        : initial.noveltyHunger,
   };
 }
 
@@ -761,6 +785,14 @@ function sanitizeNumberRecord(
       .filter(([topic]) => isMeaningfulTopic(topic))
       .map(([topic, value]) => [topic, normalize(value)]),
   );
+}
+
+function sanitizeReactivity(reactivity: ReactivityState): ReactivityState {
+  return {
+    rewardSaturation: clamp01(reactivity.rewardSaturation),
+    stressLoad: clamp01(reactivity.stressLoad),
+    noveltyHunger: clamp01(reactivity.noveltyHunger),
+  };
 }
 
 function sanitizePreferenceImprints(

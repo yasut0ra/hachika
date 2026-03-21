@@ -5,7 +5,7 @@ import {
 import { rewindBodyHours, settleBodyAfterInitiative } from "./body.js";
 import { pickFreshText, recentAssistantReplies } from "./expression.js";
 import { buildSelfModel } from "./self-model.js";
-import { clamp01 } from "./state.js";
+import { clamp01, INITIAL_REACTIVITY, settleTowardsBaseline } from "./state.js";
 import {
   pickPrimaryArtifactItem,
   readTraceLifecycle,
@@ -232,6 +232,28 @@ export function rewindSnapshotHours(
       lastThreatAt: snapshot.preservation.lastThreatAt,
     };
   }
+
+  snapshot.reactivity = {
+    rewardSaturation: settleTowardsBaseline(
+      clamp01(snapshot.reactivity.rewardSaturation - Math.min(0.24, hours / 36)),
+      INITIAL_REACTIVITY.rewardSaturation,
+      0.12,
+    ),
+    stressLoad: settleTowardsBaseline(
+      clamp01(
+        snapshot.reactivity.stressLoad -
+          Math.min(0.14, hours / 72) +
+          (hours >= 20 ? Math.min(0.06, (hours - 20) / 120) : 0),
+      ),
+      INITIAL_REACTIVITY.stressLoad,
+      0.05,
+    ),
+    noveltyHunger: settleTowardsBaseline(
+      clamp01(snapshot.reactivity.noveltyHunger + Math.min(0.22, hours / 30)),
+      INITIAL_REACTIVITY.noveltyHunger,
+      0.04,
+    ),
+  };
 
   rewindBodyHours(snapshot, hours);
 
