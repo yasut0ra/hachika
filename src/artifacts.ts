@@ -1,6 +1,7 @@
-import { mkdir, readdir, unlink, writeFile } from "node:fs/promises";
+import { mkdir, readdir, unlink } from "node:fs/promises";
 import { dirname, join, relative, resolve } from "node:path";
 
+import { writeTextFileAtomic } from "./atomic-file.js";
 import {
   deriveEffectiveTraceStaleAt,
   deriveTraceTendingMode,
@@ -105,10 +106,10 @@ export async function syncArtifacts(
     }
 
     await mkdir(dirname(file.absolutePath), { recursive: true });
-    await writeFile(file.absolutePath, renderArtifactDocument(snapshot, trace), "utf8");
+    await writeTextFileAtomic(file.absolutePath, renderArtifactDocument(snapshot, trace));
   }
 
-  await writeFile(join(root, INDEX_FILE_NAME), renderArtifactIndex(snapshot, files), "utf8");
+  await writeTextFileAtomic(join(root, INDEX_FILE_NAME), renderArtifactIndex(snapshot, files));
 
   for (const tending of TENDING_ORDER) {
     const tendingDir = join(root, tending);
@@ -117,20 +118,18 @@ export async function syncArtifacts(
     );
 
     await mkdir(tendingDir, { recursive: true });
-    await writeFile(
+    await writeTextFileAtomic(
       join(tendingDir, INDEX_FILE_NAME),
       renderTendingArtifactIndex(snapshot, tending, tendingFiles),
-      "utf8",
     );
   }
 
   const archiveDir = join(root, "archive");
   const archivedFiles = files.filter((file) => file.lifecyclePhase === "archived");
   await mkdir(archiveDir, { recursive: true });
-  await writeFile(
+  await writeTextFileAtomic(
     join(archiveDir, INDEX_FILE_NAME),
     renderArchiveArtifactIndex(snapshot, archivedFiles),
-    "utf8",
   );
 
   const removedFiles: string[] = [];

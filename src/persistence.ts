@@ -1,6 +1,6 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
+import { readFile } from "node:fs/promises";
 
+import { writeTextFileAtomic } from "./atomic-file.js";
 import { extractTopics, isMeaningfulTopic } from "./memory.js";
 import { clamp01, clampSigned, createInitialSnapshot } from "./state.js";
 import { isInformativeTraceClause } from "./traces.js";
@@ -47,8 +47,7 @@ export async function saveSnapshot(
   snapshot: HachikaSnapshot,
 ): Promise<void> {
   sanitizeSnapshot(snapshot);
-  await mkdir(dirname(filePath), { recursive: true });
-  await writeFile(filePath, `${JSON.stringify(snapshot, null, 2)}\n`, "utf8");
+  await writeTextFileAtomic(filePath, `${JSON.stringify(snapshot, null, 2)}\n`);
 }
 
 const LOW_SIGNAL_ARTIFACT_PATTERNS = [

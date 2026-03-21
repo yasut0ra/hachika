@@ -314,6 +314,7 @@ npm run loop
 loop は snapshot を定期的に読み込み、idle consolidation と proactive emission を進めて `initiative.history` と artifacts に反映します。
 CLI と UI server は各操作の直前に snapshot を再読込するので、loop と併用しても state の見え方がずれにくくなっています。
 起動中は `data/resident-lock.json` と `data/resident-status.json` を使って多重起動防止と heartbeat/status 表示を行います。
+snapshot / resident status / artifact index の保存は atomic write を使うので、loop と併用しても途中書き込みが残りにくくなっています。
 
 LLM wording を有効にする場合:
 

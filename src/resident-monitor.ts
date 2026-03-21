@@ -2,6 +2,8 @@ import { readFileSync, existsSync } from "node:fs";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
+import { writeTextFileAtomic } from "./atomic-file.js";
+
 export interface ResidentLoopStatus {
   active: boolean;
   pid: number | null;
@@ -98,8 +100,7 @@ export async function saveResidentLoopStatus(
   filePath: string,
   status: ResidentLoopStatus,
 ): Promise<void> {
-  await mkdir(dirname(filePath), { recursive: true });
-  await writeFile(filePath, `${JSON.stringify(status, null, 2)}\n`, "utf8");
+  await writeTextFileAtomic(filePath, `${JSON.stringify(status, null, 2)}\n`);
 }
 
 export async function loadResidentLoopStatus(
