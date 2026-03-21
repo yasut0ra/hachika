@@ -95,6 +95,7 @@ const STOPWORDS = new Set([
   "ごめん",
   "落ち",
   "着い",
+  "て話",
   "かな",
   "って",
   "まずは",
@@ -140,12 +141,35 @@ const STOPWORDS = new Set([
 ]);
 
 const HIRAGANA_ONLY = /^[ぁ-ゖー]+$/u;
+const SINGLE_KANJI = /^[一-龠々]$/u;
+const OVERBROAD_TOPIC_PARTS = new Set([
+  "会話",
+  "話",
+  "言い方",
+  "雰囲気",
+  "温度",
+  "感じ",
+]);
 
 export function extractTopics(text: string): string[] {
   const topics: string[] = [];
   const seen = new Set<string>();
+  const segments = [...segmenter.segment(text)];
 
-  for (const segment of segmenter.segment(text)) {
+  for (const topic of extractCompoundTopics(segments)) {
+    if (seen.has(topic)) {
+      continue;
+    }
+
+    seen.add(topic);
+    topics.push(topic);
+
+    if (topics.length >= 6) {
+      return topics;
+    }
+  }
+
+  for (const segment of segments) {
     if (!segment.isWordLike) {
       continue;
     }
@@ -165,6 +189,107 @@ export function extractTopics(text: string): string[] {
   }
 
   return topics;
+}
+
+function extractCompoundTopics(
+  segments: Intl.SegmentData[],
+): string[] {
+  const topics: string[] = [];
+  const seen = new Set<string>();
+
+  for (let index = 0; index < segments.length; index += 1) {
+    const current = normalizeTopicPart(segments[index]?.segment ?? "");
+    if (!current) {
+      continue;
+    }
+
+    const mergedCurrent = readCompoundHead(segments, index);
+
+    if (!mergedCurrent) {
+      continue;
+    }
+
+    if (segments[index + 1]?.segment === "の") {
+      const right = readCompoundHead(segments, index + 2);
+
+      if (!right || !isMeaningfulTopic(right.topic)) {
+        continue;
+      }
+
+      const candidates = OVERBROAD_TOPIC_PARTS.has(current)
+        ? [right.topic]
+        : [`${mergedCurrent.topic}の${right.topic}`, right.topic];
+
+      for (const candidate of candidates) {
+        if (!isMeaningfulTopic(candidate) || seen.has(candidate)) {
+          continue;
+        }
+
+        seen.add(candidate);
+        topics.push(candidate);
+      }
+
+      continue;
+    }
+
+    if (mergedCurrent.consumed > 1 && isMeaningfulTopic(mergedCurrent.topic) && !seen.has(mergedCurrent.topic)) {
+      seen.add(mergedCurrent.topic);
+      topics.push(mergedCurrent.topic);
+    }
+  }
+
+  return topics;
+}
+
+function readCompoundHead(
+  segments: Intl.SegmentData[],
+  start: number,
+): { topic: string; consumed: number } | null {
+  const base = normalizeTopicPart(segments[start]?.segment ?? "");
+
+  if (!base) {
+    return null;
+  }
+
+  let topic = base;
+  let consumed = 1;
+
+  for (let index = start + 1; index < segments.length; index += 1) {
+    const next = segments[index];
+
+    if (!next?.isWordLike) {
+      break;
+    }
+
+    const normalized = normalizeTopicPart(next.segment);
+
+    if (!normalized || !SINGLE_KANJI.test(normalized)) {
+      break;
+    }
+
+    topic += normalized;
+    consumed += 1;
+  }
+
+  return { topic, consumed };
+}
+
+function normalizeTopicPart(token: string): string | null {
+  const normalized = token.normalize("NFKC").trim().toLowerCase();
+
+  if (!normalized) {
+    return null;
+  }
+
+  if (/^[0-9]+$/.test(normalized)) {
+    return null;
+  }
+
+  if (STOPWORDS.has(normalized) && !OVERBROAD_TOPIC_PARTS.has(normalized)) {
+    return null;
+  }
+
+  return normalized;
 }
 
 export function remember(

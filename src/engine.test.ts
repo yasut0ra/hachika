@@ -706,7 +706,7 @@ test("blocked trace schedules a blocker-aware initiative", () => {
   const pending = result.snapshot.initiative.pending;
 
   assert.ok(pending !== null);
-  assert.equal(pending?.topic, "仕様");
+  assert.match(pending?.topic ?? "", /仕様/);
   assert.ok((pending?.blocker ?? "").includes("未定") || (pending?.blocker ?? "").includes("曖昧"));
 });
 
@@ -1123,7 +1123,7 @@ test("blocker-aware proactive emission resolves the targeted blocker into a next
   const engine = new HachikaEngine(createInitialSnapshot());
 
   const first = engine.respond("仕様の境界が未定で曖昧だ。まだ進められない。");
-  const before = Object.values(first.snapshot.traces).find((entry) => entry.topic === "仕様");
+  const before = findTraceByTopicFragment(first.snapshot.traces, "仕様");
   const pendingBlocker = first.snapshot.initiative.pending?.blocker;
 
   assert.ok(before !== undefined);
@@ -1132,7 +1132,7 @@ test("blocker-aware proactive emission resolves the targeted blocker into a next
 
   engine.rewindIdleHours(8);
   const message = engine.emitInitiative();
-  const after = engine.getSnapshot().traces.仕様;
+  const after = findTraceByTopicFragment(engine.getSnapshot().traces, "仕様");
 
   assert.ok(message !== null);
   assert.ok(after !== undefined);
@@ -1151,7 +1151,7 @@ test("ordinary reply can surface unresolved trace work", () => {
   assert.equal(
     result.debug.selfModel.topMotives.some(
       (motive) =>
-        motive.topic === "仕様" &&
+        (motive.topic ?? "").includes("仕様") &&
         /詰まりどころ|未決着の芯|止まったまま|輪郭が曖昧/.test(motive.reason),
     ),
     true,
@@ -1432,11 +1432,23 @@ test("first-turn meta work talk does not collapse into a decision or a fully coh
   assert.ok(result.snapshot.identity.coherence < 0.5);
 });
 
+test("a newly explicit work topic can outrank the previous carried topic", () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+
+  engine.respond("じゃあ会話の問題点を三つに分けたい。");
+  const result = engine.respond("仕様の境界が未定で曖昧だ。まだ進められない。");
+  const currentTrace = findTraceByTopicFragment(result.snapshot.traces, "仕様");
+
+  assert.ok(currentTrace !== undefined);
+  assert.match(result.debug.reply.selection?.currentTopic ?? "", /仕様/);
+  assert.match(result.reply, /仕様/);
+});
+
 test("ambiguous work can create blockers in trace work state", () => {
   const engine = new HachikaEngine(createInitialSnapshot());
 
   const result = engine.respond("仕様の境界が未定で曖昧だ。まだ進められない。");
-  const trace = Object.values(result.snapshot.traces).find((entry) => entry.topic === "仕様");
+  const trace = findTraceByTopicFragment(result.snapshot.traces, "仕様");
 
   assert.ok(trace !== undefined);
   assert.ok(trace.work.blockers.length > 0);
@@ -1955,4 +1967,11 @@ function createArchivedTrace(
     createdAt: "2026-03-19T08:00:00.000Z",
     lastUpdatedAt: "2026-03-19T09:00:00.000Z",
   };
+}
+
+function findTraceByTopicFragment<T extends { topic: string }>(
+  traces: Record<string, T>,
+  fragment: string,
+): T | undefined {
+  return Object.values(traces).find((trace) => trace.topic.includes(fragment));
 }

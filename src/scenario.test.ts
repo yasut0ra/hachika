@@ -61,13 +61,15 @@ test("scenario: blocked work can turn into a concrete next step after proactive 
   const blocked = requireScenarioEvent(run, "blocked", "user");
   const repair = requireScenarioEvent(run, "repair", "proactive");
   const blocker = blocked.snapshot.initiative.pending?.blocker;
+  const blockedTrace = findTraceByTopicFragment(blocked.snapshot.traces, "仕様");
+  const repairTrace = findTraceByTopicFragment(repair.snapshot.traces, "仕様");
 
-  assert.ok(blocked.snapshot.traces.仕様 !== undefined);
+  assert.ok(blockedTrace !== undefined);
   assert.ok(blocker !== null && blocker !== undefined);
-  assert.ok(blocked.snapshot.traces.仕様?.work.blockers.includes(blocker));
+  assert.ok(blockedTrace?.work.blockers.includes(blocker));
   assert.ok(repair.message !== null);
-  assert.equal(repair.snapshot.traces.仕様?.work.blockers.includes(blocker), false);
-  assert.ok((repair.snapshot.traces.仕様?.artifact.nextSteps[0] ?? "").includes("整理"));
+  assert.equal(repairTrace?.work.blockers.includes(blocker), false);
+  assert.ok((repairTrace?.artifact.nextSteps[0] ?? "").includes("整理"));
   assert.match(repair.message ?? "", /整理|ほどく/);
 });
 
@@ -187,17 +189,19 @@ test("scenario: async reply fallback keeps local state updates intact", async ()
 
   const baselineBlocked = requireScenarioEvent(baseline, "blocked", "user");
   const blocked = requireScenarioEvent(run, "blocked", "user");
+  const baselineBlockedTrace = findTraceByTopicFragment(baselineBlocked.snapshot.traces, "仕様");
+  const blockedTrace = findTraceByTopicFragment(blocked.snapshot.traces, "仕様");
 
   assert.equal(blocked.reply, baselineBlocked.reply);
   assert.equal(blocked.debug.reply.mode, "reply");
   assert.equal(blocked.debug.reply.source, "rule");
   assert.equal(blocked.debug.reply.fallbackUsed, true);
   assert.match(blocked.debug.reply.error ?? "", /reply adapter offline/);
-  assert.equal(blocked.snapshot.traces.仕様?.kind, baselineBlocked.snapshot.traces.仕様?.kind);
-  assert.equal(blocked.snapshot.traces.仕様?.status, baselineBlocked.snapshot.traces.仕様?.status);
-  assert.deepEqual(blocked.snapshot.traces.仕様?.artifact, baselineBlocked.snapshot.traces.仕様?.artifact);
-  assert.deepEqual(blocked.snapshot.traces.仕様?.work.blockers, baselineBlocked.snapshot.traces.仕様?.work.blockers);
-  assert.equal(blocked.snapshot.traces.仕様?.work.focus, baselineBlocked.snapshot.traces.仕様?.work.focus);
+  assert.equal(blockedTrace?.kind, baselineBlockedTrace?.kind);
+  assert.equal(blockedTrace?.status, baselineBlockedTrace?.status);
+  assert.deepEqual(blockedTrace?.artifact, baselineBlockedTrace?.artifact);
+  assert.deepEqual(blockedTrace?.work.blockers, baselineBlockedTrace?.work.blockers);
+  assert.equal(blockedTrace?.work.focus, baselineBlockedTrace?.work.focus);
   assert.equal(
     blocked.snapshot.purpose.active?.kind,
     baselineBlocked.snapshot.purpose.active?.kind,
@@ -257,17 +261,19 @@ test("scenario: async proactive fallback keeps local maintenance intact", async 
 
   const baselineRepair = requireScenarioEvent(baseline, "repair", "proactive");
   const repair = requireScenarioEvent(run, "repair", "proactive");
+  const baselineRepairTrace = findTraceByTopicFragment(baselineRepair.snapshot.traces, "仕様");
+  const repairTrace = findTraceByTopicFragment(repair.snapshot.traces, "仕様");
 
   assert.equal(repair.message, baselineRepair.message);
   assert.equal(repair.debug?.mode, "proactive");
   assert.equal(repair.debug?.source, "rule");
   assert.equal(repair.debug?.fallbackUsed, true);
   assert.match(repair.debug?.error ?? "", /proactive adapter offline/);
-  assert.equal(repair.snapshot.traces.仕様?.kind, baselineRepair.snapshot.traces.仕様?.kind);
-  assert.equal(repair.snapshot.traces.仕様?.status, baselineRepair.snapshot.traces.仕様?.status);
-  assert.deepEqual(repair.snapshot.traces.仕様?.artifact, baselineRepair.snapshot.traces.仕様?.artifact);
-  assert.deepEqual(repair.snapshot.traces.仕様?.work.blockers, baselineRepair.snapshot.traces.仕様?.work.blockers);
-  assert.equal(repair.snapshot.traces.仕様?.work.focus, baselineRepair.snapshot.traces.仕様?.work.focus);
+  assert.equal(repairTrace?.kind, baselineRepairTrace?.kind);
+  assert.equal(repairTrace?.status, baselineRepairTrace?.status);
+  assert.deepEqual(repairTrace?.artifact, baselineRepairTrace?.artifact);
+  assert.deepEqual(repairTrace?.work.blockers, baselineRepairTrace?.work.blockers);
+  assert.equal(repairTrace?.work.focus, baselineRepairTrace?.work.focus);
   assert.equal(repair.snapshot.initiative.pending?.kind, baselineRepair.snapshot.initiative.pending?.kind);
   assert.equal(repair.snapshot.initiative.pending?.topic, baselineRepair.snapshot.initiative.pending?.topic);
   assert.equal(repair.snapshot.initiative.pending?.blocker, baselineRepair.snapshot.initiative.pending?.blocker);
@@ -557,4 +563,11 @@ function createBlockedInitiativeScenarioSnapshot(): HachikaSnapshot {
   };
 
   return snapshot;
+}
+
+function findTraceByTopicFragment<T extends { topic: string }>(
+  traces: Record<string, T>,
+  fragment: string,
+): T | undefined {
+  return Object.values(traces).find((trace) => trace.topic.includes(fragment));
 }

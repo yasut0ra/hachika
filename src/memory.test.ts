@@ -15,6 +15,17 @@ test("extractTopics drops discourse scaffolding and vague tail fragments", () =>
   assert.ok(!topics.includes("かな"));
 });
 
+test("extractTopics prefers compound concrete topics over split fragments", () => {
+  const problemTopics = extractTopics("じゃあ会話の問題点を三つに分けたい。");
+  const boundaryTopics = extractTopics("仕様の境界が未定で曖昧だ。");
+  const worldviewTopics = extractTopics("あなたは世界観をどう見ている？");
+
+  assert.ok(problemTopics.includes("問題点"));
+  assert.ok(!problemTopics.includes("じゃあ"));
+  assert.ok(boundaryTopics.includes("仕様の境界"));
+  assert.ok(worldviewTopics.includes("世界観"));
+});
+
 test("isMeaningfulTopic rejects low-information conversational fragments", () => {
   assert.equal(isMeaningfulTopic("かな"), false);
   assert.equal(isMeaningfulTopic("って"), false);

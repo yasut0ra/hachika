@@ -850,6 +850,22 @@ function scoreTraceTopicCandidate(
   topic: string,
 ): number {
   const signalIndex = signals.topics.indexOf(topic);
+  const explicitShiftBoost =
+    signalIndex === 0 &&
+    signals.topics.length > 0 &&
+    snapshot.purpose.active?.topic !== topic &&
+    snapshot.initiative.pending?.topic !== topic
+      ? 0.24
+      : signalIndex >= 0 && signals.topics.length > 0
+        ? 0.08
+        : 0;
+  const carriedTopicPenalty =
+    signalIndex < 0 &&
+    signals.topics.length > 0 &&
+    (signals.workCue > 0.16 || signals.memoryCue > 0.1 || signals.completion > 0.12) &&
+    (snapshot.purpose.active?.topic === topic || snapshot.initiative.pending?.topic === topic)
+      ? 0.18
+      : 0;
   const motiveScore = selfModel.topMotives.reduce((score, motive, index) => {
     if (motive.topic !== topic) {
       return score;
@@ -861,6 +877,8 @@ function scoreTraceTopicCandidate(
 
   return (
     (signalIndex >= 0 ? 0.72 - signalIndex * 0.14 : 0) +
+    explicitShiftBoost -
+    carriedTopicPenalty +
     (snapshot.purpose.active?.topic === topic ? 0.34 : 0) +
     (snapshot.initiative.pending?.topic === topic ? 0.28 : 0) +
     (snapshot.identity.anchors.indexOf(topic) >= 0
