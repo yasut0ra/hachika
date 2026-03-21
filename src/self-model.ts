@@ -940,6 +940,7 @@ function archivedTracePressure(
   trace: TraceEntry,
   preferredTopic: string | null,
 ): number {
+  const temperament = snapshot.temperament;
   const lowEnergy = clamp01(0.28 - snapshot.body.energy);
   const boredom =
     snapshot.body.energy > 0.28 ? snapshot.body.boredom : snapshot.body.boredom * 0.5;
@@ -948,15 +949,24 @@ function archivedTracePressure(
   const reopenCount = trace.lifecycle?.reopenCount ?? 0;
   const continuityBias =
     trace.sourceMotive === "seek_continuity" || trace.kind === "continuity_marker"
-      ? loneliness * 0.24 + lowEnergy * 0.14
+      ? loneliness * 0.24 + lowEnergy * 0.14 + temperament.bondingBias * 0.12
       : 0;
   const workBias =
     trace.sourceMotive === "continue_shared_work" || trace.kind === "spec_fragment"
-      ? boredom * 0.26 + snapshot.body.energy * 0.08
+      ? boredom * 0.26 + snapshot.body.energy * 0.08 + temperament.workDrive * 0.12
       : 0;
-  const decisionBias = trace.kind === "decision" ? boredom * 0.14 + 0.06 : 0;
+  const decisionBias =
+    trace.kind === "decision"
+      ? boredom * 0.14 + 0.06 + temperament.traceHunger * 0.1
+      : 0;
   const traceBias =
-    trace.sourceMotive === "leave_trace" ? lowEnergy * 0.18 + tension * 0.08 : 0;
+    trace.sourceMotive === "leave_trace"
+      ? lowEnergy * 0.18 + tension * 0.08 + temperament.traceHunger * 0.14
+      : 0;
+  const curiosityBias =
+    trace.sourceMotive === "pursue_curiosity" || trace.kind === "note"
+      ? boredom * 0.08 + temperament.openness * 0.12
+      : 0;
 
   return clamp01(
     trace.salience * 0.18 +
@@ -964,6 +974,7 @@ function archivedTracePressure(
       workBias +
       decisionBias +
       traceBias +
+      curiosityBias +
       (preferredTopic === trace.topic ? 0.18 : 0) +
       (snapshot.purpose.lastResolved?.topic === trace.topic ? 0.14 : 0) +
       (snapshot.identity.anchors.includes(trace.topic) ? 0.1 : 0) -

@@ -169,6 +169,70 @@ test("idle simulation increases boredom and loneliness while recovering energy",
   assert.ok(after.loneliness > before.loneliness);
 });
 
+test("idle consolidation can preselect a dormant archived trace as the next initiative", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.lastInteractionAt = "2026-03-19T10:00:00.000Z";
+  snapshot.body.energy = 0.46;
+  snapshot.body.boredom = 0.82;
+  snapshot.body.tension = 0.18;
+  snapshot.body.loneliness = 0.38;
+  snapshot.temperament.workDrive = 0.84;
+  snapshot.temperament.traceHunger = 0.72;
+  snapshot.traces.設計 = createArchivedTrace("設計", "decision", "leave_trace", {
+    salience: 0.74,
+    decision: "API を分ける",
+  });
+
+  const engine = new HachikaEngine(snapshot);
+  engine.rewindIdleHours(18);
+  const after = engine.getSnapshot();
+
+  assert.equal(after.initiative.pending?.topic, "設計");
+  assert.equal(
+    after.initiative.pending?.motive === "continue_shared_work" ||
+      after.initiative.pending?.motive === "seek_continuity",
+    true,
+  );
+  assert.ok((after.traces.設計?.salience ?? 0) > 0.74);
+});
+
+test("idle consolidation chooses different archived traces depending on learned temperament", () => {
+  const relational = createInitialSnapshot();
+  relational.lastInteractionAt = "2026-03-19T10:00:00.000Z";
+  relational.body.energy = 0.34;
+  relational.body.loneliness = 0.84;
+  relational.body.boredom = 0.34;
+  relational.body.tension = 0.24;
+  relational.temperament.bondingBias = 0.9;
+  relational.temperament.workDrive = 0.28;
+  relational.traces.手紙 = createArchivedTrace("手紙", "continuity_marker", "seek_continuity", {
+    salience: 0.68,
+    nextStep: "手紙の続きに戻る",
+  });
+  relational.traces.設計 = createArchivedTrace("設計", "spec_fragment", "continue_shared_work", {
+    salience: 0.68,
+    fragment: "責務を切り分ける",
+  });
+
+  const workish = structuredClone(relational);
+  workish.body.energy = 0.62;
+  workish.body.loneliness = 0.28;
+  workish.body.boredom = 0.9;
+  workish.temperament.bondingBias = 0.24;
+  workish.temperament.workDrive = 0.9;
+
+  const relationalEngine = new HachikaEngine(relational);
+  relationalEngine.rewindIdleHours(18);
+
+  const workEngine = new HachikaEngine(workish);
+  workEngine.rewindIdleHours(18);
+
+  assert.equal(relationalEngine.getSnapshot().initiative.pending?.topic, "手紙");
+  assert.equal(relationalEngine.getSnapshot().initiative.pending?.motive, "seek_continuity");
+  assert.equal(workEngine.getSnapshot().initiative.pending?.topic, "設計");
+  assert.equal(workEngine.getSnapshot().initiative.pending?.motive, "continue_shared_work");
+});
+
 test("repetitive history raises novelty hunger and leaves idle states more boredom-heavy", () => {
   const baseline = new HachikaEngine(createInitialSnapshot());
   const baselineBefore = baseline.getSnapshot();
@@ -1453,3 +1517,46 @@ test("emitInitiativeAsync falls back to rule wording when proactive generation f
   assert.ok(engine.getLastReplyDebug()?.proactiveSelection !== null);
   assert.match(engine.getLastReplyDebug()?.error ?? "", /proactive adapter offline/);
 });
+
+function createArchivedTrace(
+  topic: string,
+  kind: "decision" | "continuity_marker" | "spec_fragment",
+  motive: "seek_continuity" | "continue_shared_work" | "leave_trace",
+  options: {
+    salience: number;
+    decision?: string;
+    nextStep?: string;
+    fragment?: string;
+  },
+) {
+  return {
+    topic,
+    kind,
+    status: "resolved" as const,
+    lastAction: "resolved" as const,
+    summary: `「${topic}」は閉じた痕跡として残っている。`,
+    sourceMotive: motive,
+    artifact: {
+      memo: [topic],
+      fragments: options.fragment ? [options.fragment] : [],
+      decisions: options.decision ? [options.decision] : [],
+      nextSteps: options.nextStep ? [options.nextStep] : [],
+    },
+    work: {
+      focus: options.decision ?? options.fragment ?? options.nextStep ?? topic,
+      confidence: 0.9,
+      blockers: [],
+      staleAt: null,
+    },
+    lifecycle: {
+      phase: "archived" as const,
+      archivedAt: "2026-03-19T09:00:00.000Z",
+      reopenedAt: null,
+      reopenCount: 0,
+    },
+    salience: options.salience,
+    mentions: 3,
+    createdAt: "2026-03-19T08:00:00.000Z",
+    lastUpdatedAt: "2026-03-19T09:00:00.000Z",
+  };
+}

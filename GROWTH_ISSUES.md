@@ -152,7 +152,8 @@
 ### ステータス
 - 部分完了
 - idle による body 変化、initiative、trace maintenance、archive/reopen はすでにある
-- 未完了なのは「会話していない間の再評価バッチ」としての consolidation
+- deterministic な idle consolidation を追加し、temperament と body を見て dormant archive の salience / pending initiative を再評価するところまでは入った
+- 未完了なのは memories / imprints / identity anchor の再配置を batch としてもっと厚くすること
 
 ### 背景
 - 現在も `initiative` と trace maintenance はあるが、主に未完了 topic の再開に寄っている。
@@ -172,9 +173,9 @@
 - `rewindSnapshotHours` と `emitInitiative` のテストを増やす
 
 ### 次にやる部分
-- `rewindSnapshotHours` の中で deterministic な consolidation pass を一段入れる
-- stale trace の順序だけでなく、identity anchor と dormant archive pressure も更新する
-- learned temperament 導入後は reopen 候補の選定に temperament を参照させる
+- stale trace だけでなく memories / relation imprint も idle batch で再評価する
+- dormant archive の pending 化だけでなく、trace priority と identity anchor の再配置をもう一段強める
+- proactive emission 前に「なぜ今この archive が再浮上したか」の監査情報も持たせる
 
 ### 実装メモ
 - 初手では batch 処理を `idle` コマンド経由の deterministic 処理として実装する

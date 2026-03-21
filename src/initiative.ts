@@ -258,6 +258,7 @@ export function rewindSnapshotHours(
 
   rewindBodyHours(snapshot, hours);
   rewindTemperamentHours(snapshot, hours);
+  consolidateIdleSnapshot(snapshot, hours);
 
   if (snapshot.initiative.pending) {
     snapshot.initiative.pending = {
@@ -265,6 +266,86 @@ export function rewindSnapshotHours(
       createdAt: shiftTimestamp(snapshot.initiative.pending.createdAt, hours) ?? snapshot.initiative.pending.createdAt,
     };
   }
+}
+
+function consolidateIdleSnapshot(
+  snapshot: HachikaSnapshot,
+  hours: number,
+): void {
+  if (!Number.isFinite(hours) || hours < 6) {
+    return;
+  }
+
+  const preferredMotive = deriveIdlePreferredMotive(snapshot);
+  const preferredTopic =
+    snapshot.purpose.active?.topic ??
+    snapshot.purpose.lastResolved?.topic ??
+    snapshot.identity.anchors[0] ??
+    null;
+  const candidateTopics = [
+    ...snapshot.identity.anchors.slice(0, 3),
+    preferredTopic ?? "",
+  ].filter(isNonEmpty);
+  const dormant = sortedArchivedInitiativeTraces(snapshot, 8)
+    .map((trace) => {
+      const motive = mappedReopenMotiveForTrace(snapshot, trace, preferredMotive);
+      const score = scoreDormantArchivedTrace(
+        snapshot,
+        trace,
+        candidateTopics,
+        preferredMotive,
+        preferredTopic,
+      );
+
+      return { trace, motive, score };
+    })
+    .sort((left, right) => right.score - left.score)[0];
+
+  if (!dormant || dormant.score < 0.42) {
+    return;
+  }
+
+  const selectedBoost =
+    Math.min(0.14, hours / 96) * (0.45 + dormant.score * 0.4);
+  dormant.trace.salience = clamp01(dormant.trace.salience + selectedBoost);
+
+  for (const archived of sortedArchivedInitiativeTraces(snapshot, 12)) {
+    if (archived.topic === dormant.trace.topic) {
+      continue;
+    }
+
+    archived.salience = clamp01(
+      archived.salience - Math.min(0.03, hours / 240),
+    );
+  }
+
+  const existingPending = snapshot.initiative.pending;
+  const shouldInstallPending =
+    !existingPending ||
+    (existingPending.kind !== "preserve_presence" &&
+      (existingPending.topic === dormant.trace.topic || dormant.score >= 0.58));
+
+  if (!shouldInstallPending) {
+    return;
+  }
+
+  const readyAfter = Math.max(
+    0.5,
+    readyAfterMotive(snapshot, dormant.motive) -
+      Math.min(2.5, hours / 12) -
+      Math.min(1.5, dormant.score * 1.2),
+  );
+
+  snapshot.initiative.pending = {
+    kind: "resume_topic",
+    reason: reasonFromMotive(dormant.motive),
+    motive: dormant.motive,
+    topic: dormant.trace.topic,
+    blocker: null,
+    concern: null,
+    createdAt: snapshot.lastInteractionAt ?? new Date().toISOString(),
+    readyAfterHours: Math.round(readyAfter * 10) / 10,
+  };
 }
 
 function selectInitiativeTopic(
@@ -1014,6 +1095,32 @@ function selectBodyPreferredMotive(
   }
 
   return null;
+}
+
+function deriveIdlePreferredMotive(snapshot: HachikaSnapshot): MotiveKind {
+  if (snapshot.purpose.active) {
+    return snapshot.purpose.active.kind;
+  }
+
+  const temperament = snapshot.temperament;
+
+  if (snapshot.body.loneliness > 0.66 || temperament.bondingBias > 0.7) {
+    return "seek_continuity";
+  }
+
+  if (snapshot.body.boredom > 0.72 && temperament.workDrive >= temperament.traceHunger) {
+    return "continue_shared_work";
+  }
+
+  if (snapshot.preservation.threat > 0.24 || temperament.traceHunger > 0.68) {
+    return "leave_trace";
+  }
+
+  if (temperament.openness > 0.66) {
+    return "pursue_curiosity";
+  }
+
+  return snapshot.purpose.lastResolved?.kind ?? "continue_shared_work";
 }
 
 function readyAfterMotive(
