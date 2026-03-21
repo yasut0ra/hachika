@@ -647,8 +647,9 @@ function formatGeneratedDebug(
   const fallback = debug.fallbackUsed ? " fallback" : "";
   const error = debug.error ? ` error:${debug.error}` : "";
   const plan = debug.plan ? ` plan:${debug.plan}` : "";
+  const selection = formatReplySelection(debug.selection);
 
-  return `${mode}${debug.source}${via}${model}${fallback}${error}${plan}`;
+  return `${mode}${debug.source}${via}${model}${fallback}${error}${plan}${selection}`;
 }
 
 function formatInterpretationDebug(
@@ -700,6 +701,24 @@ function formatInterpretationScores(
   return ` scores:${visible
     .map(([label, score]) => `${label}:${score.toFixed(2)}`)
     .join("/")}`;
+}
+
+function formatReplySelection(
+  selection: NonNullable<ReturnType<HachikaEngine["getLastReplyDebug"]>>["selection"],
+): string {
+  if (!selection) {
+    return " selection:none";
+  }
+
+  const focus = selection.currentTopic ? ` focus:${selection.currentTopic}` : " focus:none";
+  const trace = selection.relevantTraceTopic ? ` trace:${selection.relevantTraceTopic}` : " trace:none";
+  const boundary = selection.relevantBoundaryTopic
+    ? ` boundary:${selection.relevantBoundaryTopic}`
+    : " boundary:none";
+  const tracePriority = ` tracePriority:${selection.prioritizeTraceLine ? "high" : "low"}`;
+  const social = ` social:${selection.socialTurn ? "yes" : "no"}`;
+
+  return `${focus}${trace}${boundary}${tracePriority}${social}`;
 }
 
 function calculateNeglectLevelForDisplay(

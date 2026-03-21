@@ -317,6 +317,14 @@ export interface InterpretationScoresDebug {
   dismissal: number;
 }
 
+export interface ReplySelectionDebug {
+  socialTurn: boolean;
+  currentTopic: string | null;
+  relevantTraceTopic: string | null;
+  relevantBoundaryTopic: string | null;
+  prioritizeTraceLine: boolean;
+}
+
 export interface GeneratedTextDebug {
   mode: "reply" | "proactive";
   source: "rule" | "llm";
@@ -325,4 +333,5 @@ export interface GeneratedTextDebug {
   fallbackUsed: boolean;
   error: string | null;
   plan: string | null;
+  selection: ReplySelectionDebug | null;
 }

@@ -46,6 +46,7 @@ import type {
   InterpretationDebug,
   InteractionSignals,
   MoodLabel,
+  ReplySelectionDebug,
   SelfModel,
   TraceEntry,
   TurnResult,
@@ -423,6 +424,7 @@ export class HachikaEngine {
       fallbackUsed: false,
       error: null,
       plan: emission.plan.summary,
+      selection: null,
     });
   }
 
@@ -454,6 +456,7 @@ export class HachikaEngine {
           fallbackUsed: false,
           error: null,
           plan: emission.plan.summary,
+          selection: null,
         },
       );
     }
@@ -472,6 +475,7 @@ export class HachikaEngine {
         fallbackUsed: message === fallbackMessage,
         error: message === fallbackMessage ? "empty_reply" : null,
         plan: emission.plan.summary,
+        selection: null,
       });
     } catch (error) {
       return this.#finalizeProactiveEmission(previousSnapshot, nextSnapshot, fallbackMessage, emission.topics, {
@@ -482,6 +486,7 @@ export class HachikaEngine {
         fallbackUsed: true,
         error: formatReplyGenerationError(error),
         plan: emission.plan.summary,
+        selection: null,
       });
     }
   }
@@ -522,6 +527,7 @@ export class HachikaEngine {
       prepared.signals,
       prepared.selfModel,
       prepared.responsePlan,
+      prepared.replySelection,
     );
 
     return this.#finalizeTurn(input, prepared, reply, {
@@ -532,6 +538,7 @@ export class HachikaEngine {
       fallbackUsed: false,
       error: null,
       plan: prepared.responsePlan.summary,
+      selection: prepared.replySelection.debug,
     });
   }
 
@@ -555,6 +562,7 @@ export class HachikaEngine {
       prepared.signals,
       prepared.selfModel,
       prepared.responsePlan,
+      prepared.replySelection,
     );
     const replyGenerator = options.replyGenerator ?? null;
 
@@ -567,6 +575,7 @@ export class HachikaEngine {
         fallbackUsed: false,
         error: null,
         plan: prepared.responsePlan.summary,
+        selection: prepared.replySelection.debug,
       });
     }
 
@@ -584,6 +593,7 @@ export class HachikaEngine {
         fallbackUsed: reply === fallbackReply,
         error: reply === fallbackReply ? "empty_reply" : null,
         plan: prepared.responsePlan.summary,
+        selection: prepared.replySelection.debug,
       });
     } catch (error) {
       return this.#finalizeTurn(input, prepared, fallbackReply, {
@@ -594,6 +604,7 @@ export class HachikaEngine {
         fallbackUsed: true,
         error: formatReplyGenerationError(error),
         plan: prepared.responsePlan.summary,
+        selection: prepared.replySelection.debug,
       });
     }
   }
@@ -634,11 +645,21 @@ interface PreparedTurn {
   nextSnapshot: HachikaSnapshot;
   signals: InteractionSignals;
   interpretationDebug: InterpretationDebug;
+  replySelection: ResolvedReplySelection;
   mood: MoodLabel;
   dominant: DriveName;
   selfModel: SelfModel;
   responsePlan: ResponsePlan;
   sentimentScore: number;
+}
+
+interface ResolvedReplySelection {
+  socialTurn: boolean;
+  currentTopic: string | undefined;
+  relevantTrace: TraceEntry | undefined;
+  relevantBoundary: ReturnType<typeof findRelevantBoundaryImprint>;
+  prioritizeTraceLine: boolean;
+  debug: ReplySelectionDebug;
 }
 
 function prepareTurn(
@@ -706,12 +727,14 @@ function prepareTurnFromSignals(
     signals,
     selfModel,
   );
+  const replySelection = resolveReplySelection(nextSnapshot, signals, responsePlan);
 
   return {
     previousSnapshot,
     nextSnapshot,
     signals,
     interpretationDebug,
+    replySelection,
     mood,
     dominant,
     selfModel,
@@ -778,6 +801,43 @@ function formatInterpretationError(error: unknown): string {
   }
 
   return "input_interpretation_failed";
+}
+
+function resolveReplySelection(
+  snapshot: HachikaSnapshot,
+  signals: InteractionSignals,
+  responsePlan: ResponsePlan,
+): ResolvedReplySelection {
+  const socialTurn = isSocialTurnSignals(signals);
+  const currentTopic =
+    responsePlan.focusTopic ??
+    (socialTurn ? undefined : topPreferredTopics(snapshot, 1)[0]);
+  const relevantTrace = responsePlan.mentionTrace
+    ? findRelevantTrace(snapshot, signals.topics)
+    : undefined;
+  const relevantBoundary = responsePlan.mentionBoundary
+    ? findRelevantBoundaryImprint(snapshot, signals.topics)
+    : undefined;
+  const prioritizeTraceLine = shouldPrioritizeTraceLine(
+    relevantTrace,
+    snapshot,
+    signals,
+  );
+
+  return {
+    socialTurn,
+    currentTopic,
+    relevantTrace,
+    relevantBoundary,
+    prioritizeTraceLine,
+    debug: {
+      socialTurn,
+      currentTopic: currentTopic ?? null,
+      relevantTraceTopic: relevantTrace?.topic ?? null,
+      relevantBoundaryTopic: relevantBoundary?.topic ?? null,
+      prioritizeTraceLine,
+    },
+  };
 }
 
 async function analyzeInteractionAsync(
@@ -1300,18 +1360,15 @@ function composeReply(
   signals: InteractionSignals,
   selfModel: SelfModel,
   responsePlan: ResponsePlan,
+  replySelection: ResolvedReplySelection,
 ): string {
   const turnIndex = nextSnapshot.conversationCount;
-  const socialTurn = isSocialTurnSignals(signals);
-  const currentTopic = responsePlan.focusTopic ?? (socialTurn ? undefined : topPreferredTopics(nextSnapshot, 1)[0]);
+  const socialTurn = replySelection.socialTurn;
+  const currentTopic = replySelection.currentTopic;
   const relevantMemory = findRelevantMemory(previousSnapshot, signals.topics);
-  const relevantTrace = responsePlan.mentionTrace
-    ? findRelevantTrace(nextSnapshot, signals.topics)
-    : undefined;
+  const relevantTrace = replySelection.relevantTrace;
   const relevantPreference = findRelevantPreferenceImprint(nextSnapshot, signals.topics);
-  const relevantBoundary = responsePlan.mentionBoundary
-    ? findRelevantBoundaryImprint(nextSnapshot, signals.topics)
-    : undefined;
+  const relevantBoundary = replySelection.relevantBoundary;
   const relevantRelation = findRelevantRelationImprint(
     nextSnapshot,
     selectRelationKinds(dominant, signals),
@@ -1319,7 +1376,7 @@ function composeReply(
   const traceLine = responsePlan.mentionTrace
     ? buildTraceLine(relevantTrace, nextSnapshot, signals)
     : null;
-  const prioritizeTraceLine = shouldPrioritizeTraceLine(relevantTrace, nextSnapshot, signals);
+  const prioritizeTraceLine = replySelection.prioritizeTraceLine;
   const bodyLine = buildBodyLine(nextSnapshot, mood, signals, currentTopic);
   const prioritizeBodyLine = shouldPrioritizeBodyLine(nextSnapshot, signals);
   const parts: string[] = [buildPlannedOpener(responsePlan, mood, turnIndex)];

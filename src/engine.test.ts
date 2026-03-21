@@ -933,6 +933,7 @@ test("respond stores the last local reply diagnostics on the engine", () => {
   assert.equal(engine.getLastReplyDebug()?.fallbackUsed, false);
   assert.equal(engine.getLastReplyDebug()?.error, null);
   assert.ok((engine.getLastReplyDebug()?.plan ?? "").length > 0);
+  assert.equal(engine.getLastReplyDebug()?.selection?.currentTopic, "仕様");
 });
 
 test("respondAsync can use an external reply generator while keeping local state updates", async () => {
@@ -968,6 +969,7 @@ test("respondAsync can use an external reply generator while keeping local state
   assert.equal(result.debug.reply.model, "stub");
   assert.equal(result.debug.reply.fallbackUsed, false);
   assert.ok((result.debug.reply.plan ?? "").length > 0);
+  assert.ok(result.debug.reply.selection !== null);
   assert.equal(engine.getLastReplyDebug()?.source, "llm");
   assert.equal(engine.getLastReplyDebug()?.provider, "test-llm");
   assert.ok((engine.getLastReplyDebug()?.plan ?? "").startsWith("continue_work/") || (engine.getLastReplyDebug()?.plan ?? "").startsWith("explore/") || (engine.getLastReplyDebug()?.plan ?? "").startsWith("attune/"));
