@@ -22,6 +22,21 @@ test("response planner treats greetings as social and suppresses trace focus", (
   assert.equal(plan.distance, "close");
 });
 
+test("response planner treats explicit topic shifts as social and suppresses trace focus", () => {
+  const snapshot = createInitialSnapshot();
+  const signals = createSignals({
+    abandonment: 0.92,
+    smalltalk: 0.24,
+  });
+  const selfModel = createSelfModel("continue_shared_work", "自分");
+
+  const plan = buildResponsePlan(snapshot, "warm", "continuity", signals, selfModel);
+
+  assert.equal(isSocialTurnSignals(signals), true);
+  assert.equal(plan.act, "attune");
+  assert.equal(plan.mentionTrace, false);
+});
+
 test("response planner prefers self disclosure for self inquiry", () => {
   const snapshot = createInitialSnapshot();
   snapshot.identity.coherence = 0.62;

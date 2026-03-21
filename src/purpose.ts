@@ -397,6 +397,10 @@ function buildAbandonedResolution(
   const topic = purpose.topic ? `「${purpose.topic}」` : "この流れ";
 
   if (signals.abandonment >= 0.2) {
+    if (signals.topics.length === 0) {
+      return "今の流れを今は進めない意志が示された。こちらも無理には保持しない。";
+    }
+
     return `${topic}を今は進めない意志が示された。こちらも無理には保持しない。`;
   }
 

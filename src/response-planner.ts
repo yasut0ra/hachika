@@ -152,6 +152,15 @@ export function buildResponsePlan(
 }
 
 export function isSocialTurnSignals(signals: InteractionSignals): boolean {
+  if (
+    signals.abandonment >= 0.28 &&
+    signals.workCue < 0.35 &&
+    signals.negative < 0.18 &&
+    signals.dismissal < 0.18
+  ) {
+    return true;
+  }
+
   return (
     signals.negative < 0.18 &&
     signals.dismissal < 0.18 &&

@@ -47,10 +47,12 @@ const STOPWORDS = new Set([
   "邪魔",
   "うるさい",
   "だし",
+  "納得",
   "ありがとう",
   "こんにちは",
   "こんばんは",
   "おはよう",
+  "はじめまして",
   "よろしく",
   "お願い",
   "お願いします",
@@ -79,6 +81,14 @@ const STOPWORDS = new Set([
   "あの",
   "そう",
   "なんか",
+  "かな",
+  "って",
+  "まずは",
+  "いちばん",
+  "ちゃんと",
+  "ひとまず",
+  "ここから",
+  "始まり",
   "へー",
   "ふーん",
   "うん",
@@ -114,6 +124,8 @@ const STOPWORDS = new Set([
   "で",
   "の",
 ]);
+
+const HIRAGANA_ONLY = /^[ぁ-ゖー]+$/u;
 
 export function extractTopics(text: string): string[] {
   const topics: string[] = [];
@@ -180,7 +192,7 @@ export function findRelevantMemory(
 
 export function topPreferredTopics(snapshot: HachikaSnapshot, limit = 3): string[] {
   return Object.entries(snapshot.preferences)
-    .filter(([, score]) => score > 0.15)
+    .filter(([topic, score]) => score > 0.15 && isMeaningfulTopic(topic))
     .sort((left, right) => right[1] - left[1])
     .slice(0, limit)
     .map(([topic]) => topic);
@@ -193,6 +205,10 @@ export function consolidatePreferenceImprints(
   timestamp = new Date().toISOString(),
 ): void {
   for (const topic of signals.topics) {
+    if (!isMeaningfulTopic(topic)) {
+      continue;
+    }
+
     const topicCount = snapshot.topicCounts[topic] ?? 0;
     const preference = snapshot.preferences[topic] ?? 0;
     const qualifies =
@@ -324,6 +340,10 @@ export function findRelevantPreferenceImprint(
   topics: string[],
 ): PreferenceImprint | undefined {
   for (const topic of topics) {
+    if (!isMeaningfulTopic(topic)) {
+      continue;
+    }
+
     const imprint = snapshot.preferenceImprints[topic];
 
     if (imprint) {
@@ -369,6 +389,7 @@ export function sortedPreferenceImprints(
   limit = 6,
 ): PreferenceImprint[] {
   return Object.values(snapshot.preferenceImprints)
+    .filter((imprint) => isMeaningfulTopic(imprint.topic))
     .sort((left, right) => {
       if (right.salience !== left.salience) {
         return right.salience - left.salience;
@@ -409,22 +430,36 @@ export function sortedRelationImprints(
     .slice(0, limit);
 }
 
-function normalizeToken(token: string): string | null {
-  const normalized = token.normalize("NFKC").trim().toLowerCase();
+export function isMeaningfulTopic(topic: string): boolean {
+  const normalized = topic.normalize("NFKC").trim().toLowerCase();
 
   if (!normalized) {
-    return null;
+    return false;
   }
 
   if (STOPWORDS.has(normalized)) {
-    return null;
+    return false;
   }
 
   if (/^[0-9]+$/.test(normalized)) {
-    return null;
+    return false;
   }
 
   if (normalized.length === 1 && !/[a-z]/.test(normalized)) {
+    return false;
+  }
+
+  if (HIRAGANA_ONLY.test(normalized) && normalized.length <= 2) {
+    return false;
+  }
+
+  return true;
+}
+
+function normalizeToken(token: string): string | null {
+  const normalized = token.normalize("NFKC").trim().toLowerCase();
+
+  if (!isMeaningfulTopic(normalized)) {
     return null;
   }
 

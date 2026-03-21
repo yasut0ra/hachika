@@ -1,4 +1,5 @@
 import { clamp01 } from "./state.js";
+import { isMeaningfulTopic } from "./memory.js";
 import type {
   HachikaSnapshot,
   InteractionSignals,
@@ -106,6 +107,20 @@ const BLOCKER_MARKERS = [
   "課題",
   "不足",
   "できない",
+];
+
+const TRACE_DISCOURSE_CLAUSES = [
+  "納得",
+  "こんにちは",
+  "はじめまして",
+  "そうなんだ",
+  "いいね",
+  "よかった",
+  "うれしい",
+  "お疲れ",
+  "頑張れ",
+  "何がいいかな",
+  "深い話でもする",
 ];
 
 export function readTraceLifecycle(
@@ -538,7 +553,10 @@ function selectTraceKind(
   signals: InteractionSignals,
   sourceMotive: MotiveKind,
 ): TraceKind {
-  if (signals.completion > 0.16) {
+  if (
+    signals.completion > 0.16 &&
+    (signals.workCue > 0.18 || signals.expansionCue > 0.14 || signals.memoryCue > 0.1)
+  ) {
     return "decision";
   }
 
@@ -1288,22 +1306,32 @@ function extractTraceArtifact(
   kind: TraceKind,
 ): TraceArtifact {
   const clauses = prioritizeClauses(splitTraceClauses(input), topic);
+  const informativeClauses = clauses.filter((clause) =>
+    isInformativeTraceClause(clause, topic),
+  );
   const artifact = createEmptyTraceArtifact();
-  const fallback = clauses[0] ?? `${topic} を残す`;
+  const fallback =
+    kind === "decision"
+      ? `${topic} を決まった形として残す`
+      : kind === "continuity_marker"
+        ? `${topic} を次に触れられる形へ整える`
+        : kind === "spec_fragment"
+          ? `${topic} をもう少し具体化する`
+          : `${topic} をひとつの断片として残す`;
 
-  artifact.memo = selectClauses(clauses, MEMO_MARKERS, kind === "note" ? 2 : 1);
+  artifact.memo = selectClauses(informativeClauses, MEMO_MARKERS, kind === "note" ? 2 : 1);
   artifact.fragments = selectClauses(
-    clauses,
+    informativeClauses,
     FRAGMENT_MARKERS,
     kind === "spec_fragment" ? 3 : 1,
   );
   artifact.decisions = selectClauses(
-    clauses,
+    informativeClauses,
     DECISION_MARKERS,
     kind === "decision" ? 2 : 1,
   );
   artifact.nextSteps = selectClauses(
-    clauses,
+    informativeClauses,
     NEXT_STEP_MARKERS,
     kind === "continuity_marker" ? 2 : 1,
   );
@@ -1325,14 +1353,20 @@ function extractTraceArtifact(
   }
 
   if (artifact.memo.length === 0 && kind !== "decision") {
-    artifact.memo = clauses.slice(0, 1);
+    artifact.memo = informativeClauses.slice(0, 1);
+  }
+
+  if (artifact.memo.length === 0 && kind !== "decision") {
+    artifact.memo = [fallback];
   }
 
   return artifact;
 }
 
 function extractTraceBlockers(input: string, topic: string): string[] {
-  const clauses = prioritizeClauses(splitTraceClauses(input), topic);
+  const clauses = prioritizeClauses(splitTraceClauses(input), topic).filter((clause) =>
+    isInformativeTraceClause(clause, topic),
+  );
   const blockers = clauses.filter((clause) => containsAny(clause, BLOCKER_MARKERS));
 
   if (blockers.length > 0) {
@@ -1350,6 +1384,39 @@ function splitTraceClauses(input: string): string[] {
       .map((clause) => sanitizeClause(clause))
       .filter((clause) => clause.length >= 2),
   ).slice(0, 8);
+}
+
+function isInformativeTraceClause(clause: string, topic: string): boolean {
+  const normalized = clause.normalize("NFKC").trim().toLowerCase();
+  const containsTopic = clause.includes(topic);
+  const hasStructuredCue =
+    containsAny(clause, MEMO_MARKERS) ||
+    containsAny(clause, FRAGMENT_MARKERS) ||
+    containsAny(clause, DECISION_MARKERS) ||
+    containsAny(clause, NEXT_STEP_MARKERS) ||
+    containsAny(clause, BLOCKER_MARKERS);
+
+  if (!normalized) {
+    return false;
+  }
+
+  if (TRACE_DISCOURSE_CLAUSES.some((entry) => normalized.includes(entry))) {
+    return false;
+  }
+
+  if (isMeaningfulTopic(normalized) && normalized === topic) {
+    return false;
+  }
+
+  if (!containsTopic && !hasStructuredCue && normalized.length < 8) {
+    return false;
+  }
+
+  if (!containsTopic && !hasStructuredCue && /(?:だね|しよう|しようか|いいかな)$/.test(normalized)) {
+    return false;
+  }
+
+  return true;
 }
 
 function sanitizeClause(clause: string): string {

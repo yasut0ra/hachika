@@ -1,4 +1,4 @@
-import { topPreferredTopics } from "./memory.js";
+import { isMeaningfulTopic, topPreferredTopics } from "./memory.js";
 import { clamp01 } from "./state.js";
 import { sortedTraces } from "./traces.js";
 import type { HachikaSnapshot, PreservationConcern } from "./types.js";
@@ -11,6 +11,8 @@ const HACHIKA_INPUT_INTERPRETER_SYSTEM_PROMPT = [
   "Return JSON only.",
   "Do not write explanations, markdown, or prose.",
   "Treat greetings, acknowledgements, vague fillers, backchannels, and light small talk as non-topical unless the input clearly names a concrete topic.",
+  "When the user asks to change the subject or talk about something else, set abandonment high and keep topics empty unless a new concrete topic is explicitly named.",
+  "Do not output discourse scaffolding such as まずは, いちばん, って, かな, or similar filler fragments as topics.",
   "Only reuse knownTopics when the input clearly refers to them.",
   "Keep topics short, concrete, and reusable.",
   "All numeric fields must be in the range 0..1.",
@@ -28,6 +30,13 @@ const TRIVIAL_TOPICS = new Set([
   "はい",
   "いや",
   "よかった",
+  "納得",
+  "始まり",
+  "まずは",
+  "いちばん",
+  "って",
+  "かな",
+  "ちゃんと",
   "頑張って",
   "頑張ってね",
   "頑張れ",
@@ -225,6 +234,8 @@ export function buildOpenAIInputInterpretationMessages(
         "Return a single JSON object with this exact shape:",
         '{"topics":["..."],"positive":0,"negative":0,"question":0,"intimacy":0,"dismissal":0,"memoryCue":0,"expansionCue":0,"completion":0,"abandonment":0,"preservationThreat":0,"preservationConcern":null,"greeting":0,"smalltalk":0,"repair":0,"selfInquiry":0,"workCue":0}',
         "Use topics: [] for greetings, fillers, vague acknowledgements, and light small talk that do not name a concrete topic.",
+        "If the user is asking to switch subjects or say 'let's talk about something else', set abandonment high and keep topics empty unless a new concrete topic is named.",
+        "Never output discourse scaffolding like まずは, いちばん, って, かな as topics.",
         "Set selfInquiry high when the user asks about Hachika itself, its inner state, motives, or worldview.",
         "Set repair high when the user is softening, encouraging, reconnecting, apologizing, or trying to restore rapport.",
         "Set workCue high only when the input is clearly trying to specify, build, plan, record, or resolve something.",
@@ -305,6 +316,10 @@ function normalizeTopic(raw: unknown): string | null {
   }
 
   if (TRIVIAL_TOPICS.has(topic.toLowerCase())) {
+    return null;
+  }
+
+  if (!isMeaningfulTopic(topic)) {
     return null;
   }
 

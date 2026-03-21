@@ -212,6 +212,8 @@ Hachika は、単に有用なだけでなく、
 - ユーザー入力を相互作用イベントに変換し、状態を更新する
   - rule-based な signal 抽出に加えて、OpenAI 互換の `input interpreter` を使えば greeting / smalltalk / repair / self-inquiry / work を LLM で正規化できる
   - 挨拶や相槌のような低情報入力を topic / trace として扱いにくくし、雑談や自己開示要求を stale work と切り分けやすくしている
+  - `まずは / いちばん / って / かな / 納得` のような discourse scaffolding や相槌は topic として採りにくくし、既存の preference に残っていても優先 topic として使いにくくしている
+  - `別の話` のような明示的な topic shift は abandonment として扱い、old purpose / trace をそのまま前景化しにくくしている
 - 応答直前には `response planner` が `act / stance / distance / focus` を決め、rule-based reply と LLM wording の両方が同じ返答意図を共有する
   - greeting / repair / self-disclosure のような social turn では stale trace を引っ込め、関係の温度や自己開示を優先しやすくしている
   - `askBack / variation` も rule-based reply に反映され、雑談や explore では問い返しや文面の揺れ方が planner に従う
@@ -236,6 +238,7 @@ Hachika は、単に有用なだけでなく、
 - resolved で open work のない trace は `archive/` へ退避され、会話や能動行動で再び動きが出れば live trace として reopen される
 - archived trace は boredom / continuity / identity anchor の影響で self-model と initiative に再浮上し、自分から掘り返されることがある
 - 能動行動は発話だけでなく trace maintenance も行い、必要なら `nextSteps` を補完し、fulfilled な topic は `decision` へ昇格できる
+- social な相槌や軽い雑談句は trace artifact の `decision / nextStep` に昇格しにくくし、`納得` や `何がいいかな` のような低情報句がそのまま artifact を汚しにくくしている
 - artifact Markdown には `status / lifecycle / lastAction / pending next step / tending / effective stale` が含まれ、今どの段階の痕跡で、archive 済みか再開中か、整えているのか掘っているのか、どれくらい早く掘り返したがっているのかを外から追える
 - artifact index と `/artifacts` 表示は `deepen / preserve / steady` の順に grouped され、materialize 先のディレクトリ構造もそれに対応する
 - 各 trace はさらに `focus / confidence / blockers / staleAt` を持ち、「今どこで止まっているか」を作業状態として保持する

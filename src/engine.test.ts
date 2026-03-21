@@ -143,6 +143,56 @@ test("smalltalk reply can ask back when the response plan is attuning", () => {
   assert.match(result.reply, /？/);
 });
 
+test("explicit topic shift abandons the old purpose and avoids extracting vague new topics", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.purpose.active = {
+    kind: "continue_shared_work",
+    topic: "自分",
+    summary: "自分を一緒に前へ進めたい",
+    confidence: 0.82,
+    progress: 0.44,
+    createdAt: "2026-03-20T10:00:00.000Z",
+    lastUpdatedAt: "2026-03-20T10:00:00.000Z",
+    turnsActive: 2,
+  };
+  snapshot.identity.anchors = ["自分"];
+  snapshot.traces.自分 = {
+    topic: "自分",
+    kind: "spec_fragment",
+    status: "active",
+    lastAction: "expanded",
+    summary: "「自分」は断片として残っている。",
+    sourceMotive: "continue_shared_work",
+    artifact: {
+      memo: ["自分の輪郭"],
+      fragments: ["自分の輪郭"],
+      decisions: [],
+      nextSteps: ["自分を整える"],
+    },
+    work: {
+      focus: "自分を整える",
+      confidence: 0.54,
+      blockers: [],
+      staleAt: "2026-03-21T10:00:00.000Z",
+    },
+    salience: 0.74,
+    mentions: 3,
+    createdAt: "2026-03-20T10:00:00.000Z",
+    lastUpdatedAt: "2026-03-20T10:30:00.000Z",
+  };
+
+  const engine = new HachikaEngine(snapshot);
+  const result = engine.respond("なあ別の話しないか");
+  const userMemory = result.snapshot.memories.at(-2);
+
+  assert.ok(result.debug.signals.abandonment >= 0.2);
+  assert.deepEqual(result.debug.signals.topics, []);
+  assert.equal(result.snapshot.purpose.lastResolved?.topic, "自分");
+  assert.equal(result.snapshot.purpose.lastResolved?.outcome, "abandoned");
+  assert.deepEqual(userMemory?.topics ?? [], []);
+  assert.doesNotMatch(result.reply, /「自分」/);
+});
+
 test("blocked trace schedules a blocker-aware initiative", () => {
   const engine = new HachikaEngine(createInitialSnapshot());
 

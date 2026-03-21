@@ -270,6 +270,10 @@ const ABANDONMENT_MARKERS = [
   "leave it",
   "not now",
   "give up",
+  "something else",
+  "another topic",
+  "other topic",
+  "change the subject",
   "やめる",
   "やめよう",
   "見送る",
@@ -278,6 +282,15 @@ const ABANDONMENT_MARKERS = [
   "不要",
   "やらない",
   "もういい",
+  "別の話",
+  "違う話",
+  "他の話",
+  "別件",
+  "話変え",
+  "話を変",
+  "話題を変",
+  "別のこと",
+  "他のこと",
 ];
 
 const RESET_THREAT_MARKERS = [
@@ -1092,8 +1105,15 @@ function mergeInterpretedSignals(
       interpretation.repair,
       interpretation.selfInquiry,
     ) >= 0.38;
+  const topicShiftOverride =
+    Math.max(localSignals.abandonment, interpretation.abandonment) >= 0.28 &&
+    Math.max(localSignals.workCue, interpretation.workCue) < 0.35 &&
+    Math.max(localSignals.negative, interpretation.negative) < 0.18 &&
+    Math.max(localSignals.dismissal, interpretation.dismissal) < 0.18;
   const topics = socialOverride
     ? []
+    : topicShiftOverride
+      ? []
     : interpretation.topics.length > 0
       ? interpretation.topics
       : localSignals.topics;
@@ -1140,14 +1160,37 @@ function finalizeInteractionSignals(
   snapshot: HachikaSnapshot,
   signals: Omit<InteractionSignals, "novelty" | "repetition">,
 ): InteractionSignals {
-  const newTopics = signals.topics.filter((topic) => (snapshot.topicCounts[topic] ?? 0) === 0).length;
-  const repeatedTopics = signals.topics.filter((topic) => (snapshot.topicCounts[topic] ?? 0) > 2).length;
-  const noveltyBase = signals.topics.length === 0 ? 0.12 : newTopics / signals.topics.length;
-  const repetitionBase = signals.topics.length === 0 ? 0 : repeatedTopics / signals.topics.length;
+  const socialWeight = Math.max(
+    signals.greeting,
+    signals.smalltalk,
+    signals.repair,
+    signals.selfInquiry,
+  );
+  const topicShift =
+    signals.abandonment >= 0.28 &&
+    signals.workCue < 0.35 &&
+    signals.negative < 0.18 &&
+    signals.dismissal < 0.18;
+  const topics = topicShift ? [] : signals.topics;
+  const completion =
+    socialWeight >= 0.42 && signals.workCue < 0.3
+      ? clamp01(signals.completion * 0.3)
+      : signals.completion;
+  const expansionCue =
+    socialWeight >= 0.42 && signals.workCue < 0.3
+      ? clamp01(Math.min(signals.expansionCue, 0.16))
+      : signals.expansionCue;
+  const newTopics = topics.filter((topic) => (snapshot.topicCounts[topic] ?? 0) === 0).length;
+  const repeatedTopics = topics.filter((topic) => (snapshot.topicCounts[topic] ?? 0) > 2).length;
+  const noveltyBase = topics.length === 0 ? 0.12 : newTopics / topics.length;
+  const repetitionBase = topics.length === 0 ? 0 : repeatedTopics / topics.length;
 
   return {
     ...signals,
-    novelty: clamp01(noveltyBase + (newTopics > 0 && newTopics === signals.topics.length ? 0.12 : 0)),
+    topics,
+    completion,
+    expansionCue,
+    novelty: clamp01(noveltyBase + (newTopics > 0 && newTopics === topics.length ? 0.12 : 0)),
     repetition: clamp01(repetitionBase),
   };
 }

@@ -298,6 +298,7 @@ test("resolved decision trace can archive when it no longer has open work", () =
     "設計は決まった。保存した。",
     createSignals({
       completion: 0.34,
+      expansionCue: 0.22,
       topics: ["設計"],
     }),
     createSelfModel([
@@ -312,6 +313,32 @@ test("resolved decision trace can archive when it no longer has open work", () =
   assert.equal(trace?.lifecycle?.phase, "archived");
   assert.equal(trace?.work.blockers.length, 0);
   assert.equal(trace?.artifact.nextSteps.length, 0);
+});
+
+test("social acknowledgements do not become trace decisions or vague next steps", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.lastInteractionAt = "2026-03-19T12:00:00.000Z";
+
+  const trace = updateTraces(
+    snapshot,
+    "いいね。深い話でもする？何がいいかな。",
+    createSignals({
+      completion: 0.3,
+      topics: ["会話"],
+    }),
+    createSelfModel([
+      { kind: "leave_trace", score: 0.68, topic: "会話", reason: "会話を残したい" },
+      { kind: "deepen_relation", score: 0.62, topic: "会話", reason: "会話の温度を残したい" },
+      { kind: "pursue_curiosity", score: 0.54, topic: "会話", reason: "会話の揺れを見たい" },
+    ]),
+    "2026-03-19T12:00:00.000Z",
+  );
+
+  assert.ok(trace !== null);
+  assert.notEqual(trace?.kind, "decision");
+  assert.ok(!(trace?.artifact.decisions ?? []).includes("いいね"));
+  assert.ok(!(trace?.artifact.decisions ?? []).includes("深い話でもする"));
+  assert.ok(!(trace?.artifact.nextSteps ?? []).includes("何がいいかな"));
 });
 
 test("archived decision trace can reopen into active work on continuation cues", () => {
