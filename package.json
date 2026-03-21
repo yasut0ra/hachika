@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "tsx src/index.ts",
     "ui": "tsx src/ui-server.ts",
+    "loop": "tsx src/resident-daemon.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
     "test": "tsx --test src/*.test.ts"

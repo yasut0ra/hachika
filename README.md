@@ -304,6 +304,15 @@ npm run ui
 デフォルトでは `http://127.0.0.1:3042` で起動します。  
 `HACHIKA_UI_HOST` と `HACHIKA_UI_PORT` で変更できます。
 
+常在 loop を動かす場合:
+
+```bash
+npm run loop
+```
+
+`HACHIKA_LOOP_INTERVAL_MS` で tick 間隔、`HACHIKA_LOOP_IDLE_HOURS_PER_TICK` で 1 tick あたりに進める疑似 idle 時間を変えられます。  
+loop は snapshot を定期的に読み込み、idle consolidation と proactive emission を進めて `initiative.history` と artifacts に反映します。
+
 LLM wording を有効にする場合:
 
 ```bash
