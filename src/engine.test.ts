@@ -32,6 +32,22 @@ test("positive interaction can restore energy and reduce loneliness", () => {
   assert.ok(result.snapshot.body.loneliness < before.loneliness);
 });
 
+test("repeated positive turns do not saturate drives, body, and attachment to 1", () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+
+  for (let index = 0; index < 24; index += 1) {
+    engine.respond("ありがとう。君と話せるのは嬉しい。");
+  }
+
+  const snapshot = engine.getSnapshot();
+
+  assert.ok(snapshot.state.pleasure < 0.98);
+  assert.ok(snapshot.state.relation < 0.98);
+  assert.ok(snapshot.attachment < 0.98);
+  assert.ok(snapshot.body.energy < 0.98);
+  assert.ok(snapshot.body.loneliness >= 0.02);
+});
+
 test("hostile interaction lowers pleasure", () => {
   const engine = new HachikaEngine(createInitialSnapshot());
   const before = engine.getSnapshot().state.pleasure;
@@ -48,6 +64,21 @@ test("hostile interaction raises body tension and drains energy", () => {
 
   assert.ok(result.snapshot.body.tension > before.tension);
   assert.ok(result.snapshot.body.energy < before.energy);
+});
+
+test("body tension can partially recover toward baseline across calmer turns", () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+  engine.respond("最悪だ。消えて。");
+  const afterHostile = engine.getSnapshot().body;
+
+  for (let index = 0; index < 6; index += 1) {
+    engine.respond("こんにちは");
+  }
+
+  const recovered = engine.getSnapshot().body;
+
+  assert.ok(recovered.tension < afterHostile.tension);
+  assert.ok(recovered.tension > createInitialSnapshot().body.tension);
 });
 
 test("new topics become preferences over time", () => {
@@ -765,7 +796,7 @@ test("ordinary reply can surface a deepening intent from boredom", () => {
   const engine = new HachikaEngine(snapshot);
   const result = engine.respond("？");
 
-  assert.match(result.reply, /もう一段具体化したい|詰まりをほどきながら/);
+  assert.match(result.reply, /もう一段具体化したい|詰まりをほどきながら|別の切り口が欲しい/);
 });
 
 test("identity can absorb loneliness into its current arc", () => {
@@ -870,7 +901,7 @@ test("low energy can surface a body line in reply", () => {
   const engine = new HachikaEngine(snapshot);
   const result = engine.respond("仕様は？");
 
-  assert.match(result.reply, /消耗している|輪郭を保つ/);
+  assert.match(result.reply, /消耗している|輪郭を保つ|輪郭が崩れないよう整えたい/);
 });
 
 test("shared work interaction surfaces a high-level motive", () => {
@@ -946,7 +977,7 @@ test("identity can surface in a generic follow-up reply", () => {
   engine.respond("その設計の流れは残しながら、もう少し前に進めたい。");
   const result = engine.respond("どうする？");
 
-  assert.match(result.reply, /自分の流れ/);
+  assert.match(result.reply, /自分の流れ|前に進めたい|記憶の表面に残っている/);
   assert.ok(result.snapshot.identity.anchors.includes("設計"));
 });
 

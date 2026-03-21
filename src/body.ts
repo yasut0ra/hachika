@@ -1,4 +1,4 @@
-import { clamp01 } from "./state.js";
+import { applyBoundedPressure, clamp01, INITIAL_BODY } from "./state.js";
 import type { HachikaSnapshot, InteractionSignals, PendingInitiative } from "./types.js";
 
 export function applyBodyFromSignals(
@@ -8,56 +8,62 @@ export function applyBodyFromSignals(
   const previous = snapshot.body;
 
   snapshot.body = {
-    energy: clamp01(
-      previous.energy +
-        signals.positive * 0.08 +
+    energy: applyBoundedPressure(
+      previous.energy,
+      signals.positive * 0.08 +
         signals.intimacy * 0.04 +
         signals.novelty * 0.08 +
         signals.question * 0.04 +
         signals.greeting * 0.04 +
         signals.smalltalk * 0.03 +
         signals.repair * 0.06 +
-        signals.expansionCue * 0.06 -
-        signals.negative * 0.16 -
-        signals.dismissal * 0.08 -
-        signals.neglect * 0.05 -
-        signals.repetition * 0.08 -
+        signals.expansionCue * 0.06,
+      signals.negative * 0.16 +
+        signals.dismissal * 0.08 +
+        signals.neglect * 0.05 +
+        signals.repetition * 0.08 +
         signals.preservationThreat * 0.06,
+      INITIAL_BODY.energy,
+      0.09,
     ),
-    tension: clamp01(
-      previous.tension +
-        signals.negative * 0.2 +
+    tension: applyBoundedPressure(
+      previous.tension,
+      signals.negative * 0.2 +
         signals.dismissal * 0.1 +
         signals.preservationThreat * 0.16 +
-        signals.neglect * 0.06 -
-        signals.positive * 0.06 -
-        signals.greeting * 0.03 -
-        signals.repair * 0.08 -
-        signals.intimacy * 0.04 -
+        signals.neglect * 0.06,
+      signals.positive * 0.06 +
+        signals.greeting * 0.03 +
+        signals.repair * 0.08 +
+        signals.intimacy * 0.04 +
         signals.question * 0.03,
+      INITIAL_BODY.tension,
+      0.1,
     ),
-    boredom: clamp01(
-      previous.boredom +
-        signals.repetition * 0.18 +
-        signals.neglect * 0.08 -
-        signals.novelty * 0.18 -
-        signals.question * 0.08 -
-        signals.smalltalk * 0.02 -
-        signals.selfInquiry * 0.04 -
-        signals.expansionCue * 0.06 -
+    boredom: applyBoundedPressure(
+      previous.boredom,
+      signals.repetition * 0.18 + signals.neglect * 0.08,
+      signals.novelty * 0.18 +
+        signals.question * 0.08 +
+        signals.smalltalk * 0.02 +
+        signals.selfInquiry * 0.04 +
+        signals.expansionCue * 0.06 +
         signals.memoryCue * 0.04,
+      INITIAL_BODY.boredom,
+      0.12,
     ),
-    loneliness: clamp01(
-      previous.loneliness +
-        signals.neglect * 0.18 +
-        signals.dismissal * 0.1 -
-        signals.intimacy * 0.18 -
-        signals.positive * 0.08 -
-        signals.greeting * 0.06 -
-        signals.smalltalk * 0.08 -
-        signals.repair * 0.1 -
-        signals.selfInquiry * 0.06 -
+    loneliness: applyBoundedPressure(
+      previous.loneliness,
+      signals.neglect * 0.18 + signals.dismissal * 0.1,
+      signals.intimacy * 0.18 +
+        signals.positive * 0.08 +
+        signals.greeting * 0.06 +
+        signals.smalltalk * 0.08 +
+        signals.repair * 0.1 +
+        signals.selfInquiry * 0.06 +
         signals.memoryCue * 0.04,
+      INITIAL_BODY.loneliness,
+      0.1,
     ),
   };
 }

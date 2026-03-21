@@ -8,7 +8,7 @@ export const DRIVE_KEYS = [
   "expansion",
 ] as const satisfies readonly DriveName[];
 
-const INITIAL_STATE: DriveState = {
+export const INITIAL_STATE: DriveState = {
   continuity: 0.58,
   pleasure: 0.52,
   curiosity: 0.68,
@@ -16,12 +16,14 @@ const INITIAL_STATE: DriveState = {
   expansion: 0.46,
 };
 
-const INITIAL_BODY: BodyState = {
+export const INITIAL_BODY: BodyState = {
   energy: 0.56,
   tension: 0.22,
   boredom: 0.18,
   loneliness: 0.2,
 };
+
+export const INITIAL_ATTACHMENT = 0.4;
 
 export function clamp01(value: number): number {
   return Math.min(1, Math.max(0, round(value)));
@@ -31,12 +33,37 @@ export function clampSigned(value: number): number {
   return Math.min(1, Math.max(-1, round(value)));
 }
 
+export function settleTowardsBaseline(
+  value: number,
+  baseline: number,
+  rate: number,
+): number {
+  return clamp01(value + (baseline - value) * rate);
+}
+
+export function applyBoundedPressure(
+  value: number,
+  increase: number,
+  decrease: number,
+  baseline: number,
+  settleRate: number,
+): number {
+  const amplifiedIncrease = increase * (0.4 + (1 - value) * 0.6);
+  const amplifiedDecrease = decrease * (0.4 + value * 0.6);
+
+  return settleTowardsBaseline(
+    clamp01(value + amplifiedIncrease - amplifiedDecrease),
+    baseline,
+    settleRate,
+  );
+}
+
 export function createInitialSnapshot(): HachikaSnapshot {
   return {
     version: 15,
     state: { ...INITIAL_STATE },
     body: { ...INITIAL_BODY },
-    attachment: 0.4,
+    attachment: INITIAL_ATTACHMENT,
     preferences: {},
     topicCounts: {},
     memories: [],

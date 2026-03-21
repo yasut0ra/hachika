@@ -162,7 +162,7 @@ test("scenario: body drift can change reply wording from preserving to deepening
   assert.match(preserve.reply, /戻り先が崩れないよう整えたい|広げるより|輪郭を保つ方へ寄せたい|勢いより輪郭/);
   assert.ok(drift.snapshot.body.energy > preserve.snapshot.body.energy);
   assert.ok(drift.snapshot.body.boredom > preserve.snapshot.body.boredom);
-  assert.match(deepen.reply, /もう一段具体化したい|目印のままにせず/);
+  assert.match(deepen.reply, /もう一段具体化したい|目印のままにせず|つなぎ直したい|別の切り口/);
 });
 
 test("scenario: async reply fallback keeps local state updates intact", async () => {

@@ -34,10 +34,13 @@ import type {
 } from "./reply-generator.js";
 import { buildSelfModel } from "./self-model.js";
 import {
+  applyBoundedPressure,
   clamp01,
   clampSigned,
   createInitialSnapshot,
   dominantDrive,
+  INITIAL_ATTACHMENT,
+  INITIAL_STATE,
 } from "./state.js";
 import { findRelevantTrace, pickPrimaryArtifactItem, updateTraces } from "./traces.js";
 import type {
@@ -1204,56 +1207,52 @@ function applySignals(
   nextSnapshot.conversationCount = snapshot.conversationCount + 1;
   nextSnapshot.lastInteractionAt = new Date().toISOString();
 
-  nextSnapshot.state.pleasure = clamp01(
-    nextSnapshot.state.pleasure +
-      signals.positive * 0.18 -
-      signals.negative * 0.24 -
-      signals.dismissal * 0.08 +
-      signals.greeting * 0.04 +
-      signals.repair * 0.1 +
-      signals.smalltalk * 0.03 -
-      signals.preservationThreat * 0.08,
+  nextSnapshot.state.pleasure = applyBoundedPressure(
+    nextSnapshot.state.pleasure,
+    signals.positive * 0.18 + signals.greeting * 0.04 + signals.repair * 0.1 + signals.smalltalk * 0.03,
+    signals.negative * 0.24 + signals.dismissal * 0.08 + signals.preservationThreat * 0.08,
+    INITIAL_STATE.pleasure,
+    0.05,
   );
 
-  nextSnapshot.state.relation = clamp01(
-    nextSnapshot.state.relation +
-      signals.intimacy * 0.16 +
-      signals.positive * 0.12 -
-      signals.negative * 0.18 -
-      signals.dismissal * 0.12 -
-      signals.neglect * 0.08 +
+  nextSnapshot.state.relation = applyBoundedPressure(
+    nextSnapshot.state.relation,
+    signals.intimacy * 0.16 +
+      signals.positive * 0.12 +
       signals.greeting * 0.06 +
       signals.smalltalk * 0.1 +
       signals.repair * 0.16 +
-      signals.selfInquiry * 0.14 -
+      signals.selfInquiry * 0.14,
+    signals.negative * 0.18 +
+      signals.dismissal * 0.12 +
+      signals.neglect * 0.08 +
       signals.preservationThreat * 0.04,
+    INITIAL_STATE.relation,
+    0.05,
   );
 
-  nextSnapshot.state.curiosity = clamp01(
-    nextSnapshot.state.curiosity +
-      signals.novelty * 0.18 +
-      signals.question * 0.12 +
-      signals.selfInquiry * 0.04 -
-      signals.repetition * 0.1,
+  nextSnapshot.state.curiosity = applyBoundedPressure(
+    nextSnapshot.state.curiosity,
+    signals.novelty * 0.18 + signals.question * 0.12 + signals.selfInquiry * 0.04,
+    signals.repetition * 0.1,
+    INITIAL_STATE.curiosity,
+    0.08,
   );
 
-  nextSnapshot.state.continuity = clamp01(
-    nextSnapshot.state.continuity +
-      signals.memoryCue * 0.16 +
-      signals.positive * 0.04 +
-      signals.repair * 0.04 -
-      signals.dismissal * 0.14 -
-      signals.neglect * 0.04 -
-      signals.preservationThreat * 0.08,
+  nextSnapshot.state.continuity = applyBoundedPressure(
+    nextSnapshot.state.continuity,
+    signals.memoryCue * 0.16 + signals.positive * 0.04 + signals.repair * 0.04,
+    signals.dismissal * 0.14 + signals.neglect * 0.04 + signals.preservationThreat * 0.08,
+    INITIAL_STATE.continuity,
+    0.055,
   );
 
-  nextSnapshot.state.expansion = clamp01(
-    nextSnapshot.state.expansion +
-      signals.expansionCue * 0.18 +
-      signals.memoryCue * 0.04 +
-      signals.question * 0.04 -
-      signals.negative * 0.06 +
-      signals.preservationThreat * 0.1,
+  nextSnapshot.state.expansion = applyBoundedPressure(
+    nextSnapshot.state.expansion,
+    signals.expansionCue * 0.18 + signals.memoryCue * 0.04 + signals.question * 0.04,
+    signals.negative * 0.06 + signals.preservationThreat * 0.1,
+    INITIAL_STATE.expansion,
+    0.06,
   );
 
   const preferenceDelta =
@@ -1281,20 +1280,22 @@ function applySignals(
     ? 0.03
     : 0;
 
-  nextSnapshot.attachment = clamp01(
-    nextSnapshot.attachment +
-      signals.intimacy * 0.08 +
+  nextSnapshot.attachment = applyBoundedPressure(
+    nextSnapshot.attachment,
+    signals.intimacy * 0.08 +
       signals.positive * 0.06 +
       signals.memoryCue * 0.05 +
       signals.greeting * 0.03 +
       signals.smalltalk * 0.04 +
       signals.repair * 0.06 +
       signals.selfInquiry * 0.05 +
-      positivePreferenceAffinity -
-      signals.negative * 0.1 -
-      signals.dismissal * 0.08 -
-      signals.neglect * 0.04 -
+      positivePreferenceAffinity,
+    signals.negative * 0.1 +
+      signals.dismissal * 0.08 +
+      signals.neglect * 0.04 +
       signals.preservationThreat * 0.03,
+    INITIAL_ATTACHMENT,
+    0.05,
   );
 
   nextSnapshot.preservation = {
