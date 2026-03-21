@@ -5,6 +5,14 @@ import { loadDotEnv } from "./env.js";
 import { loadSnapshot, saveSnapshot } from "./persistence.js";
 import { createReplyGeneratorFromEnv, describeReplyGenerator } from "./reply-generator.js";
 import {
+  acquireResidentLoopLock,
+  formatResidentLoopStatus,
+  releaseResidentLoopLock,
+  saveResidentLoopStatus,
+  type ResidentLoopLock,
+  type ResidentLoopStatus,
+} from "./resident-monitor.js";
+import {
   describeResidentLoopConfig,
   formatResidentActivity,
   readResidentLoopConfigFromEnv,
@@ -13,26 +21,68 @@ import {
 
 const snapshotPath = resolve(process.cwd(), "data/hachika-state.json");
 const artifactsDir = resolve(process.cwd(), "data/artifacts");
+const residentLockPath = resolve(process.cwd(), "data/resident-lock.json");
+const residentStatusPath = resolve(process.cwd(), "data/resident-status.json");
 
 loadDotEnv();
 
 const config = readResidentLoopConfigFromEnv();
 const replyGenerator = createReplyGeneratorFromEnv();
+const startedAt = new Date().toISOString();
+
 let running = false;
 let stopped = false;
+let timer: NodeJS.Timeout | null = null;
+let lock: ResidentLoopLock | null = null;
+const status: ResidentLoopStatus = {
+  active: false,
+  pid: process.pid,
+  startedAt,
+  heartbeatAt: startedAt,
+  lastTickAt: null,
+  lastActivityAt: null,
+  lastProactiveAt: null,
+  lastError: null,
+  lastActivities: [],
+  reply: describeReplyGenerator(replyGenerator),
+  config,
+  stoppedAt: null,
+};
 
-console.log("Hachika resident loop");
-console.log(describeResidentLoopConfig(config));
-console.log(`reply:${describeReplyGenerator(replyGenerator)}`);
+process.on("SIGINT", () => {
+  void shutdown("SIGINT");
+});
+process.on("SIGTERM", () => {
+  void shutdown("SIGTERM");
+});
 
-const timer = setInterval(() => {
-  void tick();
-}, config.intervalMs);
+await main();
 
-void tick();
+async function main(): Promise<void> {
+  try {
+    lock = await acquireResidentLoopLock(residentLockPath);
+  } catch (error) {
+    console.error(
+      `[loop] startup error: ${error instanceof Error ? error.message : "resident_loop_lock_error"}`,
+    );
+    process.exitCode = 1;
+    return;
+  }
 
-process.on("SIGINT", shutdown);
-process.on("SIGTERM", shutdown);
+  status.active = true;
+  await flushStatus();
+
+  console.log("Hachika resident loop");
+  console.log(describeResidentLoopConfig(config));
+  console.log(`reply:${describeReplyGenerator(replyGenerator)}`);
+  console.log(`status:${formatResidentLoopStatus(status)}`);
+
+  timer = setInterval(() => {
+    void tick();
+  }, config.intervalMs);
+
+  await tick();
+}
 
 async function tick(): Promise<void> {
   if (running || stopped) {
@@ -40,6 +90,7 @@ async function tick(): Promise<void> {
   }
 
   running = true;
+  status.heartbeatAt = new Date().toISOString();
 
   try {
     const snapshot = await loadSnapshot(snapshotPath);
@@ -51,6 +102,23 @@ async function tick(): Promise<void> {
     await saveSnapshot(snapshotPath, result.snapshot);
     await syncArtifacts(result.snapshot, artifactsDir);
 
+    const tickAt = new Date().toISOString();
+    status.active = true;
+    status.heartbeatAt = tickAt;
+    status.lastTickAt = tickAt;
+    status.lastError = null;
+    status.lastActivities = result.activities.map(formatResidentActivity).slice(-6);
+
+    if (result.activities.length > 0) {
+      status.lastActivityAt = tickAt;
+    }
+
+    if (result.proactiveMessage) {
+      status.lastProactiveAt = tickAt;
+    }
+
+    await flushStatus();
+
     for (const activity of result.activities) {
       console.log(`[loop] ${formatResidentActivity(activity)}`);
     }
@@ -59,20 +127,56 @@ async function tick(): Promise<void> {
       console.log(`hachika* ${result.proactiveMessage}`);
     }
   } catch (error) {
-    console.error(
-      `[loop] error: ${error instanceof Error ? error.message : "resident_loop_error"}`,
-    );
+    status.active = true;
+    status.heartbeatAt = new Date().toISOString();
+    status.lastError =
+      error instanceof Error ? error.message : "resident_loop_error";
+    await flushStatus();
+    console.error(`[loop] error: ${status.lastError}`);
   } finally {
     running = false;
   }
 }
 
-function shutdown(): void {
+async function shutdown(signal: string): Promise<void> {
   if (stopped) {
     return;
   }
 
   stopped = true;
-  clearInterval(timer);
+
+  if (timer) {
+    clearInterval(timer);
+    timer = null;
+  }
+
+  const stoppedAt = new Date().toISOString();
+  status.active = false;
+  status.heartbeatAt = stoppedAt;
+  status.stoppedAt = stoppedAt;
+  status.lastError = status.lastError ?? `stopped:${signal}`;
+
+  try {
+    await flushStatus();
+  } catch (error) {
+    console.error(
+      `[loop] shutdown status error: ${error instanceof Error ? error.message : "resident_loop_shutdown_error"}`,
+    );
+  }
+
+  if (lock) {
+    try {
+      await releaseResidentLoopLock(lock);
+    } catch (error) {
+      console.error(
+        `[loop] unlock error: ${error instanceof Error ? error.message : "resident_loop_unlock_error"}`,
+      );
+    }
+  }
+
   console.log("resident loop stopped");
+}
+
+async function flushStatus(): Promise<void> {
+  await saveResidentLoopStatus(residentStatusPath, status);
 }

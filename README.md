@@ -313,6 +313,7 @@ npm run loop
 `HACHIKA_LOOP_INTERVAL_MS` で tick 間隔、`HACHIKA_LOOP_IDLE_HOURS_PER_TICK` で 1 tick あたりに進める疑似 idle 時間を変えられます。  
 loop は snapshot を定期的に読み込み、idle consolidation と proactive emission を進めて `initiative.history` と artifacts に反映します。
 CLI と UI server は各操作の直前に snapshot を再読込するので、loop と併用しても state の見え方がずれにくくなっています。
+起動中は `data/resident-lock.json` と `data/resident-status.json` を使って多重起動防止と heartbeat/status 表示を行います。
 
 LLM wording を有効にする場合:
 
@@ -328,6 +329,7 @@ cp .env.example .env
 - `/help` コマンド一覧を表示
 - `/proactive` 能動発話を強制的に出す
 - `/llm` 現在の reply generator / input interpreter / response planner / trace extractor と直近の `reply/proactive/trace` diagnostics を表示
+- `/loop` resident loop の `heartbeat / last tick / last activity / last proactive / error / recent activity` を表示
 - `/debug` では `pending initiative` に加えて、その時点の `pending plan` も表示する
   - 直近の通常応答と直近の能動発話の diagnostics / plan は別々に保持される
   - 直近の `input interpretation` も `rule / llm / fallback / topics` に加えて、主要 score と `local -> final` の topic 差分付きで確認できる

@@ -40,7 +40,7 @@ function render(ui) {
   renderMessages(ui.memories);
   renderState(ui.summary);
   renderIdentity(ui.summary, ui.selfModel);
-  renderDiagnostics(ui.diagnostics);
+  renderDiagnostics(ui.diagnostics, ui.summary.residentLoop);
   renderTraces(ui.traces);
   renderArtifacts(ui.artifacts);
 }
@@ -105,6 +105,7 @@ function renderState(summary) {
     <div class="metric-row"><span>attachment</span><strong>${formatNumber(summary.attachment)}</strong></div>
     <div class="metric-row"><span>conversations</span><strong>${summary.conversationCount}</strong></div>
     <div class="metric-row"><span>last interaction</span><strong>${summary.lastInteractionAt ?? "none"}</strong></div>
+    <div class="metric-row"><span>resident loop</span><strong>${formatResidentLoop(summary.residentLoop)}</strong></div>
   `;
   stateNode.append(footer);
 }
@@ -134,9 +135,10 @@ function renderIdentity(summary, selfModel) {
   );
 }
 
-function renderDiagnostics(diagnostics) {
+function renderDiagnostics(diagnostics, residentLoop) {
   diagnosticsNode.innerHTML = "";
   diagnosticsNode.append(
+    stackCard("Resident Loop", formatResidentLoopDetail(residentLoop)),
     stackCard("Last Reply", formatGenerated(diagnostics.lastReply)),
     stackCard("Last Response", formatGenerated(diagnostics.lastResponse)),
     stackCard("Last Proactive", formatGenerated(diagnostics.lastProactive)),
@@ -242,6 +244,43 @@ function formatTrace(debug) {
   }${debug.adoptedTopics.length ? ` · add:${debug.adoptedTopics.join(", ")}` : ""}${
     debug.droppedTopics.length ? ` · drop:${debug.droppedTopics.join(", ")}` : ""
   }`;
+}
+
+function formatResidentLoop(status) {
+  if (!status) {
+    return "none";
+  }
+
+  const state = status.active ? "active" : "inactive";
+  const heartbeat = status.heartbeatAt ? ` · beat ${status.heartbeatAt}` : "";
+  const proactive = status.lastProactiveAt ? ` · proactive ${status.lastProactiveAt}` : "";
+  const error = status.lastError ? ` · err ${status.lastError}` : "";
+  return `${state}${heartbeat}${proactive}${error}`;
+}
+
+function formatResidentLoopDetail(status) {
+  if (!status) {
+    return "none";
+  }
+
+  const summary = [
+    status.active ? "active" : "inactive",
+    status.pid !== null ? `pid ${status.pid}` : null,
+    status.heartbeatAt ? `beat ${status.heartbeatAt}` : null,
+    status.lastTickAt ? `tick ${status.lastTickAt}` : null,
+    status.lastActivityAt ? `activity ${status.lastActivityAt}` : null,
+    status.lastProactiveAt ? `proactive ${status.lastProactiveAt}` : null,
+    status.config
+      ? `interval ${status.config.intervalMs}ms / idle ${status.config.idleHoursPerTick}h`
+      : null,
+    status.lastActivities.length > 0
+      ? `recent ${status.lastActivities.slice(-2).join(" | ")}`
+      : null,
+    status.lastError ? `error ${status.lastError}` : null,
+    status.stoppedAt ? `stopped ${status.stoppedAt}` : null,
+  ].filter(Boolean);
+
+  return summary.join(" · ");
 }
 
 function formatNumber(value) {

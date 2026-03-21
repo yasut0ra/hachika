@@ -13,6 +13,7 @@ import {
 } from "./memory.js";
 import { loadSnapshot, saveSnapshot } from "./persistence.js";
 import { createReplyGeneratorFromEnv, describeReplyGenerator } from "./reply-generator.js";
+import { formatResidentLoopStatus, loadResidentLoopStatusSync } from "./resident-monitor.js";
 import {
   buildProactivePlan,
   createResponsePlannerFromEnv,
@@ -36,6 +37,7 @@ import type { ResolvedPurpose } from "./types.js";
 
 const snapshotPath = resolve(process.cwd(), "data/hachika-state.json");
 const artifactsDir = resolve(process.cwd(), "data/artifacts");
+const residentStatusPath = resolve(process.cwd(), "data/resident-status.json");
 loadDotEnv();
 const snapshot = await loadSnapshot(snapshotPath);
 const engine = new HachikaEngine(snapshot);
@@ -82,6 +84,11 @@ try {
 
     if (text === "/llm") {
       printReplyGeneratorStatus();
+      continue;
+    }
+
+    if (text === "/loop") {
+      printResidentLoop();
       continue;
     }
 
@@ -191,6 +198,7 @@ async function printIntro(currentEngine: HachikaEngine): Promise<void> {
   console.log(`interpret:${describeInputInterpreter(inputInterpreter)}`);
   console.log(`planner:${describeResponsePlanner(responsePlanner)}`);
   console.log(`trace:${describeTraceExtractor(traceExtractor)}`);
+  console.log(`loop:${formatResidentLoopStatus(loadResidentLoopStatusSync(residentStatusPath))}`);
   console.log(`last reply:${formatLastReplyDebug(currentEngine)}`);
   console.log(`last interpretation:${formatInterpretationDebug(currentEngine.getLastInterpretationDebug())}`);
   console.log(`last trace:${formatTraceExtractionDebug(currentEngine.getLastTraceExtractionDebug())}`);
@@ -202,6 +210,7 @@ function printHelp(): void {
   console.log("/help   show commands");
   console.log("/proactive force a proactive line now");
   console.log("/llm    print current reply generator");
+  console.log("/loop   print resident loop status");
   console.log("/idle N simulate N hours of inactivity");
   console.log("/state  print current drives");
   console.log("/body   print current body state");
@@ -252,11 +261,42 @@ function printReplyGeneratorStatus(): void {
   console.log(`interpret:${describeInputInterpreter(inputInterpreter)}`);
   console.log(`planner:${describeResponsePlanner(responsePlanner)}`);
   console.log(`trace:${describeTraceExtractor(traceExtractor)}`);
+  console.log(`loop:${formatResidentLoopStatus(loadResidentLoopStatusSync(residentStatusPath))}`);
   console.log(`last reply:${formatLastReplyDebug(engine)}`);
   console.log(`last interpretation:${formatInterpretationDebug(engine.getLastInterpretationDebug())}`);
   console.log(`last trace:${formatTraceExtractionDebug(engine.getLastTraceExtractionDebug())}`);
   console.log(`last response:${formatGeneratedDebug(engine.getLastResponseDebug())}`);
   console.log(`last proactive:${formatGeneratedDebug(engine.getLastProactiveDebug())}`);
+}
+
+function printResidentLoop(): void {
+  const status = loadResidentLoopStatusSync(residentStatusPath);
+
+  if (!status) {
+    console.log("resident loop: none");
+    return;
+  }
+
+  console.log(`resident loop: ${formatResidentLoopStatus(status)}`);
+  console.log(`pid: ${status.pid ?? "none"}`);
+  console.log(`started: ${status.startedAt ?? "none"}`);
+  console.log(`heartbeat: ${status.heartbeatAt ?? "none"}`);
+  console.log(`last tick: ${status.lastTickAt ?? "none"}`);
+  console.log(`last activity: ${status.lastActivityAt ?? "none"}`);
+  console.log(`last proactive: ${status.lastProactiveAt ?? "none"}`);
+  console.log(`stopped: ${status.stoppedAt ?? "none"}`);
+  console.log(`reply: ${status.reply ?? "none"}`);
+  console.log(
+    status.config
+      ? `config: intervalMs:${status.config.intervalMs} idleHoursPerTick:${status.config.idleHoursPerTick}`
+      : "config: none",
+  );
+  console.log(`last error: ${status.lastError ?? "none"}`);
+  console.log(
+    status.lastActivities.length > 0
+      ? `recent activity: ${status.lastActivities.join(" | ")}`
+      : "recent activity: none",
+  );
 }
 
 function printTraces(currentEngine: HachikaEngine): void {
@@ -411,6 +451,7 @@ function printDebug(currentEngine: HachikaEngine): void {
   console.log(`response planner: ${describeResponsePlanner(responsePlanner)}`);
   console.log(`trace extractor: ${describeTraceExtractor(traceExtractor)}`);
   console.log(`input interpreter: ${describeInputInterpreter(inputInterpreter)}`);
+  console.log(`resident loop: ${formatResidentLoopStatus(loadResidentLoopStatusSync(residentStatusPath))}`);
   console.log(`last reply: ${formatLastReplyDebug(currentEngine)}`);
   console.log(`last interpretation: ${formatInterpretationDebug(currentEngine.getLastInterpretationDebug())}`);
   console.log(`last trace extraction: ${formatTraceExtractionDebug(currentEngine.getLastTraceExtractionDebug())}`);

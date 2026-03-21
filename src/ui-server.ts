@@ -15,6 +15,7 @@ import { buildUiState } from "./ui-state.js";
 
 const snapshotPath = resolve(process.cwd(), "data/hachika-state.json");
 const artifactsDir = resolve(process.cwd(), "data/artifacts");
+const residentStatusPath = resolve(process.cwd(), "data/resident-status.json");
 const uiDir = resolve(process.cwd(), "ui");
 loadDotEnv();
 const host = process.env.HACHIKA_UI_HOST?.trim() || "127.0.0.1";
@@ -38,7 +39,7 @@ const server = createServer(async (request, response) => {
     }
 
     if (url.pathname === "/api/state" && request.method === "GET") {
-      return sendJson(response, 200, buildUiState(engine, artifactsDir));
+      return sendJson(response, 200, buildUiState(engine, artifactsDir, residentStatusPath));
     }
 
     if (url.pathname === "/api/message" && request.method === "POST") {
@@ -61,7 +62,7 @@ const server = createServer(async (request, response) => {
       await persistState(engine);
       return sendJson(response, 200, {
         reply: result.reply,
-        ui: buildUiState(engine, artifactsDir),
+        ui: buildUiState(engine, artifactsDir, residentStatusPath),
       });
     }
 
@@ -75,7 +76,7 @@ const server = createServer(async (request, response) => {
       await persistState(engine);
       return sendJson(response, 200, {
         message,
-        ui: buildUiState(engine, artifactsDir),
+        ui: buildUiState(engine, artifactsDir, residentStatusPath),
       });
     }
 
@@ -97,7 +98,7 @@ const server = createServer(async (request, response) => {
       return sendJson(response, 200, {
         hours,
         proactive,
-        ui: buildUiState(engine, artifactsDir),
+        ui: buildUiState(engine, artifactsDir, residentStatusPath),
       });
     }
 
@@ -106,7 +107,7 @@ const server = createServer(async (request, response) => {
       await persistState(engine);
       return sendJson(response, 200, {
         ok: true,
-        ui: buildUiState(engine, artifactsDir),
+        ui: buildUiState(engine, artifactsDir, residentStatusPath),
       });
     }
 

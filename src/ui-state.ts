@@ -1,6 +1,8 @@
 import { describeArtifactFiles } from "./artifacts.js";
 import type { ArtifactFile } from "./artifacts.js";
 import { HachikaEngine } from "./engine.js";
+import { loadResidentLoopStatusSync } from "./resident-monitor.js";
+import type { ResidentLoopStatus } from "./resident-monitor.js";
 import { sortedTraces } from "./traces.js";
 import type {
   GeneratedTextDebug,
@@ -22,6 +24,7 @@ export interface UiStatePayload {
     identity: ReturnType<HachikaEngine["getSnapshot"]>["identity"];
     purpose: ReturnType<HachikaEngine["getSnapshot"]>["purpose"];
     pendingInitiative: ReturnType<HachikaEngine["getSnapshot"]>["initiative"]["pending"];
+    residentLoop: ResidentLoopStatus | null;
   };
   selfModel: ReturnType<HachikaEngine["getSelfModel"]>;
   memories: MemoryEntry[];
@@ -51,9 +54,13 @@ export interface UiStatePayload {
 export function buildUiState(
   engine: HachikaEngine,
   artifactsDir: string,
+  residentStatusPath?: string,
 ): UiStatePayload {
   const snapshot = engine.getSnapshot();
   const artifacts = describeArtifactFiles(snapshot, artifactsDir);
+  const residentLoop = residentStatusPath
+    ? loadResidentLoopStatusSync(residentStatusPath)
+    : null;
 
   return {
     summary: {
@@ -66,7 +73,8 @@ export function buildUiState(
       lastInteractionAt: snapshot.lastInteractionAt,
       identity: snapshot.identity,
       purpose: snapshot.purpose,
-    pendingInitiative: snapshot.initiative.pending,
+      pendingInitiative: snapshot.initiative.pending,
+      residentLoop,
     },
     selfModel: engine.getSelfModel(),
     memories: snapshot.memories.slice(-18),

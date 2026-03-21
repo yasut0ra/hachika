@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -18,8 +18,50 @@ test("buildUiState exposes recent memories, traces, and diagnostics for the web 
 
   assert.equal(ui.summary.conversationCount, 1);
   assert.ok(ui.summary.identity.summary.length > 0);
+  assert.equal(ui.summary.residentLoop, null);
   assert.ok(ui.memories.length >= 2);
   assert.equal(ui.memories.at(-1)?.role, "hachika");
   assert.ok(ui.traces.some((trace) => trace.topic === "仕様"));
   assert.ok(ui.diagnostics.lastResponse !== null);
+});
+
+test("buildUiState includes resident loop status when a status file exists", () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+  const rootDir = mkdtempSync(join(tmpdir(), "hachika-ui-loop-"));
+  const artifactsDir = join(rootDir, "artifacts");
+  const residentStatusPath = join(rootDir, "resident-status.json");
+
+  writeFileSync(
+    residentStatusPath,
+    `${JSON.stringify(
+      {
+        active: true,
+        pid: 4242,
+        startedAt: "2026-03-22T00:00:00.000Z",
+        heartbeatAt: "2026-03-22T00:05:00.000Z",
+        lastTickAt: "2026-03-22T00:05:00.000Z",
+        lastActivityAt: "2026-03-22T00:05:00.000Z",
+        lastProactiveAt: null,
+        lastError: null,
+        lastActivities: ["idle_consolidation/continuity 仕様を温め直した"],
+        reply: "openai",
+        config: {
+          intervalMs: 5000,
+          idleHoursPerTick: 2,
+        },
+        stoppedAt: null,
+      },
+      null,
+      2,
+    )}\n`,
+    "utf8",
+  );
+
+  const ui = buildUiState(engine, artifactsDir, residentStatusPath);
+
+  assert.equal(ui.summary.residentLoop?.active, true);
+  assert.equal(ui.summary.residentLoop?.pid, 4242);
+  assert.deepEqual(ui.summary.residentLoop?.lastActivities, [
+    "idle_consolidation/continuity 仕様を温め直した",
+  ]);
 });
