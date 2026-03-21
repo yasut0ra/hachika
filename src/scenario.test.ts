@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import type { InputInterpreter } from "./input-interpreter.js";
 import type { ReplyGenerator } from "./reply-generator.js";
 import { requireScenarioEvent, runScenario, runScenarioAsync } from "./scenario-harness.js";
 import { createInitialSnapshot } from "./state.js";
@@ -270,6 +271,58 @@ test("scenario: async proactive fallback keeps local maintenance intact", async 
   assert.equal(repair.snapshot.initiative.pending?.kind, baselineRepair.snapshot.initiative.pending?.kind);
   assert.equal(repair.snapshot.initiative.pending?.topic, baselineRepair.snapshot.initiative.pending?.topic);
   assert.equal(repair.snapshot.initiative.pending?.blocker, baselineRepair.snapshot.initiative.pending?.blocker);
+});
+
+test("scenario: async interpreter can drop a local topic and keep reply selection social", async () => {
+  const inputInterpreter: InputInterpreter = {
+    name: "test-interpreter",
+    async interpretInput() {
+      return {
+        provider: "test-interpreter",
+        model: "stub",
+        interpretation: {
+          topics: [],
+          positive: 0.08,
+          negative: 0,
+          question: 0,
+          intimacy: 0.14,
+          dismissal: 0,
+          memoryCue: 0,
+          expansionCue: 0,
+          completion: 0,
+          abandonment: 0,
+          preservationThreat: 0,
+          preservationConcern: null,
+          greeting: 0.92,
+          smalltalk: 0.68,
+          repair: 0,
+          selfInquiry: 0,
+          workCue: 0,
+        },
+      };
+    },
+  };
+
+  const run = await runScenarioAsync(
+    [
+      {
+        kind: "user",
+        label: "social",
+        input: "海辺",
+      },
+    ],
+    createInitialSnapshot(),
+    { inputInterpreter },
+  );
+
+  const social = requireScenarioEvent(run, "social", "user");
+
+  assert.equal(social.debug.interpretation.source, "llm");
+  assert.ok(social.debug.interpretation.localTopics.includes("海辺"));
+  assert.ok(social.debug.interpretation.droppedTopics.includes("海辺"));
+  assert.deepEqual(social.debug.signals.topics, []);
+  assert.equal(social.debug.reply.selection?.socialTurn, true);
+  assert.equal(social.debug.reply.selection?.currentTopic, null);
 });
 
 function createArchivedTraceScenarioSnapshot(): HachikaSnapshot {

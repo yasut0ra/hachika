@@ -1011,13 +1011,13 @@ test("respondAsync can use an input interpreter to keep greetings non-topical an
     },
   };
 
-  const result = await engine.respondAsync("設計", { inputInterpreter });
+  const result = await engine.respondAsync("海辺", { inputInterpreter });
 
   assert.equal(result.debug.interpretation.source, "llm");
   assert.equal(result.debug.interpretation.fallbackUsed, false);
   assert.equal(result.debug.interpretation.topics.length, 0);
-  assert.ok(result.debug.interpretation.localTopics.includes("設計"));
-  assert.ok(result.debug.interpretation.droppedTopics.includes("設計"));
+  assert.ok(result.debug.interpretation.localTopics.includes("海辺"));
+  assert.ok(result.debug.interpretation.droppedTopics.includes("海辺"));
   assert.deepEqual(result.debug.interpretation.adoptedTopics, []);
   assert.ok(result.debug.interpretation.scores.greeting > 0.8);
   assert.ok(result.debug.interpretation.scores.smalltalk > 0.5);
@@ -1026,6 +1026,64 @@ test("respondAsync can use an input interpreter to keep greetings non-topical an
   assert.ok(result.debug.signals.smalltalk > 0.5);
   assert.equal(Object.keys(result.snapshot.traces).length, 0);
   assert.ok(result.snapshot.state.relation >= createInitialSnapshot().state.relation);
+});
+
+test("respondAsync can forward interpreted reply selection into the llm payload", async () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+  let capturedContext: ReplyGenerationContext | null = null;
+
+  const inputInterpreter: InputInterpreter = {
+    name: "test-interpreter",
+    async interpretInput() {
+      return {
+        provider: "test-interpreter",
+        model: "stub",
+        interpretation: {
+          topics: [],
+          positive: 0.08,
+          negative: 0,
+          question: 0,
+          intimacy: 0.14,
+          dismissal: 0,
+          memoryCue: 0,
+          expansionCue: 0,
+          completion: 0,
+          abandonment: 0,
+          preservationThreat: 0,
+          preservationConcern: null,
+          greeting: 0.92,
+          smalltalk: 0.68,
+          repair: 0,
+          selfInquiry: 0,
+          workCue: 0,
+        },
+      };
+    },
+  };
+
+  const replyGenerator: ReplyGenerator = {
+    name: "test-llm",
+    async generateReply(context) {
+      capturedContext = context;
+      return {
+        reply: "こんにちは。入り方はそれで十分伝わる。",
+        provider: "test-llm",
+        model: "stub",
+      };
+    },
+  };
+
+  await engine.respondAsync("海辺", { replyGenerator, inputInterpreter });
+
+  if (capturedContext === null) {
+    throw new Error("reply generator did not receive interpreted context");
+  }
+
+  const receivedContext = capturedContext as ReplyGenerationContext;
+  assert.deepEqual(receivedContext.signals.topics, []);
+  assert.equal(receivedContext.replySelection.socialTurn, true);
+  assert.equal(receivedContext.replySelection.currentTopic, null);
+  assert.equal(receivedContext.replySelection.relevantTraceTopic, null);
 });
 
 test("respondAsync falls back to the rule reply when the generator fails", async () => {

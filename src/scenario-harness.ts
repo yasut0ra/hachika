@@ -1,4 +1,5 @@
 import { HachikaEngine } from "./engine.js";
+import type { InputInterpreter } from "./input-interpreter.js";
 import type { ReplyGenerator } from "./reply-generator.js";
 import { createInitialSnapshot } from "./state.js";
 import type { GeneratedTextDebug, HachikaSnapshot, SelfModel, TurnResult } from "./types.js";
@@ -123,16 +124,20 @@ export function runScenario(
 export async function runScenarioAsync(
   steps: readonly ScenarioStep[],
   initialSnapshot: HachikaSnapshot = createInitialSnapshot(),
-  options: { replyGenerator?: ReplyGenerator | null } = {},
+  options: {
+    replyGenerator?: ReplyGenerator | null;
+    inputInterpreter?: InputInterpreter | null;
+  } = {},
 ): Promise<ScenarioRun> {
   const engine = new HachikaEngine(initialSnapshot);
   const events: ScenarioEvent[] = [];
   const replyGenerator = options.replyGenerator ?? null;
+  const inputInterpreter = options.inputInterpreter ?? null;
 
   for (const step of steps) {
     if (step.kind === "user") {
-      const result = replyGenerator
-        ? await engine.respondAsync(step.input, { replyGenerator })
+      const result = replyGenerator || inputInterpreter
+        ? await engine.respondAsync(step.input, { replyGenerator, inputInterpreter })
         : engine.respond(step.input);
       events.push({
         kind: "user",
