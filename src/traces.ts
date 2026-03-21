@@ -123,6 +123,15 @@ const TRACE_DISCOURSE_CLAUSES = [
   "深い話でもする",
 ];
 
+const TRACE_META_TOPICS = new Set([
+  "会話",
+  "話",
+  "言い方",
+  "雰囲気",
+  "温度",
+  "感じ",
+]);
+
 export function readTraceLifecycle(
   trace: { lifecycle?: TraceLifecycleState },
 ): TraceLifecycleState {
@@ -153,9 +162,20 @@ export function updateTraces(
   const sourceMotive = selectTraceMotive(snapshot, selfModel, signals);
   const nextKind = selectTraceKind(signals, sourceMotive);
   const previous = snapshot.traces[topic];
-  const kind = shouldReopenArchivedTrace(previous, signals)
+  let kind = shouldReopenArchivedTrace(previous, signals)
     ? nextKind
     : strongerTraceKind(previous?.kind, nextKind);
+
+  if (
+    kind === "decision" &&
+    ((!previous && signals.completion < 0.72) || TRACE_META_TOPICS.has(topic))
+  ) {
+    kind =
+      sourceMotive === "seek_continuity" && signals.memoryCue > signals.expansionCue
+        ? "continuity_marker"
+        : "spec_fragment";
+  }
+
   const artifact = mergeTraceArtifacts(
     previous?.artifact,
     extractTraceArtifact(input, topic, kind),
@@ -554,8 +574,11 @@ function selectTraceKind(
   sourceMotive: MotiveKind,
 ): TraceKind {
   if (
-    signals.completion > 0.16 &&
+    signals.completion > 0.24 &&
     (signals.workCue > 0.18 || signals.expansionCue > 0.14 || signals.memoryCue > 0.1)
+      &&
+    Math.max(signals.greeting, signals.smalltalk, signals.repair, signals.selfInquiry) < 0.55 &&
+    signals.topics.length > 0
   ) {
     return "decision";
   }

@@ -297,7 +297,7 @@ test("resolved decision trace can archive when it no longer has open work", () =
     snapshot,
     "設計は決まった。保存した。",
     createSignals({
-      completion: 0.34,
+      completion: 0.74,
       expansionCue: 0.22,
       topics: ["設計"],
     }),

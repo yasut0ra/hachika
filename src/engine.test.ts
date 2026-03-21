@@ -1421,6 +1421,17 @@ test("shared work interaction creates a concrete trace", () => {
   assert.match(result.reply, /残した/);
 });
 
+test("first-turn meta work talk does not collapse into a decision or a fully coherent identity", () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+
+  const result = engine.respond("じゃあ会話の問題点を三つに分けたい。");
+  const traces = Object.values(result.snapshot.traces);
+
+  assert.equal(traces.some((trace) => trace.topic === "会話"), false);
+  assert.equal(traces.some((trace) => trace.kind === "decision"), false);
+  assert.ok(result.snapshot.identity.coherence < 0.5);
+});
+
 test("ambiguous work can create blockers in trace work state", () => {
   const engine = new HachikaEngine(createInitialSnapshot());
 
@@ -1443,6 +1454,31 @@ test("identity condenses repeated shared work into a stable summary", () => {
   assert.ok(result.snapshot.identity.anchors.includes("設計"));
   assert.ok(result.snapshot.identity.traits.includes("collaborative"));
   assert.match(result.snapshot.identity.summary, /設計|前へ進める/);
+});
+
+test("repair turn can release prior work focus instead of carrying the old topic", () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+
+  engine.respond("設計を一緒に進めて、記録として残したい。");
+  engine.respond("うるさい。");
+  const result = engine.respond("ごめん、言い方が悪かった。落ち着いて話したい。");
+
+  assert.deepEqual(result.debug.signals.topics, []);
+  assert.equal(result.debug.reply.selection?.currentTopic, null);
+  assert.equal(result.debug.reply.selection?.relevantTraceTopic, null);
+  assert.match(result.reply, /温度|距離|少しずつ|ほどけ/);
+  assert.equal(/設計/.test(result.reply), false);
+});
+
+test("ambiguous question asks for a concrete direction instead of inventing a topic", () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+
+  const result = engine.respond("何がいいかな？");
+
+  assert.deepEqual(result.debug.signals.topics, []);
+  assert.equal(result.debug.reply.selection?.currentTopic, null);
+  assert.equal(result.debug.reply.selection?.relevantTraceTopic, null);
+  assert.match(result.reply, /雑談|作業|ひとつ話題|軽く話す|深く掘る/);
 });
 
 test("identity can surface in a generic follow-up reply", () => {

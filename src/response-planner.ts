@@ -74,12 +74,19 @@ export function buildResponsePlan(
   const topMotive = selfModel.topMotives[0] ?? null;
   const socialTurn = isSocialTurnSignals(signals);
   const temperament = snapshot.temperament;
-  const focusTopic =
-    signals.topics[0] ??
-    topMotive?.topic ??
-    snapshot.purpose.active?.topic ??
-    snapshot.identity.anchors[0] ??
-    null;
+  const clarifyReady =
+    signals.question > 0.24 &&
+    signals.topics.length === 0 &&
+    snapshot.purpose.active === null &&
+    Object.keys(snapshot.traces).length === 0 &&
+    snapshot.identity.anchors.length === 0 &&
+    signals.workCue < 0.35 &&
+    signals.selfInquiry < 0.28 &&
+    signals.greeting < 0.45 &&
+    signals.repair < 0.42 &&
+    signals.preservationThreat < 0.18 &&
+    signals.negative < 0.18 &&
+    signals.dismissal < 0.18;
   const selfDisclosureReady =
     signals.selfInquiry > 0.45 ||
     (signals.selfInquiry > 0.28 &&
@@ -98,6 +105,8 @@ export function buildResponsePlan(
     act = "self_disclose";
   } else if (repairReady) {
     act = "repair";
+  } else if (clarifyReady) {
+    act = "explore";
   } else if (signals.greeting > 0.45) {
     act = "greet";
   } else if (socialTurn) {
@@ -117,6 +126,17 @@ export function buildResponsePlan(
   } else {
     act = "attune";
   }
+
+  const looseFocus =
+    signals.topics.length === 0 &&
+    (socialTurn || act === "greet" || act === "repair" || act === "self_disclose" || clarifyReady);
+  const focusTopic = looseFocus
+    ? null
+    : signals.topics[0] ??
+      topMotive?.topic ??
+      snapshot.purpose.active?.topic ??
+      snapshot.identity.anchors[0] ??
+      null;
 
   const stance =
     act === "boundary" || mood === "guarded" || mood === "distant"
@@ -141,7 +161,12 @@ export function buildResponsePlan(
               (temperament.selfDisclosureBias > 0.56 && temperament.guardedness < 0.5)))
         ? "close"
         : "measured";
-  const mentionTrace = !socialTurn && act !== "self_disclose" && act !== "greet" && act !== "repair";
+  const mentionTrace =
+    !socialTurn &&
+    act !== "self_disclose" &&
+    act !== "greet" &&
+    act !== "repair" &&
+    !clarifyReady;
   const mentionIdentity =
     act === "self_disclose" ||
     act === "repair" ||
@@ -153,12 +178,15 @@ export function buildResponsePlan(
       signals.negative > 0.08);
   const askBack =
     act === "explore" ||
+    clarifyReady ||
     (act === "attune" && signals.smalltalk > 0.48 && signals.question < 0.2) ||
     (act === "self_disclose" &&
       temperament.openness > 0.62 &&
       temperament.selfDisclosureBias > 0.48);
   const variation =
-    act === "greet" || act === "repair" || act === "attune"
+    clarifyReady
+      ? "questioning"
+      : act === "greet" || act === "repair" || act === "attune"
       ? "brief"
       : act === "explore" ||
           (act === "self_disclose" && temperament.openness > 0.66)

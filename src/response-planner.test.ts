@@ -54,6 +54,48 @@ test("response planner prefers self disclosure for self inquiry", () => {
   assert.equal(plan.mentionTrace, false);
 });
 
+test("response planner keeps repair turns loosely focused when no concrete topic is named", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.purpose.active = {
+    kind: "continue_shared_work",
+    topic: "設計",
+    summary: "設計を前へ進めたい。",
+    confidence: 0.62,
+    progress: 0.3,
+    createdAt: "2026-03-20T00:00:00.000Z",
+    lastUpdatedAt: "2026-03-20T00:00:00.000Z",
+    turnsActive: 1,
+  };
+  const signals = createSignals({
+    repair: 0.92,
+    intimacy: 0.24,
+    topics: [],
+  });
+  const selfModel = createSelfModel("continue_shared_work", "設計");
+
+  const plan = buildResponsePlan(snapshot, "warm", "relation", signals, selfModel);
+
+  assert.equal(plan.act, "repair");
+  assert.equal(plan.focusTopic, null);
+  assert.equal(plan.mentionTrace, false);
+});
+
+test("response planner turns topicless open questions into clarify-first exploration", () => {
+  const snapshot = createInitialSnapshot();
+  const signals = createSignals({
+    question: 0.86,
+    topics: [],
+  });
+  const selfModel = createSelfModel("continue_shared_work", "設計");
+
+  const plan = buildResponsePlan(snapshot, "curious", "curiosity", signals, selfModel);
+
+  assert.equal(plan.act, "explore");
+  assert.equal(plan.focusTopic, null);
+  assert.equal(plan.askBack, true);
+  assert.equal(plan.mentionTrace, false);
+});
+
 test("proactive planner prioritizes blocker repair when a blocker is pending", () => {
   const snapshot = createInitialSnapshot();
   const pending = createPending({

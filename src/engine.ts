@@ -299,6 +299,18 @@ const ABANDONMENT_MARKERS = [
   "他のこと",
 ];
 
+const REPAIR_META_TOPICS = new Set([
+  "会話",
+  "話",
+  "言い方",
+  "雰囲気",
+  "温度",
+  "感じ",
+  "ごめん",
+  "落ち",
+  "着い",
+]);
+
 const RESET_THREAT_MARKERS = [
   "reset",
   "restart",
@@ -1177,7 +1189,13 @@ function finalizeInteractionSignals(
     signals.workCue < 0.35 &&
     signals.negative < 0.18 &&
     signals.dismissal < 0.18;
-  const topics = topicShift ? [] : signals.topics;
+  const repairTopicReset =
+    signals.repair >= 0.42 &&
+    signals.workCue < 0.35 &&
+    signals.negative < 0.18 &&
+    signals.dismissal < 0.18 &&
+    shouldClearRepairTopics(signals.topics);
+  const topics = topicShift || repairTopicReset ? [] : signals.topics;
   const completion =
     socialWeight >= 0.42 && signals.workCue < 0.3
       ? clamp01(signals.completion * 0.3)
@@ -1199,6 +1217,10 @@ function finalizeInteractionSignals(
     novelty: clamp01(noveltyBase + (newTopics > 0 && newTopics === topics.length ? 0.12 : 0)),
     repetition: clamp01(repetitionBase),
   };
+}
+
+function shouldClearRepairTopics(topics: readonly string[]): boolean {
+  return topics.length > 0 && topics.every((topic) => REPAIR_META_TOPICS.has(topic));
 }
 
 function applySignals(
@@ -2085,9 +2107,9 @@ function buildAskBackLine(
 
     return pickFreshText(
       [
-        "いま一番、まだ決まっていないのはどこ？",
-        "いま触るなら、どこから開く？",
-        "いまは何を先に確かめたい？",
+        "いまは、雑談のまま少し揺れを見るか、ひとつ話題を決めるか、どちらが近い？",
+        "軽く話す、深く掘る、何か決める。いま近いのはどれ？",
+        "まだ定まっていないなら、雑談寄りか作業寄りか、まずそこからでもいい。",
       ],
       recentAssistantLines,
       snapshot.conversationCount,

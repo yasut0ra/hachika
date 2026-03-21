@@ -124,13 +124,17 @@ export function updateIdentity(
 
   const traits = traitScores.map((entry) => entry.trait);
   const anchors = deriveIdentityAnchors(snapshot);
+  const recurringAnchors = anchors.filter((anchor) => previous.anchors.includes(anchor)).length;
+  const recurringTraits = traits.filter((trait) => previous.traits.includes(trait)).length;
   const coherence = clamp01(
-    previous.coherence * 0.7 +
-      Math.min(0.22, snapshot.conversationCount * 0.018) +
-      traits.length * 0.06 +
-      anchors.length * 0.04 +
-      (activePurpose ? 0.08 : 0) +
-      (lastResolved ? 0.04 : 0),
+    previous.coherence * 0.82 +
+      Math.min(0.08, snapshot.conversationCount * 0.006) +
+      recurringTraits * 0.03 +
+      recurringAnchors * 0.035 +
+      Math.max(0, traits.length - recurringTraits) * 0.012 +
+      Math.max(0, anchors.length - recurringAnchors) * 0.016 +
+      (activePurpose ? 0.025 : 0) +
+      (lastResolved ? 0.015 : 0),
   );
   const currentArc = buildCurrentArc(snapshot, traits, anchors);
   const summary = buildSummary(snapshot, traits, anchors, currentArc);
