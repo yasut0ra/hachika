@@ -2,13 +2,39 @@
 
 `hachika` を「状態を持つ会話エンジン」から「変質しながら成長する存在」に寄せるための issue 草案。
 
-推奨実装順:
-1. state/body の飽和防止と反応曲線の可塑化
-2. 学習される気質・性格傾向の導入
-3. idle 中の再編成と能動再浮上
-4. 成長評価シナリオと指標の固定
+## 現状整理
+
+すでに入っているもの:
+- baseline へ戻る弱い homeostasis により、`state / body / attachment` の単純飽和は以前より起きにくくなっている
+- `initiative`, `trace maintenance`, `archive / reopen`, `idle` による body 変化はすでに実装済み
+- `scenario harness` と複数ターンの回帰テストもすでにある
+- snapshot load/save 時の低情報 topic / 汚れた trace artifact の自動正規化も入っている
+
+まだ残っている主課題:
+- 反応そのものの履歴依存カーブはまだ弱い
+- learned temperament は未導入
+- idle 中の再編成は「未完了の再開」中心で、再評価バッチとしてはまだ薄い
+- 成長を比較する専用 metrics / doc は未整備
+
+改訂した推奨実装順:
+1. Issue 1 の残タスク: 飽和防止の先にある「履歴依存の反応曲線」
+2. Issue 4 の先行草案: 成長評価シナリオと指標の固定
+3. Issue 2: learned temperament の導入
+4. Issue 3: idle 中の再編成と能動再浮上の強化
+
+理由:
+- 単純な飽和はすでにある程度止まっているので、次に効くのは reaction sensitivity の導入
+- temperament と idle reorganization は評価軸がないと差分を見失いやすい
+- idle の再編成は learned temperament を参照できた方が自然
+
+---
 
 ## Issue 1: drive/body の飽和を防ぎ、履歴依存の反応曲線を導入する
+
+### ステータス
+- 部分完了
+- homeostasis と飽和抑制はすでに入っている
+- 未完了なのは「最近の履歴で効き方が変わる」部分
 
 ### 背景
 - 現状の snapshot では `state` と `attachment` が高値に張り付きやすく、会話が続くほど差分が出にくくなる。
@@ -23,6 +49,12 @@
 - 連続ポジティブ入力への逓減、ネガティブ入力後の回復遅延、放置後の反動を導入
 - `attachment` にも飽和抑制と反動を導入
 - replay しやすい regression test を追加
+
+### 次にやる部分
+- `recent strain / recent repair / recent novelty` のような軽量な感度 state を追加する
+- 同じ `positive` でも直前が hostile なら relation/pleasure の戻り方を鈍くする
+- boredom と curiosity の効き方に recent repetition を入れる
+- `attachment` に rebound と mistrust の差を持たせる
 
 ### 実装メモ
 - `DriveState`/`BodyState` とは別に、反応感度を表す軽量 state を導入してよい
@@ -50,6 +82,10 @@
 ---
 
 ## Issue 2: learned temperament を導入し、経験で性格傾向が変わるようにする
+
+### ステータス
+- 未着手
+- 現在の `identity.traits` は要約寄りで、persistent な判断バイアスにはなっていない
 
 ### 背景
 - 現在の `identity.traits` は snapshot から毎回再推定される要約に近く、将来の判断を強く書き換える persistent な気質ではない。
@@ -104,6 +140,11 @@
 
 ## Issue 3: idle 中の再編成を導入し、会話外でも少し変化するようにする
 
+### ステータス
+- 部分完了
+- idle による body 変化、initiative、trace maintenance、archive/reopen はすでにある
+- 未完了なのは「会話していない間の再評価バッチ」としての consolidation
+
 ### 背景
 - 現在も `initiative` と trace maintenance はあるが、主に未完了 topic の再開に寄っている。
 - 生物感を高めるには、会話していない間にも記憶統合、価値づけの再配置、archived trace の再浮上が起こる必要がある。
@@ -120,6 +161,11 @@
 - learned trait と identity anchor の微調整
 - proactive emission 前に consolidation を反映
 - `rewindSnapshotHours` と `emitInitiative` のテストを増やす
+
+### 次にやる部分
+- `rewindSnapshotHours` の中で deterministic な consolidation pass を一段入れる
+- stale trace の順序だけでなく、identity anchor と dormant archive pressure も更新する
+- learned temperament 導入後は reopen 候補の選定に temperament を参照させる
 
 ### 実装メモ
 - 初手では batch 処理を `idle` コマンド経由の deterministic 処理として実装する
@@ -149,6 +195,11 @@
 
 ## Issue 4: 「成長したか」を判断する評価シナリオと指標を固定する
 
+### ステータス
+- 部分完了
+- scenario harness と長めの回帰はある
+- 専用 metrics doc と growth comparison の標準手順はまだない
+
 ### 背景
 - 成長や生物性の改善は、体感だけで進めるとすぐに評価不能になる。
 - このリポジトリはシナリオテストが強みなので、仕様変更より先に評価の再現性を固定したい。
@@ -171,6 +222,11 @@
 - recovery lag
 - archived trace reopen rate
 - identity drift visibility
+
+### 次にやる部分
+- `docs/growth-metrics.md` のような専用 doc を追加する
+- 既存 scenario の中から growth 比較に使う canonical scenario を 4-6 本選ぶ
+- wording ではなく snapshot / debug payload ベースの assertion を定義する
 
 ### 実装メモ
 - まずは README ではなく専用 doc に置く
@@ -197,5 +253,6 @@
 
 ## 補足
 - Issue 1-3 は順番依存がある
-- まず Issue 1 で飽和を止めないと、Issue 2 の learned trait が効いても差が見えにくい
-- Issue 4 は先に草案だけ作っておき、実装は Issue 1 と並行でもよい
+- 単純な飽和抑制はすでに入っているので、Issue 1 の残りは reaction sensitivity の導入になる
+- Issue 4 は先に草案と比較手順だけ作っておくと、Issue 2-3 の差分を評価しやすい
+- 実装の次手としては `Issue 1 の残タスク -> Issue 4 の metrics 草案 -> Issue 2 -> Issue 3` が自然
