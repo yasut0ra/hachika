@@ -254,6 +254,8 @@ Hachika は、単に有用なだけでなく、
 - learned temperament は drive/body の効き方をわずかに変え、同じ drive/body でも self-model / purpose / initiative / response planner の向きが少し変わる
 - `idle` 中には deterministic な consolidation pass が走り、temperament と body を見ながら dormant archive の salience を再評価し、必要なら次の `pending initiative` を archived trace 由来で組み直す
 - そのため、同じ archived trace 群でも `bondingBias` が強いと continuity/reconnect 側へ、`workDrive` や boredom が強いと shared-work/reopen 側へ再浮上しやすくなる
+- 同じ consolidation pass は recent memories の recurring topic も見直し、preference imprint / relation imprint / identity state を薄く再配置するため、会話していない間にも「何が残りやすいか」が少し変わる
+- 反対に、触れられていない弱い preference imprint は idle 中に少しずつ減衰し、long-tail の古い topic が永遠に前景を占有し続けにくくしている
 - identity summary / current arc と initiative motive / topic / blocker selection も身体状態の影響を受ける
 - identity summary は learned temperament も織り込み、「残したがりながら雑には開かない」「関係の内側で少しずつ自分を見せる」などの持続的な気質差を出す
 - trace の優先順位と artifact の surfaced order も身体状態の影響を受け、低 energy では残しやすい痕跡が、高 boredom では stale な未完了が前に出やすくなる

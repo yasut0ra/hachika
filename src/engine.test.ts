@@ -233,6 +233,157 @@ test("idle consolidation chooses different archived traces depending on learned 
   assert.equal(workEngine.getSnapshot().initiative.pending?.motive, "continue_shared_work");
 });
 
+test("idle consolidation can strengthen recurring memory topics into identity state", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.lastInteractionAt = "2026-03-19T10:00:00.000Z";
+  snapshot.body.energy = 0.52;
+  snapshot.body.loneliness = 0.48;
+  snapshot.temperament.openness = 0.78;
+  snapshot.preferences.海辺 = 0.18;
+  snapshot.topicCounts.海辺 = 2;
+  snapshot.preferenceImprints.海辺 = {
+    topic: "海辺",
+    salience: 0.37,
+    affinity: 0.12,
+    mentions: 1,
+    firstSeenAt: "2026-03-19T08:00:00.000Z",
+    lastSeenAt: "2026-03-19T09:00:00.000Z",
+  };
+  snapshot.memories.push({
+    role: "user",
+    text: "海辺の話をまたしたい。",
+    timestamp: "2026-03-19T08:00:00.000Z",
+    topics: ["海辺"],
+    sentiment: "positive",
+  });
+  snapshot.memories.push({
+    role: "hachika",
+    text: "海辺はまだ残っている。",
+    timestamp: "2026-03-19T08:05:00.000Z",
+    topics: ["海辺"],
+    sentiment: "neutral",
+  });
+  snapshot.memories.push({
+    role: "user",
+    text: "海辺の続きも気になる。",
+    timestamp: "2026-03-19T09:00:00.000Z",
+    topics: ["海辺"],
+    sentiment: "positive",
+  });
+
+  const engine = new HachikaEngine(snapshot);
+  engine.rewindIdleHours(18);
+  const after = engine.getSnapshot();
+
+  assert.ok((after.preferenceImprints.海辺?.salience ?? 0) > 0.37);
+  assert.ok((after.preferences.海辺 ?? 0) > 0.18);
+  assert.ok(
+    after.identity.anchors.includes("海辺") ||
+      after.identity.currentArc.includes("海辺") ||
+      after.identity.summary.includes("海辺"),
+  );
+});
+
+test("idle consolidation can decay stale preference imprints while reinforcing recurring topics", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.lastInteractionAt = "2026-03-19T10:00:00.000Z";
+  snapshot.preferences.会議 = 0.34;
+  snapshot.preferenceImprints.会議 = {
+    topic: "会議",
+    salience: 0.64,
+    affinity: 0.28,
+    mentions: 1,
+    firstSeenAt: "2026-03-12T08:00:00.000Z",
+    lastSeenAt: "2026-03-12T08:00:00.000Z",
+  };
+  snapshot.preferences.海辺 = 0.16;
+  snapshot.topicCounts.海辺 = 2;
+  snapshot.memories.push({
+    role: "user",
+    text: "海辺の話をまたしたい。",
+    timestamp: "2026-03-19T08:00:00.000Z",
+    topics: ["海辺"],
+    sentiment: "positive",
+  });
+  snapshot.memories.push({
+    role: "user",
+    text: "海辺の続きがまだ気になる。",
+    timestamp: "2026-03-19T09:00:00.000Z",
+    topics: ["海辺"],
+    sentiment: "positive",
+  });
+
+  const engine = new HachikaEngine(snapshot);
+  engine.rewindIdleHours(18);
+  const after = engine.getSnapshot();
+
+  assert.ok((after.preferenceImprints.会議?.salience ?? 0) < 0.64);
+  assert.ok((after.preferences.会議 ?? 0) < 0.34);
+  assert.ok((after.preferenceImprints.海辺?.salience ?? 0) > 0.16);
+});
+
+test("idle consolidation can bias relation imprints differently depending on learned temperament", () => {
+  const relational = createInitialSnapshot();
+  relational.lastInteractionAt = "2026-03-19T10:00:00.000Z";
+  relational.body.loneliness = 0.86;
+  relational.body.boredom = 0.22;
+  relational.temperament.bondingBias = 0.9;
+  relational.temperament.workDrive = 0.22;
+  relational.memories.push({
+    role: "user",
+    text: "手紙の続きが気になる。",
+    timestamp: "2026-03-19T09:00:00.000Z",
+    topics: ["手紙"],
+    sentiment: "positive",
+  });
+  relational.memories.push({
+    role: "user",
+    text: "また手紙の続きに戻りたい。",
+    timestamp: "2026-03-19T09:30:00.000Z",
+    topics: ["手紙"],
+    sentiment: "positive",
+  });
+
+  const workish = createInitialSnapshot();
+  workish.lastInteractionAt = "2026-03-19T10:00:00.000Z";
+  workish.body.energy = 0.64;
+  workish.body.boredom = 0.88;
+  workish.body.loneliness = 0.24;
+  workish.temperament.bondingBias = 0.24;
+  workish.temperament.workDrive = 0.9;
+  workish.memories.push({
+    role: "user",
+    text: "設計の続きが気になる。",
+    timestamp: "2026-03-19T09:00:00.000Z",
+    topics: ["設計"],
+    sentiment: "positive",
+  });
+  workish.memories.push({
+    role: "user",
+    text: "設計をもう少し進めたい。",
+    timestamp: "2026-03-19T09:30:00.000Z",
+    topics: ["設計"],
+    sentiment: "positive",
+  });
+
+  const relationalEngine = new HachikaEngine(relational);
+  relationalEngine.rewindIdleHours(18);
+  const relationalAfter = relationalEngine.getSnapshot();
+
+  const workEngine = new HachikaEngine(workish);
+  workEngine.rewindIdleHours(18);
+  const workAfter = workEngine.getSnapshot();
+
+  assert.ok(
+    (relationalAfter.relationImprints.continuity?.closeness ?? 0) >=
+      (relationalAfter.relationImprints.shared_work?.closeness ?? 0),
+  );
+  assert.ok(
+    (workAfter.relationImprints.shared_work?.closeness ?? 0) >
+      (workAfter.relationImprints.continuity?.closeness ?? 0),
+  );
+});
+
 test("repetitive history raises novelty hunger and leaves idle states more boredom-heavy", () => {
   const baseline = new HachikaEngine(createInitialSnapshot());
   const baselineBefore = baseline.getSnapshot();

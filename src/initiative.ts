@@ -1,11 +1,12 @@
 import {
+  isMeaningfulTopic,
   sortedPreferenceImprints,
   topPreferredTopics,
 } from "./memory.js";
 import { rewindBodyHours, settleBodyAfterInitiative } from "./body.js";
 import { pickFreshText, recentAssistantReplies } from "./expression.js";
 import { buildSelfModel } from "./self-model.js";
-import { clamp01, INITIAL_REACTIVITY, settleTowardsBaseline } from "./state.js";
+import { clamp01, clampSigned, INITIAL_REACTIVITY, settleTowardsBaseline } from "./state.js";
 import { rewindTemperamentHours } from "./temperament.js";
 import {
   pickPrimaryArtifactItem,
@@ -302,6 +303,7 @@ function consolidateIdleSnapshot(
     .sort((left, right) => right.score - left.score)[0];
 
   if (!dormant || dormant.score < 0.42) {
+    consolidateIdleMemoryImprints(snapshot, hours, null, null);
     return;
   }
 
@@ -326,6 +328,7 @@ function consolidateIdleSnapshot(
       (existingPending.topic === dormant.trace.topic || dormant.score >= 0.58));
 
   if (!shouldInstallPending) {
+    consolidateIdleMemoryImprints(snapshot, hours, dormant.trace.topic, dormant.motive);
     return;
   }
 
@@ -345,6 +348,175 @@ function consolidateIdleSnapshot(
     concern: null,
     createdAt: snapshot.lastInteractionAt ?? new Date().toISOString(),
     readyAfterHours: Math.round(readyAfter * 10) / 10,
+  };
+  consolidateIdleMemoryImprints(snapshot, hours, dormant.trace.topic, dormant.motive);
+}
+
+function consolidateIdleMemoryImprints(
+  snapshot: HachikaSnapshot,
+  hours: number,
+  prioritizedTopic: string | null,
+  prioritizedMotive: MotiveKind | null,
+): void {
+  const scoredTopics = scoreIdleMemoryTopics(snapshot, prioritizedTopic);
+  const timestamp = snapshot.lastInteractionAt ?? new Date().toISOString();
+  const temperament = snapshot.temperament;
+  const reinforcedTopics = new Set<string>();
+
+  for (const [topic, score] of scoredTopics.slice(0, 3)) {
+    if (score < 1.05) {
+      continue;
+    }
+
+    reinforcedTopics.add(topic);
+
+    const previous = snapshot.preferenceImprints[topic];
+    const affinityNudge =
+      prioritizedTopic === topic
+        ? prioritizedMotive === "seek_continuity"
+          ? 0.16
+          : prioritizedMotive === "continue_shared_work"
+            ? 0.14
+            : prioritizedMotive === "leave_trace"
+              ? 0.12
+              : 0.1
+        : 0.06;
+    const salienceGain =
+      Math.min(0.18, score * 0.08 + hours / 360) +
+      (prioritizedTopic === topic ? 0.04 : 0);
+
+    snapshot.preferenceImprints[topic] = {
+      topic,
+      salience: clamp01((previous?.salience ?? 0) * 0.92 + salienceGain),
+      affinity: clampSigned(
+        (previous?.affinity ?? snapshot.preferences[topic] ?? 0) * 0.9 + affinityNudge * 0.24,
+      ),
+      mentions: Math.max(
+        previous?.mentions ?? 0,
+        (snapshot.topicCounts[topic] ?? 0) + Math.max(1, Math.round(score)),
+      ),
+      firstSeenAt: previous?.firstSeenAt ?? timestamp,
+      lastSeenAt: timestamp,
+    };
+    const preferenceGain =
+      affinityNudge * 0.14 +
+      Math.min(0.03, score * 0.012) +
+      (prioritizedTopic === topic ? 0.01 : 0);
+    snapshot.preferences[topic] = clampSigned(
+      (snapshot.preferences[topic] ?? 0) * 0.98 + preferenceGain,
+    );
+  }
+
+  decayIdlePreferenceImprints(snapshot, reinforcedTopics, hours);
+
+  const continuityPull =
+    (prioritizedMotive === "seek_continuity" ? 0.08 : 0) +
+    Math.min(0.08, hours / 240) * (0.4 + snapshot.body.loneliness * 0.4 + temperament.bondingBias * 0.3);
+  const sharedWorkPull =
+    (prioritizedMotive === "continue_shared_work" ? 0.08 : 0) +
+    Math.min(0.08, hours / 240) * (0.3 + snapshot.body.boredom * 0.45 + temperament.workDrive * 0.35);
+  const attentionPull =
+    Math.min(0.07, hours / 300) * (0.28 + snapshot.body.loneliness * 0.42 + temperament.bondingBias * 0.4);
+
+  if (continuityPull > 0.02) {
+    nudgeRelationImprint(snapshot, "continuity", continuityPull, timestamp);
+  }
+
+  if (sharedWorkPull > 0.02) {
+    nudgeRelationImprint(snapshot, "shared_work", sharedWorkPull, timestamp);
+  }
+
+  if (attentionPull > 0.02) {
+    nudgeRelationImprint(snapshot, "attention", attentionPull, timestamp);
+  }
+}
+
+function decayIdlePreferenceImprints(
+  snapshot: HachikaSnapshot,
+  reinforcedTopics: ReadonlySet<string>,
+  hours: number,
+): void {
+  const salienceDecay = Math.min(0.12, hours / 180);
+  const preferenceDecayRate = Math.min(0.06, hours / 480);
+
+  for (const [topic, imprint] of Object.entries(snapshot.preferenceImprints)) {
+    if (!isMeaningfulTopic(topic) || reinforcedTopics.has(topic)) {
+      continue;
+    }
+
+    const nextSalience = clamp01(
+      Math.max(0, imprint.salience * (1 - salienceDecay * 0.55) - salienceDecay * 0.45),
+    );
+    const nextAffinity = clampSigned(imprint.affinity * (1 - preferenceDecayRate * 0.8));
+    const nextPreference = clampSigned(
+      (snapshot.preferences[topic] ?? 0) * (1 - preferenceDecayRate),
+    );
+
+    if (
+      nextSalience < 0.08 &&
+      Math.abs(nextAffinity) < 0.08 &&
+      Math.abs(nextPreference) < 0.08 &&
+      imprint.mentions <= 1
+    ) {
+      delete snapshot.preferenceImprints[topic];
+      delete snapshot.preferences[topic];
+      continue;
+    }
+
+    snapshot.preferenceImprints[topic] = {
+      ...imprint,
+      salience: nextSalience,
+      affinity: nextAffinity,
+    };
+    snapshot.preferences[topic] = nextPreference;
+  }
+}
+
+function scoreIdleMemoryTopics(
+  snapshot: HachikaSnapshot,
+  prioritizedTopic: string | null,
+): Array<[string, number]> {
+  const scores = new Map<string, number>();
+  const memories = snapshot.memories.slice(-10);
+
+  for (const [index, memory] of memories.entries()) {
+    const recencyWeight = 0.52 + (index + 1) / Math.max(1, memories.length) * 0.48;
+    const roleWeight = memory.role === "user" ? 1 : 0.58;
+    const sentimentWeight =
+      memory.sentiment === "positive" ? 1.06 : memory.sentiment === "negative" ? 0.82 : 1;
+
+    for (const topic of memory.topics) {
+      if (!isMeaningfulTopic(topic)) {
+        continue;
+      }
+
+      const next = (scores.get(topic) ?? 0) + recencyWeight * roleWeight * sentimentWeight;
+      scores.set(topic, next);
+    }
+  }
+
+  if (prioritizedTopic && isMeaningfulTopic(prioritizedTopic)) {
+    scores.set(prioritizedTopic, (scores.get(prioritizedTopic) ?? 0) + 0.9);
+  }
+
+  return [...scores.entries()].sort((left, right) => right[1] - left[1]);
+}
+
+function nudgeRelationImprint(
+  snapshot: HachikaSnapshot,
+  kind: "attention" | "continuity" | "shared_work",
+  closenessGain: number,
+  timestamp: string,
+): void {
+  const previous = snapshot.relationImprints[kind];
+
+  snapshot.relationImprints[kind] = {
+    kind,
+    salience: clamp01((previous?.salience ?? 0) * 0.94 + closenessGain * 0.65 + 0.03),
+    closeness: clamp01((previous?.closeness ?? 0) * 0.9 + closenessGain),
+    mentions: (previous?.mentions ?? 0) + 1,
+    firstSeenAt: previous?.firstSeenAt ?? timestamp,
+    lastSeenAt: timestamp,
   };
 }
 

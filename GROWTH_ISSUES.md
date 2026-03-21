@@ -12,9 +12,9 @@
 
 まだ残っている主課題:
 - 反応そのものの履歴依存カーブはまだ弱い
-- learned temperament は初期導入まで完了したが、idle consolidation や archive reopen との結合はまだ弱い
-- idle 中の再編成は「未完了の再開」中心で、再評価バッチとしてはまだ薄い
-- 成長を比較する専用 metrics / doc は未整備
+- learned temperament は archive reopen / idle consolidation まで通ったが、purpose 閾値や growth metrics への反映はまだ薄い
+- idle 中の再編成は archive だけでなく memory / imprint / identity に広がり、弱い stale preference imprint の自然減衰も入ったが、long-tail memory の圧縮や再配置はまだ薄い
+- 成長を比較する専用 metrics / doc は初期導入までで、temperament drift や consolidation quality の指標はまだ薄い
 
 改訂した推奨実装順:
 1. Issue 1 の残タスク: 飽和防止の先にある「履歴依存の反応曲線」
@@ -88,7 +88,8 @@
 - 部分完了
 - `temperament` として `openness / guardedness / bondingBias / workDrive / traceHunger / selfDisclosureBias` を導入済み
 - `self-model / response planner / identity summary / initiative topic scoring` へはすでに反映済み
-- 未完了なのは `idle consolidation`, `archive reopen`, `purpose` の細部へさらに深く通すこと
+- `idle consolidation` と archived trace reopen の選好にもすでに反映済み
+- 未完了なのは `purpose` の細部、trace maintenance 強度、growth metrics へさらに深く通すこと
 
 ### 背景
 - 現在の `identity.traits` は snapshot から毎回再推定される要約に近く、将来の判断を強く書き換える persistent な気質ではない。
@@ -118,7 +119,6 @@
 - 既存の `IdentityTrait` は残してよいが、要約 trait と学習 trait を分ける
 
 ### 次にやる部分
-- `rewindSnapshotHours` の consolidation が temperament を使って dormant archive の再浮上を変えるようにする
 - `purpose` の切替と abandonment/reopen の閾値にも temperament を少し通す
 - `trace maintenance` の preserve/deepen 強度にも temperament を重ねる
 - growth metrics 側に temperament drift / temperament divergence を追加する
@@ -153,7 +153,9 @@
 - 部分完了
 - idle による body 変化、initiative、trace maintenance、archive/reopen はすでにある
 - deterministic な idle consolidation を追加し、temperament と body を見て dormant archive の salience / pending initiative を再評価するところまでは入った
-- 未完了なのは memories / imprints / identity anchor の再配置を batch としてもっと厚くすること
+- recurring memory topic から preference imprint / relation imprint / identity state を薄く再配置する batch も入った
+- 弱い stale preference imprint の自然減衰も入った
+- 未完了なのは long-tail memory の圧縮、identity anchor の優先順位再編、relation/boundary imprint の減衰と再配置をもっと厚くすること
 
 ### 背景
 - 現在も `initiative` と trace maintenance はあるが、主に未完了 topic の再開に寄っている。
