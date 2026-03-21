@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import type { InputInterpreter } from "./input-interpreter.js";
-import type { ReplyGenerator } from "./reply-generator.js";
+import type { ProactiveGenerationContext, ReplyGenerator } from "./reply-generator.js";
 import { requireScenarioEvent, runScenario, runScenarioAsync } from "./scenario-harness.js";
 import { createInitialSnapshot } from "./state.js";
 import type { HachikaSnapshot } from "./types.js";
@@ -271,6 +271,105 @@ test("scenario: async proactive fallback keeps local maintenance intact", async 
   assert.equal(repair.snapshot.initiative.pending?.kind, baselineRepair.snapshot.initiative.pending?.kind);
   assert.equal(repair.snapshot.initiative.pending?.topic, baselineRepair.snapshot.initiative.pending?.topic);
   assert.equal(repair.snapshot.initiative.pending?.blocker, baselineRepair.snapshot.initiative.pending?.blocker);
+});
+
+test("scenario: async proactive blocker repair forwards proactive selection into the generator context", async () => {
+  let capturedContext: ProactiveGenerationContext | null = null;
+
+  const replyGenerator = {
+    name: "stub",
+    async generateReply() {
+      return null;
+    },
+    async generateProactive(context) {
+      capturedContext = context;
+      return {
+        reply: "仕様の詰まりは見えている。まずは境界を決めるところから戻したい。",
+        provider: "stub",
+        model: "stub-model",
+      };
+    },
+  } satisfies ReplyGenerator;
+
+  const run = await runScenarioAsync(
+    [
+      {
+        kind: "proactive",
+        label: "repair",
+        force: true,
+      },
+    ],
+    createBlockedInitiativeScenarioSnapshot(),
+    { replyGenerator },
+  );
+
+  const repair = requireScenarioEvent(run, "repair", "proactive");
+
+  if (capturedContext === null) {
+    throw new Error("proactive generator did not receive blocker repair context");
+  }
+  const blockerContext = capturedContext as ProactiveGenerationContext;
+  assert.equal(repair.debug?.mode, "proactive");
+  assert.equal(repair.debug?.source, "llm");
+  assert.equal(repair.debug?.proactiveSelection?.focusTopic, "仕様");
+  assert.equal(repair.debug?.proactiveSelection?.maintenanceTraceTopic, "仕様");
+  assert.equal(repair.debug?.proactiveSelection?.blocker, "境界が未定");
+  assert.equal(repair.debug?.proactiveSelection?.reopened, false);
+  assert.equal(blockerContext.proactiveSelection.focusTopic, "仕様");
+  assert.equal(blockerContext.proactiveSelection.maintenanceTraceTopic, "仕様");
+  assert.equal(blockerContext.proactiveSelection.blocker, "境界が未定");
+  assert.equal(blockerContext.proactiveSelection.reopened, false);
+});
+
+test("scenario: async proactive reopen forwards reopen selection into the generator context", async () => {
+  let capturedContext: ProactiveGenerationContext | null = null;
+
+  const replyGenerator = {
+    name: "stub",
+    async generateReply() {
+      return null;
+    },
+    async generateProactive(context) {
+      capturedContext = context;
+      return {
+        reply: "いったん閉じていた設計だけど、まだ戻る余地はある。",
+        provider: "stub",
+        model: "stub-model",
+      };
+    },
+  } satisfies ReplyGenerator;
+
+  const run = await runScenarioAsync(
+    [
+      {
+        kind: "user",
+        label: "nudge",
+        input: "？",
+      },
+      {
+        kind: "proactive",
+        label: "reopen",
+        force: true,
+      },
+    ],
+    createArchivedTraceScenarioSnapshot(),
+    { replyGenerator },
+  );
+
+  const reopen = requireScenarioEvent(run, "reopen", "proactive");
+
+  if (capturedContext === null) {
+    throw new Error("proactive generator did not receive reopen context");
+  }
+  const reopenContext = capturedContext as ProactiveGenerationContext;
+  assert.equal(reopen.debug?.mode, "proactive");
+  assert.equal(reopen.debug?.source, "llm");
+  assert.equal(reopen.debug?.proactiveSelection?.focusTopic, "設計");
+  assert.equal(reopen.debug?.proactiveSelection?.maintenanceTraceTopic, "設計");
+  assert.equal(reopen.debug?.proactiveSelection?.reopened, true);
+  assert.equal(reopenContext.proactiveSelection.focusTopic, "設計");
+  assert.equal(reopenContext.proactiveSelection.maintenanceTraceTopic, "設計");
+  assert.equal(reopenContext.proactiveSelection.reopened, true);
 });
 
 test("scenario: async interpreter can drop a local topic and keep reply selection social", async () => {
