@@ -402,6 +402,8 @@ export interface GeneratedTextDebug {
   fallbackUsed: boolean;
   error: string | null;
   plan: string | null;
+  plannerRulePlan: string | null;
+  plannerDiff: string | null;
   plannerSource: "rule" | "llm";
   plannerProvider: string | null;
   plannerModel: string | null;

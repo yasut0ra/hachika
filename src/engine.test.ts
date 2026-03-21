@@ -1825,6 +1825,10 @@ test("respondAsync can use an llm response planner before reply generation", asy
   assert.equal(result.debug.reply.plannerModel, "stub");
   assert.equal(result.debug.reply.plannerFallbackUsed, false);
   assert.equal(result.debug.reply.plan, "explore/measured/measured");
+  assert.ok(result.debug.reply.plannerRulePlan !== null);
+  assert.notEqual(result.debug.reply.plannerRulePlan, result.debug.reply.plan);
+  assert.match(result.debug.reply.plannerDiff ?? "", /focus:仕様->none/);
+  assert.match(result.debug.reply.plannerDiff ?? "", /ask:off->on/);
   assert.equal(engine.getLastReplyDebug()?.plannerSource, "llm");
 });
 
@@ -1873,6 +1877,8 @@ test("respondAsync falls back to the rule plan when the response planner fails",
   assert.equal(result.debug.reply.plannerSource, "rule");
   assert.equal(result.debug.reply.plannerProvider, "broken-planner");
   assert.equal(result.debug.reply.plannerFallbackUsed, true);
+  assert.equal(result.debug.reply.plannerRulePlan, ruleResult.debug.reply.plan);
+  assert.equal(result.debug.reply.plannerDiff, null);
   assert.match(result.debug.reply.plannerError ?? "", /planner offline/);
 });
 

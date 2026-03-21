@@ -699,11 +699,16 @@ function formatGeneratedDebug(
   const fallback = debug.fallbackUsed ? " fallback" : "";
   const error = debug.error ? ` error:${debug.error}` : "";
   const plan = debug.plan ? ` plan:${debug.plan}` : "";
+  const plannerRulePlan =
+    debug.plannerRulePlan && debug.plannerRulePlan !== debug.plan
+      ? ` rule:${debug.plannerRulePlan}`
+      : "";
+  const plannerDiff = debug.plannerDiff ? ` diff:${debug.plannerDiff}` : "";
   const plannerVia = debug.plannerProvider ? ` via:${debug.plannerProvider}` : "";
   const plannerModel = debug.plannerModel ? ` model:${debug.plannerModel}` : "";
   const plannerFallback = debug.plannerFallbackUsed ? " fallback" : "";
   const plannerError = debug.plannerError ? ` error:${debug.plannerError}` : "";
-  const planner = ` planner:${debug.plannerSource}${plannerVia}${plannerModel}${plannerFallback}${plannerError}`;
+  const planner = ` planner:${debug.plannerSource}${plannerVia}${plannerModel}${plannerFallback}${plannerError}${plannerRulePlan}${plannerDiff}`;
   const selection =
     debug.mode === "proactive"
       ? formatProactiveSelection(debug.proactiveSelection)

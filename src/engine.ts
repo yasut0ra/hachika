@@ -473,6 +473,8 @@ export class HachikaEngine {
       fallbackUsed: false,
       error: null,
       plan: emission.plan.summary,
+      plannerRulePlan: null,
+      plannerDiff: null,
       plannerSource: "rule",
       plannerProvider: null,
       plannerModel: null,
@@ -511,6 +513,8 @@ export class HachikaEngine {
           fallbackUsed: false,
           error: null,
           plan: emission.plan.summary,
+          plannerRulePlan: null,
+          plannerDiff: null,
           plannerSource: "rule",
           plannerProvider: null,
           plannerModel: null,
@@ -536,6 +540,8 @@ export class HachikaEngine {
         fallbackUsed: message === fallbackMessage,
         error: message === fallbackMessage ? "empty_reply" : null,
         plan: emission.plan.summary,
+        plannerRulePlan: null,
+        plannerDiff: null,
         plannerSource: "rule",
         plannerProvider: null,
         plannerModel: null,
@@ -553,6 +559,8 @@ export class HachikaEngine {
         fallbackUsed: true,
         error: formatReplyGenerationError(error),
         plan: emission.plan.summary,
+        plannerRulePlan: null,
+        plannerDiff: null,
         plannerSource: "rule",
         plannerProvider: null,
         plannerModel: null,
@@ -611,6 +619,8 @@ export class HachikaEngine {
       fallbackUsed: false,
       error: null,
       plan: prepared.responsePlan.summary,
+      plannerRulePlan: prepared.planningDebug.rulePlan,
+      plannerDiff: prepared.planningDebug.diff,
       plannerSource: prepared.planningDebug.source,
       plannerProvider: prepared.planningDebug.provider,
       plannerModel: prepared.planningDebug.model,
@@ -658,6 +668,8 @@ export class HachikaEngine {
         fallbackUsed: false,
         error: null,
         plan: prepared.responsePlan.summary,
+        plannerRulePlan: prepared.planningDebug.rulePlan,
+        plannerDiff: prepared.planningDebug.diff,
         plannerSource: prepared.planningDebug.source,
         plannerProvider: prepared.planningDebug.provider,
         plannerModel: prepared.planningDebug.model,
@@ -682,6 +694,8 @@ export class HachikaEngine {
         fallbackUsed: reply === fallbackReply,
         error: reply === fallbackReply ? "empty_reply" : null,
         plan: prepared.responsePlan.summary,
+        plannerRulePlan: prepared.planningDebug.rulePlan,
+        plannerDiff: prepared.planningDebug.diff,
         plannerSource: prepared.planningDebug.source,
         plannerProvider: prepared.planningDebug.provider,
         plannerModel: prepared.planningDebug.model,
@@ -699,6 +713,8 @@ export class HachikaEngine {
         fallbackUsed: true,
         error: formatReplyGenerationError(error),
         plan: prepared.responsePlan.summary,
+        plannerRulePlan: prepared.planningDebug.rulePlan,
+        plannerDiff: prepared.planningDebug.diff,
         plannerSource: prepared.planningDebug.source,
         plannerProvider: prepared.planningDebug.provider,
         plannerModel: prepared.planningDebug.model,
@@ -766,6 +782,8 @@ interface PlanningDebug {
   model: string | null;
   fallbackUsed: boolean;
   error: string | null;
+  rulePlan: string;
+  diff: string | null;
 }
 
 interface ResolvedReplySelection {
@@ -886,6 +904,8 @@ function prepareTurnFromSignals(
       model: null,
       fallbackUsed: false,
       error: null,
+      rulePlan: responsePlan.summary,
+      diff: null,
     },
     replySelection,
     mood,
@@ -924,6 +944,8 @@ async function applyResponsePlanner(
           model: null,
           fallbackUsed: true,
           error: "empty_plan",
+          rulePlan: prepared.responsePlan.summary,
+          diff: null,
         },
       };
     }
@@ -938,6 +960,8 @@ async function applyResponsePlanner(
         model: planned.model,
         fallbackUsed: false,
         error: null,
+        rulePlan: prepared.responsePlan.summary,
+        diff: summarizeResponsePlanDiff(prepared.responsePlan, responsePlan),
       },
       replySelection: resolveReplySelection(
         prepared.nextSnapshot,
@@ -954,6 +978,8 @@ async function applyResponsePlanner(
         model: null,
         fallbackUsed: true,
         error: formatReplyGenerationError(error),
+        rulePlan: prepared.responsePlan.summary,
+        diff: null,
       },
     };
   }
@@ -976,6 +1002,43 @@ function buildReplyGenerationContext(
     replySelection: prepared.replySelection.debug,
     fallbackReply,
   };
+}
+
+function summarizeResponsePlanDiff(
+  rulePlan: ResponsePlan,
+  finalPlan: ResponsePlan,
+): string | null {
+  const changes: string[] = [];
+
+  if (rulePlan.act !== finalPlan.act) {
+    changes.push(`act:${rulePlan.act}->${finalPlan.act}`);
+  }
+  if (rulePlan.stance !== finalPlan.stance) {
+    changes.push(`stance:${rulePlan.stance}->${finalPlan.stance}`);
+  }
+  if (rulePlan.distance !== finalPlan.distance) {
+    changes.push(`distance:${rulePlan.distance}->${finalPlan.distance}`);
+  }
+  if (rulePlan.focusTopic !== finalPlan.focusTopic) {
+    changes.push(`focus:${rulePlan.focusTopic ?? "none"}->${finalPlan.focusTopic ?? "none"}`);
+  }
+  if (rulePlan.mentionTrace !== finalPlan.mentionTrace) {
+    changes.push(`trace:${rulePlan.mentionTrace ? "on" : "off"}->${finalPlan.mentionTrace ? "on" : "off"}`);
+  }
+  if (rulePlan.mentionIdentity !== finalPlan.mentionIdentity) {
+    changes.push(`identity:${rulePlan.mentionIdentity ? "on" : "off"}->${finalPlan.mentionIdentity ? "on" : "off"}`);
+  }
+  if (rulePlan.mentionBoundary !== finalPlan.mentionBoundary) {
+    changes.push(`boundary:${rulePlan.mentionBoundary ? "on" : "off"}->${finalPlan.mentionBoundary ? "on" : "off"}`);
+  }
+  if (rulePlan.askBack !== finalPlan.askBack) {
+    changes.push(`ask:${rulePlan.askBack ? "on" : "off"}->${finalPlan.askBack ? "on" : "off"}`);
+  }
+  if (rulePlan.variation !== finalPlan.variation) {
+    changes.push(`variation:${rulePlan.variation}->${finalPlan.variation}`);
+  }
+
+  return changes.length > 0 ? changes.join("/") : null;
 }
 
 function buildProactiveGenerationContext(
