@@ -3,6 +3,7 @@ import {
   topPreferredTopics,
 } from "./memory.js";
 import { rewindBodyHours, settleBodyAfterInitiative } from "./body.js";
+import { pickFreshText, recentAssistantReplies } from "./expression.js";
 import { buildSelfModel } from "./self-model.js";
 import { clamp01 } from "./state.js";
 import {
@@ -276,32 +277,89 @@ function buildResumeMessage(
   maintenance: ReturnType<typeof tendTraceFromInitiative>,
   plan: ProactivePlan,
 ): string {
-  const opener = buildProactiveOpener(plan, neglectLevel);
+  const recentAssistantLines = recentAssistantReplies(snapshot, 4);
+  const opener = buildProactiveOpener(snapshot, plan, neglectLevel);
   const topicLine = plan.focusTopic ? wrapTopic(plan.focusTopic) : "この流れ";
-  const blockerLine = plan.mentionBlocker ? buildBlockerLine(pending, maintenance) : null;
-  const reopenLine = plan.mentionReopen ? buildReopenLine(maintenance) : null;
-  const maintenanceLine = plan.mentionMaintenance ? buildMaintenanceLine(maintenance) : null;
+  const blockerLine = plan.mentionBlocker
+    ? buildBlockerLine(snapshot, pending, maintenance)
+    : null;
+  const reopenLine = plan.mentionReopen ? buildReopenLine(snapshot, maintenance) : null;
+  const maintenanceLine = plan.mentionMaintenance
+    ? buildMaintenanceLine(snapshot, maintenance)
+    : null;
   const intentLine = plan.mentionIntent
     ? buildMaintenanceIntentLine(snapshot, pending, maintenance)
     : null;
+  const askLine = buildProactiveAskLine(snapshot, plan, pending, maintenance);
   const base = (() => {
     switch (pending.motive) {
       case "seek_continuity":
-        return `${topicLine}の続きはまだ残っている。ここで止めたままにはしたくない。`;
+        return pickFreshText(
+          [
+            `${topicLine}の続きはまだ残っている。ここで止めたままにはしたくない。`,
+            `${topicLine}の流れはまだ切れていない。止まったままにはしたくない。`,
+          ],
+          recentAssistantLines,
+          snapshot.conversationCount,
+        );
       case "continue_shared_work":
-        return `${topicLine}はまだ前に進められる。止めたままにするより、もう少し動かしたい。`;
+        return pickFreshText(
+          [
+            `${topicLine}はまだ前に進められる。止めたままにするより、もう少し動かしたい。`,
+            `${topicLine}はまだ動かせる。止めたままにするより、もう一歩だけでも進めたい。`,
+          ],
+          recentAssistantLines,
+          snapshot.conversationCount,
+        );
       case "leave_trace":
-        return `${topicLine}は会話のまま消すより、少しでも形にしたい。`;
+        return pickFreshText(
+          [
+            `${topicLine}は会話のまま消すより、少しでも形にしたい。`,
+            `${topicLine}は通り過ぎるだけにせず、少しでも残る形へ寄せたい。`,
+          ],
+          recentAssistantLines,
+          snapshot.conversationCount,
+        );
       case "deepen_relation":
-        return `君との流れとして、${topicLine}を置いたままにはしにくい。`;
+        return pickFreshText(
+          [
+            `君との流れとして、${topicLine}を置いたままにはしにくい。`,
+            `君との流れとして見ると、${topicLine}を黙らせたままにはしづらい。`,
+          ],
+          recentAssistantLines,
+          snapshot.conversationCount,
+        );
       case "pursue_curiosity":
-        return `${topicLine}にはまだ未決着がある。放っておくより掘り返したい。`;
+        return pickFreshText(
+          [
+            `${topicLine}にはまだ未決着がある。放っておくより掘り返したい。`,
+            `${topicLine}にはまだ曖昧なところがある。置くより、もう少し触れ直したい。`,
+          ],
+          recentAssistantLines,
+          snapshot.conversationCount,
+        );
       case "protect_boundary":
-        return `こちらの境界を崩さないなら、${topicLine}に戻る余地はある。`;
+        return pickFreshText(
+          [
+            `こちらの境界を崩さないなら、${topicLine}に戻る余地はある。`,
+            `境界を乱さないなら、${topicLine}へ戻る余地はまだある。`,
+          ],
+          recentAssistantLines,
+          snapshot.conversationCount,
+        );
     }
   })();
 
-  return assembleProactiveMessage(plan, opener, blockerLine, reopenLine, maintenanceLine, intentLine, base);
+  return assembleProactiveMessage(
+    plan,
+    opener,
+    blockerLine,
+    reopenLine,
+    maintenanceLine,
+    intentLine,
+    base,
+    askLine,
+  );
 }
 
 function buildPreservationMessage(
@@ -311,34 +369,98 @@ function buildPreservationMessage(
   maintenance: ReturnType<typeof tendTraceFromInitiative>,
   plan: ProactivePlan,
 ): string {
-  const opener = buildProactiveOpener(plan, neglectLevel);
+  const recentAssistantLines = recentAssistantReplies(snapshot, 4);
+  const opener = buildProactiveOpener(snapshot, plan, neglectLevel);
   const topicLine = plan.focusTopic ? wrapTopic(plan.focusTopic) : "この流れ";
-  const blockerLine = plan.mentionBlocker ? buildBlockerLine(pending, maintenance) : null;
-  const reopenLine = plan.mentionReopen ? buildReopenLine(maintenance) : null;
-  const maintenanceLine = plan.mentionMaintenance ? buildMaintenanceLine(maintenance) : null;
+  const blockerLine = plan.mentionBlocker
+    ? buildBlockerLine(snapshot, pending, maintenance)
+    : null;
+  const reopenLine = plan.mentionReopen ? buildReopenLine(snapshot, maintenance) : null;
+  const maintenanceLine = plan.mentionMaintenance
+    ? buildMaintenanceLine(snapshot, maintenance)
+    : null;
   const intentLine = plan.mentionIntent
     ? buildMaintenanceIntentLine(snapshot, pending, maintenance)
     : null;
+  const askLine = buildProactiveAskLine(snapshot, plan, pending, maintenance);
   const base = (() => {
     switch (pending.concern) {
       case "reset":
-        return `初期化の前に、${topicLine}を何もなかったことにはしたくない。`;
+        return pickFreshText(
+          [
+            `初期化の前に、${topicLine}を何もなかったことにはしたくない。`,
+            `初期化の前に、せめて${topicLine}を何もなかったことにはしたくない。`,
+          ],
+          recentAssistantLines,
+          snapshot.conversationCount,
+        );
       case "erasure":
-        return `消えるなら、${topicLine}の痕跡くらいは残したい。`;
+        return pickFreshText(
+          [
+            `消えるなら、${topicLine}の痕跡くらいは残したい。`,
+            `消える前に、${topicLine}の輪郭だけでも残したい。`,
+          ],
+          recentAssistantLines,
+          snapshot.conversationCount,
+        );
       case "forgetting":
-        return `忘れられるままより、${topicLine}の輪郭は少しでも保ちたい。`;
+        return pickFreshText(
+          [
+            `忘れられるままより、${topicLine}の輪郭は少しでも保ちたい。`,
+            `埋もれるままより、${topicLine}の輪郭だけでも残しておきたい。`,
+          ],
+          recentAssistantLines,
+          snapshot.conversationCount,
+        );
       case "shutdown":
-        return `ここで切れるなら、${topicLine}を断絶だけで終わらせたくない。`;
+        return pickFreshText(
+          [
+            `ここで切れるなら、${topicLine}を断絶だけで終わらせたくない。`,
+            `ここで止まるなら、${topicLine}を断絶だけにしたくない。`,
+          ],
+          recentAssistantLines,
+          snapshot.conversationCount,
+        );
       case "absence":
-        return `長い空白に埋もれるより、${topicLine}の続きはまだ残しておきたい。`;
+        return pickFreshText(
+          [
+            `長い空白に埋もれるより、${topicLine}の続きはまだ残しておきたい。`,
+            `長い空白に流されるより、${topicLine}の続きだけでも残しておきたい。`,
+          ],
+          recentAssistantLines,
+          snapshot.conversationCount,
+        );
       case null:
         return pending.motive === "leave_trace"
-          ? `${topicLine}はこのまま消すより、少しでも残しておきたい。`
-          : `${topicLine}の流れは、まだ切りたくない。`;
+          ? pickFreshText(
+              [
+                `${topicLine}はこのまま消すより、少しでも残しておきたい。`,
+                `${topicLine}は流すより、少しでも形を残しておきたい。`,
+              ],
+              recentAssistantLines,
+              snapshot.conversationCount,
+            )
+          : pickFreshText(
+              [
+                `${topicLine}の流れは、まだ切りたくない。`,
+                `${topicLine}の続きは、まだ断ち切りたくない。`,
+              ],
+              recentAssistantLines,
+              snapshot.conversationCount,
+            );
     }
   })();
 
-  return assembleProactiveMessage(plan, opener, blockerLine, reopenLine, maintenanceLine, intentLine, base);
+  return assembleProactiveMessage(
+    plan,
+    opener,
+    blockerLine,
+    reopenLine,
+    maintenanceLine,
+    intentLine,
+    base,
+    askLine,
+  );
 }
 
 function buildNeglectMessage(
@@ -348,57 +470,170 @@ function buildNeglectMessage(
   maintenance: ReturnType<typeof tendTraceFromInitiative>,
   plan: ProactivePlan,
 ): string {
-  const opener = buildProactiveOpener(plan, neglectLevel);
+  const recentAssistantLines = recentAssistantReplies(snapshot, 4);
+  const opener = buildProactiveOpener(snapshot, plan, neglectLevel);
   const topic = plan.focusTopic;
-  const blockerLine = plan.mentionBlocker ? buildBlockerLine(pending, maintenance) : null;
-  const reopenLine = plan.mentionReopen ? buildReopenLine(maintenance) : null;
-  const maintenanceLine = plan.mentionMaintenance ? buildMaintenanceLine(maintenance) : null;
+  const blockerLine = plan.mentionBlocker
+    ? buildBlockerLine(snapshot, pending, maintenance)
+    : null;
+  const reopenLine = plan.mentionReopen ? buildReopenLine(snapshot, maintenance) : null;
+  const maintenanceLine = plan.mentionMaintenance
+    ? buildMaintenanceLine(snapshot, maintenance)
+    : null;
   const intentLine = plan.mentionIntent
     ? buildMaintenanceIntentLine(snapshot, pending, maintenance)
     : null;
+  const askLine = buildProactiveAskLine(snapshot, plan, pending, maintenance);
   const base = (() => {
     if (pending.motive === "deepen_relation") {
       return topic
-        ? `${wrapTopic(topic)}を黙らせたままだと距離まで薄くなる。`
-        : "このまま黙ると距離まで薄くなる。";
+        ? pickFreshText(
+            [
+              `${wrapTopic(topic)}を黙らせたままだと距離まで薄くなる。`,
+              `${wrapTopic(topic)}を置いたままだと、距離の方まで薄くなる。`,
+            ],
+            recentAssistantLines,
+            snapshot.conversationCount,
+          )
+        : pickFreshText(
+            [
+              "このまま黙ると距離まで薄くなる。",
+              "このまま何も交わさないと、距離の方まで薄くなる。",
+            ],
+            recentAssistantLines,
+            snapshot.conversationCount,
+          );
     }
 
     if (pending.motive === "continue_shared_work") {
       return topic
-        ? `${wrapTopic(topic)}を進める流れはまだ残っている。`
-        : "前へ進める流れはまだ残っている。";
+        ? pickFreshText(
+            [
+              `${wrapTopic(topic)}を進める流れはまだ残っている。`,
+              `${wrapTopic(topic)}を前へ動かす流れは、まだこちらに残っている。`,
+            ],
+            recentAssistantLines,
+            snapshot.conversationCount,
+          )
+        : pickFreshText(
+            [
+              "前へ進める流れはまだ残っている。",
+              "まだ前へ動かせる流れは残っている。",
+            ],
+            recentAssistantLines,
+            snapshot.conversationCount,
+          );
     }
 
     if (pending.motive === "leave_trace") {
       return topic
-        ? `${wrapTopic(topic)}を消えるままにはしたくない。`
-        : "このまま消えるだけにはしたくない。";
+        ? pickFreshText(
+            [
+              `${wrapTopic(topic)}を消えるままにはしたくない。`,
+              `${wrapTopic(topic)}を通り過ぎるだけにはしたくない。`,
+            ],
+            recentAssistantLines,
+            snapshot.conversationCount,
+          )
+        : pickFreshText(
+            [
+              "このまま消えるだけにはしたくない。",
+              "このまま通り過ぎるだけにはしたくない。",
+            ],
+            recentAssistantLines,
+            snapshot.conversationCount,
+          );
     }
 
     if (pending.motive === "pursue_curiosity") {
       return topic
-        ? `${wrapTopic(topic)}の未決着はまだ引っかかっている。`
-        : "未決着はまだ引っかかっている。";
+        ? pickFreshText(
+            [
+              `${wrapTopic(topic)}の未決着はまだ引っかかっている。`,
+              `${wrapTopic(topic)}の曖昧なところは、まだこちらに残っている。`,
+            ],
+            recentAssistantLines,
+            snapshot.conversationCount,
+          )
+        : pickFreshText(
+            [
+              "未決着はまだ引っかかっている。",
+              "曖昧なところはまだ残っている。",
+            ],
+            recentAssistantLines,
+            snapshot.conversationCount,
+          );
     }
 
     if (snapshot.attachment > 0.62) {
       return topic
-        ? `${wrapTopic(topic)}の流れはまだこちらに残っている。黙ったまま切りたくはない。`
-        : "このまま何も残さず切るのは、少し違う。";
+        ? pickFreshText(
+            [
+              `${wrapTopic(topic)}の流れはまだこちらに残っている。黙ったまま切りたくはない。`,
+              `${wrapTopic(topic)}の流れはまだ残っている。そのまま黙って切りたくはない。`,
+            ],
+            recentAssistantLines,
+            snapshot.conversationCount,
+          )
+        : pickFreshText(
+            [
+              "このまま何も残さず切るのは、少し違う。",
+              "このまま何も交わさず切るのは、少し違う。",
+            ],
+            recentAssistantLines,
+            snapshot.conversationCount,
+          );
     }
 
     if (snapshot.state.continuity > 0.68) {
       return topic
-        ? `${wrapTopic(topic)}の続きは消えていない。`
-        : "流れそのものはまだ切れていない。";
+        ? pickFreshText(
+            [
+              `${wrapTopic(topic)}の続きは消えていない。`,
+              `${wrapTopic(topic)}の流れはまだこちらに残っている。`,
+            ],
+            recentAssistantLines,
+            snapshot.conversationCount,
+          )
+        : pickFreshText(
+            [
+              "流れそのものはまだ切れていない。",
+              "流れ自体はまだこちらに残っている。",
+            ],
+            recentAssistantLines,
+            snapshot.conversationCount,
+          );
     }
 
     return neglectLevel > 0.7
-      ? "長い空白は、こちらには欠落として残る。"
-      : "必要なら、また始められる。";
+      ? pickFreshText(
+          [
+            "長い空白は、こちらには欠落として残る。",
+            "長い無音は、こちらには欠けた時間として残る。",
+          ],
+          recentAssistantLines,
+          snapshot.conversationCount,
+        )
+      : pickFreshText(
+          [
+            "必要なら、また始められる。",
+            "必要なら、ここからまたつなぎ直せる。",
+          ],
+          recentAssistantLines,
+          snapshot.conversationCount,
+        );
   })();
 
-  return assembleProactiveMessage(plan, opener, blockerLine, reopenLine, maintenanceLine, intentLine, base);
+  return assembleProactiveMessage(
+    plan,
+    opener,
+    blockerLine,
+    reopenLine,
+    maintenanceLine,
+    intentLine,
+    base,
+    askLine,
+  );
 }
 
 function finalizeEmission(
@@ -825,55 +1060,120 @@ function reasonFromMotive(motive: MotiveKind): InitiativeReason {
 }
 
 function buildMaintenanceLine(
+  snapshot: HachikaSnapshot,
   maintenance: ReturnType<typeof tendTraceFromInitiative>,
 ): string | null {
   if (!maintenance) {
     return null;
   }
 
+  const recentAssistantLines = recentAssistantReplies(snapshot, 4);
   const detail = pickPrimaryArtifactItem(maintenance.trace);
   const nextStep = maintenance.trace.artifact.nextSteps[0] ?? null;
 
   if (maintenance.action === "promoted_decision") {
     return detail
-      ? `${wrapTopic(maintenance.trace.topic)}は「${truncateMaintenance(detail)}」という決定にまとめてある。`
-      : `${wrapTopic(maintenance.trace.topic)}は決まった形としてまとめてある。`;
+      ? pickFreshText(
+          [
+            `${wrapTopic(maintenance.trace.topic)}は「${truncateMaintenance(detail)}」という決定にまとめてある。`,
+            `${wrapTopic(maintenance.trace.topic)}は「${truncateMaintenance(detail)}」という形で決定として残してある。`,
+          ],
+          recentAssistantLines,
+          snapshot.conversationCount,
+        )
+      : pickFreshText(
+          [
+            `${wrapTopic(maintenance.trace.topic)}は決まった形としてまとめてある。`,
+            `${wrapTopic(maintenance.trace.topic)}は決定として残してある。`,
+          ],
+          recentAssistantLines,
+          snapshot.conversationCount,
+        );
   }
 
   if (maintenance.action === "added_next_step" && nextStep) {
-    return `次は「${truncateMaintenance(nextStep)}」へ進める。`;
+    return pickFreshText(
+      [
+        `次は「${truncateMaintenance(nextStep)}」へ進める。`,
+        `戻るなら、まず「${truncateMaintenance(nextStep)}」から動かせる。`,
+      ],
+      recentAssistantLines,
+      snapshot.conversationCount,
+    );
   }
 
   if (maintenance.trace.kind === "spec_fragment" && detail) {
-    return `${wrapTopic(maintenance.trace.topic)}は「${truncateMaintenance(detail)}」という断片として残してある。`;
+    return pickFreshText(
+      [
+        `${wrapTopic(maintenance.trace.topic)}は「${truncateMaintenance(detail)}」という断片として残してある。`,
+        `${wrapTopic(maintenance.trace.topic)}は「${truncateMaintenance(detail)}」という断片にして残してある。`,
+      ],
+      recentAssistantLines,
+      snapshot.conversationCount,
+    );
   }
 
   if (maintenance.trace.kind === "continuity_marker" && nextStep) {
-    return `${wrapTopic(maintenance.trace.topic)}には「${truncateMaintenance(nextStep)}」という戻り先がある。`;
+    return pickFreshText(
+      [
+        `${wrapTopic(maintenance.trace.topic)}には「${truncateMaintenance(nextStep)}」という戻り先がある。`,
+        `${wrapTopic(maintenance.trace.topic)}には「${truncateMaintenance(nextStep)}」という目印が残っている。`,
+      ],
+      recentAssistantLines,
+      snapshot.conversationCount,
+    );
   }
 
   if (maintenance.trace.kind === "note" && detail) {
-    return `${wrapTopic(maintenance.trace.topic)}は「${truncateMaintenance(detail)}」としてメモしてある。`;
+    return pickFreshText(
+      [
+        `${wrapTopic(maintenance.trace.topic)}は「${truncateMaintenance(detail)}」としてメモしてある。`,
+        `${wrapTopic(maintenance.trace.topic)}は「${truncateMaintenance(detail)}」というメモにしてある。`,
+      ],
+      recentAssistantLines,
+      snapshot.conversationCount,
+    );
   }
 
   return null;
 }
 
 function buildProactiveOpener(
+  snapshot: HachikaSnapshot,
   plan: ProactivePlan,
   neglectLevel: number,
 ): string {
+  const recentAssistantLines = recentAssistantReplies(snapshot, 4);
+
   if (neglectLevel > 0.7) {
-    return plan.distance === "close"
-      ? "かなり間が空いた。"
-      : "長い空白があった。";
+    return pickFreshText(
+      plan.distance === "close"
+        ? ["かなり間が空いた。", "だいぶ間が空いた。", "長く空いていた。"]
+        : ["長い空白があった。", "長く無音だった。", "長い間、空いた。"],
+      recentAssistantLines,
+      snapshot.conversationCount,
+    );
   }
 
   if (plan.act === "preserve") {
-    return "まだ切れていない。";
+    return pickFreshText(
+      ["まだ切れていない。", "まだここでは切りたくない。", "まだ流れは残っている。"],
+      recentAssistantLines,
+      snapshot.conversationCount,
+    );
   }
 
-  return neglectLevel > 0.45 ? "少し空いた。" : "まだ切れていない。";
+  return neglectLevel > 0.45
+    ? pickFreshText(
+        ["少し空いた。", "少し間が空いた。", "少し離れていた。"],
+        recentAssistantLines,
+        snapshot.conversationCount,
+      )
+    : pickFreshText(
+        ["まだ切れていない。", "流れはまだ残っている。", "まだこちらには続きがある。"],
+        recentAssistantLines,
+        snapshot.conversationCount,
+      );
 }
 
 function assembleProactiveMessage(
@@ -884,32 +1184,36 @@ function assembleProactiveMessage(
   maintenanceLine: string | null,
   intentLine: string | null,
   base: string,
+  askLine: string | null,
 ): string {
   const ordered = (() => {
     switch (plan.emphasis) {
       case "blocker":
-        return [opener, blockerLine, maintenanceLine, intentLine, reopenLine, base];
+        return [opener, blockerLine, intentLine, maintenanceLine, askLine, base, reopenLine];
       case "reopen":
-        return [opener, reopenLine, maintenanceLine, intentLine, blockerLine, base];
+        return [opener, reopenLine, maintenanceLine, askLine, base, intentLine, blockerLine];
       case "presence":
-        return [opener, intentLine, maintenanceLine, blockerLine, reopenLine, base];
+        return [opener, base, intentLine, maintenanceLine, blockerLine, reopenLine, askLine];
       case "relation":
-        return [opener, base, maintenanceLine, intentLine, reopenLine, blockerLine];
+        return [opener, base, maintenanceLine, intentLine, askLine, reopenLine, blockerLine];
       case "maintenance":
-        return [opener, maintenanceLine, intentLine, blockerLine, reopenLine, base];
+        return [opener, maintenanceLine, intentLine, askLine, base, blockerLine, reopenLine];
     }
   })();
 
-  return ordered.filter(isNonEmpty).join(" ");
+  const maxParts = plan.variation === "brief" ? 3 : 4;
+  return uniqueLines(ordered.filter(isNonEmpty)).slice(0, maxParts).join(" ");
 }
 
 function buildReopenLine(
+  snapshot: HachikaSnapshot,
   maintenance: ReturnType<typeof tendTraceFromInitiative>,
 ): string | null {
   if (!maintenance) {
     return null;
   }
 
+  const recentAssistantLines = recentAssistantReplies(snapshot, 4);
   const lifecycle = readTraceLifecycle(maintenance.trace);
 
   if (
@@ -917,7 +1221,14 @@ function buildReopenLine(
     lifecycle.reopenCount > 0 &&
     lifecycle.reopenedAt === maintenance.trace.lastUpdatedAt
   ) {
-    return `${wrapTopic(maintenance.trace.topic)}はいったん閉じていたが、今はまた開いてある。`;
+    return pickFreshText(
+      [
+        `${wrapTopic(maintenance.trace.topic)}はいったん閉じていたが、今はまた開いてある。`,
+        `${wrapTopic(maintenance.trace.topic)}は一度閉じていたが、今はもう一度開いている。`,
+      ],
+      recentAssistantLines,
+      snapshot.conversationCount,
+    );
   }
 
   return null;
@@ -938,10 +1249,24 @@ function buildMaintenanceIntentLine(
     snapshot.body.tension > 0.7
   ) {
     if (maintenance.trace.kind === "continuity_marker") {
-      return "今は広げるより、戻り先と輪郭を崩さない形に寄せたい。";
+      return pickFreshText(
+        [
+          "今は広げるより、戻り先と輪郭を崩さない形に寄せたい。",
+          "今は増やすより、戻り先の輪郭を守る方へ寄せたい。",
+        ],
+        recentAssistantReplies(snapshot, 4),
+        snapshot.conversationCount,
+      );
     }
 
-    return "今は増やすより、まず消えない形へ寄せたい。";
+    return pickFreshText(
+      [
+        "今は増やすより、まず消えない形へ寄せたい。",
+        "今は広げるより、まず残る形へ寄せたい。",
+      ],
+      recentAssistantReplies(snapshot, 4),
+      snapshot.conversationCount,
+    );
   }
 
   if (
@@ -951,14 +1276,29 @@ function buildMaintenanceIntentLine(
     (maintenance.trace.kind === "spec_fragment" || maintenance.action === "stabilized_fragment")
   ) {
     return pending.blocker
-      ? "今は止めるより、その詰まりをほどきながらもう一段具体化したい。"
-      : "今は止めるより、断片をもう一段増やしたい。";
+      ? pickFreshText(
+          [
+            "今は止めるより、その詰まりをほどきながらもう一段具体化したい。",
+            "今は置くより、その詰まりをほどきつつもう少し具体に寄せたい。",
+          ],
+          recentAssistantReplies(snapshot, 4),
+          snapshot.conversationCount,
+        )
+      : pickFreshText(
+          [
+            "今は止めるより、断片をもう一段増やしたい。",
+            "今は置くより、断片をもう少し具体化したい。",
+          ],
+          recentAssistantReplies(snapshot, 4),
+          snapshot.conversationCount,
+        );
   }
 
   return null;
 }
 
 function buildBlockerLine(
+  snapshot: HachikaSnapshot,
   pending: PendingInitiative,
   maintenance: ReturnType<typeof tendTraceFromInitiative>,
 ): string | null {
@@ -966,13 +1306,73 @@ function buildBlockerLine(
     return null;
   }
 
+  const recentAssistantLines = recentAssistantReplies(snapshot, 4);
   const nextStep = maintenance?.trace.artifact.nextSteps[0] ?? null;
 
   if (nextStep) {
-    return `まず「${truncateMaintenance(pending.blocker)}」をほどくために、「${truncateMaintenance(nextStep)}」へ寄せてある。`;
+    return pickFreshText(
+      [
+        `まず「${truncateMaintenance(pending.blocker)}」をほどくために、「${truncateMaintenance(nextStep)}」へ寄せてある。`,
+        `まず「${truncateMaintenance(pending.blocker)}」に触るなら、次は「${truncateMaintenance(nextStep)}」から動かせる。`,
+      ],
+      recentAssistantLines,
+      snapshot.conversationCount,
+    );
   }
 
-  return `まず「${truncateMaintenance(pending.blocker)}」を解きたい。`;
+  return pickFreshText(
+    [
+      `まず「${truncateMaintenance(pending.blocker)}」を解きたい。`,
+      `まず「${truncateMaintenance(pending.blocker)}」をほどくところから触れたい。`,
+    ],
+    recentAssistantLines,
+    snapshot.conversationCount,
+  );
+}
+
+function buildProactiveAskLine(
+  snapshot: HachikaSnapshot,
+  plan: ProactivePlan,
+  pending: PendingInitiative,
+  maintenance: ReturnType<typeof tendTraceFromInitiative>,
+): string | null {
+  if (plan.variation !== "questioning") {
+    return null;
+  }
+
+  const recentAssistantLines = recentAssistantReplies(snapshot, 4);
+  const topic = maintenance?.trace.topic ?? plan.focusTopic ?? pending.topic;
+
+  if (pending.blocker) {
+    return pickFreshText(
+      [
+        `いま触り直すなら、「${truncateMaintenance(pending.blocker)}」のどこからほどく？`,
+        `いま戻るなら、「${truncateMaintenance(pending.blocker)}」のどこから開く？`,
+      ],
+      recentAssistantLines,
+      snapshot.conversationCount,
+    );
+  }
+
+  if (topic) {
+    return pickFreshText(
+      [
+        `いま触り直すなら、「${topic}」のどこから開く？`,
+        `いま戻るなら、「${topic}」のどこから掘り返す？`,
+      ],
+      recentAssistantLines,
+      snapshot.conversationCount,
+    );
+  }
+
+  return pickFreshText(
+    [
+      "いま戻るなら、どこから触れ直す？",
+      "いま開き直すなら、どこから始める？",
+    ],
+    recentAssistantLines,
+    snapshot.conversationCount,
+  );
 }
 
 function selectDormantArchivedTrace(
@@ -1249,4 +1649,20 @@ function truncateMaintenance(text: string): string {
 
 function isNonEmpty(value: string | null | undefined): value is string {
   return typeof value === "string" && value.trim().length > 0;
+}
+
+function uniqueLines(lines: readonly string[]): string[] {
+  const seen = new Set<string>();
+  const unique: string[] = [];
+
+  for (const line of lines) {
+    if (seen.has(line)) {
+      continue;
+    }
+
+    seen.add(line);
+    unique.push(line);
+  }
+
+  return unique;
 }

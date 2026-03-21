@@ -214,8 +214,9 @@ Hachika は、単に有用なだけでなく、
   - 挨拶や相槌のような低情報入力を topic / trace として扱いにくくし、雑談や自己開示要求を stale work と切り分けやすくしている
 - 応答直前には `response planner` が `act / stance / distance / focus` を決め、rule-based reply と LLM wording の両方が同じ返答意図を共有する
   - greeting / repair / self-disclosure のような social turn では stale trace を引っ込め、関係の温度や自己開示を優先しやすくしている
+  - `askBack / variation` も rule-based reply に反映され、雑談や explore では問い返しや文面の揺れ方が planner に従う
   - 能動発話でも `proactive plan` が `act / stance / distance / emphasis` を決め、rule-based proactive と LLM wording が同じ切り出し方を共有する
-  - rule-based fallback でも直近の Hachika 発話を参照し、同じ opener や social line を連続で繰り返しにくくしている
+  - rule-based fallback でも直近の Hachika 発話を参照し、通常応答と能動発話の両方で同じ opener や social line を連続で繰り返しにくくしている
 - トピックごとの好み、短期記憶、長期記憶の痕跡を保持する
   - 長期記憶は `preference / boundary / relation` の3系統に分けて保持する
 - 放置後の反応や話題の再開を、能動行動レイヤーとして扱う

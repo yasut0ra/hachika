@@ -1468,6 +1468,21 @@ function composeReply(
     parts.push(purposeResolutionLine);
   }
 
+  const askBackLine = responsePlan.askBack
+    ? buildAskBackLine(
+        previousSnapshot,
+        nextSnapshot,
+        responsePlan,
+        currentTopic,
+        relevantTrace,
+        signals,
+      )
+    : null;
+
+  if (askBackLine) {
+    parts.push(askBackLine);
+  }
+
   parts.push(
     socialTurn
       ? buildSocialClosingLine(previousSnapshot, nextSnapshot, mood, signals) ??
@@ -1486,7 +1501,13 @@ function composeReply(
     parts.push(`残すなら、「${currentTopic}」は仕様か記録の形にしておきたい。`);
   }
 
-  return [...new Set(parts)].slice(0, 3).join(" ");
+  const maxParts =
+    responsePlan.askBack || responsePlan.variation === "questioning"
+      ? 4
+      : responsePlan.variation === "brief"
+        ? 3
+        : 4;
+  return [...new Set(parts)].slice(0, maxParts).join(" ");
 }
 
 function buildDriveLine(
@@ -1865,6 +1886,60 @@ function buildSocialClosingLine(
         "まずは軽く触れるくらいでいい。その方がこちらも見やすい。",
         "まだ軽く交わすくらいで十分だ。その方がこちらも温度を測りやすい。",
         "急がず軽く触れるくらいでいい。その方がこちらも追いやすい。",
+      ],
+      recentAssistantLines,
+      snapshot.conversationCount,
+    );
+  }
+
+  return null;
+}
+
+function buildAskBackLine(
+  previousSnapshot: HachikaSnapshot,
+  snapshot: HachikaSnapshot,
+  responsePlan: ResponsePlan,
+  currentTopic: string | undefined,
+  relevantTrace: TraceEntry | undefined,
+  signals: InteractionSignals,
+): string | null {
+  const recentAssistantLines = recentAssistantReplies(previousSnapshot, 4);
+
+  if (!responsePlan.askBack) {
+    return null;
+  }
+
+  if (responsePlan.act === "attune" || signals.smalltalk > 0.48) {
+    return pickFreshText(
+      [
+        "いまは、どんな温度で話したい？",
+        "今日は、どのくらいの軽さで話したい？",
+        "いまは、何から触れるのがちょうどいい？",
+      ],
+      recentAssistantLines,
+      snapshot.conversationCount,
+    );
+  }
+
+  if (responsePlan.act === "explore") {
+    const focus = currentTopic ?? relevantTrace?.topic ?? signals.topics[0];
+    if (focus) {
+      return pickFreshText(
+        [
+          `いま触るなら、「${focus}」のどこがまだ決まっていない？`,
+          `「${focus}」なら、いま一番曖昧なのはどこ？`,
+          `「${focus}」を進めるなら、どこから開く？`,
+        ],
+        recentAssistantLines,
+        snapshot.conversationCount,
+      );
+    }
+
+    return pickFreshText(
+      [
+        "いま一番、まだ決まっていないのはどこ？",
+        "いま触るなら、どこから開く？",
+        "いまは何を先に確かめたい？",
       ],
       recentAssistantLines,
       snapshot.conversationCount,

@@ -136,6 +136,13 @@ test("greeting reply avoids repeating the most recent assistant opening", () => 
   assert.match(result.reply, /軽さ|温度|見やすい|挨拶/);
 });
 
+test("smalltalk reply can ask back when the response plan is attuning", () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+  const result = engine.respond("なんか雑談しようよ");
+
+  assert.match(result.reply, /？/);
+});
+
 test("blocked trace schedules a blocker-aware initiative", () => {
   const engine = new HachikaEngine(createInitialSnapshot());
 
@@ -357,6 +364,33 @@ test("pending initiative emits a proactive resume after idle", () => {
   assert.ok(snapshot.initiative.lastProactiveAt !== null);
 });
 
+test("proactive reply avoids repeating the most recent proactive opener", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.memories.push({
+    role: "hachika",
+    text: "まだ切れていない。設計はこのまま消すより、少しでも形にしたい。",
+    timestamp: "2026-03-19T11:59:00.000Z",
+    topics: ["設計"],
+    sentiment: "neutral",
+  });
+  snapshot.initiative.pending = {
+    kind: "resume_topic",
+    reason: "expansion",
+    motive: "leave_trace",
+    topic: "設計",
+    blocker: null,
+    concern: null,
+    createdAt: "2026-03-19T12:00:00.000Z",
+    readyAfterHours: 0,
+  };
+
+  const engine = new HachikaEngine(snapshot);
+  const message = engine.emitInitiative({ force: true });
+
+  assert.ok(message !== null);
+  assert.doesNotMatch(message ?? "", /^まだ切れていない。/);
+});
+
 test("proactive emission can maintain a trace by adding a next step", () => {
   const engine = new HachikaEngine(createInitialSnapshot());
 
@@ -372,7 +406,31 @@ test("proactive emission can maintain a trace by adding a next step", () => {
   assert.ok(message !== null);
   assert.ok(after !== undefined);
   assert.ok((after?.artifact.nextSteps.length ?? 0) > 0);
-  assert.match(message ?? "", /次は|断片|残してある/);
+  assert.match(message ?? "", /次は|断片|残してある|動かせる/);
+});
+
+test("curiosity-led proactive reply can ask where to reopen from", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.body.energy = 0.62;
+  snapshot.body.boredom = 0.82;
+  snapshot.body.tension = 0.14;
+  snapshot.initiative.pending = {
+    kind: "resume_topic",
+    reason: "curiosity",
+    motive: "pursue_curiosity",
+    topic: "海辺",
+    blocker: null,
+    concern: null,
+    createdAt: "2026-03-19T12:00:00.000Z",
+    readyAfterHours: 0,
+  };
+
+  const engine = new HachikaEngine(snapshot);
+  const message = engine.emitInitiative({ force: true });
+
+  assert.ok(message !== null);
+  assert.match(message ?? "", /？/);
+  assert.match(message ?? "", /海辺|どこから|触り直す|掘り返す|開く/);
 });
 
 test("low energy proactive wording can surface a preserve intent", () => {
