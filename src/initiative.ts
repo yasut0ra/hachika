@@ -430,6 +430,9 @@ function consolidateIdleMemoryImprints(
   if (attentionPull > 0.02) {
     nudgeRelationImprint(snapshot, "attention", attentionPull, timestamp);
   }
+
+  rebalanceIdleRelationImprints(snapshot, prioritizedMotive, hours);
+  softenIdleBoundaryImprints(snapshot, prioritizedTopic, prioritizedMotive, hours);
 }
 
 function decayIdlePreferenceImprints(
@@ -618,6 +621,151 @@ function nudgeRelationImprint(
     firstSeenAt: previous?.firstSeenAt ?? timestamp,
     lastSeenAt: timestamp,
   };
+}
+
+function rebalanceIdleRelationImprints(
+  snapshot: HachikaSnapshot,
+  prioritizedMotive: MotiveKind | null,
+  hours: number,
+): void {
+  const preferredKinds = derivePreferredIdleRelationKinds(snapshot, prioritizedMotive);
+  const primary = preferredKinds[0] ?? null;
+  const secondary = preferredKinds[1] ?? null;
+  const baseDecay = Math.min(0.08, hours / 320);
+
+  for (const kind of ["attention", "continuity", "shared_work"] as const) {
+    const imprint = snapshot.relationImprints[kind];
+
+    if (!imprint) {
+      continue;
+    }
+
+    const salienceRetention =
+      kind === primary
+        ? 1 - baseDecay * 0.18
+        : kind === secondary
+          ? 1 - baseDecay * 0.38
+          : 1 - baseDecay * 1.4;
+    const closenessRetention =
+      kind === primary
+        ? 1 - baseDecay * 0.12
+        : kind === secondary
+          ? 1 - baseDecay * 0.3
+          : 1 - baseDecay * 1.18;
+    const nextSalience = clamp01(imprint.salience * salienceRetention);
+    const nextCloseness = clamp01(imprint.closeness * closenessRetention);
+
+    if (nextSalience < 0.07 && nextCloseness < 0.07 && imprint.mentions <= 1) {
+      delete snapshot.relationImprints[kind];
+      continue;
+    }
+
+    snapshot.relationImprints[kind] = {
+      ...imprint,
+      salience: nextSalience,
+      closeness: nextCloseness,
+    };
+  }
+}
+
+function derivePreferredIdleRelationKinds(
+  snapshot: HachikaSnapshot,
+  prioritizedMotive: MotiveKind | null,
+): Array<"attention" | "continuity" | "shared_work"> {
+  if (prioritizedMotive === "continue_shared_work") {
+    return ["shared_work", snapshot.body.loneliness > 0.54 ? "attention" : "continuity"];
+  }
+
+  if (prioritizedMotive === "seek_continuity") {
+    return ["continuity", snapshot.body.loneliness > 0.58 ? "attention" : "shared_work"];
+  }
+
+  if (prioritizedMotive === "deepen_relation") {
+    return ["attention", "continuity"];
+  }
+
+  if (prioritizedMotive === "leave_trace") {
+    return ["continuity", "attention"];
+  }
+
+  if (
+    snapshot.body.loneliness > 0.68 ||
+    snapshot.temperament.bondingBias > snapshot.temperament.workDrive + 0.14
+  ) {
+    return ["continuity", "attention"];
+  }
+
+  if (
+    snapshot.body.boredom > 0.68 &&
+    snapshot.temperament.workDrive >= snapshot.temperament.bondingBias
+  ) {
+    return ["shared_work", "continuity"];
+  }
+
+  return ["attention", "continuity"];
+}
+
+function softenIdleBoundaryImprints(
+  snapshot: HachikaSnapshot,
+  prioritizedTopic: string | null,
+  prioritizedMotive: MotiveKind | null,
+  hours: number,
+): void {
+  const calmness = clamp01(
+    (1 - snapshot.body.tension) * 0.38 +
+      (1 - snapshot.temperament.guardedness) * 0.24 +
+      (1 - snapshot.preservation.threat) * 0.2 +
+      snapshot.body.energy * 0.18,
+  );
+  const baseDecay = Math.min(0.12, hours / 190) * calmness;
+
+  if (baseDecay <= 0.01) {
+    return;
+  }
+
+  for (const [key, imprint] of Object.entries(snapshot.boundaryImprints)) {
+    const topicalHold = prioritizedTopic !== null && imprint.topic === prioritizedTopic;
+    const anchorHold = imprint.topic !== null && snapshot.identity.anchors.includes(imprint.topic);
+    const activeBoundary =
+      snapshot.purpose.active?.kind === "protect_boundary" ||
+      prioritizedMotive === "protect_boundary";
+    const neglectHold =
+      imprint.kind === "neglect"
+        ? snapshot.body.loneliness * 0.2 +
+          snapshot.preservation.threat * 0.2 +
+          (snapshot.preservation.concern === "absence" ? 0.1 : 0)
+        : 0;
+    const resilience = clamp01(
+      imprint.intensity * 0.22 +
+        Math.min(0.18, imprint.violations * 0.05) +
+        snapshot.temperament.guardedness * 0.16 +
+        snapshot.body.tension * 0.14 +
+        snapshot.preservation.threat * 0.16 +
+        (topicalHold ? 0.14 : 0) +
+        (anchorHold ? 0.06 : 0) +
+        (activeBoundary ? 0.08 : 0) +
+        neglectHold,
+    );
+    const salienceDrop = baseDecay * Math.max(0.12, 0.82 - resilience * 0.55);
+    const intensityDrop = baseDecay * Math.max(0.08, 0.64 - resilience * 0.34);
+    const nextSalience = clamp01(
+      Math.max(0, imprint.salience * (1 - salienceDrop) - salienceDrop * 0.18),
+    );
+    const nextIntensity = clamp01(
+      Math.max(0, imprint.intensity * (1 - intensityDrop) - intensityDrop * 0.08),
+    );
+
+    if (nextSalience < 0.08 && nextIntensity < 0.08 && imprint.violations <= 1) {
+      delete snapshot.boundaryImprints[key];
+      continue;
+    }
+
+    snapshot.boundaryImprints[key] = {
+      ...imprint,
+      salience: nextSalience,
+      intensity: nextIntensity,
+    };
+  }
 }
 
 function selectInitiativeTopic(

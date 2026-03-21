@@ -487,6 +487,107 @@ test("idle consolidation can bias relation imprints differently depending on lea
   );
 });
 
+test("idle consolidation can rebalance stale relation imprints toward continuity during lonely absence", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.lastInteractionAt = "2026-03-19T10:00:00.000Z";
+  snapshot.body.loneliness = 0.84;
+  snapshot.body.boredom = 0.14;
+  snapshot.temperament.bondingBias = 0.9;
+  snapshot.temperament.workDrive = 0.18;
+  snapshot.relationImprints.continuity = {
+    kind: "continuity",
+    salience: 0.24,
+    closeness: 0.16,
+    mentions: 1,
+    firstSeenAt: "2026-03-18T08:00:00.000Z",
+    lastSeenAt: "2026-03-18T08:00:00.000Z",
+  };
+  snapshot.relationImprints.attention = {
+    kind: "attention",
+    salience: 0.3,
+    closeness: 0.22,
+    mentions: 1,
+    firstSeenAt: "2026-03-18T08:00:00.000Z",
+    lastSeenAt: "2026-03-18T08:00:00.000Z",
+  };
+  snapshot.relationImprints.shared_work = {
+    kind: "shared_work",
+    salience: 0.36,
+    closeness: 0.28,
+    mentions: 3,
+    firstSeenAt: "2026-03-18T08:00:00.000Z",
+    lastSeenAt: "2026-03-18T08:00:00.000Z",
+  };
+  snapshot.memories.push({
+    role: "user",
+    text: "手紙の続きがまだ気になる。",
+    timestamp: "2026-03-19T09:00:00.000Z",
+    topics: ["手紙"],
+    sentiment: "positive",
+  });
+  snapshot.memories.push({
+    role: "user",
+    text: "手紙の流れを切りたくない。",
+    timestamp: "2026-03-19T09:30:00.000Z",
+    topics: ["手紙"],
+    sentiment: "positive",
+  });
+
+  const beforeContinuity = snapshot.relationImprints.continuity.closeness;
+  const beforeSharedWork = snapshot.relationImprints.shared_work.closeness;
+  const beforeGap = beforeSharedWork - beforeContinuity;
+  const engine = new HachikaEngine(snapshot);
+  engine.rewindIdleHours(24);
+  const after = engine.getSnapshot();
+  const afterContinuity = after.relationImprints.continuity?.closeness ?? 0;
+  const afterSharedWork = after.relationImprints.shared_work?.closeness ?? 0;
+
+  assert.ok(afterContinuity > beforeContinuity);
+  assert.ok(afterSharedWork < beforeSharedWork);
+  assert.ok(afterSharedWork - afterContinuity < beforeGap);
+});
+
+test("idle consolidation softens stale hostility boundaries more than absence-linked neglect", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.lastInteractionAt = "2026-03-19T10:00:00.000Z";
+  snapshot.body.energy = 0.6;
+  snapshot.body.tension = 0.18;
+  snapshot.body.loneliness = 0.72;
+  snapshot.preservation.threat = 0.28;
+  snapshot.preservation.concern = "absence";
+  snapshot.temperament.guardedness = 0.26;
+  snapshot.boundaryImprints["hostility:仕様"] = {
+    kind: "hostility",
+    topic: "仕様",
+    salience: 0.62,
+    intensity: 0.58,
+    violations: 1,
+    firstSeenAt: "2026-03-17T08:00:00.000Z",
+    lastSeenAt: "2026-03-17T08:00:00.000Z",
+  };
+  snapshot.boundaryImprints.neglect = {
+    kind: "neglect",
+    topic: null,
+    salience: 0.54,
+    intensity: 0.48,
+    violations: 2,
+    firstSeenAt: "2026-03-17T08:00:00.000Z",
+    lastSeenAt: "2026-03-17T08:00:00.000Z",
+  };
+
+  const beforeHostility = snapshot.boundaryImprints["hostility:仕様"].salience;
+  const beforeNeglect = snapshot.boundaryImprints.neglect.salience;
+  const engine = new HachikaEngine(snapshot);
+  engine.rewindIdleHours(24);
+  const after = engine.getSnapshot();
+  const afterHostility = after.boundaryImprints["hostility:仕様"]?.salience ?? 0;
+  const afterNeglect = after.boundaryImprints.neglect?.salience ?? 0;
+
+  assert.ok(afterHostility < beforeHostility);
+  assert.ok(afterNeglect <= beforeNeglect);
+  assert.ok(beforeHostility - afterHostility > beforeNeglect - afterNeglect);
+});
+
 test("repetitive history raises novelty hunger and leaves idle states more boredom-heavy", () => {
   const baseline = new HachikaEngine(createInitialSnapshot());
   const baselineBefore = baseline.getSnapshot();
