@@ -425,6 +425,7 @@ export class HachikaEngine {
       error: null,
       plan: emission.plan.summary,
       selection: null,
+      proactiveSelection: emission.selection,
     });
   }
 
@@ -457,6 +458,7 @@ export class HachikaEngine {
           error: null,
           plan: emission.plan.summary,
           selection: null,
+          proactiveSelection: emission.selection,
         },
       );
     }
@@ -476,6 +478,7 @@ export class HachikaEngine {
         error: message === fallbackMessage ? "empty_reply" : null,
         plan: emission.plan.summary,
         selection: null,
+        proactiveSelection: emission.selection,
       });
     } catch (error) {
       return this.#finalizeProactiveEmission(previousSnapshot, nextSnapshot, fallbackMessage, emission.topics, {
@@ -487,6 +490,7 @@ export class HachikaEngine {
         error: formatReplyGenerationError(error),
         plan: emission.plan.summary,
         selection: null,
+        proactiveSelection: emission.selection,
       });
     }
   }
@@ -539,6 +543,7 @@ export class HachikaEngine {
       error: null,
       plan: prepared.responsePlan.summary,
       selection: prepared.replySelection.debug,
+      proactiveSelection: null,
     });
   }
 
@@ -576,6 +581,7 @@ export class HachikaEngine {
         error: null,
         plan: prepared.responsePlan.summary,
         selection: prepared.replySelection.debug,
+        proactiveSelection: null,
       });
     }
 
@@ -594,6 +600,7 @@ export class HachikaEngine {
         error: reply === fallbackReply ? "empty_reply" : null,
         plan: prepared.responsePlan.summary,
         selection: prepared.replySelection.debug,
+        proactiveSelection: null,
       });
     } catch (error) {
       return this.#finalizeTurn(input, prepared, fallbackReply, {
@@ -605,6 +612,7 @@ export class HachikaEngine {
         error: formatReplyGenerationError(error),
         plan: prepared.responsePlan.summary,
         selection: prepared.replySelection.debug,
+        proactiveSelection: null,
       });
     }
   }
@@ -773,6 +781,7 @@ function buildProactiveGenerationContext(
     selfModel: buildSelfModel(nextSnapshot),
     pending: emission.pending,
     proactivePlan: emission.plan,
+    proactiveSelection: emission.selection,
     topics: emission.topics,
     neglectLevel: emission.neglectLevel,
     fallbackMessage: emission.message,

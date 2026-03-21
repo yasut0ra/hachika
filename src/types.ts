@@ -325,6 +325,19 @@ export interface ReplySelectionDebug {
   prioritizeTraceLine: boolean;
 }
 
+export interface ProactiveSelectionDebug {
+  focusTopic: string | null;
+  maintenanceTraceTopic: string | null;
+  blocker: string | null;
+  reopened: boolean;
+  maintenanceAction:
+    | "created"
+    | "stabilized_fragment"
+    | "added_next_step"
+    | "promoted_decision"
+    | null;
+}
+
 export interface GeneratedTextDebug {
   mode: "reply" | "proactive";
   source: "rule" | "llm";
@@ -334,4 +347,5 @@ export interface GeneratedTextDebug {
   error: string | null;
   plan: string | null;
   selection: ReplySelectionDebug | null;
+  proactiveSelection: ProactiveSelectionDebug | null;
 }

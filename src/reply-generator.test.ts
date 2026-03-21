@@ -220,6 +220,13 @@ test("buildProactiveGenerationPayload surfaces pending initiative and fallback p
       variation: "textured",
       summary: "untangle/measured/measured/blocker on 仕様",
     },
+    proactiveSelection: {
+      focusTopic: "仕様",
+      maintenanceTraceTopic: "仕様",
+      blocker: "責務が未定",
+      reopened: false,
+      maintenanceAction: "added_next_step",
+    },
     topics: ["仕様"],
     neglectLevel: 0.2,
     fallbackMessage: "まだ切れていない。まず「責務が未定」をほどくために、「責務を切り分ける」へ寄せてある。",
@@ -232,6 +239,9 @@ test("buildProactiveGenerationPayload surfaces pending initiative and fallback p
   assert.equal(payload.pending.topic, "仕様");
   assert.equal(payload.pending.blocker, "責務が未定");
   assert.equal(payload.proactivePlan.act, "untangle");
+  assert.equal(payload.proactiveSelection.focusTopic, "仕様");
+  assert.equal(payload.proactiveSelection.maintenanceTraceTopic, "仕様");
+  assert.equal(payload.proactiveSelection.blocker, "責務が未定");
   assert.equal(payload.currentTopic, "仕様");
   assert.equal(payload.traces[0]?.topic, "仕様");
   assert.equal(payload.traces[0]?.tending, "deepen");

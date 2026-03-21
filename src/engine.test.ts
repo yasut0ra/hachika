@@ -1205,6 +1205,9 @@ test("emitInitiativeAsync can use an external generator for proactive wording", 
   assert.equal(proactiveContext.pending.kind, "resume_topic");
   assert.ok(proactiveContext.proactivePlan.act === "leave_trace" || proactiveContext.proactivePlan.act === "continue_work");
   assert.equal(proactiveContext.proactivePlan.focusTopic, proactiveContext.pending.topic);
+  assert.equal(proactiveContext.proactiveSelection.focusTopic, proactiveContext.pending.topic);
+  assert.equal(proactiveContext.proactiveSelection.maintenanceTraceTopic, proactiveContext.pending.topic);
+  assert.equal(engine.getLastReplyDebug()?.proactiveSelection?.focusTopic, proactiveContext.pending.topic);
   assert.equal(engine.getLastReplyDebug()?.mode, "proactive");
   assert.equal(engine.getLastReplyDebug()?.source, "llm");
   assert.equal(engine.getLastReplyDebug()?.provider, "test-llm");
@@ -1237,5 +1240,6 @@ test("emitInitiativeAsync falls back to rule wording when proactive generation f
   assert.equal(engine.getLastReplyDebug()?.mode, "proactive");
   assert.equal(engine.getLastReplyDebug()?.source, "rule");
   assert.equal(engine.getLastReplyDebug()?.fallbackUsed, true);
+  assert.ok(engine.getLastReplyDebug()?.proactiveSelection !== null);
   assert.match(engine.getLastReplyDebug()?.error ?? "", /proactive adapter offline/);
 });

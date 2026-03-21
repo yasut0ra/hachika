@@ -647,7 +647,10 @@ function formatGeneratedDebug(
   const fallback = debug.fallbackUsed ? " fallback" : "";
   const error = debug.error ? ` error:${debug.error}` : "";
   const plan = debug.plan ? ` plan:${debug.plan}` : "";
-  const selection = formatReplySelection(debug.selection);
+  const selection =
+    debug.mode === "proactive"
+      ? formatProactiveSelection(debug.proactiveSelection)
+      : formatReplySelection(debug.selection);
 
   return `${mode}${debug.source}${via}${model}${fallback}${error}${plan}${selection}`;
 }
@@ -719,6 +722,26 @@ function formatReplySelection(
   const social = ` social:${selection.socialTurn ? "yes" : "no"}`;
 
   return `${focus}${trace}${boundary}${tracePriority}${social}`;
+}
+
+function formatProactiveSelection(
+  selection: NonNullable<ReturnType<HachikaEngine["getLastReplyDebug"]>>["proactiveSelection"],
+): string {
+  if (!selection) {
+    return " selection:none";
+  }
+
+  const focus = selection.focusTopic ? ` focus:${selection.focusTopic}` : " focus:none";
+  const trace = selection.maintenanceTraceTopic
+    ? ` trace:${selection.maintenanceTraceTopic}`
+    : " trace:none";
+  const blocker = selection.blocker ? ` blocker:${selection.blocker}` : " blocker:none";
+  const reopened = ` reopened:${selection.reopened ? "yes" : "no"}`;
+  const maintenance = selection.maintenanceAction
+    ? ` maintenance:${selection.maintenanceAction}`
+    : " maintenance:none";
+
+  return `${focus}${trace}${blocker}${reopened}${maintenance}`;
 }
 
 function calculateNeglectLevelForDisplay(

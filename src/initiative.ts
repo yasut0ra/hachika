@@ -20,6 +20,7 @@ import type {
   InteractionSignals,
   MotiveKind,
   PendingInitiative,
+  ProactiveSelectionDebug,
   SelfModel,
   SelfMotive,
 } from "./types.js";
@@ -31,6 +32,7 @@ export interface ProactiveEmission {
   neglectLevel: number;
   maintenance: TraceMaintenance | null;
   plan: ProactivePlan;
+  selection: ProactiveSelectionDebug;
 }
 
 export function scheduleInitiative(
@@ -99,6 +101,7 @@ export function emitInitiative(
   if (pending && (force || hoursSinceInteraction >= pending.readyAfterHours)) {
     const maintenance = tendTraceFromInitiative(snapshot, pending, nowIso);
     const plan = buildProactivePlan(snapshot, pending, neglectLevel, maintenance);
+    const selection = buildProactiveSelectionDebug(pending, maintenance, plan);
     const message =
       pending.kind === "preserve_presence"
         ? buildPreservationMessage(snapshot, pending, neglectLevel, maintenance, plan)
@@ -115,6 +118,7 @@ export function emitInitiative(
       neglectLevel,
       maintenance,
       plan,
+      selection,
     };
   }
 
@@ -129,6 +133,7 @@ export function emitInitiative(
 
     const maintenance = tendTraceFromInitiative(snapshot, neglectInitiative, nowIso);
     const plan = buildProactivePlan(snapshot, neglectInitiative, neglectLevel, maintenance);
+    const selection = buildProactiveSelectionDebug(neglectInitiative, maintenance, plan);
     const message = buildNeglectMessage(
       snapshot,
       neglectInitiative,
@@ -148,6 +153,7 @@ export function emitInitiative(
       neglectLevel,
       maintenance,
       plan,
+      selection,
     };
   }
 
@@ -178,6 +184,7 @@ export function emitInitiative(
 
     const maintenance = tendTraceFromInitiative(snapshot, synthesized, nowIso);
     const plan = buildProactivePlan(snapshot, synthesized, neglectLevel, maintenance);
+    const selection = buildProactiveSelectionDebug(synthesized, maintenance, plan);
     const message =
       synthesized.kind === "preserve_presence"
         ? buildPreservationMessage(snapshot, synthesized, neglectLevel, maintenance, plan)
@@ -195,6 +202,7 @@ export function emitInitiative(
       neglectLevel,
       maintenance,
       plan,
+      selection,
     };
   }
 
@@ -447,6 +455,28 @@ function finalizeEmission(
       };
     }
   }
+}
+
+function buildProactiveSelectionDebug(
+  pending: PendingInitiative,
+  maintenance: TraceMaintenance | null,
+  plan: ProactivePlan,
+): ProactiveSelectionDebug {
+  const lifecycle = maintenance ? readTraceLifecycle(maintenance.trace) : null;
+  const reopened =
+    maintenance !== null &&
+    lifecycle !== null &&
+    lifecycle.phase === "live" &&
+    lifecycle.reopenCount > 0 &&
+    lifecycle.reopenedAt === maintenance.trace.lastUpdatedAt;
+
+  return {
+    focusTopic: plan.focusTopic ?? pending.topic ?? maintenance?.trace.topic ?? null,
+    maintenanceTraceTopic: maintenance?.trace.topic ?? null,
+    blocker: pending.blocker,
+    reopened,
+    maintenanceAction: maintenance?.action ?? null,
+  };
 }
 
 function calculateNeglectLevel(

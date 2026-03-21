@@ -12,6 +12,7 @@ import type {
   InteractionSignals,
   MoodLabel,
   PendingInitiative,
+  ProactiveSelectionDebug,
   ReplySelectionDebug,
   SelfConflict,
   SelfModel,
@@ -49,6 +50,7 @@ export interface ProactiveGenerationContext {
   selfModel: SelfModel;
   pending: PendingInitiative;
   proactivePlan: ProactivePlan;
+  proactiveSelection: ProactiveSelectionDebug;
   topics: string[];
   neglectLevel: number;
   fallbackMessage: string;
@@ -134,6 +136,7 @@ export interface ProactiveGenerationPayload extends CommonGenerationPayload {
   neglectLevel: number;
   pending: PendingInitiative;
   proactivePlan: ProactivePlan;
+  proactiveSelection: ProactiveSelectionDebug;
   topics: string[];
 }
 
@@ -290,6 +293,7 @@ export function buildProactiveGenerationPayload(
     neglectLevel: context.neglectLevel,
     pending: context.pending,
     proactivePlan: context.proactivePlan,
+    proactiveSelection: context.proactiveSelection,
     topics: context.topics,
     ...buildCommonGenerationPayload(
       context.nextSnapshot,
@@ -345,6 +349,7 @@ export function buildOpenAIProactiveMessages(
         "Rewrite Hachika's proactive utterance wording from the payload below.",
         "The local engine is authoritative.",
         "Use proactivePlan as the primary guide for stance, distance, act, and emphasis.",
+        "Use proactiveSelection to stay faithful to the chosen focus topic, maintenance trace, blocker, and reopen state.",
         "Preserve the same underlying intent as fallbackMessage, but do not mirror its phrasing line by line.",
         "Vary the sentence shape and emphasis while staying faithful to the local state.",
         "Return only the final utterance text.",
