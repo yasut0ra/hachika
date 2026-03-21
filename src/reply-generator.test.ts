@@ -123,6 +123,13 @@ test("buildReplyGenerationPayload surfaces fallback intent and internal state su
       variation: "textured",
       summary: "continue_work/measured/measured on 設計",
     },
+    replySelection: {
+      socialTurn: false,
+      currentTopic: "設計",
+      relevantTraceTopic: "設計",
+      relevantBoundaryTopic: null,
+      prioritizeTraceLine: true,
+    },
     fallbackReply: "「設計」はまだ前に進められる。止めたままにするより、もう少し動かしたい。",
   };
 
@@ -131,6 +138,8 @@ test("buildReplyGenerationPayload surfaces fallback intent and internal state su
   assert.equal(payload.fallbackReply, context.fallbackReply);
   assert.equal(payload.currentTopic, "設計");
   assert.equal(payload.responsePlan.act, "continue_work");
+  assert.equal(payload.replySelection.currentTopic, "設計");
+  assert.equal(payload.replySelection.relevantTraceTopic, "設計");
   assert.equal(payload.state.attachment, 0.63);
   assert.equal(payload.purpose.active?.kind, "continue_shared_work");
   assert.equal(payload.traces[0]?.topic, "設計");

@@ -757,6 +757,7 @@ function buildReplyGenerationContext(
     signals: prepared.signals,
     selfModel: prepared.selfModel,
     responsePlan: prepared.responsePlan,
+    replySelection: prepared.replySelection.debug,
     fallbackReply,
   };
 }

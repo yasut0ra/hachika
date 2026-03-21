@@ -963,6 +963,8 @@ test("respondAsync can use an external reply generator while keeping local state
   }
   const receivedContext = capturedContext as ReplyGenerationContext;
   assert.match(receivedContext.fallbackReply, /応じ|気分|乗りやすい|進めたい/);
+  assert.equal(receivedContext.replySelection.currentTopic, "実装");
+  assert.equal(receivedContext.replySelection.socialTurn, false);
   assert.equal(result.debug.reply.mode, "reply");
   assert.equal(result.debug.reply.source, "llm");
   assert.equal(result.debug.reply.provider, "test-llm");

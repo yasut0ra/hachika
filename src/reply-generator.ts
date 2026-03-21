@@ -12,6 +12,7 @@ import type {
   InteractionSignals,
   MoodLabel,
   PendingInitiative,
+  ReplySelectionDebug,
   SelfConflict,
   SelfModel,
 } from "./types.js";
@@ -38,6 +39,7 @@ export interface ReplyGenerationContext {
   signals: InteractionSignals;
   selfModel: SelfModel;
   responsePlan: ResponsePlan;
+  replySelection: ReplySelectionDebug;
   fallbackReply: string;
 }
 
@@ -123,6 +125,7 @@ export interface ReplyGenerationPayload extends CommonGenerationPayload {
   dominantDrive: DriveName;
   signals: InteractionSignals;
   responsePlan: ResponsePlan;
+  replySelection: ReplySelectionDebug;
 }
 
 export interface ProactiveGenerationPayload extends CommonGenerationPayload {
@@ -265,6 +268,7 @@ export function buildReplyGenerationPayload(
     dominantDrive: context.dominantDrive,
     signals: context.signals,
     responsePlan: context.responsePlan,
+    replySelection: context.replySelection,
     ...buildCommonGenerationPayload(
       context.nextSnapshot,
       context.selfModel,
@@ -315,6 +319,7 @@ export function buildOpenAIChatMessages(
         "Rewrite Hachika's reply wording from the payload below.",
         "The local engine is authoritative.",
         "Use responsePlan as the primary guide for stance, distance, and act.",
+        "Use replySelection to stay faithful to the exact chosen focus, trace, boundary, and trace priority.",
         "Preserve the same underlying intent as fallbackReply, but do not mirror its phrasing line by line.",
         "Vary the sentence shape and emphasis while staying faithful to the local state.",
         "Return only the final reply text.",
