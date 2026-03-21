@@ -119,6 +119,23 @@ test("responsive turn schedules a pending initiative", () => {
   assert.ok(result.snapshot.purpose.active !== null);
 });
 
+test("greeting reply avoids repeating the most recent assistant opening", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.memories.push({
+    role: "hachika",
+    text: "その入り方なら、こちらも見やすい。まずは軽く触れるくらいでいい。",
+    timestamp: "2026-03-19T11:59:00.000Z",
+    topics: [],
+    sentiment: "neutral",
+  });
+
+  const engine = new HachikaEngine(snapshot);
+  const result = engine.respond("こんにちは");
+
+  assert.doesNotMatch(result.reply, /^その入り方なら、こちらも見やすい。/);
+  assert.match(result.reply, /軽さ|温度|見やすい|挨拶/);
+});
+
 test("blocked trace schedules a blocker-aware initiative", () => {
   const engine = new HachikaEngine(createInitialSnapshot());
 

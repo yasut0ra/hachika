@@ -3,6 +3,7 @@ import {
   sortedPreferenceImprints,
   sortedRelationImprints,
 } from "./memory.js";
+import { recentAssistantOpenings, recentAssistantReplies } from "./expression.js";
 import type { ProactivePlan, ResponsePlan } from "./response-planner.js";
 import { deriveTraceTendingMode, pickPrimaryArtifactItem, readTraceLifecycle, sortedTraces } from "./traces.js";
 import type {
@@ -58,6 +59,10 @@ export interface ProactiveGenerationContext {
 
 interface CommonGenerationPayload {
   currentTopic: string | null;
+  expression: {
+    recentAssistantReplies: string[];
+    avoidOpenings: string[];
+  };
   state: {
     drives: HachikaSnapshot["state"];
     body: HachikaSnapshot["body"];
@@ -280,6 +285,7 @@ export function buildReplyGenerationPayload(
         context.nextSnapshot.purpose.active?.topic ??
         context.nextSnapshot.identity.anchors[0] ??
         null,
+      context.previousSnapshot,
     ),
   };
 }
@@ -303,6 +309,7 @@ export function buildProactiveGenerationPayload(
         context.selfModel.topMotives[0]?.topic ??
         context.nextSnapshot.identity.anchors[0] ??
         null,
+      context.previousSnapshot,
     ),
   };
 }
@@ -324,6 +331,7 @@ export function buildOpenAIChatMessages(
         "The local engine is authoritative.",
         "Use responsePlan as the primary guide for stance, distance, and act.",
         "Use replySelection to stay faithful to the exact chosen focus, trace, boundary, and trace priority.",
+        "Avoid reusing the same opening fragments or sentence skeletons found in expression.recentAssistantReplies unless the local state makes it unavoidable.",
         "Preserve the same underlying intent as fallbackReply, but do not mirror its phrasing line by line.",
         "Vary the sentence shape and emphasis while staying faithful to the local state.",
         "Return only the final reply text.",
@@ -350,6 +358,7 @@ export function buildOpenAIProactiveMessages(
         "The local engine is authoritative.",
         "Use proactivePlan as the primary guide for stance, distance, act, and emphasis.",
         "Use proactiveSelection to stay faithful to the chosen focus topic, maintenance trace, blocker, and reopen state.",
+        "Avoid reusing the same opening fragments or sentence skeletons found in expression.recentAssistantReplies unless the local state makes it unavoidable.",
         "Preserve the same underlying intent as fallbackMessage, but do not mirror its phrasing line by line.",
         "Vary the sentence shape and emphasis while staying faithful to the local state.",
         "Return only the final utterance text.",
@@ -363,9 +372,14 @@ function buildCommonGenerationPayload(
   snapshot: HachikaSnapshot,
   selfModel: SelfModel,
   currentTopic: string | null,
+  expressionSnapshot: HachikaSnapshot = snapshot,
 ): CommonGenerationPayload {
   return {
     currentTopic,
+    expression: {
+      recentAssistantReplies: recentAssistantReplies(expressionSnapshot, 3),
+      avoidOpenings: recentAssistantOpenings(expressionSnapshot, 3),
+    },
     state: {
       drives: snapshot.state,
       body: snapshot.body,

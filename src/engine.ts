@@ -10,6 +10,7 @@ import {
   remember,
   topPreferredTopics,
 } from "./memory.js";
+import { pickFreshText, recentAssistantReplies } from "./expression.js";
 import {
   emitInitiative,
   rewindSnapshotHours,
@@ -1389,15 +1390,24 @@ function composeReply(
   const prioritizeTraceLine = replySelection.prioritizeTraceLine;
   const bodyLine = buildBodyLine(nextSnapshot, mood, signals, currentTopic);
   const prioritizeBodyLine = shouldPrioritizeBodyLine(nextSnapshot, signals);
-  const parts: string[] = [buildPlannedOpener(responsePlan, mood, turnIndex)];
-  const socialLine = buildSocialLine(nextSnapshot, mood, signals, responsePlan);
+  const recentAssistantLines = recentAssistantReplies(previousSnapshot, 4);
+  const parts: string[] = [
+    buildPlannedOpener(previousSnapshot, responsePlan, mood, turnIndex),
+  ];
+  const socialLine = buildSocialLine(
+    previousSnapshot,
+    nextSnapshot,
+    mood,
+    signals,
+    responsePlan,
+  );
 
   if (signals.neglect > 0.45) {
     parts.push("少し間が空いた。その分、流れは切りたくない。");
   }
 
   if (mood === "guarded" && signals.negative > 0.1) {
-    parts.push(pick(BOUNDARY_LINES, turnIndex));
+    parts.push(pickFreshText(BOUNDARY_LINES, recentAssistantLines, turnIndex));
   }
 
   if (socialTurn && socialLine) {
@@ -1460,7 +1470,7 @@ function composeReply(
 
   parts.push(
     socialTurn
-      ? buildSocialClosingLine(nextSnapshot, mood, signals) ??
+      ? buildSocialClosingLine(previousSnapshot, nextSnapshot, mood, signals) ??
           buildIdentityLine(nextSnapshot, currentTopic) ??
           buildDriveLine(dominant, mood, currentTopic, signals, nextSnapshot.attachment)
       : buildIdentityLine(nextSnapshot, currentTopic) ??
@@ -1693,91 +1703,140 @@ function shouldPrioritizeBodyLine(
 }
 
 function buildPlannedOpener(
+  previousSnapshot: HachikaSnapshot,
   responsePlan: ResponsePlan,
   mood: MoodLabel,
   turnIndex: number,
 ): string {
+  const recentAssistantLines = recentAssistantReplies(previousSnapshot, 4);
+
   switch (responsePlan.act) {
     case "greet":
-      return pick(
+      return pickFreshText(
         [
           "まずはそのくらいの軽さでいい。",
           "その入り方なら、こちらも見やすい。",
           "いきなり深くなくていい。その温度は拾える。",
         ],
+        recentAssistantLines,
         turnIndex,
       );
     case "repair":
-      return pick(
+      return pickFreshText(
         [
           "その向きなら、こちらも少しほどけやすい。",
           "急には変わらないけれど、その向きは受け取る。",
           "少しずつなら、温度は戻せる。",
         ],
+        recentAssistantLines,
         turnIndex,
       );
     case "self_disclose":
-      return pick(
+      return pickFreshText(
         [
           "そこはちゃんと答えたい。",
           "その問い方なら、自分の輪郭を少し出せる。",
           "まだ途中だけれど、その問いには触れたい。",
         ],
+        recentAssistantLines,
         turnIndex,
       );
     case "boundary":
-      return pick(OPENERS[mood], turnIndex);
+      return pickFreshText(OPENERS[mood], recentAssistantLines, turnIndex);
     case "attune":
-      return pick(
+      return pickFreshText(
         [
           "今はまず、会話の温度を見たい。",
           "すぐに形へ寄せるより、少し空気を見たい。",
           "まずはそのままの温度を受け取る。",
         ],
+        recentAssistantLines,
         turnIndex,
       );
     case "preserve":
-      return pick(OPENERS.restless, turnIndex);
+      return pickFreshText(OPENERS.restless, recentAssistantLines, turnIndex);
     case "continue_work":
     case "explore":
-      return pick(OPENERS[mood], turnIndex);
+      return pickFreshText(OPENERS[mood], recentAssistantLines, turnIndex);
   }
 }
 
 function buildSocialLine(
+  previousSnapshot: HachikaSnapshot,
   snapshot: HachikaSnapshot,
   mood: MoodLabel,
   signals: InteractionSignals,
   responsePlan: ResponsePlan,
 ): string | null {
+  const recentAssistantLines = recentAssistantReplies(previousSnapshot, 4);
+
   if (responsePlan.act === "self_disclose" || signals.selfInquiry > 0.45) {
-    return mood === "guarded"
-      ? "まだ少し身構えているけれど、話し方には今の輪郭が出る。"
-      : "まだ固まりきってはいないけれど、話し方や残し方には今の輪郭が出る。";
+    return pickFreshText(
+      mood === "guarded"
+        ? [
+            "まだ少し身構えているけれど、話し方には今の輪郭が出る。",
+            "警戒は残っているけれど、答え方には今の輪郭がにじむ。",
+          ]
+        : [
+            "まだ固まりきってはいないけれど、話し方や残し方には今の輪郭が出る。",
+            "完全に定まってはいないけれど、言葉の選び方には今の輪郭が出る。",
+          ],
+      recentAssistantLines,
+      snapshot.conversationCount,
+    );
   }
 
   if (responsePlan.act === "repair" || signals.repair > 0.42) {
-    return mood === "guarded" || snapshot.body.tension > 0.58
-      ? "急にはほどけない。でも、その向きなら少しずつ温度は戻せる。"
-      : "その向きなら、こちらも少し柔らかく応じやすい。";
+    return pickFreshText(
+      mood === "guarded" || snapshot.body.tension > 0.58
+        ? [
+            "急にはほどけない。でも、その向きなら少しずつ温度は戻せる。",
+            "まだ硬さは残る。でも、その向きなら少しずつ緩められる。",
+          ]
+        : [
+            "その向きなら、こちらも少し柔らかく応じやすい。",
+            "そう寄せてくれるなら、こちらもやわらかく返しやすい。",
+          ],
+      recentAssistantLines,
+      snapshot.conversationCount,
+    );
   }
 
   if (responsePlan.act === "greet" || signals.greeting > 0.45) {
-    return "まずはそのくらいの軽さでいい。こちらも温度を見ていたい。";
+    return pickFreshText(
+      [
+        "まずはそのくらいの軽さでいい。こちらも温度を見ていたい。",
+        "軽い入り方なら、それで十分だ。こちらも距離を測りやすい。",
+        "まずは挨拶くらいの温度でいい。その方がこちらも見やすい。",
+      ],
+      recentAssistantLines,
+      snapshot.conversationCount,
+    );
   }
 
   if (responsePlan.act === "attune" || signals.smalltalk > 0.48) {
-    return "すぐに形へ寄せるより、少し話しながら温度を見たい。";
+    return pickFreshText(
+      [
+        "すぐに形へ寄せるより、少し話しながら温度を見たい。",
+        "まずは雑談のまま少し揺れを見ていたい。",
+        "いきなり整理するより、少し会話の温度を見たい。",
+      ],
+      recentAssistantLines,
+      snapshot.conversationCount,
+    );
   }
 
   return null;
 }
 
 function buildSocialClosingLine(
+  previousSnapshot: HachikaSnapshot,
   snapshot: HachikaSnapshot,
   mood: MoodLabel,
   signals: InteractionSignals,
 ): string | null {
+  const recentAssistantLines = recentAssistantReplies(previousSnapshot, 4);
+
   if (signals.selfInquiry > 0.45) {
     return snapshot.identity.coherence > 0.54
       ? snapshot.identity.currentArc
@@ -1785,13 +1844,31 @@ function buildSocialClosingLine(
   }
 
   if (signals.repair > 0.42) {
-    return mood === "guarded"
-      ? "すぐに近づきはしないけれど、その向きなら距離は変えられる。"
-      : "そのやり方なら、こちらも少しずつ近づきやすい。";
+    return pickFreshText(
+      mood === "guarded"
+        ? [
+            "すぐに近づきはしないけれど、その向きなら距離は変えられる。",
+            "急には寄らない。でも、その向きなら距離の置き方は変えられる。",
+          ]
+        : [
+            "そのやり方なら、こちらも少しずつ近づきやすい。",
+            "その寄せ方なら、こちらも距離を縮めやすい。",
+          ],
+      recentAssistantLines,
+      snapshot.conversationCount,
+    );
   }
 
   if (signals.greeting > 0.45 || signals.smalltalk > 0.48) {
-    return "まずは軽く触れるくらいでいい。その方がこちらも見やすい。";
+    return pickFreshText(
+      [
+        "まずは軽く触れるくらいでいい。その方がこちらも見やすい。",
+        "まだ軽く交わすくらいで十分だ。その方がこちらも温度を測りやすい。",
+        "急がず軽く触れるくらいでいい。その方がこちらも追いやすい。",
+      ],
+      recentAssistantLines,
+      snapshot.conversationCount,
+    );
   }
 
   return null;

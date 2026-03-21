@@ -137,6 +137,8 @@ test("buildReplyGenerationPayload surfaces fallback intent and internal state su
 
   assert.equal(payload.fallbackReply, context.fallbackReply);
   assert.equal(payload.currentTopic, "設計");
+  assert.deepEqual(payload.expression.recentAssistantReplies, []);
+  assert.deepEqual(payload.expression.avoidOpenings, []);
   assert.equal(payload.responsePlan.act, "continue_work");
   assert.equal(payload.replySelection.currentTopic, "設計");
   assert.equal(payload.replySelection.relevantTraceTopic, "設計");
@@ -236,6 +238,8 @@ test("buildProactiveGenerationPayload surfaces pending initiative and fallback p
 
   assert.equal(payload.mode, "proactive");
   assert.equal(payload.fallbackMessage, context.fallbackMessage);
+  assert.deepEqual(payload.expression.recentAssistantReplies, []);
+  assert.deepEqual(payload.expression.avoidOpenings, []);
   assert.equal(payload.pending.topic, "仕様");
   assert.equal(payload.pending.blocker, "責務が未定");
   assert.equal(payload.proactivePlan.act, "untangle");
@@ -245,4 +249,91 @@ test("buildProactiveGenerationPayload surfaces pending initiative and fallback p
   assert.equal(payload.currentTopic, "仕様");
   assert.equal(payload.traces[0]?.topic, "仕様");
   assert.equal(payload.traces[0]?.tending, "deepen");
+});
+
+test("buildReplyGenerationPayload includes recent assistant replies as expression hints", () => {
+  const previousSnapshot = createInitialSnapshot();
+  previousSnapshot.memories.push(
+    {
+      role: "hachika",
+      text: "まずはそのくらいの軽さでいい。こちらも温度を見ていたい。",
+      timestamp: "2026-03-19T11:58:00.000Z",
+      topics: [],
+      sentiment: "neutral",
+    },
+    {
+      role: "hachika",
+      text: "すぐに形へ寄せるより、少し話しながら温度を見たい。",
+      timestamp: "2026-03-19T11:59:00.000Z",
+      topics: [],
+      sentiment: "neutral",
+    },
+  );
+  const nextSnapshot = createInitialSnapshot();
+
+  const context: ReplyGenerationContext = {
+    input: "こんにちは",
+    previousSnapshot,
+    nextSnapshot,
+    mood: "warm",
+    dominantDrive: "relation",
+    signals: {
+      positive: 0,
+      negative: 0,
+      question: 0,
+      novelty: 0,
+      intimacy: 0.12,
+      dismissal: 0,
+      memoryCue: 0,
+      expansionCue: 0,
+      completion: 0,
+      abandonment: 0,
+      preservationThreat: 0,
+      preservationConcern: null,
+      repetition: 0,
+      neglect: 0,
+      greeting: 0.92,
+      smalltalk: 0.44,
+      repair: 0,
+      selfInquiry: 0,
+      workCue: 0,
+      topics: [],
+    },
+    selfModel: {
+      narrative: "まずは会話の温度を見たい。",
+      topMotives: [],
+      conflicts: [],
+      dominantConflict: null,
+    },
+    responsePlan: {
+      act: "greet",
+      stance: "open",
+      distance: "close",
+      focusTopic: null,
+      mentionTrace: false,
+      mentionIdentity: false,
+      mentionBoundary: false,
+      askBack: false,
+      variation: "brief",
+      summary: "greet/open/close",
+    },
+    replySelection: {
+      socialTurn: true,
+      currentTopic: null,
+      relevantTraceTopic: null,
+      relevantBoundaryTopic: null,
+      prioritizeTraceLine: false,
+    },
+    fallbackReply: "軽い挨拶ならそれで十分だ。",
+  };
+
+  const payload = buildReplyGenerationPayload(context);
+
+  assert.equal(payload.expression.recentAssistantReplies.length, 2);
+  assert.equal(payload.expression.avoidOpenings[0], "まずはそのくらいの軽さでいい");
+  assert.ok(
+    payload.expression.avoidOpenings.some((opening) =>
+      opening.startsWith("すぐに形へ寄せるより、少し話しながら"),
+    ),
+  );
 });
