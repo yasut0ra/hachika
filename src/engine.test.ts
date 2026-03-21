@@ -3,6 +3,7 @@ import test from "node:test";
 
 import { HachikaEngine } from "./engine.js";
 import type { InputInterpreter } from "./input-interpreter.js";
+import type { ResponsePlanner } from "./response-planner.js";
 import { createInitialSnapshot } from "./state.js";
 import type {
   ProactiveGenerationContext,
@@ -1768,6 +1769,64 @@ test("respondAsync can forward interpreted reply selection into the llm payload"
   assert.equal(receivedContext.replySelection.relevantTraceTopic, null);
 });
 
+test("respondAsync can use an llm response planner before reply generation", async () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+  let capturedContext: ReplyGenerationContext | null = null;
+
+  const responsePlanner: ResponsePlanner = {
+    name: "test-planner",
+    async planResponse(context) {
+      return {
+        provider: "test-planner",
+        model: "stub",
+        plan: {
+          ...context.rulePlan,
+          act: "explore",
+          focusTopic: null,
+          mentionTrace: false,
+          askBack: true,
+          variation: "questioning",
+          summary: "explore/measured/measured",
+        },
+      };
+    },
+  };
+
+  const replyGenerator: ReplyGenerator = {
+    name: "test-llm",
+    async generateReply(context) {
+      capturedContext = context;
+      return {
+        reply: "どの向きで話したいか、先に少しだけ見せてほしい。",
+        provider: "test-llm",
+        model: "stub",
+      };
+    },
+  };
+
+  const result = await engine.respondAsync("仕様は？", {
+    replyGenerator,
+    responsePlanner,
+  });
+
+  if (capturedContext === null) {
+    throw new Error("reply generator did not receive planned context");
+  }
+
+  const receivedContext = capturedContext as ReplyGenerationContext;
+  assert.equal(receivedContext.responsePlan.act, "explore");
+  assert.equal(receivedContext.responsePlan.focusTopic, null);
+  assert.equal(receivedContext.responsePlan.askBack, true);
+  assert.equal(receivedContext.replySelection.relevantTraceTopic, null);
+  assert.equal(result.debug.reply.selection?.currentTopic, "仕様");
+  assert.equal(result.debug.reply.plannerSource, "llm");
+  assert.equal(result.debug.reply.plannerProvider, "test-planner");
+  assert.equal(result.debug.reply.plannerModel, "stub");
+  assert.equal(result.debug.reply.plannerFallbackUsed, false);
+  assert.equal(result.debug.reply.plan, "explore/measured/measured");
+  assert.equal(engine.getLastReplyDebug()?.plannerSource, "llm");
+});
+
 test("respondAsync falls back to the rule reply when the generator fails", async () => {
   const engine = new HachikaEngine(createInitialSnapshot());
 
@@ -1791,6 +1850,29 @@ test("respondAsync falls back to the rule reply when the generator fails", async
   assert.match(result.debug.reply.error ?? "", /adapter offline/);
   assert.equal(engine.getLastReplyDebug()?.source, "rule");
   assert.equal(engine.getLastReplyDebug()?.fallbackUsed, true);
+});
+
+test("respondAsync falls back to the rule plan when the response planner fails", async () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+
+  const ruleResult = engine.respond("仕様は？");
+  engine.reset(createInitialSnapshot());
+
+  const responsePlanner: ResponsePlanner = {
+    name: "broken-planner",
+    async planResponse() {
+      throw new Error("planner offline");
+    },
+  };
+
+  const result = await engine.respondAsync("仕様は？", { responsePlanner });
+
+  assert.equal(result.reply, ruleResult.reply);
+  assert.equal(result.debug.reply.plan, ruleResult.debug.reply.plan);
+  assert.equal(result.debug.reply.plannerSource, "rule");
+  assert.equal(result.debug.reply.plannerProvider, "broken-planner");
+  assert.equal(result.debug.reply.plannerFallbackUsed, true);
+  assert.match(result.debug.reply.plannerError ?? "", /planner offline/);
 });
 
 test("respondAsync falls back to local analysis when the input interpreter fails", async () => {

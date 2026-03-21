@@ -13,7 +13,11 @@ import {
 } from "./memory.js";
 import { loadSnapshot, saveSnapshot } from "./persistence.js";
 import { createReplyGeneratorFromEnv, describeReplyGenerator } from "./reply-generator.js";
-import { buildProactivePlan } from "./response-planner.js";
+import {
+  buildProactivePlan,
+  createResponsePlannerFromEnv,
+  describeResponsePlanner,
+} from "./response-planner.js";
 import {
   createInitialSnapshot,
   formatBodyState,
@@ -36,6 +40,7 @@ const snapshot = await loadSnapshot(snapshotPath);
 const engine = new HachikaEngine(snapshot);
 const replyGenerator = createReplyGeneratorFromEnv();
 const inputInterpreter = createInputInterpreterFromEnv();
+const responsePlanner = createResponsePlannerFromEnv();
 
 const rl = createInterface({ input, output });
 
@@ -148,8 +153,8 @@ try {
       continue;
     }
 
-    const result = replyGenerator
-      ? await engine.respondAsync(text, { replyGenerator, inputInterpreter })
+    const result = replyGenerator || inputInterpreter || responsePlanner
+      ? await engine.respondAsync(text, { replyGenerator, inputInterpreter, responsePlanner })
       : engine.respond(text);
     await persistState(engine);
 
@@ -170,6 +175,7 @@ async function printIntro(currentEngine: HachikaEngine): Promise<void> {
   console.log(`identity:${currentEngine.getIdentity().summary}`);
   console.log(`reply:${describeReplyGenerator(replyGenerator)}`);
   console.log(`interpret:${describeInputInterpreter(inputInterpreter)}`);
+  console.log(`planner:${describeResponsePlanner(responsePlanner)}`);
   console.log(`last reply:${formatLastReplyDebug(currentEngine)}`);
   console.log(`last interpretation:${formatInterpretationDebug(currentEngine.getLastInterpretationDebug())}`);
   console.log(`artifacts:${describeArtifactFiles(currentEngine.getSnapshot(), artifactsDir).length}`);
@@ -226,6 +232,7 @@ function printTemperament(currentEngine: HachikaEngine): void {
 function printReplyGeneratorStatus(): void {
   console.log(`reply:${describeReplyGenerator(replyGenerator)}`);
   console.log(`interpret:${describeInputInterpreter(inputInterpreter)}`);
+  console.log(`planner:${describeResponsePlanner(responsePlanner)}`);
   console.log(`last reply:${formatLastReplyDebug(engine)}`);
   console.log(`last interpretation:${formatInterpretationDebug(engine.getLastInterpretationDebug())}`);
   console.log(`last response:${formatGeneratedDebug(engine.getLastResponseDebug())}`);
@@ -366,6 +373,7 @@ function printDebug(currentEngine: HachikaEngine): void {
   console.log(formatTemperamentState(snapshot.temperament));
   console.log(`attachment: ${snapshot.attachment.toFixed(2)}`);
   console.log(`reply generator: ${describeReplyGenerator(replyGenerator)}`);
+  console.log(`response planner: ${describeResponsePlanner(responsePlanner)}`);
   console.log(`input interpreter: ${describeInputInterpreter(inputInterpreter)}`);
   console.log(`last reply: ${formatLastReplyDebug(currentEngine)}`);
   console.log(`last interpretation: ${formatInterpretationDebug(currentEngine.getLastInterpretationDebug())}`);
@@ -678,12 +686,17 @@ function formatGeneratedDebug(
   const fallback = debug.fallbackUsed ? " fallback" : "";
   const error = debug.error ? ` error:${debug.error}` : "";
   const plan = debug.plan ? ` plan:${debug.plan}` : "";
+  const plannerVia = debug.plannerProvider ? ` via:${debug.plannerProvider}` : "";
+  const plannerModel = debug.plannerModel ? ` model:${debug.plannerModel}` : "";
+  const plannerFallback = debug.plannerFallbackUsed ? " fallback" : "";
+  const plannerError = debug.plannerError ? ` error:${debug.plannerError}` : "";
+  const planner = ` planner:${debug.plannerSource}${plannerVia}${plannerModel}${plannerFallback}${plannerError}`;
   const selection =
     debug.mode === "proactive"
       ? formatProactiveSelection(debug.proactiveSelection)
       : formatReplySelection(debug.selection);
 
-  return `${mode}${debug.source}${via}${model}${fallback}${error}${plan}${selection}`;
+  return `${mode}${debug.source}${via}${model}${fallback}${error}${plan}${planner}${selection}`;
 }
 
 function formatInterpretationDebug(

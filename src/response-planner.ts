@@ -6,8 +6,23 @@ import type {
   PendingInitiative,
   SelfModel,
 } from "./types.js";
-import { readTraceLifecycle } from "./traces.js";
+import { readTraceLifecycle, sortedTraces } from "./traces.js";
 import type { TraceMaintenance } from "./traces.js";
+
+const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1";
+const DEFAULT_OPENAI_MODEL = "gpt-5-mini";
+
+const HACHIKA_RESPONSE_PLANNER_SYSTEM_PROMPT = [
+  "You plan only the reply shape for Hachika's local engine.",
+  "Return JSON only.",
+  "Do not write prose, markdown, or explanations.",
+  "The local engine remains authoritative for all state, memory, motive, purpose, initiative, and trace updates.",
+  "Stay close to rulePlan unless there is a strong semantic reason to shift act, focus, or distance.",
+  "For greetings, light small talk, repair attempts, and self-inquiry, avoid forcing stale work focus unless a concrete work topic is explicitly named.",
+  "For vague open questions without a concrete topic, prefer focusTopic null and askBack true.",
+  "focusTopic must be null or one of candidateTopics.",
+  "All booleans must be true or false.",
+].join(" ");
 
 export type ResponseAct =
   | "greet"
@@ -50,6 +65,77 @@ export interface ResponsePlan {
   summary: string;
 }
 
+export interface ResponsePlannerContext {
+  input: string;
+  previousSnapshot: HachikaSnapshot;
+  nextSnapshot: HachikaSnapshot;
+  mood: MoodLabel;
+  dominantDrive: DriveName;
+  signals: InteractionSignals;
+  selfModel: SelfModel;
+  rulePlan: ResponsePlan;
+}
+
+export interface ResponsePlannerPayload {
+  input: string;
+  mood: MoodLabel;
+  dominantDrive: DriveName;
+  signals: Pick<
+    InteractionSignals,
+    | "question"
+    | "negative"
+    | "dismissal"
+    | "preservationThreat"
+    | "greeting"
+    | "smalltalk"
+    | "repair"
+    | "selfInquiry"
+    | "workCue"
+    | "abandonment"
+    | "topics"
+  >;
+  rulePlan: Omit<ResponsePlan, "summary">;
+  candidateTopics: string[];
+  body: HachikaSnapshot["body"];
+  attachment: number;
+  identity: {
+    summary: string;
+    anchors: string[];
+    coherence: number;
+  };
+  purpose: {
+    kind: string | null;
+    topic: string | null;
+  };
+  motives: Array<{
+    kind: string;
+    topic: string | null;
+    score: number;
+    reason: string;
+  }>;
+  traces: Array<{
+    topic: string;
+    kind: string;
+    status: string;
+    lifecycle: string;
+    blocker: string | null;
+    summary: string;
+  }>;
+}
+
+export interface ResponsePlannerResult {
+  plan: ResponsePlan;
+  provider: string;
+  model: string | null;
+}
+
+export interface ResponsePlanner {
+  readonly name: string;
+  planResponse(
+    context: ResponsePlannerContext,
+  ): Promise<ResponsePlannerResult | null>;
+}
+
 export interface ProactivePlan {
   act: ProactiveAct;
   stance: ResponseStance;
@@ -62,6 +148,196 @@ export interface ProactivePlan {
   mentionIntent: boolean;
   variation: ResponseVariation;
   summary: string;
+}
+
+interface OpenAIResponsePlannerOptions {
+  apiKey: string;
+  model: string;
+  baseUrl?: string;
+  organization?: string | null;
+  project?: string | null;
+  timeoutMs?: number;
+}
+
+export class OpenAIResponsePlanner implements ResponsePlanner {
+  readonly name = "openai";
+
+  readonly #apiKey: string;
+  readonly #model: string;
+  readonly #baseUrl: string;
+  readonly #organization: string | null;
+  readonly #project: string | null;
+  readonly #timeoutMs: number;
+
+  constructor(options: OpenAIResponsePlannerOptions) {
+    this.#apiKey = options.apiKey;
+    this.#model = options.model;
+    this.#baseUrl = trimTrailingSlash(options.baseUrl ?? DEFAULT_OPENAI_BASE_URL);
+    this.#organization = options.organization ?? null;
+    this.#project = options.project ?? null;
+    this.#timeoutMs = options.timeoutMs ?? 30_000;
+  }
+
+  async planResponse(
+    context: ResponsePlannerContext,
+  ): Promise<ResponsePlannerResult | null> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), this.#timeoutMs);
+
+    try {
+      const response = await fetch(`${this.#baseUrl}/chat/completions`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${this.#apiKey}`,
+          "Content-Type": "application/json",
+          ...(this.#organization ? { "OpenAI-Organization": this.#organization } : {}),
+          ...(this.#project ? { "OpenAI-Project": this.#project } : {}),
+        },
+        body: JSON.stringify({
+          model: this.#model,
+          messages: buildOpenAIResponsePlannerMessages(context),
+        }),
+        signal: controller.signal,
+      });
+
+      if (!response.ok) {
+        throw new Error(await buildOpenAIHttpError(response));
+      }
+
+      const payload = (await response.json()) as unknown;
+      const plan = normalizePlannedResponsePlan(
+        extractOpenAIReplyText(payload),
+        context.rulePlan,
+        collectResponsePlanCandidateTopics(context),
+      );
+
+      if (!plan) {
+        return null;
+      }
+
+      return {
+        plan,
+        provider: this.name,
+        model: this.#model,
+      };
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+}
+
+export function createResponsePlannerFromEnv(
+  env: NodeJS.ProcessEnv = process.env,
+): ResponsePlanner | null {
+  const apiKey = env.OPENAI_API_KEY?.trim();
+
+  if (!apiKey) {
+    return null;
+  }
+
+  return new OpenAIResponsePlanner({
+    apiKey,
+    model:
+      env.OPENAI_PLANNER_MODEL?.trim() ||
+      env.OPENAI_MODEL?.trim() ||
+      DEFAULT_OPENAI_MODEL,
+    baseUrl: env.OPENAI_BASE_URL?.trim() || DEFAULT_OPENAI_BASE_URL,
+    organization: env.OPENAI_ORGANIZATION?.trim() || null,
+    project: env.OPENAI_PROJECT?.trim() || null,
+  });
+}
+
+export function describeResponsePlanner(planner: ResponsePlanner | null): string {
+  return planner ? planner.name : "rule";
+}
+
+export function buildResponsePlannerPayload(
+  context: ResponsePlannerContext,
+): ResponsePlannerPayload {
+  return {
+    input: context.input,
+    mood: context.mood,
+    dominantDrive: context.dominantDrive,
+    signals: {
+      question: context.signals.question,
+      negative: context.signals.negative,
+      dismissal: context.signals.dismissal,
+      preservationThreat: context.signals.preservationThreat,
+      greeting: context.signals.greeting,
+      smalltalk: context.signals.smalltalk,
+      repair: context.signals.repair,
+      selfInquiry: context.signals.selfInquiry,
+      workCue: context.signals.workCue,
+      abandonment: context.signals.abandonment,
+      topics: context.signals.topics,
+    },
+    rulePlan: {
+      act: context.rulePlan.act,
+      stance: context.rulePlan.stance,
+      distance: context.rulePlan.distance,
+      focusTopic: context.rulePlan.focusTopic,
+      mentionTrace: context.rulePlan.mentionTrace,
+      mentionIdentity: context.rulePlan.mentionIdentity,
+      mentionBoundary: context.rulePlan.mentionBoundary,
+      askBack: context.rulePlan.askBack,
+      variation: context.rulePlan.variation,
+    },
+    candidateTopics: collectResponsePlanCandidateTopics(context),
+    body: context.nextSnapshot.body,
+    attachment: context.nextSnapshot.attachment,
+    identity: {
+      summary: context.nextSnapshot.identity.summary,
+      anchors: context.nextSnapshot.identity.anchors.slice(0, 4),
+      coherence: context.nextSnapshot.identity.coherence,
+    },
+    purpose: {
+      kind: context.nextSnapshot.purpose.active?.kind ?? null,
+      topic: context.nextSnapshot.purpose.active?.topic ?? null,
+    },
+    motives: context.selfModel.topMotives.slice(0, 3).map((motive) => ({
+      kind: motive.kind,
+      topic: motive.topic,
+      score: motive.score,
+      reason: motive.reason,
+    })),
+    traces: sortedTraces(context.nextSnapshot, 3).map((trace) => ({
+      topic: trace.topic,
+      kind: trace.kind,
+      status: trace.status,
+      lifecycle: readTraceLifecycle(trace).phase,
+      blocker: trace.work.blockers[0] ?? null,
+      summary: trace.summary,
+    })),
+  };
+}
+
+export function buildOpenAIResponsePlannerMessages(
+  context: ResponsePlannerContext,
+): Array<{ role: "system" | "user"; content: string }> {
+  const payload = buildResponsePlannerPayload(context);
+
+  return [
+    {
+      role: "system",
+      content: HACHIKA_RESPONSE_PLANNER_SYSTEM_PROMPT,
+    },
+    {
+      role: "user",
+      content: [
+        "Plan Hachika's next reply shape from the payload below.",
+        "Return a single JSON object with this exact shape:",
+        '{"act":"greet","stance":"open","distance":"close","focusTopic":null,"mentionTrace":false,"mentionIdentity":false,"mentionBoundary":false,"askBack":false,"variation":"brief"}',
+        "Allowed act: greet, repair, self_disclose, boundary, attune, continue_work, preserve, explore.",
+        "Allowed stance: open, measured, guarded.",
+        "Allowed distance: close, measured, far.",
+        "Allowed variation: brief, textured, questioning.",
+        "Keep focusTopic null unless the user clearly names or reuses a concrete topic.",
+        "Use candidateTopics only.",
+        "Return JSON only.",
+        JSON.stringify(payload, null, 2),
+      ].join("\n\n"),
+    },
+  ];
 }
 
 export function buildResponsePlan(
@@ -192,6 +468,43 @@ export function buildResponsePlan(
           (act === "self_disclose" && temperament.openness > 0.66)
         ? "questioning"
         : "textured";
+
+  return {
+    act,
+    stance,
+    distance,
+    focusTopic,
+    mentionTrace,
+    mentionIdentity,
+    mentionBoundary,
+    askBack,
+    variation,
+    summary: summarizePlan(act, stance, distance, focusTopic),
+  };
+}
+
+export function normalizePlannedResponsePlan(
+  rawText: string | null,
+  fallbackPlan: ResponsePlan,
+  candidateTopics: string[],
+): ResponsePlan | null {
+  const parsed = parsePlannerJson(rawText);
+
+  if (!parsed || !containsPlanLikeField(parsed)) {
+    return null;
+  }
+
+  const act = readEnum(parsed.act, RESPONSE_ACT_VALUES) ?? fallbackPlan.act;
+  const stance = readEnum(parsed.stance, RESPONSE_STANCE_VALUES) ?? fallbackPlan.stance;
+  const distance =
+    readEnum(parsed.distance, RESPONSE_DISTANCE_VALUES) ?? fallbackPlan.distance;
+  const variation =
+    readEnum(parsed.variation, RESPONSE_VARIATION_VALUES) ?? fallbackPlan.variation;
+  const focusTopic = readFocusTopic(parsed.focusTopic, candidateTopics, fallbackPlan.focusTopic);
+  const mentionTrace = readBoolean(parsed.mentionTrace, fallbackPlan.mentionTrace);
+  const mentionIdentity = readBoolean(parsed.mentionIdentity, fallbackPlan.mentionIdentity);
+  const mentionBoundary = readBoolean(parsed.mentionBoundary, fallbackPlan.mentionBoundary);
+  const askBack = readBoolean(parsed.askBack, fallbackPlan.askBack);
 
   return {
     act,
@@ -369,4 +682,191 @@ function reopenedByMaintenance(
     lifecycle.reopenCount > 0 &&
     lifecycle.reopenedAt === maintenance.trace.lastUpdatedAt
   );
+}
+
+const RESPONSE_ACT_VALUES = [
+  "greet",
+  "repair",
+  "self_disclose",
+  "boundary",
+  "attune",
+  "continue_work",
+  "preserve",
+  "explore",
+] as const satisfies readonly ResponseAct[];
+
+const RESPONSE_STANCE_VALUES = [
+  "open",
+  "measured",
+  "guarded",
+] as const satisfies readonly ResponseStance[];
+
+const RESPONSE_DISTANCE_VALUES = [
+  "close",
+  "measured",
+  "far",
+] as const satisfies readonly ResponseDistance[];
+
+const RESPONSE_VARIATION_VALUES = [
+  "brief",
+  "textured",
+  "questioning",
+] as const satisfies readonly ResponseVariation[];
+
+function collectResponsePlanCandidateTopics(
+  context: ResponsePlannerContext,
+): string[] {
+  return unique(
+    [
+      ...context.signals.topics,
+      context.rulePlan.focusTopic ?? "",
+      context.nextSnapshot.purpose.active?.topic ?? "",
+      ...context.selfModel.topMotives.map((motive) => motive.topic ?? ""),
+      ...context.nextSnapshot.identity.anchors,
+      ...sortedTraces(context.nextSnapshot, 4).map((trace) => trace.topic),
+    ].filter((topic) => topic.length > 0),
+  ).slice(0, 8);
+}
+
+function containsPlanLikeField(payload: Record<string, unknown>): boolean {
+  return [
+    "act",
+    "stance",
+    "distance",
+    "focusTopic",
+    "mentionTrace",
+    "mentionIdentity",
+    "mentionBoundary",
+    "askBack",
+    "variation",
+  ].some((key) => key in payload);
+}
+
+function readEnum<T extends string>(
+  value: unknown,
+  allowed: readonly T[],
+): T | null {
+  return typeof value === "string" && allowed.includes(value as T) ? (value as T) : null;
+}
+
+function readBoolean(value: unknown, fallback: boolean): boolean {
+  return typeof value === "boolean" ? value : fallback;
+}
+
+function readFocusTopic(
+  value: unknown,
+  candidateTopics: string[],
+  fallback: string | null,
+): string | null {
+  if (value === null) {
+    return null;
+  }
+
+  if (typeof value !== "string") {
+    return fallback;
+  }
+
+  const normalized = value.trim();
+  if (!normalized) {
+    return fallback;
+  }
+
+  return candidateTopics.includes(normalized) ? normalized : fallback;
+}
+
+function parsePlannerJson(rawText: string | null): Record<string, unknown> | null {
+  if (!rawText) {
+    return null;
+  }
+
+  const trimmed = rawText.trim();
+  const direct = tryParseJsonRecord(trimmed);
+  if (direct) {
+    return direct;
+  }
+
+  const start = trimmed.indexOf("{");
+  const end = trimmed.lastIndexOf("}");
+  if (start === -1 || end === -1 || end <= start) {
+    return null;
+  }
+
+  return tryParseJsonRecord(trimmed.slice(start, end + 1));
+}
+
+function tryParseJsonRecord(value: string): Record<string, unknown> | null {
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return isRecord(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+async function buildOpenAIHttpError(response: Response): Promise<string> {
+  const body = await response.text();
+  const detail = body.trim();
+  const suffix = detail.length > 0 ? ` ${truncate(detail, 240)}` : "";
+  return `openai ${response.status}${suffix}`;
+}
+
+function extractOpenAIReplyText(payload: unknown): string | null {
+  if (!isRecord(payload)) {
+    return null;
+  }
+
+  const choiceContent = extractChatCompletionContent(payload.choices);
+  if (choiceContent) {
+    return choiceContent;
+  }
+
+  return null;
+}
+
+function extractChatCompletionContent(choices: unknown): string | null {
+  if (!Array.isArray(choices)) {
+    return null;
+  }
+
+  const firstChoice = choices[0];
+  if (!isRecord(firstChoice) || !isRecord(firstChoice.message)) {
+    return null;
+  }
+
+  const content = firstChoice.message.content;
+  if (typeof content === "string") {
+    return content;
+  }
+
+  if (!Array.isArray(content)) {
+    return null;
+  }
+
+  const parts = content
+    .map((item) => {
+      if (!isRecord(item)) {
+        return null;
+      }
+
+      return typeof item.text === "string" ? item.text : null;
+    })
+    .filter((item): item is string => Boolean(item));
+
+  return parts.length > 0 ? parts.join("\n") : null;
+}
+
+function trimTrailingSlash(value: string): string {
+  return value.endsWith("/") ? value.slice(0, -1) : value;
+}
+
+function truncate(value: string, maxLength: number): string {
+  return value.length <= maxLength ? value : `${value.slice(0, maxLength - 1)}…`;
+}
+
+function unique(values: string[]): string[] {
+  return Array.from(new Set(values));
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }

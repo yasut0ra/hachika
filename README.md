@@ -218,6 +218,8 @@ Hachika は、単に有用なだけでなく、
 - 応答直前には `response planner` が `act / stance / distance / focus` を決め、rule-based reply と LLM wording の両方が同じ返答意図を共有する
   - greeting / repair / self-disclosure のような social turn では stale trace を引っ込め、関係の温度や自己開示を優先しやすくしている
   - `askBack / variation` も rule-based reply に反映され、雑談や explore では問い返しや文面の揺れ方が planner に従う
+  - OpenAI 互換の `response planner` を使えば、rule plan を土台にしつつ `act / stance / distance / focus / askBack` を LLM が structured に補正できる
+  - planner が空応答や不正 JSON を返した場合は rule plan に fallback し、`/llm` と `/debug` から planner の source / fallback を追える
   - 能動発話でも `proactive plan` が `act / stance / distance / emphasis` を決め、rule-based proactive と LLM wording が同じ切り出し方を共有する
   - wording 直前にはさらに `expression perspective` が `identity / motive / drive / body / relation / trace / preservation` のどこを前景化するかを選び、同じ state でも毎回同じ角度だけから喋り続けにくくしている
   - rule-based fallback でも直近の Hachika 発話を参照し、通常応答と能動発話の両方で同じ opener や social line を連続で繰り返しにくくしている
@@ -296,14 +298,14 @@ LLM wording を有効にする場合:
 cp .env.example .env
 ```
 
-`.env` に `OPENAI_API_KEY` を入れると、CLI は OpenAI reply generator と input interpreter を使います。  
-返答のモデルは `OPENAI_MODEL`、入力解釈だけ別に変えたい場合は `OPENAI_INTERPRETER_MODEL` を使えます。未設定時はどちらも `gpt-5-mini` です。
+`.env` に `OPENAI_API_KEY` を入れると、CLI は OpenAI reply generator / input interpreter / response planner を使います。  
+返答のモデルは `OPENAI_MODEL`、入力解釈だけ別に変えたい場合は `OPENAI_INTERPRETER_MODEL`、planner だけ別に変えたい場合は `OPENAI_PLANNER_MODEL` を使えます。未設定時はどれも `gpt-5-mini` です。
 
 主なコマンド:
 
 - `/help` コマンド一覧を表示
 - `/proactive` 能動発話を強制的に出す
-- `/llm` 現在の reply generator / input interpreter と直近の `reply/proactive` diagnostics を表示
+- `/llm` 現在の reply generator / input interpreter / response planner と直近の `reply/proactive` diagnostics を表示
 - `/debug` では `pending initiative` に加えて、その時点の `pending plan` も表示する
   - 直近の通常応答と直近の能動発話の diagnostics / plan は別々に保持される
   - 直近の `input interpretation` も `rule / llm / fallback / topics` に加えて、主要 score と `local -> final` の topic 差分付きで確認できる

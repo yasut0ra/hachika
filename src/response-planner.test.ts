@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { buildProactivePlan, buildResponsePlan, isSocialTurnSignals } from "./response-planner.js";
+import {
+  buildProactivePlan,
+  buildResponsePlan,
+  buildResponsePlannerPayload,
+  isSocialTurnSignals,
+  normalizePlannedResponsePlan,
+} from "./response-planner.js";
 import { createInitialSnapshot } from "./state.js";
 import type { InteractionSignals, PendingInitiative, SelfModel, TraceEntry } from "./types.js";
 
@@ -94,6 +100,88 @@ test("response planner turns topicless open questions into clarify-first explora
   assert.equal(plan.focusTopic, null);
   assert.equal(plan.askBack, true);
   assert.equal(plan.mentionTrace, false);
+});
+
+test("llm response planner payload surfaces rule plan and candidate topics", () => {
+  const previousSnapshot = createInitialSnapshot();
+  const nextSnapshot = createInitialSnapshot();
+  nextSnapshot.identity.anchors = ["設計"];
+  nextSnapshot.purpose.active = {
+    kind: "continue_shared_work",
+    topic: "設計",
+    summary: "設計を前に進めたい。",
+    confidence: 0.7,
+    progress: 0.32,
+    createdAt: "2026-03-20T00:00:00.000Z",
+    lastUpdatedAt: "2026-03-20T00:00:00.000Z",
+    turnsActive: 1,
+  };
+  nextSnapshot.traces.設計 = createTrace("設計", "spec_fragment");
+  const signals = createSignals({
+    question: 0.64,
+    workCue: 0.74,
+    topics: ["設計"],
+  });
+  const rulePlan = buildResponsePlan(
+    nextSnapshot,
+    "curious",
+    "curiosity",
+    signals,
+    createSelfModel("continue_shared_work", "設計"),
+  );
+
+  const payload = buildResponsePlannerPayload({
+    input: "設計はどう進める？",
+    previousSnapshot,
+    nextSnapshot,
+    mood: "curious",
+    dominantDrive: "curiosity",
+    signals,
+    selfModel: createSelfModel("continue_shared_work", "設計"),
+    rulePlan,
+  });
+
+  assert.equal(payload.rulePlan.act, rulePlan.act);
+  assert.equal(payload.rulePlan.focusTopic, "設計");
+  assert.ok(payload.candidateTopics.includes("設計"));
+  assert.equal(payload.traces[0]?.topic, "設計");
+});
+
+test("llm response planner normalization keeps focus within candidate topics", () => {
+  const fallbackPlan = {
+    act: "continue_work",
+    stance: "measured",
+    distance: "measured",
+    focusTopic: "設計",
+    mentionTrace: true,
+    mentionIdentity: false,
+    mentionBoundary: false,
+    askBack: false,
+    variation: "textured",
+    summary: "continue_work/measured/measured on 設計",
+  } as const;
+
+  const normalized = normalizePlannedResponsePlan(
+    JSON.stringify({
+      act: "explore",
+      stance: "open",
+      distance: "close",
+      focusTopic: "雑談",
+      mentionTrace: false,
+      askBack: true,
+      variation: "questioning",
+    }),
+    fallbackPlan,
+    ["設計", "仕様"],
+  );
+
+  assert.equal(normalized?.act, "explore");
+  assert.equal(normalized?.stance, "open");
+  assert.equal(normalized?.distance, "close");
+  assert.equal(normalized?.focusTopic, "設計");
+  assert.equal(normalized?.mentionTrace, false);
+  assert.equal(normalized?.askBack, true);
+  assert.equal(normalized?.summary, "explore/open/close on 設計");
 });
 
 test("proactive planner prioritizes blocker repair when a blocker is pending", () => {

@@ -26,7 +26,11 @@ import type {
 } from "./input-interpreter.js";
 import { updatePurpose } from "./purpose.js";
 import { buildResponsePlan, isSocialTurnSignals } from "./response-planner.js";
-import type { ResponsePlan } from "./response-planner.js";
+import type {
+  ResponsePlan,
+  ResponsePlanner,
+  ResponsePlannerContext,
+} from "./response-planner.js";
 import type {
   ProactiveGenerationContext,
   ReplyGenerationContext,
@@ -456,6 +460,11 @@ export class HachikaEngine {
       fallbackUsed: false,
       error: null,
       plan: emission.plan.summary,
+      plannerSource: "rule",
+      plannerProvider: null,
+      plannerModel: null,
+      plannerFallbackUsed: false,
+      plannerError: null,
       selection: null,
       proactiveSelection: emission.selection,
     });
@@ -489,6 +498,11 @@ export class HachikaEngine {
           fallbackUsed: false,
           error: null,
           plan: emission.plan.summary,
+          plannerSource: "rule",
+          plannerProvider: null,
+          plannerModel: null,
+          plannerFallbackUsed: false,
+          plannerError: null,
           selection: null,
           proactiveSelection: emission.selection,
         },
@@ -509,6 +523,11 @@ export class HachikaEngine {
         fallbackUsed: message === fallbackMessage,
         error: message === fallbackMessage ? "empty_reply" : null,
         plan: emission.plan.summary,
+        plannerSource: "rule",
+        plannerProvider: null,
+        plannerModel: null,
+        plannerFallbackUsed: false,
+        plannerError: null,
         selection: null,
         proactiveSelection: emission.selection,
       });
@@ -521,6 +540,11 @@ export class HachikaEngine {
         fallbackUsed: true,
         error: formatReplyGenerationError(error),
         plan: emission.plan.summary,
+        plannerSource: "rule",
+        plannerProvider: null,
+        plannerModel: null,
+        plannerFallbackUsed: false,
+        plannerError: null,
         selection: null,
         proactiveSelection: emission.selection,
       });
@@ -574,6 +598,11 @@ export class HachikaEngine {
       fallbackUsed: false,
       error: null,
       plan: prepared.responsePlan.summary,
+      plannerSource: prepared.planningDebug.source,
+      plannerProvider: prepared.planningDebug.provider,
+      plannerModel: prepared.planningDebug.model,
+      plannerFallbackUsed: prepared.planningDebug.fallbackUsed,
+      plannerError: prepared.planningDebug.error,
       selection: prepared.replySelection.debug,
       proactiveSelection: null,
     });
@@ -584,12 +613,14 @@ export class HachikaEngine {
     options: {
       replyGenerator?: ReplyGenerator | null;
       inputInterpreter?: InputInterpreter | null;
+      responsePlanner?: ResponsePlanner | null;
     } = {},
   ): Promise<TurnResult> {
     const prepared = await prepareTurnAsync(
       this.#snapshot,
       input,
       options.inputInterpreter ?? null,
+      options.responsePlanner ?? null,
     );
     const fallbackReply = composeReply(
       prepared.previousSnapshot,
@@ -612,6 +643,11 @@ export class HachikaEngine {
         fallbackUsed: false,
         error: null,
         plan: prepared.responsePlan.summary,
+        plannerSource: prepared.planningDebug.source,
+        plannerProvider: prepared.planningDebug.provider,
+        plannerModel: prepared.planningDebug.model,
+        plannerFallbackUsed: prepared.planningDebug.fallbackUsed,
+        plannerError: prepared.planningDebug.error,
         selection: prepared.replySelection.debug,
         proactiveSelection: null,
       });
@@ -631,6 +667,11 @@ export class HachikaEngine {
         fallbackUsed: reply === fallbackReply,
         error: reply === fallbackReply ? "empty_reply" : null,
         plan: prepared.responsePlan.summary,
+        plannerSource: prepared.planningDebug.source,
+        plannerProvider: prepared.planningDebug.provider,
+        plannerModel: prepared.planningDebug.model,
+        plannerFallbackUsed: prepared.planningDebug.fallbackUsed,
+        plannerError: prepared.planningDebug.error,
         selection: prepared.replySelection.debug,
         proactiveSelection: null,
       });
@@ -643,6 +684,11 @@ export class HachikaEngine {
         fallbackUsed: true,
         error: formatReplyGenerationError(error),
         plan: prepared.responsePlan.summary,
+        plannerSource: prepared.planningDebug.source,
+        plannerProvider: prepared.planningDebug.provider,
+        plannerModel: prepared.planningDebug.model,
+        plannerFallbackUsed: prepared.planningDebug.fallbackUsed,
+        plannerError: prepared.planningDebug.error,
         selection: prepared.replySelection.debug,
         proactiveSelection: null,
       });
@@ -685,12 +731,21 @@ interface PreparedTurn {
   nextSnapshot: HachikaSnapshot;
   signals: InteractionSignals;
   interpretationDebug: InterpretationDebug;
+  planningDebug: PlanningDebug;
   replySelection: ResolvedReplySelection;
   mood: MoodLabel;
   dominant: DriveName;
   selfModel: SelfModel;
   responsePlan: ResponsePlan;
   sentimentScore: number;
+}
+
+interface PlanningDebug {
+  source: "rule" | "llm";
+  provider: string | null;
+  model: string | null;
+  fallbackUsed: boolean;
+  error: string | null;
 }
 
 interface ResolvedReplySelection {
@@ -719,14 +774,21 @@ async function prepareTurnAsync(
   snapshot: HachikaSnapshot,
   input: string,
   inputInterpreter: InputInterpreter | null,
+  responsePlanner: ResponsePlanner | null,
 ): Promise<PreparedTurn> {
   const analyzed = await analyzeInteractionAsync(input, snapshot, inputInterpreter);
-  return prepareTurnFromSignals(
+  const prepared = prepareTurnFromSignals(
     snapshot,
     analyzed.signals,
     input,
     analyzed.interpretationDebug,
   );
+
+  if (!responsePlanner) {
+    return prepared;
+  }
+
+  return applyResponsePlanner(prepared, input, responsePlanner);
 }
 
 function prepareTurnFromSignals(
@@ -774,6 +836,13 @@ function prepareTurnFromSignals(
     nextSnapshot,
     signals,
     interpretationDebug,
+    planningDebug: {
+      source: "rule",
+      provider: null,
+      model: null,
+      fallbackUsed: false,
+      error: null,
+    },
     replySelection,
     mood,
     dominant,
@@ -781,6 +850,69 @@ function prepareTurnFromSignals(
     responsePlan,
     sentimentScore,
   };
+}
+
+async function applyResponsePlanner(
+  prepared: PreparedTurn,
+  input: string,
+  responsePlanner: ResponsePlanner,
+): Promise<PreparedTurn> {
+  const context: ResponsePlannerContext = {
+    input,
+    previousSnapshot: prepared.previousSnapshot,
+    nextSnapshot: prepared.nextSnapshot,
+    mood: prepared.mood,
+    dominantDrive: prepared.dominant,
+    signals: prepared.signals,
+    selfModel: prepared.selfModel,
+    rulePlan: prepared.responsePlan,
+  };
+
+  try {
+    const planned = await responsePlanner.planResponse(context);
+
+    if (!planned) {
+      return {
+        ...prepared,
+        planningDebug: {
+          source: "rule",
+          provider: responsePlanner.name,
+          model: null,
+          fallbackUsed: true,
+          error: "empty_plan",
+        },
+      };
+    }
+
+    const responsePlan = planned.plan;
+    return {
+      ...prepared,
+      responsePlan,
+      planningDebug: {
+        source: "llm",
+        provider: planned.provider,
+        model: planned.model,
+        fallbackUsed: false,
+        error: null,
+      },
+      replySelection: resolveReplySelection(
+        prepared.nextSnapshot,
+        prepared.signals,
+        responsePlan,
+      ),
+    };
+  } catch (error) {
+    return {
+      ...prepared,
+      planningDebug: {
+        source: "rule",
+        provider: responsePlanner.name,
+        model: null,
+        fallbackUsed: true,
+        error: formatReplyGenerationError(error),
+      },
+    };
+  }
 }
 
 function buildReplyGenerationContext(

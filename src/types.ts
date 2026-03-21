@@ -373,6 +373,11 @@ export interface GeneratedTextDebug {
   fallbackUsed: boolean;
   error: string | null;
   plan: string | null;
+  plannerSource: "rule" | "llm";
+  plannerProvider: string | null;
+  plannerModel: string | null;
+  plannerFallbackUsed: boolean;
+  plannerError: string | null;
   selection: ReplySelectionDebug | null;
   proactiveSelection: ProactiveSelectionDebug | null;
 }
