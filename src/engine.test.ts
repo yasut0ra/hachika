@@ -5,6 +5,7 @@ import { HachikaEngine } from "./engine.js";
 import type { InputInterpreter } from "./input-interpreter.js";
 import type { ResponsePlanner } from "./response-planner.js";
 import { createInitialSnapshot } from "./state.js";
+import type { TraceExtractor } from "./trace-extractor.js";
 import type {
   ProactiveGenerationContext,
   ReplyGenerationContext,
@@ -1903,6 +1904,63 @@ test("respondAsync falls back to local analysis when the input interpreter fails
   assert.equal(result.snapshot.traces.仕様?.kind, ruleResult.snapshot.traces.仕様?.kind);
 });
 
+test("respondAsync can use a trace extractor to shape concrete trace work", async () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+
+  const traceExtractor: TraceExtractor = {
+    name: "test-trace",
+    async extractTrace() {
+      return {
+        provider: "test-trace",
+        model: "stub",
+        extraction: {
+          topics: ["仕様の境界"],
+          kindHint: "spec_fragment",
+          completion: 0,
+          blockers: ["責務が未定"],
+          memo: ["仕様の境界を見直す"],
+          fragments: ["責務の切り分けを先に決める"],
+          decisions: [],
+          nextSteps: ["API の責務を分ける"],
+        },
+      };
+    },
+  };
+
+  const result = await engine.respondAsync("仕様の境界が曖昧で、責務がまだ決まっていない。", {
+    traceExtractor,
+  });
+
+  assert.equal(result.debug.traceExtraction.source, "llm");
+  assert.equal(result.debug.traceExtraction.provider, "test-trace");
+  assert.equal(result.debug.traceExtraction.kindHint, "spec_fragment");
+  assert.ok(result.debug.traceExtraction.blockers.includes("責務が未定"));
+  assert.ok(result.snapshot.traces["仕様の境界"] !== undefined);
+  assert.ok(result.snapshot.traces["仕様の境界"]?.work.blockers.includes("責務が未定"));
+  assert.ok(result.snapshot.traces["仕様の境界"]?.artifact.nextSteps.includes("API の責務を分ける"));
+});
+
+test("respondAsync falls back to local trace extraction when the extractor fails", async () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+
+  const traceExtractor: TraceExtractor = {
+    name: "broken-trace",
+    async extractTrace() {
+      throw new Error("trace extractor offline");
+    },
+  };
+
+  const result = await engine.respondAsync("仕様を記録として残したい。", {
+    traceExtractor,
+  });
+
+  assert.equal(result.debug.traceExtraction.source, "rule");
+  assert.equal(result.debug.traceExtraction.provider, "broken-trace");
+  assert.equal(result.debug.traceExtraction.fallbackUsed, true);
+  assert.match(result.debug.traceExtraction.error ?? "", /trace extractor offline/);
+  assert.ok(result.snapshot.traces["仕様"] !== undefined);
+});
+
 test("reset clears the last reply diagnostics", async () => {
   const engine = new HachikaEngine(createInitialSnapshot());
 
@@ -1910,6 +1968,7 @@ test("reset clears the last reply diagnostics", async () => {
   assert.ok(engine.getLastReplyDebug() !== null);
   assert.ok(engine.getLastResponseDebug() !== null);
   assert.ok(engine.getLastInterpretationDebug() !== null);
+  assert.ok(engine.getLastTraceExtractionDebug() !== null);
 
   engine.reset(createInitialSnapshot());
 
@@ -1917,6 +1976,7 @@ test("reset clears the last reply diagnostics", async () => {
   assert.equal(engine.getLastResponseDebug(), null);
   assert.equal(engine.getLastProactiveDebug(), null);
   assert.equal(engine.getLastInterpretationDebug(), null);
+  assert.equal(engine.getLastTraceExtractionDebug(), null);
 });
 
 test("response and proactive diagnostics are preserved separately", () => {

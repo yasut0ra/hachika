@@ -24,6 +24,10 @@ import type {
   InputInterpretationResult,
   InputInterpreter,
 } from "./input-interpreter.js";
+import type {
+  TraceExtractionResult,
+  TraceExtractor,
+} from "./trace-extractor.js";
 import { updatePurpose } from "./purpose.js";
 import { buildResponsePlan, isSocialTurnSignals } from "./response-planner.js";
 import type {
@@ -59,6 +63,8 @@ import type {
   MoodLabel,
   ReplySelectionDebug,
   SelfModel,
+  StructuredTraceExtraction,
+  TraceExtractionDebug,
   TraceEntry,
   TurnResult,
 } from "./types.js";
@@ -398,6 +404,7 @@ export class HachikaEngine {
   #lastResponseDebug: GeneratedTextDebug | null = null;
   #lastProactiveDebug: GeneratedTextDebug | null = null;
   #lastInterpretationDebug: InterpretationDebug | null = null;
+  #lastTraceExtractionDebug: TraceExtractionDebug | null = null;
 
   constructor(snapshot: HachikaSnapshot = createInitialSnapshot()) {
     this.#snapshot = structuredClone(snapshot);
@@ -413,6 +420,7 @@ export class HachikaEngine {
     this.#lastResponseDebug = null;
     this.#lastProactiveDebug = null;
     this.#lastInterpretationDebug = null;
+    this.#lastTraceExtractionDebug = null;
   }
 
   getSelfModel(): SelfModel {
@@ -441,6 +449,10 @@ export class HachikaEngine {
 
   getLastInterpretationDebug(): InterpretationDebug | null {
     return this.#lastInterpretationDebug ? { ...this.#lastInterpretationDebug } : null;
+  }
+
+  getLastTraceExtractionDebug(): TraceExtractionDebug | null {
+    return this.#lastTraceExtractionDebug ? { ...this.#lastTraceExtractionDebug } : null;
   }
 
   emitInitiative(options: { force?: boolean; now?: Date } = {}): string | null {
@@ -614,6 +626,7 @@ export class HachikaEngine {
       replyGenerator?: ReplyGenerator | null;
       inputInterpreter?: InputInterpreter | null;
       responsePlanner?: ResponsePlanner | null;
+      traceExtractor?: TraceExtractor | null;
     } = {},
   ): Promise<TurnResult> {
     const prepared = await prepareTurnAsync(
@@ -621,6 +634,7 @@ export class HachikaEngine {
       input,
       options.inputInterpreter ?? null,
       options.responsePlanner ?? null,
+      options.traceExtractor ?? null,
     );
     const fallbackReply = composeReply(
       prepared.previousSnapshot,
@@ -710,6 +724,7 @@ export class HachikaEngine {
     this.#lastGeneratedDebug = { ...replyDebug };
     this.#lastResponseDebug = { ...replyDebug };
     this.#lastInterpretationDebug = { ...prepared.interpretationDebug };
+    this.#lastTraceExtractionDebug = { ...prepared.traceExtractionDebug };
 
     return {
       reply,
@@ -720,6 +735,7 @@ export class HachikaEngine {
         signals: prepared.signals,
         selfModel: prepared.selfModel,
         interpretation: prepared.interpretationDebug,
+        traceExtraction: prepared.traceExtractionDebug,
         reply: replyDebug,
       },
     };
@@ -731,6 +747,8 @@ interface PreparedTurn {
   nextSnapshot: HachikaSnapshot;
   signals: InteractionSignals;
   interpretationDebug: InterpretationDebug;
+  traceExtraction: StructuredTraceExtraction | null;
+  traceExtractionDebug: TraceExtractionDebug;
   planningDebug: PlanningDebug;
   replySelection: ResolvedReplySelection;
   mood: MoodLabel;
@@ -767,6 +785,8 @@ function prepareTurn(
     signals,
     input,
     buildRuleInterpretationDebug(signals),
+    null,
+    buildRuleTraceExtractionDebug(signals),
   );
 }
 
@@ -775,13 +795,22 @@ async function prepareTurnAsync(
   input: string,
   inputInterpreter: InputInterpreter | null,
   responsePlanner: ResponsePlanner | null,
+  traceExtractor: TraceExtractor | null,
 ): Promise<PreparedTurn> {
   const analyzed = await analyzeInteractionAsync(input, snapshot, inputInterpreter);
+  const traced = await analyzeTraceExtractionAsync(
+    input,
+    snapshot,
+    analyzed.signals,
+    traceExtractor,
+  );
   const prepared = prepareTurnFromSignals(
     snapshot,
     analyzed.signals,
     input,
     analyzed.interpretationDebug,
+    traced.extraction,
+    traced.traceExtractionDebug,
   );
 
   if (!responsePlanner) {
@@ -796,6 +825,8 @@ function prepareTurnFromSignals(
   signals: InteractionSignals,
   input: string,
   interpretationDebug: InterpretationDebug,
+  traceExtraction: StructuredTraceExtraction | null,
+  traceExtractionDebug: TraceExtractionDebug,
 ): PreparedTurn {
   const previousSnapshot = structuredClone(snapshot);
   const sentimentScore = scoreSentiment(signals);
@@ -816,6 +847,7 @@ function prepareTurnFromSignals(
     signals,
     selfModel,
     nextSnapshot.lastInteractionAt ?? new Date().toISOString(),
+    traceExtraction,
   );
   updateIdentity(nextSnapshot, nextSnapshot.lastInteractionAt ?? new Date().toISOString());
   selfModel = buildSelfModel(nextSnapshot);
@@ -836,6 +868,8 @@ function prepareTurnFromSignals(
     nextSnapshot,
     signals,
     interpretationDebug,
+    traceExtraction,
+    traceExtractionDebug,
     planningDebug: {
       source: "rule",
       provider: null,
@@ -1074,6 +1108,56 @@ async function analyzeInteractionAsync(
   }
 }
 
+async function analyzeTraceExtractionAsync(
+  input: string,
+  snapshot: HachikaSnapshot,
+  signals: InteractionSignals,
+  traceExtractor: TraceExtractor | null,
+): Promise<{
+  extraction: StructuredTraceExtraction | null;
+  traceExtractionDebug: TraceExtractionDebug;
+}> {
+  if (!traceExtractor) {
+    return {
+      extraction: null,
+      traceExtractionDebug: buildRuleTraceExtractionDebug(signals),
+    };
+  }
+
+  try {
+    const extracted = await traceExtractor.extractTrace({
+      input,
+      snapshot,
+      signals,
+    });
+
+    if (!extracted) {
+      return {
+        extraction: null,
+        traceExtractionDebug: buildFallbackTraceExtractionDebug(
+          traceExtractor,
+          signals,
+          "empty_trace_extraction",
+        ),
+      };
+    }
+
+    return {
+      extraction: extracted.extraction,
+      traceExtractionDebug: buildExtractorTraceExtractionDebug(extracted),
+    };
+  } catch (error) {
+    return {
+      extraction: null,
+      traceExtractionDebug: buildFallbackTraceExtractionDebug(
+        traceExtractor,
+        signals,
+        formatInterpretationError(error),
+      ),
+    };
+  }
+}
+
 function buildRuleInterpretationDebug(
   signals: InteractionSignals,
 ): InterpretationDebug {
@@ -1089,6 +1173,74 @@ function buildRuleInterpretationDebug(
     droppedTopics: [],
     scores: pickInterpretationScores(signals),
     summary: summarizeInterpretation(signals),
+  };
+}
+
+function buildRuleTraceExtractionDebug(
+  signals: InteractionSignals,
+): TraceExtractionDebug {
+  return {
+    source: "rule",
+    provider: null,
+    model: null,
+    fallbackUsed: false,
+    error: null,
+    topics: [...signals.topics],
+    blockers: [],
+    nextSteps: [],
+    kindHint: null,
+    completion: signals.completion,
+    summary: summarizeTraceExtractionDebug({
+      topics: signals.topics,
+      blockers: [],
+      nextSteps: [],
+      kindHint: null,
+      completion: signals.completion,
+    }),
+  };
+}
+
+function buildExtractorTraceExtractionDebug(
+  extracted: TraceExtractionResult,
+): TraceExtractionDebug {
+  return {
+    source: "llm",
+    provider: extracted.provider,
+    model: extracted.model,
+    fallbackUsed: false,
+    error: null,
+    topics: [...extracted.extraction.topics],
+    blockers: [...extracted.extraction.blockers],
+    nextSteps: [...extracted.extraction.nextSteps],
+    kindHint: extracted.extraction.kindHint,
+    completion: extracted.extraction.completion,
+    summary: summarizeTraceExtractionDebug(extracted.extraction),
+  };
+}
+
+function buildFallbackTraceExtractionDebug(
+  traceExtractor: TraceExtractor,
+  signals: InteractionSignals,
+  error: string,
+): TraceExtractionDebug {
+  return {
+    source: "rule",
+    provider: traceExtractor.name,
+    model: null,
+    fallbackUsed: true,
+    error,
+    topics: [...signals.topics],
+    blockers: [],
+    nextSteps: [],
+    kindHint: null,
+    completion: signals.completion,
+    summary: summarizeTraceExtractionDebug({
+      topics: signals.topics,
+      blockers: [],
+      nextSteps: [],
+      kindHint: null,
+      completion: signals.completion,
+    }),
   };
 }
 
@@ -1201,6 +1353,33 @@ function summarizeInterpretation(
   const topicSuffix =
     signals.topics.length > 0 ? ` topics:${signals.topics.join(",")}` : " topics:none";
   return `${tags.length > 0 ? tags.join("/") : "neutral"}${topicSuffix}`;
+}
+
+function summarizeTraceExtractionDebug(
+  extraction: Pick<
+    StructuredTraceExtraction,
+    "topics" | "blockers" | "nextSteps" | "kindHint" | "completion"
+  >,
+): string {
+  const tags: string[] = [];
+
+  if (extraction.kindHint) {
+    tags.push(extraction.kindHint);
+  }
+  if (extraction.topics.length > 0) {
+    tags.push(`topic:${extraction.topics[0]}`);
+  }
+  if (extraction.blockers.length > 0) {
+    tags.push("blocker");
+  }
+  if (extraction.nextSteps.length > 0) {
+    tags.push("next");
+  }
+  if (extraction.completion >= 0.18) {
+    tags.push(`completion:${extraction.completion.toFixed(2)}`);
+  }
+
+  return tags.length > 0 ? tags.join("/") : "none";
 }
 
 function analyzeInteraction(

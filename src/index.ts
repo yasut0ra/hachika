@@ -18,6 +18,7 @@ import {
   createResponsePlannerFromEnv,
   describeResponsePlanner,
 } from "./response-planner.js";
+import { createTraceExtractorFromEnv, describeTraceExtractor } from "./trace-extractor.js";
 import {
   createInitialSnapshot,
   formatBodyState,
@@ -41,6 +42,7 @@ const engine = new HachikaEngine(snapshot);
 const replyGenerator = createReplyGeneratorFromEnv();
 const inputInterpreter = createInputInterpreterFromEnv();
 const responsePlanner = createResponsePlannerFromEnv();
+const traceExtractor = createTraceExtractorFromEnv();
 
 const rl = createInterface({ input, output });
 
@@ -153,8 +155,13 @@ try {
       continue;
     }
 
-    const result = replyGenerator || inputInterpreter || responsePlanner
-      ? await engine.respondAsync(text, { replyGenerator, inputInterpreter, responsePlanner })
+    const result = replyGenerator || inputInterpreter || responsePlanner || traceExtractor
+      ? await engine.respondAsync(text, {
+          replyGenerator,
+          inputInterpreter,
+          responsePlanner,
+          traceExtractor,
+        })
       : engine.respond(text);
     await persistState(engine);
 
@@ -176,8 +183,10 @@ async function printIntro(currentEngine: HachikaEngine): Promise<void> {
   console.log(`reply:${describeReplyGenerator(replyGenerator)}`);
   console.log(`interpret:${describeInputInterpreter(inputInterpreter)}`);
   console.log(`planner:${describeResponsePlanner(responsePlanner)}`);
+  console.log(`trace:${describeTraceExtractor(traceExtractor)}`);
   console.log(`last reply:${formatLastReplyDebug(currentEngine)}`);
   console.log(`last interpretation:${formatInterpretationDebug(currentEngine.getLastInterpretationDebug())}`);
+  console.log(`last trace:${formatTraceExtractionDebug(currentEngine.getLastTraceExtractionDebug())}`);
   console.log(`artifacts:${describeArtifactFiles(currentEngine.getSnapshot(), artifactsDir).length}`);
 }
 
@@ -233,8 +242,10 @@ function printReplyGeneratorStatus(): void {
   console.log(`reply:${describeReplyGenerator(replyGenerator)}`);
   console.log(`interpret:${describeInputInterpreter(inputInterpreter)}`);
   console.log(`planner:${describeResponsePlanner(responsePlanner)}`);
+  console.log(`trace:${describeTraceExtractor(traceExtractor)}`);
   console.log(`last reply:${formatLastReplyDebug(engine)}`);
   console.log(`last interpretation:${formatInterpretationDebug(engine.getLastInterpretationDebug())}`);
+  console.log(`last trace:${formatTraceExtractionDebug(engine.getLastTraceExtractionDebug())}`);
   console.log(`last response:${formatGeneratedDebug(engine.getLastResponseDebug())}`);
   console.log(`last proactive:${formatGeneratedDebug(engine.getLastProactiveDebug())}`);
 }
@@ -374,9 +385,11 @@ function printDebug(currentEngine: HachikaEngine): void {
   console.log(`attachment: ${snapshot.attachment.toFixed(2)}`);
   console.log(`reply generator: ${describeReplyGenerator(replyGenerator)}`);
   console.log(`response planner: ${describeResponsePlanner(responsePlanner)}`);
+  console.log(`trace extractor: ${describeTraceExtractor(traceExtractor)}`);
   console.log(`input interpreter: ${describeInputInterpreter(inputInterpreter)}`);
   console.log(`last reply: ${formatLastReplyDebug(currentEngine)}`);
   console.log(`last interpretation: ${formatInterpretationDebug(currentEngine.getLastInterpretationDebug())}`);
+  console.log(`last trace extraction: ${formatTraceExtractionDebug(currentEngine.getLastTraceExtractionDebug())}`);
   console.log(`last response: ${formatGeneratedDebug(currentEngine.getLastResponseDebug())}`);
   console.log(`last proactive: ${formatGeneratedDebug(currentEngine.getLastProactiveDebug())}`);
   console.log(
@@ -720,6 +733,28 @@ function formatInterpretationDebug(
   const scores = formatInterpretationScores(debug.scores);
 
   return `${debug.source}${via}${model}${fallback}${error} ${debug.summary}${scores}${localTopics}${topics}${adopted}${dropped}`;
+}
+
+function formatTraceExtractionDebug(
+  debug: ReturnType<HachikaEngine["getLastTraceExtractionDebug"]>,
+): string {
+  if (!debug) {
+    return "none";
+  }
+
+  const via = debug.provider ? ` via:${debug.provider}` : "";
+  const model = debug.model ? ` model:${debug.model}` : "";
+  const fallback = debug.fallbackUsed ? " fallback" : "";
+  const error = debug.error ? ` error:${debug.error}` : "";
+  const topics = debug.topics.length > 0 ? ` topics:${debug.topics.join(",")}` : " topics:none";
+  const blockers =
+    debug.blockers.length > 0 ? ` blockers:${debug.blockers.join(" | ")}` : " blockers:none";
+  const next =
+    debug.nextSteps.length > 0 ? ` next:${debug.nextSteps.join(" | ")}` : " next:none";
+  const kind = debug.kindHint ? ` kind:${debug.kindHint}` : " kind:none";
+  const completion = debug.completion > 0 ? ` completion:${debug.completion.toFixed(2)}` : "";
+
+  return `${debug.source}${via}${model}${fallback}${error} ${debug.summary}${kind}${completion}${topics}${blockers}${next}`;
 }
 
 function formatInterpretationScores(

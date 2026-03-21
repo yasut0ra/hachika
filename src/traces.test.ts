@@ -155,6 +155,39 @@ test("body can shift trace motive toward leave_trace when energy is low", () => 
   assert.equal(trace?.kind, "spec_fragment");
 });
 
+test("structured trace extraction can supply blockers and next steps to updateTraces", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.lastInteractionAt = "2026-03-19T12:00:00.000Z";
+
+  const trace = updateTraces(
+    snapshot,
+    "仕様の境界が曖昧だ。",
+    createSignals({
+      workCue: 0.48,
+      topics: [],
+    }),
+    createSelfModel([
+      { kind: "continue_shared_work", score: 0.72, topic: "仕様の境界", reason: "境界を決めたい" },
+    ]),
+    "2026-03-19T12:00:00.000Z",
+    {
+      topics: ["仕様の境界"],
+      kindHint: "spec_fragment",
+      completion: 0,
+      blockers: ["責務が未定"],
+      memo: ["仕様の境界を見直す"],
+      fragments: ["責務を切り分ける"],
+      decisions: [],
+      nextSteps: ["API の責務を分ける"],
+    },
+  );
+
+  assert.equal(trace?.topic, "仕様の境界");
+  assert.equal(trace?.kind, "spec_fragment");
+  assert.ok(trace?.work.blockers.includes("責務が未定"));
+  assert.ok(trace?.artifact.nextSteps.includes("API の責務を分ける"));
+});
+
 test("low energy maintenance preserves a resume as continuity instead of deepening it", () => {
   const snapshot = createInitialSnapshot();
   snapshot.body.energy = 0.08;

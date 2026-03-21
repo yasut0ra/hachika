@@ -265,6 +265,17 @@ export interface InteractionSignals {
   topics: string[];
 }
 
+export interface StructuredTraceExtraction {
+  topics: string[];
+  kindHint: TraceKind | null;
+  completion: number;
+  blockers: string[];
+  memo: string[];
+  fragments: string[];
+  decisions: string[];
+  nextSteps: string[];
+}
+
 export type MotiveKind =
   | "protect_boundary"
   | "seek_continuity"
@@ -311,6 +322,7 @@ export interface TurnResult {
     signals: InteractionSignals;
     selfModel: SelfModel;
     interpretation: InterpretationDebug;
+    traceExtraction: TraceExtractionDebug;
     reply: GeneratedTextDebug;
   };
 }
@@ -363,6 +375,20 @@ export interface ProactiveSelectionDebug {
     | "added_next_step"
     | "promoted_decision"
     | null;
+}
+
+export interface TraceExtractionDebug {
+  source: "rule" | "llm";
+  provider: string | null;
+  model: string | null;
+  fallbackUsed: boolean;
+  error: string | null;
+  topics: string[];
+  blockers: string[];
+  nextSteps: string[];
+  kindHint: TraceKind | null;
+  completion: number;
+  summary: string;
 }
 
 export interface GeneratedTextDebug {

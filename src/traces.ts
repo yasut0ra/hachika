@@ -5,6 +5,7 @@ import type {
   InteractionSignals,
   MotiveKind,
   PendingInitiative,
+  StructuredTraceExtraction,
   SelfModel,
   SelfMotive,
   TraceAction,
@@ -152,15 +153,16 @@ export function updateTraces(
   signals: InteractionSignals,
   selfModel: SelfModel,
   timestamp = snapshot.lastInteractionAt ?? new Date().toISOString(),
+  extraction: StructuredTraceExtraction | null = null,
 ): TraceEntry | null {
-  const topic = selectTraceTopic(snapshot, signals, selfModel);
+  const topic = selectTraceTopic(snapshot, signals, selfModel, extraction);
 
-  if (!topic || !shouldCreateTrace(snapshot, signals, selfModel, topic)) {
+  if (!topic || !shouldCreateTrace(snapshot, signals, selfModel, topic, extraction)) {
     return null;
   }
 
   const sourceMotive = selectTraceMotive(snapshot, selfModel, signals);
-  const nextKind = selectTraceKind(signals, sourceMotive);
+  const nextKind = selectTraceKind(signals, sourceMotive, extraction);
   const previous = snapshot.traces[topic];
   let kind = shouldReopenArchivedTrace(previous, signals)
     ? nextKind
@@ -178,7 +180,10 @@ export function updateTraces(
 
   const artifact = mergeTraceArtifacts(
     previous?.artifact,
-    extractTraceArtifact(input, topic, kind),
+    mergeTraceArtifacts(
+      extractTraceArtifact(input, topic, kind),
+      extractStructuredTraceArtifact(extraction, topic, kind),
+    ),
   );
   const salience = clamp01(
     (previous?.salience ?? 0) * 0.82 +
@@ -196,9 +201,12 @@ export function updateTraces(
     {
       timestamp,
       salience,
-      blockers: extractTraceBlockers(input, topic),
+      blockers: mergeArtifactItems(
+        extractTraceBlockers(input, topic),
+        extraction?.blockers ?? [],
+      ),
       confidenceShift:
-        signals.completion > 0.12
+        Math.max(signals.completion, extraction?.completion ?? 0) > 0.12
           ? 0.12
           : signals.memoryCue > 0.1
             ? 0.04
@@ -454,8 +462,10 @@ function selectTraceTopic(
   snapshot: HachikaSnapshot,
   signals: InteractionSignals,
   selfModel: SelfModel,
+  extraction: StructuredTraceExtraction | null = null,
 ): string | null {
   const candidates = unique([
+    ...(extraction?.topics ?? []),
     ...signals.topics,
     snapshot.purpose.active?.topic ?? "",
     snapshot.initiative.pending?.topic ?? "",
@@ -471,7 +481,7 @@ function selectTraceTopic(
   return candidates
     .map((topic) => ({
       topic,
-      score: scoreTraceTopicCandidate(snapshot, signals, selfModel, topic),
+      score: scoreTraceTopicCandidate(snapshot, signals, selfModel, topic, extraction),
     }))
     .sort((left, right) => right.score - left.score)[0]?.topic ?? null;
 }
@@ -481,7 +491,9 @@ function shouldCreateTrace(
   signals: InteractionSignals,
   selfModel: SelfModel,
   topic: string,
+  extraction: StructuredTraceExtraction | null = null,
 ): boolean {
+  const extractedSignal = hasStructuredTraceSignal(extraction);
   const socialTurn =
     signals.negative < 0.18 &&
     signals.dismissal < 0.18 &&
@@ -489,6 +501,7 @@ function shouldCreateTrace(
     Math.max(signals.greeting, signals.smalltalk, signals.repair, signals.selfInquiry) >= 0.38;
 
   if (
+    !extractedSignal &&
     socialTurn &&
     signals.topics.length === 0 &&
     signals.memoryCue < 0.1 &&
@@ -500,6 +513,7 @@ function shouldCreateTrace(
   }
 
   if (
+    !extractedSignal &&
     signals.topics.length === 0 &&
     signals.memoryCue < 0.1 &&
     signals.expansionCue < 0.12 &&
@@ -515,6 +529,7 @@ function shouldCreateTrace(
     (snapshot.preferenceImprints[topic]?.salience ?? 0) * 0.2;
 
   return (
+    extractedSignal ||
     signals.expansionCue > 0.12 ||
     signals.memoryCue > 0.1 ||
     signals.completion > 0.12 ||
@@ -572,9 +587,20 @@ function selectTraceMotive(
 function selectTraceKind(
   signals: InteractionSignals,
   sourceMotive: MotiveKind,
+  extraction: StructuredTraceExtraction | null = null,
 ): TraceKind {
+  const effectiveCompletion = Math.max(signals.completion, extraction?.completion ?? 0);
+
+  if (extraction?.kindHint === "decision" && effectiveCompletion > 0.18) {
+    return "decision";
+  }
+
+  if (extraction?.kindHint === "spec_fragment" || extraction?.kindHint === "continuity_marker") {
+    return extraction.kindHint;
+  }
+
   if (
-    signals.completion > 0.24 &&
+    effectiveCompletion > 0.24 &&
     (signals.workCue > 0.18 || signals.expansionCue > 0.14 || signals.memoryCue > 0.1)
       &&
     Math.max(signals.greeting, signals.smalltalk, signals.repair, signals.selfInquiry) < 0.55 &&
@@ -848,8 +874,12 @@ function scoreTraceTopicCandidate(
   signals: InteractionSignals,
   selfModel: SelfModel,
   topic: string,
+  extraction: StructuredTraceExtraction | null = null,
 ): number {
+  const extractedIndex = extraction?.topics.indexOf(topic) ?? -1;
   const signalIndex = signals.topics.indexOf(topic);
+  const extractionBoost =
+    extractedIndex === 0 ? 0.3 : extractedIndex >= 0 ? 0.12 : 0;
   const explicitShiftBoost =
     signalIndex === 0 &&
     signals.topics.length > 0 &&
@@ -876,6 +906,7 @@ function scoreTraceTopicCandidate(
   const trace = snapshot.traces[topic];
 
   return (
+    extractionBoost +
     (signalIndex >= 0 ? 0.72 - signalIndex * 0.14 : 0) +
     explicitShiftBoost -
     carriedTopicPenalty +
@@ -1402,6 +1433,39 @@ function extractTraceArtifact(
   }
 
   return artifact;
+}
+
+function extractStructuredTraceArtifact(
+  extraction: StructuredTraceExtraction | null,
+  _topic: string,
+  kind: TraceKind,
+): TraceArtifact {
+  const artifact = createEmptyTraceArtifact();
+
+  if (!extraction) {
+    return artifact;
+  }
+
+  artifact.memo = extraction.memo.slice(0, kind === "note" ? 2 : 1);
+  artifact.fragments = extraction.fragments.slice(0, kind === "spec_fragment" ? 3 : 1);
+  artifact.decisions = extraction.decisions.slice(0, kind === "decision" ? 2 : 1);
+  artifact.nextSteps = extraction.nextSteps.slice(0, kind === "continuity_marker" ? 2 : 1);
+
+  return artifact;
+}
+
+function hasStructuredTraceSignal(
+  extraction: StructuredTraceExtraction | null,
+): boolean {
+  return (
+    (extraction?.topics.length ?? 0) > 0 ||
+    (extraction?.blockers.length ?? 0) > 0 ||
+    (extraction?.nextSteps.length ?? 0) > 0 ||
+    (extraction?.fragments.length ?? 0) > 0 ||
+    (extraction?.decisions.length ?? 0) > 0 ||
+    (extraction?.memo.length ?? 0) > 0 ||
+    (extraction?.completion ?? 0) > 0.12
+  );
 }
 
 function extractTraceBlockers(input: string, topic: string): string[] {

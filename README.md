@@ -225,6 +225,7 @@ Hachika は、単に有用なだけでなく、
   - rule-based fallback でも直近の Hachika 発話を参照し、通常応答と能動発話の両方で同じ opener や social line を連続で繰り返しにくくしている
 - トピックごとの好み、短期記憶、長期記憶の痕跡を保持する
   - 長期記憶は `preference / boundary / relation` の3系統に分けて保持する
+  - OpenAI 互換の `trace extractor` を使えば、`topic / blocker / kindHint / nextStep` を structured に補強し、rule-only の clause 判定に頼りすぎない trace 化ができる
 - 放置後の反応や話題の再開を、能動行動レイヤーとして扱う
 - drive と記憶から、その時点の高次目的を self-model として導出する
 - self-model では好奇心 / 関係性 / 境界などの motive conflict を明示的に扱う
@@ -298,14 +299,14 @@ LLM wording を有効にする場合:
 cp .env.example .env
 ```
 
-`.env` に `OPENAI_API_KEY` を入れると、CLI は OpenAI reply generator / input interpreter / response planner を使います。  
-返答のモデルは `OPENAI_MODEL`、入力解釈だけ別に変えたい場合は `OPENAI_INTERPRETER_MODEL`、planner だけ別に変えたい場合は `OPENAI_PLANNER_MODEL` を使えます。未設定時はどれも `gpt-5-mini` です。
+`.env` に `OPENAI_API_KEY` を入れると、CLI は OpenAI reply generator / input interpreter / response planner / trace extractor を使います。  
+返答のモデルは `OPENAI_MODEL`、入力解釈だけ別に変えたい場合は `OPENAI_INTERPRETER_MODEL`、planner だけ別に変えたい場合は `OPENAI_PLANNER_MODEL`、trace 抽出だけ別に変えたい場合は `OPENAI_TRACE_MODEL` を使えます。未設定時はどれも `gpt-5-mini` です。
 
 主なコマンド:
 
 - `/help` コマンド一覧を表示
 - `/proactive` 能動発話を強制的に出す
-- `/llm` 現在の reply generator / input interpreter / response planner と直近の `reply/proactive` diagnostics を表示
+- `/llm` 現在の reply generator / input interpreter / response planner / trace extractor と直近の `reply/proactive/trace` diagnostics を表示
 - `/debug` では `pending initiative` に加えて、その時点の `pending plan` も表示する
   - 直近の通常応答と直近の能動発話の diagnostics / plan は別々に保持される
   - 直近の `input interpretation` も `rule / llm / fallback / topics` に加えて、主要 score と `local -> final` の topic 差分付きで確認できる
