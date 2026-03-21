@@ -1,4 +1,5 @@
 import {
+  isMeaningfulTopic,
   sortedBoundaryImprints,
   sortedPreferenceImprints,
   topPreferredTopics,
@@ -145,60 +146,130 @@ export function updateIdentity(
 }
 
 function deriveIdentityAnchors(snapshot: HachikaSnapshot): string[] {
-  const stableTraces = sortedTraces(snapshot, 4)
-    .filter(
-      (trace) =>
-        (trace.mentions >= 2 || trace.salience >= 0.42) &&
-        qualifiesIdentityAnchor(snapshot, trace.topic),
-    )
-    .map((trace) => trace.topic);
-  const stablePreferred = topPreferredTopics(snapshot, 4).filter((topic) =>
-    qualifiesIdentityAnchor(snapshot, topic),
-  );
-  const stableImprints = sortedPreferenceImprints(snapshot, 4)
-    .filter(
-      (imprint) =>
-        imprint.affinity >= -0.1 &&
-        (imprint.mentions >= 2 || imprint.salience >= 0.38) &&
-        qualifiesIdentityAnchor(snapshot, imprint.topic),
-    )
-    .map((imprint) => imprint.topic);
-  const anchors = [
-    snapshot.purpose.active?.topic ?? null,
-    snapshot.purpose.lastResolved?.topic ?? null,
-    snapshot.initiative.pending?.topic ?? null,
-    ...stableTraces,
-    ...stablePreferred,
-    ...stableImprints,
-    sortedBoundaryImprints(snapshot, 1)[0]?.topic ?? null,
-  ];
+  const scores = new Map<string, number>();
+  const recentMemoryScores = scoreRecentMemoryAnchorTopics(snapshot);
+  const previousAnchors = snapshot.identity.anchors;
 
-  const unique: string[] = [];
+  accumulateAnchorScore(scores, snapshot.purpose.active?.topic ?? null, 1.2);
+  accumulateAnchorScore(scores, snapshot.purpose.lastResolved?.topic ?? null, 0.72);
+  accumulateAnchorScore(scores, snapshot.initiative.pending?.topic ?? null, 0.88);
 
-  for (const anchor of anchors) {
-    if (!anchor || unique.includes(anchor)) {
+  for (const trace of sortedTraces(snapshot, 6)) {
+    if (!qualifiesIdentityAnchor(snapshot, trace.topic, recentMemoryScores.get(trace.topic) ?? 0)) {
       continue;
     }
 
-    unique.push(anchor);
-
-    if (unique.length >= 4) {
-      break;
-    }
+    accumulateAnchorScore(
+      scores,
+      trace.topic,
+      trace.salience * 0.88 +
+        Math.min(0.18, trace.mentions * 0.03) +
+        (trace.lifecycle?.phase === "live" ? 0.12 : 0.04),
+    );
   }
 
-  return unique;
+  for (const topic of topPreferredTopics(snapshot, 6)) {
+    accumulateAnchorScore(
+      scores,
+      topic,
+      Math.max(0, snapshot.preferences[topic] ?? 0) * 0.36 +
+        (snapshot.preferenceImprints[topic]?.salience ?? 0) * 0.42,
+    );
+  }
+
+  for (const imprint of sortedPreferenceImprints(snapshot, 6)) {
+    if (!qualifiesIdentityAnchor(snapshot, imprint.topic, recentMemoryScores.get(imprint.topic) ?? 0)) {
+      continue;
+    }
+
+    accumulateAnchorScore(
+      scores,
+      imprint.topic,
+      imprint.salience * 0.68 +
+        Math.max(0, imprint.affinity) * 0.16 +
+        Math.min(0.16, imprint.mentions * 0.03),
+    );
+  }
+
+  for (const [topic, score] of recentMemoryScores.entries()) {
+    if (!qualifiesIdentityAnchor(snapshot, topic, score)) {
+      continue;
+    }
+
+    accumulateAnchorScore(scores, topic, Math.min(0.72, score * 0.34));
+  }
+
+  const topBoundary = sortedBoundaryImprints(snapshot, 1)[0];
+  accumulateAnchorScore(
+    scores,
+    topBoundary?.topic ?? null,
+    (topBoundary?.salience ?? 0) * 0.44,
+  );
+
+  for (const topic of previousAnchors.slice(0, 4)) {
+    accumulateAnchorScore(scores, topic, 0.08);
+  }
+
+  return [...scores.entries()]
+    .sort((left, right) => {
+      if (right[1] !== left[1]) {
+        return right[1] - left[1];
+      }
+
+      return (snapshot.topicCounts[right[0]] ?? 0) - (snapshot.topicCounts[left[0]] ?? 0);
+    })
+    .slice(0, 4)
+    .map(([topic]) => topic);
 }
 
 function qualifiesIdentityAnchor(
   snapshot: HachikaSnapshot,
   topic: string,
+  recentMemoryScore = 0,
 ): boolean {
   return (
     (snapshot.topicCounts[topic] ?? 0) >= 2 ||
     (snapshot.preferenceImprints[topic]?.salience ?? 0) >= 0.38 ||
-    (snapshot.traces[topic]?.salience ?? 0) >= 0.42
+    (snapshot.traces[topic]?.salience ?? 0) >= 0.42 ||
+    recentMemoryScore >= 1.4
   );
+}
+
+function accumulateAnchorScore(
+  scores: Map<string, number>,
+  topic: string | null,
+  score: number,
+): void {
+  if (!topic || !isMeaningfulTopic(topic) || score <= 0) {
+    return;
+  }
+
+  scores.set(topic, (scores.get(topic) ?? 0) + score);
+}
+
+function scoreRecentMemoryAnchorTopics(snapshot: HachikaSnapshot): Map<string, number> {
+  const scores = new Map<string, number>();
+  const memories = snapshot.memories.slice(-12);
+
+  for (const [index, memory] of memories.entries()) {
+    const recencyWeight = 0.46 + ((index + 1) / Math.max(1, memories.length)) * 0.54;
+    const roleWeight = memory.role === "user" ? 1.08 : 0.78;
+    const sentimentWeight =
+      memory.sentiment === "positive" ? 1.06 : memory.sentiment === "negative" ? 0.88 : 1;
+
+    for (const topic of memory.topics) {
+      if (!isMeaningfulTopic(topic)) {
+        continue;
+      }
+
+      scores.set(
+        topic,
+        (scores.get(topic) ?? 0) + recencyWeight * roleWeight * sentimentWeight,
+      );
+    }
+  }
+
+  return scores;
 }
 
 function buildCurrentArc(

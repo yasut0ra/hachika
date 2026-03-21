@@ -408,6 +408,7 @@ function consolidateIdleMemoryImprints(
   }
 
   decayIdlePreferenceImprints(snapshot, reinforcedTopics, hours);
+  compressIdleMemories(snapshot, reinforcedTopics, prioritizedTopic, hours);
 
   const continuityPull =
     (prioritizedMotive === "seek_continuity" ? 0.08 : 0) +
@@ -470,6 +471,105 @@ function decayIdlePreferenceImprints(
     };
     snapshot.preferences[topic] = nextPreference;
   }
+}
+
+function compressIdleMemories(
+  snapshot: HachikaSnapshot,
+  reinforcedTopics: ReadonlySet<string>,
+  prioritizedTopic: string | null,
+  hours: number,
+): void {
+  if ((snapshot.memories.length <= 16 && hours < 18) || snapshot.memories.length <= 10) {
+    return;
+  }
+
+  const tailSize = Math.min(8, snapshot.memories.length);
+  const recentTail = snapshot.memories.slice(-tailSize);
+  const olderMemories = snapshot.memories.slice(0, -tailSize);
+
+  if (olderMemories.length === 0) {
+    return;
+  }
+
+  const selected = new Map<string, (typeof olderMemories)[number]>();
+  const ranked = olderMemories
+    .map((memory, index) => ({
+      memory,
+      score: scoreIdleMemoryCompressionCandidate(
+        memory,
+        index,
+        olderMemories.length,
+        reinforcedTopics,
+        prioritizedTopic,
+      ),
+      key: deriveIdleMemoryCompressionKey(memory),
+    }))
+    .sort((left, right) => right.score - left.score);
+
+  for (const candidate of ranked) {
+    if (candidate.score < 0.42 || selected.has(candidate.key)) {
+      continue;
+    }
+
+    selected.set(candidate.key, candidate.memory);
+
+    if (selected.size >= 6) {
+      break;
+    }
+  }
+
+  snapshot.memories = [...selected.values(), ...recentTail]
+    .sort((left, right) => left.timestamp.localeCompare(right.timestamp))
+    .slice(-18);
+}
+
+function scoreIdleMemoryCompressionCandidate(
+  memory: HachikaSnapshot["memories"][number],
+  index: number,
+  total: number,
+  reinforcedTopics: ReadonlySet<string>,
+  prioritizedTopic: string | null,
+): number {
+  const recencyWeight = 0.34 + ((index + 1) / Math.max(1, total)) * 0.66;
+  const meaningfulTopics = memory.topics.filter((topic) => isMeaningfulTopic(topic));
+  let score =
+    recencyWeight *
+    (memory.role === "user" ? 1.02 : 0.8) *
+    (memory.sentiment === "positive" ? 1.04 : memory.sentiment === "negative" ? 1.08 : 1);
+
+  if (meaningfulTopics.length === 0) {
+    score -= 0.26;
+  } else {
+    score += Math.min(0.34, meaningfulTopics.length * 0.1);
+  }
+
+  if (prioritizedTopic && meaningfulTopics.includes(prioritizedTopic)) {
+    score += 0.56;
+  }
+
+  for (const topic of meaningfulTopics) {
+    if (reinforcedTopics.has(topic)) {
+      score += 0.34;
+    }
+  }
+
+  if (memory.sentiment !== "neutral") {
+    score += 0.1;
+  }
+
+  return score;
+}
+
+function deriveIdleMemoryCompressionKey(
+  memory: HachikaSnapshot["memories"][number],
+): string {
+  const primaryTopic = memory.topics.find((topic) => isMeaningfulTopic(topic));
+
+  if (primaryTopic) {
+    return `topic:${primaryTopic}`;
+  }
+
+  return `${memory.role}:${memory.sentiment}:${memory.text.normalize("NFKC").slice(0, 18)}`;
 }
 
 function scoreIdleMemoryTopics(

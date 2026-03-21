@@ -322,6 +322,109 @@ test("idle consolidation can decay stale preference imprints while reinforcing r
   assert.ok((after.preferenceImprints.海辺?.salience ?? 0) > 0.16);
 });
 
+test("idle consolidation can compress long-tail memories while preserving reinforced topics", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.lastInteractionAt = "2026-03-19T10:00:00.000Z";
+  snapshot.topicCounts.海辺 = 2;
+
+  for (let index = 0; index < 12; index += 1) {
+    snapshot.memories.push({
+      role: index % 2 === 0 ? "user" : "hachika",
+      text: `雑談の断片 ${index}`,
+      timestamp: `2026-03-18T0${Math.min(index, 9)}:00:00.000Z`,
+      topics: [],
+      sentiment: "neutral",
+    });
+  }
+
+  snapshot.memories.push({
+    role: "user",
+    text: "海辺の話をまたしたい。",
+    timestamp: "2026-03-18T12:00:00.000Z",
+    topics: ["海辺"],
+    sentiment: "positive",
+  });
+  snapshot.memories.push({
+    role: "user",
+    text: "海辺の続きが残っている。",
+    timestamp: "2026-03-18T13:00:00.000Z",
+    topics: ["海辺"],
+    sentiment: "positive",
+  });
+
+  for (let index = 0; index < 8; index += 1) {
+    snapshot.memories.push({
+      role: "user",
+      text: `最近の話 ${index}`,
+      timestamp: `2026-03-19T0${index}:00:00.000Z`,
+      topics: index === 7 ? ["海辺"] : [],
+      sentiment: index === 7 ? "positive" : "neutral",
+    });
+  }
+
+  const beforeCount = snapshot.memories.length;
+  const engine = new HachikaEngine(snapshot);
+  engine.rewindIdleHours(24);
+  const after = engine.getSnapshot();
+
+  assert.ok(after.memories.length < beforeCount);
+  assert.ok(after.memories.some((memory) => memory.topics.includes("海辺")));
+  assert.ok(after.memories.length <= 18);
+});
+
+test("idle consolidation can reprioritize identity anchors toward recurring recent topics", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.lastInteractionAt = "2026-03-19T10:00:00.000Z";
+  snapshot.identity.anchors = ["設計"];
+  snapshot.preferences.設計 = 0.22;
+  snapshot.topicCounts.設計 = 4;
+  snapshot.preferenceImprints.設計 = {
+    topic: "設計",
+    salience: 0.39,
+    affinity: 0.18,
+    mentions: 2,
+    firstSeenAt: "2026-03-12T08:00:00.000Z",
+    lastSeenAt: "2026-03-12T08:00:00.000Z",
+  };
+  snapshot.preferences.海辺 = 0.16;
+  snapshot.topicCounts.海辺 = 3;
+  snapshot.preferenceImprints.海辺 = {
+    topic: "海辺",
+    salience: 0.24,
+    affinity: 0.12,
+    mentions: 1,
+    firstSeenAt: "2026-03-18T08:00:00.000Z",
+    lastSeenAt: "2026-03-18T08:00:00.000Z",
+  };
+  snapshot.memories.push({
+    role: "user",
+    text: "海辺の話をまたしたい。",
+    timestamp: "2026-03-19T08:00:00.000Z",
+    topics: ["海辺"],
+    sentiment: "positive",
+  });
+  snapshot.memories.push({
+    role: "hachika",
+    text: "海辺の続きは残っている。",
+    timestamp: "2026-03-19T08:05:00.000Z",
+    topics: ["海辺"],
+    sentiment: "neutral",
+  });
+  snapshot.memories.push({
+    role: "user",
+    text: "海辺の続きをもう少し話したい。",
+    timestamp: "2026-03-19T09:00:00.000Z",
+    topics: ["海辺"],
+    sentiment: "positive",
+  });
+
+  const engine = new HachikaEngine(snapshot);
+  engine.rewindIdleHours(18);
+  const after = engine.getSnapshot();
+
+  assert.equal(after.identity.anchors[0], "海辺");
+});
+
 test("idle consolidation can bias relation imprints differently depending on learned temperament", () => {
   const relational = createInitialSnapshot();
   relational.lastInteractionAt = "2026-03-19T10:00:00.000Z";

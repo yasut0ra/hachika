@@ -13,7 +13,7 @@
 まだ残っている主課題:
 - 反応そのものの履歴依存カーブはまだ弱い
 - learned temperament は archive reopen / idle consolidation まで通ったが、purpose 閾値や growth metrics への反映はまだ薄い
-- idle 中の再編成は archive だけでなく memory / imprint / identity に広がり、弱い stale preference imprint の自然減衰も入ったが、long-tail memory の圧縮や再配置はまだ薄い
+- idle 中の再編成は archive だけでなく memory / imprint / identity に広がり、弱い stale preference imprint の自然減衰、long-tail memory の圧縮、identity anchor の再優先まで入ったが、relation/boundary の減衰と再配置はまだ薄い
 - 成長を比較する専用 metrics / doc は初期導入までで、temperament drift や consolidation quality の指標はまだ薄い
 
 改訂した推奨実装順:
@@ -155,7 +155,8 @@
 - deterministic な idle consolidation を追加し、temperament と body を見て dormant archive の salience / pending initiative を再評価するところまでは入った
 - recurring memory topic から preference imprint / relation imprint / identity state を薄く再配置する batch も入った
 - 弱い stale preference imprint の自然減衰も入った
-- 未完了なのは long-tail memory の圧縮、identity anchor の優先順位再編、relation/boundary imprint の減衰と再配置をもっと厚くすること
+- long-tail memory の圧縮と identity anchor の優先順位再編も入った
+- 未完了なのは relation/boundary imprint の減衰と再配置、より長い horizon の memory consolidation をもっと厚くすること
 
 ### 背景
 - 現在も `initiative` と trace maintenance はあるが、主に未完了 topic の再開に寄っている。
