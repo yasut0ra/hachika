@@ -1954,6 +1954,7 @@ test("respondAsync can use a trace extractor to shape concrete trace work", asyn
   assert.equal(result.debug.traceExtraction.provider, "test-trace");
   assert.equal(result.debug.traceExtraction.kindHint, "spec_fragment");
   assert.ok(result.debug.traceExtraction.topics.includes("仕様の境界"));
+  assert.equal(result.debug.signals.topics[0], "仕様の境界");
   assert.equal(receivedContext.responsePlan.focusTopic, "仕様の境界");
   assert.equal(receivedContext.replySelection.currentTopic, "仕様の境界");
   assert.equal(receivedContext.signals.topics[0], "仕様の境界");
@@ -1961,6 +1962,10 @@ test("respondAsync can use a trace extractor to shape concrete trace work", asyn
   assert.ok(result.snapshot.traces["仕様の境界"] !== undefined);
   assert.ok(result.snapshot.traces["仕様の境界"]?.work.blockers.includes("責務が未定"));
   assert.ok(result.snapshot.traces["仕様の境界"]?.artifact.nextSteps.includes("API の責務を分ける"));
+  assert.equal(result.snapshot.topicCounts["仕様の境界"], 1);
+  assert.equal(result.snapshot.preferences["仕様の境界"] !== undefined, true);
+  assert.ok(result.snapshot.memories.at(-2)?.topics.includes("仕様の境界"));
+  assert.ok(!result.snapshot.memories.at(-2)?.topics.includes("仕様"));
 });
 
 test("respondAsync falls back to local trace extraction when the extractor fails", async () => {
@@ -1982,6 +1987,38 @@ test("respondAsync falls back to local trace extraction when the extractor fails
   assert.equal(result.debug.traceExtraction.fallbackUsed, true);
   assert.match(result.debug.traceExtraction.error ?? "", /trace extractor offline/);
   assert.ok(result.snapshot.traces["仕様"] !== undefined);
+});
+
+test("respondAsync does not let trace extraction contaminate social turns", async () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+
+  const traceExtractor: TraceExtractor = {
+    name: "over-eager-trace",
+    async extractTrace() {
+      return {
+        provider: "over-eager-trace",
+        model: "stub",
+        extraction: {
+          topics: ["設計の境界"],
+          kindHint: "spec_fragment",
+          completion: 0,
+          blockers: ["責務が未定"],
+          memo: ["設計の境界を見直す"],
+          fragments: ["責務を切り分ける"],
+          decisions: [],
+          nextSteps: ["境界を決める"],
+        },
+      };
+    },
+  };
+
+  const result = await engine.respondAsync("こんにちは", {
+    traceExtractor,
+  });
+
+  assert.deepEqual(result.debug.signals.topics, []);
+  assert.equal(result.snapshot.topicCounts["設計の境界"] ?? 0, 0);
+  assert.deepEqual(result.snapshot.memories.at(-2)?.topics ?? [], []);
 });
 
 test("reset clears the last reply diagnostics", async () => {

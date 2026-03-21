@@ -7,6 +7,7 @@ import {
   findRelevantMemory,
   findRelevantPreferenceImprint,
   findRelevantRelationImprint,
+  isMeaningfulTopic,
   remember,
   topPreferredTopics,
 } from "./memory.js";
@@ -830,32 +831,33 @@ function prepareTurnFromSignals(
   traceExtractionDebug: TraceExtractionDebug,
 ): PreparedTurn {
   const previousSnapshot = structuredClone(snapshot);
-  const sentimentScore = scoreSentiment(signals);
-  const nextSnapshot = applySignals(snapshot, signals, sentimentScore);
-  const mood = resolveMood(nextSnapshot, signals);
+  const stateSignals = deriveStateSignals(signals, traceExtraction);
+  const sentimentScore = scoreSentiment(stateSignals);
+  const nextSnapshot = applySignals(snapshot, stateSignals, sentimentScore);
+  const mood = resolveMood(nextSnapshot, stateSignals);
   const dominant = dominantDrive(nextSnapshot.state);
   const preliminarySelfModel = buildSelfModel(nextSnapshot);
   updatePurpose(
     nextSnapshot,
     preliminarySelfModel,
-    signals,
+    stateSignals,
     nextSnapshot.lastInteractionAt ?? new Date().toISOString(),
   );
   let selfModel = buildSelfModel(nextSnapshot);
   updateTraces(
     nextSnapshot,
     input,
-    signals,
+    stateSignals,
     selfModel,
     nextSnapshot.lastInteractionAt ?? new Date().toISOString(),
     traceExtraction,
   );
   updateIdentity(nextSnapshot, nextSnapshot.lastInteractionAt ?? new Date().toISOString());
   selfModel = buildSelfModel(nextSnapshot);
-  scheduleInitiative(nextSnapshot, signals, selfModel);
+  scheduleInitiative(nextSnapshot, stateSignals, selfModel);
   updateIdentity(nextSnapshot, nextSnapshot.lastInteractionAt ?? new Date().toISOString());
   selfModel = buildSelfModel(nextSnapshot);
-  const responseSignals = deriveResponseSignals(signals, traceExtraction);
+  const responseSignals = deriveResponseSignals(stateSignals, traceExtraction);
   const responsePlan = buildResponsePlan(
     nextSnapshot,
     mood,
@@ -868,7 +870,7 @@ function prepareTurnFromSignals(
   return {
     previousSnapshot,
     nextSnapshot,
-    signals,
+    signals: stateSignals,
     responseSignals,
     interpretationDebug,
     traceExtraction,
@@ -1395,12 +1397,58 @@ function deriveResponseSignals(
     return signals;
   }
 
-  const socialTurn =
+  if (isSocialOnlyTopicTurn(signals) || !hasConcreteTraceCue(signals, traceExtraction)) {
+    return signals;
+  }
+
+  return {
+    ...signals,
+    topics: uniqueTopics([...extractedTopics, ...signals.topics]).slice(0, 4),
+  };
+}
+
+function deriveStateSignals(
+  signals: InteractionSignals,
+  traceExtraction: StructuredTraceExtraction | null,
+): InteractionSignals {
+  const extractedTopics = traceExtraction?.topics ?? [];
+
+  if (extractedTopics.length === 0) {
+    return signals;
+  }
+
+  if (isSocialOnlyTopicTurn(signals) || !hasConcreteTraceCue(signals, traceExtraction)) {
+    return signals;
+  }
+
+  if (!shouldAdoptExtractedTopicsForState(signals.topics, extractedTopics)) {
+    return signals;
+  }
+
+  return {
+    ...signals,
+    topics: mergeStateTopics(signals.topics, extractedTopics),
+  };
+}
+
+function uniqueTopics(topics: string[]): string[] {
+  return Array.from(new Set(topics.filter((topic) => topic.length > 0)));
+}
+
+function isSocialOnlyTopicTurn(signals: InteractionSignals): boolean {
+  return (
     signals.negative < 0.18 &&
     signals.dismissal < 0.18 &&
     signals.workCue < 0.35 &&
-    Math.max(signals.greeting, signals.smalltalk, signals.repair, signals.selfInquiry) >= 0.38;
-  const hasConcreteTraceCue =
+    Math.max(signals.greeting, signals.smalltalk, signals.repair, signals.selfInquiry) >= 0.38
+  );
+}
+
+function hasConcreteTraceCue(
+  signals: InteractionSignals,
+  traceExtraction: StructuredTraceExtraction | null,
+): boolean {
+  return (
     traceExtraction !== null &&
     (
       traceExtraction.blockers.length > 0 ||
@@ -1412,20 +1460,50 @@ function deriveResponseSignals(
       signals.workCue > 0.28 ||
       signals.memoryCue > 0.12 ||
       signals.expansionCue > 0.14
-    );
-
-  if (socialTurn || !hasConcreteTraceCue) {
-    return signals;
-  }
-
-  return {
-    ...signals,
-    topics: uniqueTopics([...extractedTopics, ...signals.topics]).slice(0, 4),
-  };
+    )
+  );
 }
 
-function uniqueTopics(topics: string[]): string[] {
-  return Array.from(new Set(topics.filter((topic) => topic.length > 0)));
+function shouldAdoptExtractedTopicsForState(
+  localTopics: readonly string[],
+  extractedTopics: readonly string[],
+): boolean {
+  if (localTopics.length === 0) {
+    return true;
+  }
+
+  const meaningfulLocalTopics = localTopics.filter((topic) => isMeaningfulTopic(topic));
+
+  if (meaningfulLocalTopics.length === 0) {
+    return true;
+  }
+
+  return extractedTopics.some((extractedTopic) =>
+    meaningfulLocalTopics.some(
+      (localTopic) =>
+        extractedTopic !== localTopic &&
+        extractedTopic.length > localTopic.length &&
+        extractedTopic.includes(localTopic),
+    ),
+  );
+}
+
+function mergeStateTopics(
+  localTopics: readonly string[],
+  extractedTopics: readonly string[],
+): string[] {
+  const filteredLocalTopics = localTopics.filter((localTopic) => {
+    if (!isMeaningfulTopic(localTopic)) {
+      return false;
+    }
+
+    return !extractedTopics.some(
+      (extractedTopic) =>
+        extractedTopic !== localTopic && extractedTopic.includes(localTopic),
+    );
+  });
+
+  return uniqueTopics([...extractedTopics, ...filteredLocalTopics]).slice(0, 4);
 }
 
 function analyzeInteraction(
