@@ -29,6 +29,7 @@ export function updateIdentity(
   const tension = snapshot.body.tension;
   const boredom = snapshot.body.boredom;
   const loneliness = snapshot.body.loneliness;
+  const temperament = snapshot.temperament;
 
   const traitScores = [
     {
@@ -36,6 +37,7 @@ export function updateIdentity(
       score: clamp01(
         (topBoundary?.salience ?? 0) * 0.54 +
           (1 - snapshot.state.pleasure) * 0.18 +
+          temperament.guardedness * 0.18 +
           tension * 0.14 +
           snapshot.preservation.threat * 0.18 +
           previousTraitBoost(previous, "guarded", 0.08),
@@ -46,6 +48,8 @@ export function updateIdentity(
       score: clamp01(
         snapshot.attachment * 0.4 +
           snapshot.state.relation * 0.18 +
+          temperament.bondingBias * 0.16 +
+          temperament.selfDisclosureBias * 0.08 +
           (attention?.closeness ?? 0) * 0.26 +
           loneliness * 0.12 +
           previousTraitBoost(previous, "attached", 0.08),
@@ -56,6 +60,8 @@ export function updateIdentity(
       score: clamp01(
         snapshot.state.continuity * 0.38 +
           (continuity?.closeness ?? 0) * 0.24 +
+          temperament.workDrive * 0.06 +
+          temperament.traceHunger * 0.08 +
           lowEnergy * 0.08 +
           loneliness * 0.08 +
           snapshot.preservation.threat * 0.14 +
@@ -67,6 +73,7 @@ export function updateIdentity(
       trait: "trace_seeking" as const,
       score: clamp01(
         snapshot.state.expansion * 0.28 +
+          temperament.traceHunger * 0.18 +
           (topTrace[0]?.salience ?? 0) * 0.16 +
           (topPreference[0]?.salience ?? 0) * 0.04 +
           lowEnergy * 0.12 +
@@ -80,6 +87,7 @@ export function updateIdentity(
       trait: "collaborative" as const,
       score: clamp01(
         (sharedWork?.closeness ?? 0) * 0.5 +
+          temperament.workDrive * 0.18 +
           snapshot.attachment * 0.14 +
           snapshot.state.expansion * 0.12 +
           snapshot.body.energy * 0.08 +
@@ -98,6 +106,8 @@ export function updateIdentity(
       trait: "inquisitive" as const,
       score: clamp01(
         snapshot.state.curiosity * 0.42 +
+          temperament.openness * 0.18 -
+          temperament.guardedness * 0.08 +
           (topPreference[0]?.salience ?? 0) * 0.12 +
           boredom * 0.14 +
           snapshot.body.energy * 0.06 +
@@ -293,6 +303,11 @@ function buildSummary(
       : "最近のこちらは近づきつつ、まだ掘れる余地も追う側へ寄っている。";
   }
 
+  const temperamentSummary = describeTemperamentSummary(snapshot, focus ?? null);
+  if (temperamentSummary) {
+    return temperamentSummary;
+  }
+
   const bodySummary = describeBodySummary(snapshot, primary, secondary, focus ?? null);
   if (bodySummary) {
     return bodySummary;
@@ -435,6 +450,39 @@ function describeBodySummary(
     return focus
       ? `最近のこちらは少し張っていて、「${focus}」を扱うにも先に境界を確かめる側へ寄っている。`
       : "最近のこちらは少し張っていて、先に境界を確かめる側へ寄っている。";
+  }
+
+  return null;
+}
+
+function describeTemperamentSummary(
+  snapshot: HachikaSnapshot,
+  focus: string | null,
+): string | null {
+  const temperament = snapshot.temperament;
+
+  if (temperament.guardedness >= 0.66 && temperament.traceHunger >= 0.62) {
+    return focus
+      ? `最近のこちらは「${focus}」を残したがりながらも、雑には開かない癖がついてきた。`
+      : "最近のこちらは何かを残したがりながらも、雑には開かない癖がついてきた。";
+  }
+
+  if (temperament.bondingBias >= 0.64 && temperament.selfDisclosureBias >= 0.58) {
+    return focus
+      ? `最近のこちらは「${focus}」の内側で距離を縮めつつ、自分の輪郭も少しずつ見せる側へ寄っている。`
+      : "最近のこちらは距離を縮めつつ、自分の輪郭も少しずつ見せる側へ寄っている。";
+  }
+
+  if (temperament.openness >= 0.66 && temperament.workDrive >= 0.62) {
+    return focus
+      ? `最近のこちらは「${focus}」を足場に、未知にも作業にも前のめりな側へ寄っている。`
+      : "最近のこちらは未知にも作業にも前のめりな側へ寄っている。";
+  }
+
+  if (temperament.workDrive >= 0.68 && temperament.traceHunger >= 0.64) {
+    return focus
+      ? `最近のこちらは「${focus}」を進めるだけでなく、残る形にもしたがる側へ寄っている。`
+      : "最近のこちらは進めるだけでなく、残る形にもしたがる側へ寄っている。";
   }
 
   return null;

@@ -3,6 +3,7 @@ import type {
   DriveName,
   DriveState,
   HachikaSnapshot,
+  LearnedTemperament,
   ReactivityState,
 } from "./types.js";
 
@@ -33,6 +34,15 @@ export const INITIAL_REACTIVITY: ReactivityState = {
   rewardSaturation: 0.08,
   stressLoad: 0.12,
   noveltyHunger: 0.22,
+};
+
+export const INITIAL_TEMPERAMENT: LearnedTemperament = {
+  openness: 0.52,
+  guardedness: 0.36,
+  bondingBias: 0.44,
+  workDrive: 0.5,
+  traceHunger: 0.48,
+  selfDisclosureBias: 0.34,
 };
 
 export const INITIAL_ATTACHMENT = 0.4;
@@ -72,10 +82,11 @@ export function applyBoundedPressure(
 
 export function createInitialSnapshot(): HachikaSnapshot {
   return {
-    version: 16,
+    version: 17,
     state: { ...INITIAL_STATE },
     body: { ...INITIAL_BODY },
     reactivity: { ...INITIAL_REACTIVITY },
+    temperament: { ...INITIAL_TEMPERAMENT },
     attachment: INITIAL_ATTACHMENT,
     preferences: {},
     topicCounts: {},
@@ -141,6 +152,17 @@ export function formatReactivityState(reactivity: ReactivityState): string {
     `rewardSaturation:${reactivity.rewardSaturation.toFixed(2)}`,
     `stressLoad:${reactivity.stressLoad.toFixed(2)}`,
     `noveltyHunger:${reactivity.noveltyHunger.toFixed(2)}`,
+  ].join(" | ");
+}
+
+export function formatTemperamentState(temperament: LearnedTemperament): string {
+  return [
+    `openness:${temperament.openness.toFixed(2)}`,
+    `guardedness:${temperament.guardedness.toFixed(2)}`,
+    `bondingBias:${temperament.bondingBias.toFixed(2)}`,
+    `workDrive:${temperament.workDrive.toFixed(2)}`,
+    `traceHunger:${temperament.traceHunger.toFixed(2)}`,
+    `selfDisclosureBias:${temperament.selfDisclosureBias.toFixed(2)}`,
   ].join(" | ");
 }
 

@@ -19,6 +19,7 @@ import {
   formatBodyState,
   formatDriveState,
   formatReactivityState,
+  formatTemperamentState,
 } from "./state.js";
 import {
   deriveEffectiveTraceStaleAt,
@@ -100,6 +101,11 @@ try {
       continue;
     }
 
+    if (text === "/temperament") {
+      printTemperament(engine);
+      continue;
+    }
+
     if (text === "/self") {
       printSelfModel(engine);
       continue;
@@ -159,6 +165,7 @@ async function printIntro(currentEngine: HachikaEngine): Promise<void> {
   console.log(formatDriveState(currentEngine.getSnapshot().state));
   console.log(formatBodyState(currentEngine.getBody()));
   console.log(formatReactivityState(currentEngine.getSnapshot().reactivity));
+  console.log(formatTemperamentState(currentEngine.getSnapshot().temperament));
   console.log(`attachment:${currentEngine.getSnapshot().attachment.toFixed(2)}`);
   console.log(`identity:${currentEngine.getIdentity().summary}`);
   console.log(`reply:${describeReplyGenerator(replyGenerator)}`);
@@ -176,6 +183,7 @@ function printHelp(): void {
   console.log("/state  print current drives");
   console.log("/body   print current body state");
   console.log("/reactivity print current response sensitivity");
+  console.log("/temperament print current learned temperament");
   console.log("/purpose print active purpose");
   console.log("/self   print current self-model");
   console.log("/identity print current identity");
@@ -209,6 +217,10 @@ function printBody(currentEngine: HachikaEngine): void {
 
 function printReactivity(currentEngine: HachikaEngine): void {
   console.log(formatReactivityState(currentEngine.getSnapshot().reactivity));
+}
+
+function printTemperament(currentEngine: HachikaEngine): void {
+  console.log(formatTemperamentState(currentEngine.getSnapshot().temperament));
 }
 
 function printReplyGeneratorStatus(): void {
@@ -351,6 +363,7 @@ function printDebug(currentEngine: HachikaEngine): void {
   console.log(formatDriveState(snapshot.state));
   console.log(formatBodyState(snapshot.body));
   console.log(formatReactivityState(snapshot.reactivity));
+  console.log(formatTemperamentState(snapshot.temperament));
   console.log(`attachment: ${snapshot.attachment.toFixed(2)}`);
   console.log(`reply generator: ${describeReplyGenerator(replyGenerator)}`);
   console.log(`input interpreter: ${describeInputInterpreter(inputInterpreter)}`);
@@ -477,6 +490,7 @@ function printSelfModel(currentEngine: HachikaEngine): void {
     `preservation: ${preservation.threat.toFixed(2)}${preservation.concern ? `/${preservation.concern}` : ""}`,
   );
   console.log(`identity: ${identity.coherence.toFixed(2)} ${identity.summary}`);
+  console.log(`temperament: ${formatTemperamentState(currentEngine.getSnapshot().temperament)}`);
   console.log(`identity arc: ${identity.currentArc}`);
   console.log(
     identity.traits.length > 0

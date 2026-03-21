@@ -14,6 +14,8 @@ export function updatePurpose(
   timestamp = new Date().toISOString(),
 ): void {
   const candidate = selectPurposeCandidate(selfModel.topMotives);
+  const boundaryCandidate =
+    selfModel.topMotives.find((motive) => motive.kind === "protect_boundary") ?? null;
   const active = snapshot.purpose.active;
 
   if (!active) {
@@ -25,24 +27,27 @@ export function updatePurpose(
 
   const aligned = purposeAligned(active, candidate, signals);
   const boundaryOverride =
-    candidate?.kind === "protect_boundary" &&
-    candidate.score >= 0.5 &&
-    active.kind !== "protect_boundary";
+    active.kind !== "protect_boundary" &&
+    boundaryCandidate !== null &&
+    boundaryCandidate.score >= 0.46 &&
+    (candidate?.kind === "protect_boundary" ||
+      signals.negative >= 0.42 ||
+      signals.dismissal >= 0.24);
   const strongerReplacement =
     candidate &&
     candidate.kind !== active.kind &&
     candidate.score >= active.confidence + 0.1 &&
     candidate.score >= 0.54;
 
-  if (boundaryOverride && candidate) {
+  if (boundaryOverride && boundaryCandidate) {
     resolvePurpose(
       snapshot,
       active,
       "superseded",
-      buildSupersededResolution(active, candidate),
+      buildSupersededResolution(active, boundaryCandidate),
       timestamp,
     );
-    activatePurpose(snapshot, candidate, timestamp);
+    activatePurpose(snapshot, boundaryCandidate, timestamp);
     return;
   }
 

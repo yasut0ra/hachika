@@ -6,6 +6,7 @@ import { rewindBodyHours, settleBodyAfterInitiative } from "./body.js";
 import { pickFreshText, recentAssistantReplies } from "./expression.js";
 import { buildSelfModel } from "./self-model.js";
 import { clamp01, INITIAL_REACTIVITY, settleTowardsBaseline } from "./state.js";
+import { rewindTemperamentHours } from "./temperament.js";
 import {
   pickPrimaryArtifactItem,
   readTraceLifecycle,
@@ -256,6 +257,7 @@ export function rewindSnapshotHours(
   };
 
   rewindBodyHours(snapshot, hours);
+  rewindTemperamentHours(snapshot, hours);
 
   if (snapshot.initiative.pending) {
     snapshot.initiative.pending = {
@@ -1550,6 +1552,7 @@ function scoreInitiativeTopic(
 ): number {
   const trace = snapshot.traces[topic];
   const archived = trace ? readTraceLifecycle(trace).phase === "archived" : false;
+  const temperament = snapshot.temperament;
   const lowEnergy = clamp01(0.28 - snapshot.body.energy);
   const tension = snapshot.body.tension;
   const boredom =
@@ -1567,6 +1570,10 @@ function scoreInitiativeTopic(
     Math.max(0, snapshot.preferences[topic] ?? 0) * 0.08 +
     (snapshot.preferenceImprints[topic]?.salience ?? 0) * 0.16 +
     (trace ? trace.salience * 0.32 : 0) +
+    (trace && mapped === "seek_continuity" ? temperament.bondingBias * 0.12 : 0) +
+    (trace && mapped === "leave_trace" ? temperament.traceHunger * 0.14 : 0) +
+    (trace && mapped === "continue_shared_work" ? temperament.workDrive * 0.16 : 0) +
+    (trace && mapped === "pursue_curiosity" ? temperament.openness * 0.14 : 0) +
     (trace && mapped === "seek_continuity" ? loneliness * 0.24 : 0) +
     (trace && trace.kind === "continuity_marker" ? loneliness * 0.14 : 0) +
     (trace && (mapped === "seek_continuity" || mapped === "leave_trace") ? lowEnergy * 0.24 : 0) +
@@ -1578,6 +1585,9 @@ function scoreInitiativeTopic(
     (trace && overdue ? boredom * 0.14 : 0) +
     (trace && trace.work.blockers.length > 0 ? 0.08 : 0) +
     (archived ? 0.06 : 0) +
+    (archived && archivedMapped === "leave_trace" ? temperament.traceHunger * 0.1 : 0) +
+    (archived && archivedMapped === "continue_shared_work" ? temperament.workDrive * 0.12 : 0) +
+    (archived && archivedMapped === "pursue_curiosity" ? temperament.openness * 0.1 : 0) +
     (archived && archivedMapped === "seek_continuity" ? loneliness * 0.18 + lowEnergy * 0.12 : 0) +
     (archived && archivedMapped === "continue_shared_work" ? boredom * 0.24 : 0) +
     (archived && archivedMapped === "pursue_curiosity" ? boredom * 0.2 : 0) +
@@ -1593,6 +1603,7 @@ function scoreInitiativeBlocker(
   preferredTopic: string | null | undefined,
 ): number {
   const motive = mappedMotiveForTrace(trace);
+  const temperament = snapshot.temperament;
   const lowEnergy = clamp01(0.28 - snapshot.body.energy);
   const tension = snapshot.body.tension;
   const boredom =
@@ -1607,6 +1618,10 @@ function scoreInitiativeBlocker(
     (trace.work.staleAt && isOverdue(trace.work.staleAt) ? 0.14 : 0) +
     trace.work.blockers.length * 0.06 +
     (1 - trace.work.confidence) * 0.2 +
+    (motive === "seek_continuity" ? temperament.bondingBias * 0.12 : 0) +
+    (motive === "leave_trace" ? temperament.traceHunger * 0.14 : 0) +
+    (motive === "continue_shared_work" ? temperament.workDrive * 0.14 : 0) +
+    (motive === "pursue_curiosity" ? temperament.openness * 0.12 : 0) +
     ((motive === "seek_continuity" || motive === "leave_trace") ? lowEnergy * 0.28 : 0) +
     (trace.kind === "continuity_marker" ? lowEnergy * 0.18 : 0) +
     ((motive === "seek_continuity" || motive === "leave_trace") ? tension * 0.18 : 0) +
@@ -1627,6 +1642,7 @@ function scoreDormantArchivedTrace(
   preferredTopic: string | null | undefined,
 ): number {
   const motive = mappedReopenMotiveForTrace(snapshot, trace, preferredMotive);
+  const temperament = snapshot.temperament;
   const lowEnergy = clamp01(0.28 - snapshot.body.energy);
   const tension = snapshot.body.tension;
   const boredom =
@@ -1641,6 +1657,10 @@ function scoreDormantArchivedTrace(
     (snapshot.purpose.lastResolved?.topic === trace.topic ? 0.16 : 0) +
     (snapshot.identity.anchors.includes(trace.topic) ? 0.12 : 0) +
     (motive === preferredMotive ? 0.18 : 0) +
+    (motive === "seek_continuity" ? temperament.bondingBias * 0.12 : 0) +
+    (motive === "leave_trace" ? temperament.traceHunger * 0.14 : 0) +
+    (motive === "continue_shared_work" ? temperament.workDrive * 0.14 : 0) +
+    (motive === "pursue_curiosity" ? temperament.openness * 0.12 : 0) +
     ((motive === "seek_continuity" || motive === "leave_trace") ? lowEnergy * 0.18 : 0) +
     (motive === "seek_continuity" ? loneliness * 0.24 : 0) +
     (motive === "continue_shared_work" ? boredom * 0.28 : 0) +

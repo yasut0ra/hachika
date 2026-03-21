@@ -12,6 +12,7 @@ import type {
   HachikaSnapshot,
   IdentityState,
   InitiativeState,
+  LearnedTemperament,
   MemoryEntry,
   MotiveKind,
   PendingInitiative,
@@ -61,10 +62,11 @@ function hydrateSnapshot(raw: unknown): HachikaSnapshot {
   }
 
   return {
-    version: 16,
+    version: 17,
     state: hydrateState(raw.state),
     body: hydrateBody(raw.body),
     reactivity: hydrateReactivity(raw.reactivity),
+    temperament: hydrateTemperament(raw.temperament),
     attachment:
       typeof raw.attachment === "number" ? clamp01(raw.attachment) : initial.attachment,
     preferences: hydrateNumberRecord(raw.preferences, clampSigned),
@@ -94,6 +96,7 @@ export function sanitizeSnapshot(snapshot: HachikaSnapshot): HachikaSnapshot {
     Math.max(0, Math.round(value)),
   );
   snapshot.reactivity = sanitizeReactivity(snapshot.reactivity);
+  snapshot.temperament = sanitizeTemperament(snapshot.temperament);
   snapshot.memories = snapshot.memories
     .map((memory) => ({
       ...memory,
@@ -160,6 +163,30 @@ function hydrateReactivity(raw: unknown): ReactivityState {
       typeof raw.noveltyHunger === "number"
         ? clamp01(raw.noveltyHunger)
         : initial.noveltyHunger,
+  };
+}
+
+function hydrateTemperament(raw: unknown): LearnedTemperament {
+  const initial = createInitialSnapshot().temperament;
+
+  if (!isRecord(raw)) {
+    return initial;
+  }
+
+  return {
+    openness: typeof raw.openness === "number" ? clamp01(raw.openness) : initial.openness,
+    guardedness:
+      typeof raw.guardedness === "number" ? clamp01(raw.guardedness) : initial.guardedness,
+    bondingBias:
+      typeof raw.bondingBias === "number" ? clamp01(raw.bondingBias) : initial.bondingBias,
+    workDrive:
+      typeof raw.workDrive === "number" ? clamp01(raw.workDrive) : initial.workDrive,
+    traceHunger:
+      typeof raw.traceHunger === "number" ? clamp01(raw.traceHunger) : initial.traceHunger,
+    selfDisclosureBias:
+      typeof raw.selfDisclosureBias === "number"
+        ? clamp01(raw.selfDisclosureBias)
+        : initial.selfDisclosureBias,
   };
 }
 
@@ -792,6 +819,17 @@ function sanitizeReactivity(reactivity: ReactivityState): ReactivityState {
     rewardSaturation: clamp01(reactivity.rewardSaturation),
     stressLoad: clamp01(reactivity.stressLoad),
     noveltyHunger: clamp01(reactivity.noveltyHunger),
+  };
+}
+
+function sanitizeTemperament(temperament: LearnedTemperament): LearnedTemperament {
+  return {
+    openness: clamp01(temperament.openness),
+    guardedness: clamp01(temperament.guardedness),
+    bondingBias: clamp01(temperament.bondingBias),
+    workDrive: clamp01(temperament.workDrive),
+    traceHunger: clamp01(temperament.traceHunger),
+    selfDisclosureBias: clamp01(temperament.selfDisclosureBias),
   };
 }
 

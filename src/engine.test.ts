@@ -1055,7 +1055,10 @@ test("self-model can keep a topic while surfacing boundary conflict", () => {
     conflict?.kind === "curiosity_boundary" || conflict?.kind === "shared_work_boundary",
     true,
   );
-  assert.match(result.reply, /境界を崩してまで触れたくはない|進め方には乗りたくない/);
+  assert.match(
+    result.reply,
+    /境界を崩してまで触れたくはない|進め方には乗りたくない|扱い方の荒さを止めたい/,
+  );
 });
 
 test("aligned turns reinforce an active purpose", () => {

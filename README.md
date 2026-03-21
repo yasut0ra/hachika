@@ -250,7 +250,10 @@ Hachika は、単に有用なだけでなく、
 - 身体状態は会話と放置で変化し、mood / motive / proactive timing / 通常応答に影響する
 - drive / body / attachment には baseline へ戻る弱い homeostasis を入れてあり、長い会話や同じ種類の相互作用が続いても 0 や 1 に貼りつき続けにくくしている
 - さらに `reactivity` が直近の傷つき・飽き・報酬慣れを保持し、同じ入力でも最近の履歴によって回復量や boredom の上がり方が少し変わる
+- さらに persistent な `temperament` が `openness / guardedness / bondingBias / workDrive / traceHunger / selfDisclosureBias` を保持し、修復・敵意・共同作業・放置の履歴から少しずつ気質を学習する
+- learned temperament は drive/body の効き方をわずかに変え、同じ drive/body でも self-model / purpose / initiative / response planner の向きが少し変わる
 - identity summary / current arc と initiative motive / topic / blocker selection も身体状態の影響を受ける
+- identity summary は learned temperament も織り込み、「残したがりながら雑には開かない」「関係の内側で少しずつ自分を見せる」などの持続的な気質差を出す
 - trace の優先順位と artifact の surfaced order も身体状態の影響を受け、低 energy では残しやすい痕跡が、高 boredom では stale な未完了が前に出やすくなる
 - `scenario harness` により、複数ターンの対話シナリオを fixture として検証できる
   - active purpose の継続と解決、blocker maintenance、archive/reopen、preservation threat、body drift による wording 変化を長めの回帰テストとして固定している
@@ -302,6 +305,7 @@ cp .env.example .env
 - `/state` 現在の drive 状態を表示
 - `/body` 現在の body 状態を表示
 - `/reactivity` 現在の反応感度 state を表示
+- `/temperament` 現在の learned temperament を表示
 - `/purpose` 現在の active purpose と直近の解決済み purpose を表示
 - `/self` 現在の self-model、motive、conflict を表示
 - `/identity` 現在の identity summary / arc / traits / anchors を表示

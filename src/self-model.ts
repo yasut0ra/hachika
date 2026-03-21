@@ -57,6 +57,12 @@ export function buildSelfModel(snapshot: HachikaSnapshot): SelfModel {
   const boundaryPenalty = topBoundary
     ? topBoundary.salience * 0.24 + topBoundary.intensity * 0.22
     : 0;
+  const openness = snapshot.temperament.openness;
+  const guardedness = snapshot.temperament.guardedness;
+  const bondingBias = snapshot.temperament.bondingBias;
+  const workDrive = snapshot.temperament.workDrive;
+  const traceHunger = snapshot.temperament.traceHunger;
+  const selfDisclosureBias = snapshot.temperament.selfDisclosureBias;
 
   const rawMotives: SelfMotive[] = [
     {
@@ -67,6 +73,8 @@ export function buildSelfModel(snapshot: HachikaSnapshot): SelfModel {
           (topBoundary?.intensity ?? 0) * 0.18 +
           tensionPressure * 0.22 +
           lowEnergyPressure * 0.08 +
+          guardedness * 0.18 -
+          openness * 0.04 +
           identityTraitBoost(snapshot, "guarded", 0.08) +
           preservationThreat * 0.12 +
           preservationConcernBoost(preservationConcern, ["erasure", "shutdown"], 0.1) +
@@ -86,6 +94,8 @@ export function buildSelfModel(snapshot: HachikaSnapshot): SelfModel {
         snapshot.state.continuity * 0.62 +
           (continuity?.closeness ?? 0) * 0.24 +
           identityTraitBoost(snapshot, "persistent", 0.1) +
+          bondingBias * 0.12 +
+          traceHunger * 0.1 +
           lowEnergyPressure * 0.12 +
           lonelinessPressure * 0.08 +
           continuityTracePressure * 0.24 +
@@ -110,6 +120,8 @@ export function buildSelfModel(snapshot: HachikaSnapshot): SelfModel {
         snapshot.state.curiosity * 0.56 +
           Math.max(0, topPreference?.salience ?? 0) * 0.12 -
           identityTraitBoost(snapshot, "inquisitive", 0.08) +
+          openness * 0.2 -
+          guardedness * 0.08 +
           snapshot.body.energy * 0.08 +
           boredomPressure * 0.24 +
           tensionPressure * -0.1 +
@@ -127,10 +139,13 @@ export function buildSelfModel(snapshot: HachikaSnapshot): SelfModel {
         snapshot.attachment * 0.46 +
           snapshot.state.relation * 0.34 +
           (attention?.closeness ?? 0) * 0.2 +
+          bondingBias * 0.18 +
+          selfDisclosureBias * 0.12 +
           lonelinessPressure * 0.32 +
           identityTraitBoost(snapshot, "attached", 0.08) +
           snapshot.body.energy * 0.04 +
-          tensionPressure * -0.06 +
+          tensionPressure * -0.06 -
+          guardedness * 0.12 +
           preservationThreat * 0.04 -
           boundaryPenalty +
           activePurposeBoost(activePurpose, "deepen_relation", 0.14),
@@ -144,6 +159,8 @@ export function buildSelfModel(snapshot: HachikaSnapshot): SelfModel {
         snapshot.state.expansion * 0.42 +
           (sharedWork?.closeness ?? 0) * 0.36 +
           snapshot.state.curiosity * 0.08 +
+          workDrive * 0.18 +
+          openness * 0.05 +
           snapshot.body.energy * 0.18 +
           boredomPressure * 0.08 +
           lowEnergyPressure * -0.18 +
@@ -164,6 +181,8 @@ export function buildSelfModel(snapshot: HachikaSnapshot): SelfModel {
         snapshot.state.expansion * 0.7 +
           Math.max(0, topPreference?.salience ?? 0) * 0.14 +
           (sharedWork?.closeness ?? 0) * 0.18 +
+          traceHunger * 0.2 +
+          guardedness * 0.04 +
           lowEnergyPressure * 0.2 +
           tensionPressure * 0.04 +
           boredomPressure * 0.04 +

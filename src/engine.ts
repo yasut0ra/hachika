@@ -33,6 +33,7 @@ import type {
   ReplyGenerator,
 } from "./reply-generator.js";
 import { buildSelfModel } from "./self-model.js";
+import { updateTemperament } from "./temperament.js";
 import {
   applyBoundedPressure,
   clamp01,
@@ -1208,6 +1209,7 @@ function applySignals(
   const nextSnapshot = structuredClone(snapshot);
   nextSnapshot.conversationCount = snapshot.conversationCount + 1;
   nextSnapshot.lastInteractionAt = new Date().toISOString();
+  const temperament = snapshot.temperament;
 
   nextSnapshot.reactivity = updateReactivityFromSignals(snapshot, signals);
   const rewardScale = Math.max(0.4, 1 - nextSnapshot.reactivity.rewardSaturation * 0.55);
@@ -1215,6 +1217,23 @@ function applySignals(
   const stressAmplifier = 1 + nextSnapshot.reactivity.stressLoad * 0.5;
   const noveltyAmplifier = 1 + nextSnapshot.reactivity.noveltyHunger * 0.7;
   const repetitionAmplifier = 1 + nextSnapshot.reactivity.noveltyHunger * 0.35;
+  const socialEase = Math.max(
+    0.74,
+    1 + temperament.bondingBias * 0.18 + temperament.selfDisclosureBias * 0.06 - temperament.guardedness * 0.18,
+  );
+  const curiosityEase = Math.max(
+    0.76,
+    1 + temperament.openness * 0.18 - temperament.guardedness * 0.1,
+  );
+  const continuityEase = Math.max(
+    0.8,
+    1 + temperament.traceHunger * 0.16 + temperament.workDrive * 0.04 - temperament.guardedness * 0.04,
+  );
+  const workEase = Math.max(
+    0.8,
+    1 + temperament.workDrive * 0.18 + temperament.traceHunger * 0.08,
+  );
+  const guardSensitivity = 1 + temperament.guardedness * 0.2 - temperament.openness * 0.06;
 
   nextSnapshot.state.pleasure = applyBoundedPressure(
     nextSnapshot.state.pleasure,
@@ -1223,9 +1242,11 @@ function applySignals(
       signals.repair * 0.1 +
       signals.smalltalk * 0.03) *
       rewardScale *
-      stressPenalty,
+      stressPenalty *
+      Math.max(0.8, 1 + temperament.bondingBias * 0.08 - temperament.guardedness * 0.1),
     (signals.negative * 0.24 + signals.dismissal * 0.08 + signals.preservationThreat * 0.08) *
-      stressAmplifier,
+      stressAmplifier *
+      guardSensitivity,
     INITIAL_STATE.pleasure,
     0.05,
   );
@@ -1239,12 +1260,14 @@ function applySignals(
       signals.repair * 0.16 +
       signals.selfInquiry * 0.14) *
       rewardScale *
-      stressPenalty,
+      stressPenalty *
+      socialEase,
     (signals.negative * 0.18 +
       signals.dismissal * 0.12 +
       signals.neglect * 0.08 +
       signals.preservationThreat * 0.04) *
-      stressAmplifier,
+      stressAmplifier *
+      guardSensitivity,
     INITIAL_STATE.relation,
     0.05,
   );
@@ -1252,8 +1275,9 @@ function applySignals(
   nextSnapshot.state.curiosity = applyBoundedPressure(
     nextSnapshot.state.curiosity,
     (signals.novelty * 0.18 + signals.question * 0.12 + signals.selfInquiry * 0.04) *
-      noveltyAmplifier,
-    signals.repetition * 0.1 * repetitionAmplifier,
+      noveltyAmplifier *
+      curiosityEase,
+    signals.repetition * 0.1 * repetitionAmplifier * Math.max(0.82, 1 + temperament.workDrive * 0.04),
     INITIAL_STATE.curiosity,
     0.08,
   );
@@ -1261,9 +1285,11 @@ function applySignals(
   nextSnapshot.state.continuity = applyBoundedPressure(
     nextSnapshot.state.continuity,
     (signals.memoryCue * 0.16 + signals.positive * 0.04 + signals.repair * 0.04) *
-      (0.82 + stressPenalty * 0.18),
+      (0.82 + stressPenalty * 0.18) *
+      continuityEase,
     (signals.dismissal * 0.14 + signals.neglect * 0.04 + signals.preservationThreat * 0.08) *
-      stressAmplifier,
+      stressAmplifier *
+      Math.max(0.84, 1 + temperament.guardedness * 0.1),
     INITIAL_STATE.continuity,
     0.055,
   );
@@ -1271,7 +1297,8 @@ function applySignals(
   nextSnapshot.state.expansion = applyBoundedPressure(
     nextSnapshot.state.expansion,
     (signals.expansionCue * 0.18 + signals.memoryCue * 0.04 + signals.question * 0.04) *
-      noveltyAmplifier,
+      noveltyAmplifier *
+      workEase,
     (signals.negative * 0.06 + signals.preservationThreat * 0.1) * stressAmplifier,
     INITIAL_STATE.expansion,
     0.06,
@@ -1313,12 +1340,14 @@ function applySignals(
       signals.selfInquiry * 0.05 +
       positivePreferenceAffinity) *
       rewardScale *
-      stressPenalty,
+      stressPenalty *
+      socialEase,
     (signals.negative * 0.1 +
       signals.dismissal * 0.08 +
       signals.neglect * 0.04 +
       signals.preservationThreat * 0.03) *
-      stressAmplifier,
+      stressAmplifier *
+      guardSensitivity,
     INITIAL_ATTACHMENT,
     0.05,
   );
@@ -1362,6 +1391,7 @@ function applySignals(
     signals,
     nextSnapshot.lastInteractionAt ?? undefined,
   );
+  updateTemperament(nextSnapshot, signals);
 
   return nextSnapshot;
 }

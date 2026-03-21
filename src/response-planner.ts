@@ -73,21 +73,30 @@ export function buildResponsePlan(
 ): ResponsePlan {
   const topMotive = selfModel.topMotives[0] ?? null;
   const socialTurn = isSocialTurnSignals(signals);
+  const temperament = snapshot.temperament;
   const focusTopic =
     signals.topics[0] ??
     topMotive?.topic ??
     snapshot.purpose.active?.topic ??
     snapshot.identity.anchors[0] ??
     null;
+  const selfDisclosureReady =
+    signals.selfInquiry > 0.45 ||
+    (signals.selfInquiry > 0.28 &&
+      temperament.selfDisclosureBias > 0.56 &&
+      temperament.guardedness < 0.52);
+  const repairReady =
+    signals.repair > 0.42 ||
+    (signals.repair > 0.28 && temperament.bondingBias > 0.62 && temperament.guardedness < 0.56);
 
   let act: ResponseAct;
   if (signals.negative > 0.2 || signals.dismissal > 0.16) {
     act = "boundary";
   } else if (signals.preservationThreat > 0.2) {
     act = "preserve";
-  } else if (signals.selfInquiry > 0.45) {
+  } else if (selfDisclosureReady) {
     act = "self_disclose";
-  } else if (signals.repair > 0.42) {
+  } else if (repairReady) {
     act = "repair";
   } else if (signals.greeting > 0.45) {
     act = "greet";
@@ -112,28 +121,47 @@ export function buildResponsePlan(
   const stance =
     act === "boundary" || mood === "guarded" || mood === "distant"
       ? "guarded"
-      : act === "greet" || act === "repair"
+      : act === "greet" ||
+          act === "repair" ||
+          (act === "self_disclose" &&
+            temperament.selfDisclosureBias > 0.58 &&
+            temperament.guardedness < 0.5)
         ? "open"
         : "measured";
   const distance =
     act === "boundary"
       ? "far"
-      : act === "greet" || act === "repair" || (act === "self_disclose" && snapshot.attachment > 0.34)
+      : act === "greet" ||
+          act === "repair" ||
+          (act === "attune" &&
+            temperament.bondingBias > 0.66 &&
+            temperament.guardedness < 0.48) ||
+          (act === "self_disclose" &&
+            (snapshot.attachment > 0.34 ||
+              (temperament.selfDisclosureBias > 0.56 && temperament.guardedness < 0.5)))
         ? "close"
         : "measured";
   const mentionTrace = !socialTurn && act !== "self_disclose" && act !== "greet" && act !== "repair";
   const mentionIdentity =
     act === "self_disclose" ||
     act === "repair" ||
-    (socialTurn && snapshot.identity.coherence > 0.54);
+    (socialTurn &&
+      (snapshot.identity.coherence > 0.54 || temperament.selfDisclosureBias > 0.58));
   const mentionBoundary =
     act === "boundary" ||
-    ((mood === "guarded" || mood === "distant") && signals.negative > 0.08);
-  const askBack = act === "explore" || (act === "attune" && signals.smalltalk > 0.48 && signals.question < 0.2);
+    ((mood === "guarded" || mood === "distant" || temperament.guardedness > 0.66) &&
+      signals.negative > 0.08);
+  const askBack =
+    act === "explore" ||
+    (act === "attune" && signals.smalltalk > 0.48 && signals.question < 0.2) ||
+    (act === "self_disclose" &&
+      temperament.openness > 0.62 &&
+      temperament.selfDisclosureBias > 0.48);
   const variation =
     act === "greet" || act === "repair" || act === "attune"
       ? "brief"
-      : act === "explore"
+      : act === "explore" ||
+          (act === "self_disclose" && temperament.openness > 0.66)
         ? "questioning"
         : "textured";
 
@@ -180,6 +208,7 @@ export function buildProactivePlan(
   maintenance: TraceMaintenance | null,
 ): ProactivePlan {
   const reopened = reopenedByMaintenance(maintenance);
+  const temperament = snapshot.temperament;
   const focusTopic =
     maintenance?.trace.topic ??
     pending.topic ??
@@ -218,11 +247,15 @@ export function buildProactivePlan(
   const stance =
     act === "preserve" || snapshot.body.tension > 0.7
       ? "guarded"
-      : act === "reconnect" && snapshot.body.tension < 0.56
+      : act === "reconnect" &&
+          snapshot.body.tension < 0.56 &&
+          temperament.bondingBias > 0.48
         ? "open"
         : "measured";
   const distance =
-    act === "reconnect" && snapshot.body.tension < 0.56
+    act === "reconnect" &&
+      snapshot.body.tension < 0.56 &&
+      temperament.bondingBias > 0.48
       ? "close"
       : act === "preserve" &&
           (pending.concern === "reset" || pending.concern === "shutdown")
@@ -253,7 +286,7 @@ export function buildProactivePlan(
   const variation =
     act === "reconnect" || act === "preserve"
       ? "brief"
-      : act === "explore"
+      : act === "explore" || (act === "reopen" && temperament.openness > 0.62)
         ? "questioning"
         : "textured";
 

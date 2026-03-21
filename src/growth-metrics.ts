@@ -1,4 +1,10 @@
-import { INITIAL_ATTACHMENT, INITIAL_BODY, INITIAL_REACTIVITY, INITIAL_STATE } from "./state.js";
+import {
+  INITIAL_ATTACHMENT,
+  INITIAL_BODY,
+  INITIAL_REACTIVITY,
+  INITIAL_STATE,
+  INITIAL_TEMPERAMENT,
+} from "./state.js";
 import type { HachikaSnapshot } from "./types.js";
 import type { ScenarioRun } from "./scenario-harness.js";
 
@@ -168,14 +174,16 @@ export function describeGrowthMetricBaselines(): Record<string, number | null> {
     body: INITIAL_BODY,
     attachment: INITIAL_ATTACHMENT,
     reactivity: INITIAL_REACTIVITY,
+    temperament: INITIAL_TEMPERAMENT,
   };
 
   return {
     baselineSaturationRatio: calculateStateSaturationRatio({
-      version: 16,
+      version: 17,
       state: initial.state,
       body: initial.body,
       reactivity: initial.reactivity,
+      temperament: initial.temperament,
       attachment: initial.attachment,
       preferences: {},
       topicCounts: {},

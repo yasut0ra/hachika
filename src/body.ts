@@ -6,11 +6,16 @@ export function applyBodyFromSignals(
   signals: InteractionSignals,
 ): void {
   const previous = snapshot.body;
+  const temperament = snapshot.temperament;
   const rewardScale = Math.max(0.38, 1 - snapshot.reactivity.rewardSaturation * 0.5);
   const stressPenalty = Math.max(0.35, 1 - snapshot.reactivity.stressLoad * 0.6);
   const stressAmplifier = 1 + snapshot.reactivity.stressLoad * 0.55;
   const noveltyAmplifier = 1 + snapshot.reactivity.noveltyHunger * 0.7;
   const repetitionAmplifier = 1 + snapshot.reactivity.noveltyHunger * 0.45;
+  const opennessAmplifier = 1 + temperament.openness * 0.18 + temperament.workDrive * 0.06;
+  const guardedAmplifier = 1 + temperament.guardedness * 0.22;
+  const socialAmplifier =
+    1 + temperament.bondingBias * 0.18 + temperament.selfDisclosureBias * 0.08;
 
   snapshot.body = {
     energy: applyBoundedPressure(
@@ -21,17 +26,20 @@ export function applyBodyFromSignals(
         signals.smalltalk * 0.03 +
         signals.repair * 0.06) *
         rewardScale *
-        stressPenalty +
+        stressPenalty *
+        Math.max(0.82, 1 + temperament.bondingBias * 0.08 - temperament.guardedness * 0.08) +
         (signals.novelty * 0.08 +
           signals.question * 0.04 +
           signals.expansionCue * 0.06) *
-          noveltyAmplifier,
+          noveltyAmplifier *
+          opennessAmplifier,
       (signals.negative * 0.16 +
         signals.dismissal * 0.08 +
         signals.neglect * 0.05 +
         signals.repetition * 0.08 +
         signals.preservationThreat * 0.06) *
-        stressAmplifier,
+        stressAmplifier *
+        guardedAmplifier,
       INITIAL_BODY.energy,
       0.09,
     ),
@@ -41,13 +49,15 @@ export function applyBodyFromSignals(
         signals.dismissal * 0.1 +
         signals.preservationThreat * 0.16 +
         signals.neglect * 0.06) *
-        stressAmplifier,
+        stressAmplifier *
+        guardedAmplifier,
       (signals.positive * 0.06 +
         signals.greeting * 0.03 +
         signals.repair * 0.08 +
         signals.intimacy * 0.04 +
         signals.question * 0.03) *
-        stressPenalty,
+        stressPenalty *
+        Math.max(0.8, 1 + temperament.openness * 0.04 - temperament.guardedness * 0.12),
       INITIAL_BODY.tension,
       0.1,
     ),
@@ -60,13 +70,15 @@ export function applyBodyFromSignals(
         signals.selfInquiry * 0.04 +
         signals.expansionCue * 0.06 +
         signals.memoryCue * 0.04) *
-        noveltyAmplifier,
+        noveltyAmplifier *
+        opennessAmplifier,
       INITIAL_BODY.boredom,
       0.12,
     ),
     loneliness: applyBoundedPressure(
       previous.loneliness,
-      (signals.neglect * 0.18 + signals.dismissal * 0.1) * (1 + snapshot.reactivity.stressLoad * 0.35),
+      (signals.neglect * 0.18 + signals.dismissal * 0.1) *
+        (1 + snapshot.reactivity.stressLoad * 0.35 + temperament.bondingBias * 0.18),
       (signals.intimacy * 0.18 +
         signals.positive * 0.08 +
         signals.greeting * 0.06 +
@@ -75,7 +87,8 @@ export function applyBodyFromSignals(
         signals.selfInquiry * 0.06 +
         signals.memoryCue * 0.04) *
         rewardScale *
-        stressPenalty,
+        stressPenalty *
+        socialAmplifier,
       INITIAL_BODY.loneliness,
       0.1,
     ),
@@ -97,13 +110,21 @@ export function rewindBodyHours(
     hours <= 10 ? -Math.min(0.06, hours / 80) : Math.min(0.12, (hours - 10) / 96);
   const stressPenalty = Math.max(0.45, 1 - snapshot.reactivity.stressLoad * 0.35);
   const noveltyAmplifier = 1 + snapshot.reactivity.noveltyHunger * 0.45;
+  const guardedAmplifier = 1 + snapshot.temperament.guardedness * 0.18;
 
   snapshot.body = {
     energy: clamp01(snapshot.body.energy + energyRecovery * stressPenalty),
-    tension: clamp01(snapshot.body.tension + tensionShift + snapshot.preservation.threat * 0.04),
-    boredom: clamp01(snapshot.body.boredom + boredomRise * noveltyAmplifier),
+    tension: clamp01(
+      snapshot.body.tension + tensionShift * guardedAmplifier + snapshot.preservation.threat * 0.04,
+    ),
+    boredom: clamp01(
+      snapshot.body.boredom +
+        boredomRise * noveltyAmplifier * (0.9 + snapshot.temperament.openness * 0.12),
+    ),
     loneliness: clamp01(
-      snapshot.body.loneliness + lonelinessRise * (1 + snapshot.reactivity.stressLoad * 0.25),
+      snapshot.body.loneliness +
+        lonelinessRise *
+          (1 + snapshot.reactivity.stressLoad * 0.25 + snapshot.temperament.bondingBias * 0.2),
     ),
   };
 }

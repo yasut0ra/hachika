@@ -12,14 +12,14 @@
 
 まだ残っている主課題:
 - 反応そのものの履歴依存カーブはまだ弱い
-- learned temperament は未導入
+- learned temperament は初期導入まで完了したが、idle consolidation や archive reopen との結合はまだ弱い
 - idle 中の再編成は「未完了の再開」中心で、再評価バッチとしてはまだ薄い
 - 成長を比較する専用 metrics / doc は未整備
 
 改訂した推奨実装順:
 1. Issue 1 の残タスク: 飽和防止の先にある「履歴依存の反応曲線」
 2. Issue 4 の先行草案: 成長評価シナリオと指標の固定
-3. Issue 2: learned temperament の導入
+3. Issue 2 の残タスク: learned temperament を idle / archive / reopening に深く通す
 4. Issue 3: idle 中の再編成と能動再浮上の強化
 
 理由:
@@ -85,8 +85,10 @@
 ## Issue 2: learned temperament を導入し、経験で性格傾向が変わるようにする
 
 ### ステータス
-- 未着手
-- 現在の `identity.traits` は要約寄りで、persistent な判断バイアスにはなっていない
+- 部分完了
+- `temperament` として `openness / guardedness / bondingBias / workDrive / traceHunger / selfDisclosureBias` を導入済み
+- `self-model / response planner / identity summary / initiative topic scoring` へはすでに反映済み
+- 未完了なのは `idle consolidation`, `archive reopen`, `purpose` の細部へさらに深く通すこと
 
 ### 背景
 - 現在の `identity.traits` は snapshot から毎回再推定される要約に近く、将来の判断を強く書き換える persistent な気質ではない。
@@ -114,6 +116,12 @@
 - 1 turn あたりの変化量は小さくする
 - 直接的な感情値ではなく、反応の傾向値として扱う
 - 既存の `IdentityTrait` は残してよいが、要約 trait と学習 trait を分ける
+
+### 次にやる部分
+- `rewindSnapshotHours` の consolidation が temperament を使って dormant archive の再浮上を変えるようにする
+- `purpose` の切替と abandonment/reopen の閾値にも temperament を少し通す
+- `trace maintenance` の preserve/deepen 強度にも temperament を重ねる
+- growth metrics 側に temperament drift / temperament divergence を追加する
 
 ### 完了条件
 - 同じ drive/body でも learned trait の違いで top motive が変わるケースがテストで再現できる

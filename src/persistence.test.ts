@@ -145,6 +145,7 @@ test("loadSnapshot and saveSnapshot apply sanitation to persisted files", async 
     assert.deepEqual(loaded.memories[0]?.topics, ["自分"]);
     assert.deepEqual(loaded.identity.anchors, ["自分"]);
     assert.equal(loaded.traces.かな, undefined);
+    assert.deepEqual(loaded.temperament, createInitialSnapshot().temperament);
 
     await saveSnapshot(filePath, loaded);
     const raw = await readFile(filePath, "utf8");

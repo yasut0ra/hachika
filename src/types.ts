@@ -28,6 +28,15 @@ export interface ReactivityState {
   noveltyHunger: number;
 }
 
+export interface LearnedTemperament {
+  openness: number;
+  guardedness: number;
+  bondingBias: number;
+  workDrive: number;
+  traceHunger: number;
+  selfDisclosureBias: number;
+}
+
 export interface MemoryEntry {
   role: "user" | "hachika";
   text: string;
@@ -214,6 +223,7 @@ export interface HachikaSnapshot {
   state: DriveState;
   body: BodyState;
   reactivity: ReactivityState;
+  temperament: LearnedTemperament;
   attachment: number;
   preferences: Record<string, number>;
   topicCounts: Record<string, number>;
