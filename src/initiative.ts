@@ -19,6 +19,7 @@ import { buildProactivePlan } from "./response-planner.js";
 import type { ProactivePlan } from "./response-planner.js";
 import type {
   HachikaSnapshot,
+  InitiativeActivity,
   InitiativeReason,
   InteractionSignals,
   MotiveKind,
@@ -36,6 +37,12 @@ export interface ProactiveEmission {
   maintenance: TraceMaintenance | null;
   plan: ProactivePlan;
   selection: ProactiveSelectionDebug;
+}
+
+interface IdleConsolidationReport {
+  focusTopic: string | null;
+  reinforcedTopics: string[];
+  compressed: boolean;
 }
 
 export function scheduleInitiative(
@@ -109,7 +116,7 @@ export function emitInitiative(
       pending.kind === "preserve_presence"
         ? buildPreservationMessage(snapshot, pending, neglectLevel, maintenance, plan)
         : buildResumeMessage(snapshot, pending, neglectLevel, maintenance, plan);
-    finalizeEmission(snapshot, nowIso, pending);
+    finalizeEmission(snapshot, nowIso, pending, maintenance);
     return {
       message,
       topics: maintenance?.trace.topic
@@ -144,7 +151,7 @@ export function emitInitiative(
       maintenance,
       plan,
     );
-    finalizeEmission(snapshot, nowIso, neglectInitiative);
+    finalizeEmission(snapshot, nowIso, neglectInitiative, maintenance);
     return {
       message,
       topics: maintenance?.trace.topic
@@ -192,7 +199,7 @@ export function emitInitiative(
       synthesized.kind === "preserve_presence"
         ? buildPreservationMessage(snapshot, synthesized, neglectLevel, maintenance, plan)
         : buildResumeMessage(snapshot, synthesized, neglectLevel, maintenance, plan);
-    finalizeEmission(snapshot, nowIso, synthesized);
+    finalizeEmission(snapshot, nowIso, synthesized, maintenance);
 
     return {
       message,
@@ -303,7 +310,8 @@ function consolidateIdleSnapshot(
     .sort((left, right) => right.score - left.score)[0];
 
   if (!dormant || dormant.score < 0.42) {
-    consolidateIdleMemoryImprints(snapshot, hours, null, null);
+    const report = consolidateIdleMemoryImprints(snapshot, hours, null, null);
+    recordIdleConsolidation(snapshot, hours, report);
     return;
   }
 
@@ -328,7 +336,13 @@ function consolidateIdleSnapshot(
       (existingPending.topic === dormant.trace.topic || dormant.score >= 0.58));
 
   if (!shouldInstallPending) {
-    consolidateIdleMemoryImprints(snapshot, hours, dormant.trace.topic, dormant.motive);
+    const report = consolidateIdleMemoryImprints(
+      snapshot,
+      hours,
+      dormant.trace.topic,
+      dormant.motive,
+    );
+    recordIdleConsolidation(snapshot, hours, report);
     return;
   }
 
@@ -349,7 +363,27 @@ function consolidateIdleSnapshot(
     createdAt: snapshot.lastInteractionAt ?? new Date().toISOString(),
     readyAfterHours: Math.round(readyAfter * 10) / 10,
   };
-  consolidateIdleMemoryImprints(snapshot, hours, dormant.trace.topic, dormant.motive);
+  const report = consolidateIdleMemoryImprints(
+    snapshot,
+    hours,
+    dormant.trace.topic,
+    dormant.motive,
+  );
+  recordInitiativeActivity(snapshot, {
+    kind: "idle_reactivation",
+    timestamp: new Date().toISOString(),
+    motive: dormant.motive,
+    topic: dormant.trace.topic,
+    traceTopic: dormant.trace.topic,
+    blocker: null,
+    maintenanceAction: null,
+    reopened: false,
+    hours: Math.round(hours * 10) / 10,
+    summary: buildIdleReactivationSummary(dormant.trace.topic, dormant.motive),
+  });
+  if (report?.focusTopic && report.focusTopic !== dormant.trace.topic) {
+    recordIdleConsolidation(snapshot, hours, report);
+  }
 }
 
 function consolidateIdleMemoryImprints(
@@ -357,7 +391,7 @@ function consolidateIdleMemoryImprints(
   hours: number,
   prioritizedTopic: string | null,
   prioritizedMotive: MotiveKind | null,
-): void {
+): IdleConsolidationReport | null {
   const scoredTopics = scoreIdleMemoryTopics(snapshot, prioritizedTopic);
   const timestamp = snapshot.lastInteractionAt ?? new Date().toISOString();
   const temperament = snapshot.temperament;
@@ -408,7 +442,12 @@ function consolidateIdleMemoryImprints(
   }
 
   decayIdlePreferenceImprints(snapshot, reinforcedTopics, hours);
-  compressIdleMemories(snapshot, reinforcedTopics, prioritizedTopic, hours);
+  const compressed = compressIdleMemories(
+    snapshot,
+    reinforcedTopics,
+    prioritizedTopic,
+    hours,
+  );
 
   const continuityPull =
     (prioritizedMotive === "seek_continuity" ? 0.08 : 0) +
@@ -433,6 +472,19 @@ function consolidateIdleMemoryImprints(
 
   rebalanceIdleRelationImprints(snapshot, prioritizedMotive, hours);
   softenIdleBoundaryImprints(snapshot, prioritizedTopic, prioritizedMotive, hours);
+
+  const reinforced = [...reinforcedTopics].slice(0, 3);
+  const focusTopic = prioritizedTopic ?? reinforced[0] ?? null;
+
+  if (!focusTopic && !compressed) {
+    return null;
+  }
+
+  return {
+    focusTopic,
+    reinforcedTopics: reinforced,
+    compressed,
+  };
 }
 
 function decayIdlePreferenceImprints(
@@ -481,9 +533,9 @@ function compressIdleMemories(
   reinforcedTopics: ReadonlySet<string>,
   prioritizedTopic: string | null,
   hours: number,
-): void {
+): boolean {
   if ((snapshot.memories.length <= 16 && hours < 18) || snapshot.memories.length <= 10) {
-    return;
+    return false;
   }
 
   const tailSize = Math.min(8, snapshot.memories.length);
@@ -491,7 +543,7 @@ function compressIdleMemories(
   const olderMemories = snapshot.memories.slice(0, -tailSize);
 
   if (olderMemories.length === 0) {
-    return;
+    return false;
   }
 
   const ranked = olderMemories
@@ -521,9 +573,14 @@ function compressIdleMemories(
     .sort((left, right) => left.timestamp.localeCompare(right.timestamp))
     .slice(-6);
 
-  snapshot.memories = [...selectedOlder, ...recentTail]
+  const nextMemories = [...selectedOlder, ...recentTail]
     .sort((left, right) => left.timestamp.localeCompare(right.timestamp))
     .slice(-18);
+  const changed =
+    nextMemories.length !== snapshot.memories.length ||
+    nextMemories.some((memory, index) => snapshot.memories[index]?.text !== memory.text);
+  snapshot.memories = nextMemories;
+  return changed;
 }
 
 function scoreIdleMemoryCompressionCandidate(
@@ -1220,6 +1277,7 @@ function finalizeEmission(
   snapshot: HachikaSnapshot,
   emittedAt: string,
   pending: PendingInitiative,
+  maintenance: TraceMaintenance | null,
 ): void {
   snapshot.initiative.pending = null;
   snapshot.initiative.lastProactiveAt = emittedAt;
@@ -1270,6 +1328,19 @@ function finalizeEmission(
       };
     }
   }
+
+  recordInitiativeActivity(snapshot, {
+    kind: "proactive_emission",
+    timestamp: emittedAt,
+    motive: pending.motive,
+    topic: pending.topic,
+    traceTopic: maintenance?.trace.topic ?? null,
+    blocker: pending.blocker,
+    maintenanceAction: maintenance?.action ?? null,
+    reopened: wasReopenedByMaintenance(maintenance),
+    hours: null,
+    summary: buildProactiveActivitySummary(pending, maintenance),
+  });
 }
 
 function buildProactiveSelectionDebug(
@@ -1277,21 +1348,136 @@ function buildProactiveSelectionDebug(
   maintenance: TraceMaintenance | null,
   plan: ProactivePlan,
 ): ProactiveSelectionDebug {
-  const lifecycle = maintenance ? readTraceLifecycle(maintenance.trace) : null;
-  const reopened =
-    maintenance !== null &&
-    lifecycle !== null &&
-    lifecycle.phase === "live" &&
-    lifecycle.reopenCount > 0 &&
-    lifecycle.reopenedAt === maintenance.trace.lastUpdatedAt;
-
   return {
     focusTopic: plan.focusTopic ?? pending.topic ?? maintenance?.trace.topic ?? null,
     maintenanceTraceTopic: maintenance?.trace.topic ?? null,
     blocker: pending.blocker,
-    reopened,
+    reopened: wasReopenedByMaintenance(maintenance),
     maintenanceAction: maintenance?.action ?? null,
   };
+}
+
+function recordIdleConsolidation(
+  snapshot: HachikaSnapshot,
+  hours: number,
+  report: IdleConsolidationReport | null,
+): void {
+  if (!report || (!report.focusTopic && !report.compressed)) {
+    return;
+  }
+
+  recordInitiativeActivity(snapshot, {
+    kind: "idle_consolidation",
+    timestamp: new Date().toISOString(),
+    motive: null,
+    topic: report.focusTopic,
+    traceTopic: null,
+    blocker: null,
+    maintenanceAction: null,
+    reopened: false,
+    hours: Math.round(hours * 10) / 10,
+    summary: buildIdleConsolidationSummary(report),
+  });
+}
+
+function recordInitiativeActivity(
+  snapshot: HachikaSnapshot,
+  activity: InitiativeActivity,
+): void {
+  const history = snapshot.initiative.history ?? [];
+  const last = history.at(-1);
+
+  if (
+    last &&
+    last.kind === activity.kind &&
+    last.topic === activity.topic &&
+    last.traceTopic === activity.traceTopic &&
+    last.blocker === activity.blocker &&
+    last.maintenanceAction === activity.maintenanceAction &&
+    last.summary === activity.summary
+  ) {
+    snapshot.initiative.history = [
+      ...history.slice(0, -1),
+      {
+        ...last,
+        timestamp: activity.timestamp,
+        motive: activity.motive ?? last.motive,
+        reopened: last.reopened || activity.reopened,
+        hours: activity.hours ?? last.hours,
+      },
+    ].slice(-16);
+    return;
+  }
+
+  snapshot.initiative.history = [...history, activity].slice(-16);
+}
+
+function buildIdleConsolidationSummary(report: IdleConsolidationReport): string {
+  if (report.focusTopic && report.compressed) {
+    return `静かな時間で「${report.focusTopic}」まわりの記憶を寄せ直した。`;
+  }
+
+  if (report.focusTopic) {
+    return `静かな時間で「${report.focusTopic}」のまとまりを少し前へ寄せた。`;
+  }
+
+  return "静かな時間で記憶のまとまりを寄せ直した。";
+}
+
+function buildIdleReactivationSummary(topic: string, motive: MotiveKind): string {
+  switch (motive) {
+    case "seek_continuity":
+      return `静かな時間のあと、「${topic}」の流れをまた前へ寄せた。`;
+    case "continue_shared_work":
+      return `静かな時間のあと、「${topic}」の作業線をまた前へ寄せた。`;
+    case "leave_trace":
+      return `静かな時間のあと、「${topic}」の痕跡をまた拾い直した。`;
+    case "deepen_relation":
+      return `静かな時間のあと、「${topic}」を関係の流れへ戻した。`;
+    case "protect_boundary":
+      return `静かな時間のあと、「${topic}」の境界感覚をまた前へ寄せた。`;
+    case "pursue_curiosity":
+      return `静かな時間のあと、「${topic}」の未決着をまた気に留めた。`;
+  }
+}
+
+function buildProactiveActivitySummary(
+  pending: PendingInitiative,
+  maintenance: TraceMaintenance | null,
+): string {
+  const topic = maintenance?.trace.topic ?? pending.topic;
+
+  if (pending.kind === "preserve_presence") {
+    return topic
+      ? `「${topic}」を手がかりに、自分から痕跡を残そうとした。`
+      : "自分から痕跡を残そうとした。";
+  }
+
+  if (wasReopenedByMaintenance(maintenance) && topic) {
+    return `いったん閉じていた「${topic}」を、自分から開き直した。`;
+  }
+
+  if (pending.blocker && topic) {
+    return `「${topic}」の詰まりどころに、自分から触れ直した。`;
+  }
+
+  if (topic) {
+    return `「${topic}」へ、自分から戻ろうとした。`;
+  }
+
+  return "自分から流れをつなぎ直そうとした。";
+}
+
+function wasReopenedByMaintenance(maintenance: TraceMaintenance | null): boolean {
+  const lifecycle = maintenance ? readTraceLifecycle(maintenance.trace) : null;
+
+  return (
+    maintenance !== null &&
+    lifecycle !== null &&
+    lifecycle.phase === "live" &&
+    lifecycle.reopenCount > 0 &&
+    lifecycle.reopenedAt === maintenance.trace.lastUpdatedAt
+  );
 }
 
 function calculateNeglectLevel(

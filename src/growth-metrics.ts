@@ -179,7 +179,7 @@ export function describeGrowthMetricBaselines(): Record<string, number | null> {
 
   return {
     baselineSaturationRatio: calculateStateSaturationRatio({
-      version: 17,
+      version: 18,
       state: initial.state,
       body: initial.body,
       reactivity: initial.reactivity,
@@ -213,6 +213,7 @@ export function describeGrowthMetricBaselines(): Record<string, number | null> {
       initiative: {
         pending: null,
         lastProactiveAt: null,
+        history: [],
       },
       lastInteractionAt: null,
       conversationCount: 0,

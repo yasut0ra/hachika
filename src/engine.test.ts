@@ -188,6 +188,7 @@ test("idle consolidation can preselect a dormant archived trace as the next init
   const engine = new HachikaEngine(snapshot);
   engine.rewindIdleHours(18);
   const after = engine.getSnapshot();
+  const lastActivity = after.initiative.history.at(-1);
 
   assert.equal(after.initiative.pending?.topic, "設計");
   assert.equal(
@@ -196,6 +197,8 @@ test("idle consolidation can preselect a dormant archived trace as the next init
     true,
   );
   assert.ok((after.traces.設計?.salience ?? 0) > 0.74);
+  assert.equal(lastActivity?.kind, "idle_reactivation");
+  assert.equal(lastActivity?.topic, "設計");
 });
 
 test("idle consolidation chooses different archived traces depending on learned temperament", () => {
@@ -915,11 +918,14 @@ test("pending initiative emits a proactive resume after idle", () => {
   engine.rewindIdleHours(8);
   const message = engine.emitInitiative();
   const snapshot = engine.getSnapshot();
+  const lastActivity = snapshot.initiative.history.at(-1);
 
   assert.ok(message !== null);
   assert.match(message ?? "", /実装|設計/);
   assert.equal(snapshot.initiative.pending, null);
   assert.ok(snapshot.initiative.lastProactiveAt !== null);
+  assert.equal(lastActivity?.kind, "proactive_emission");
+  assert.ok(lastActivity?.summary.includes("自分から"));
 });
 
 test("proactive reply avoids repeating the most recent proactive opener", () => {

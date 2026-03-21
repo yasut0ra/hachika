@@ -13,6 +13,7 @@ import type {
   TraceEntry,
   TraceKind,
   TraceLifecycleState,
+  TraceMaintenanceAction,
   TraceStatus,
   TraceTendingMode,
   TraceWorkState,
@@ -26,7 +27,7 @@ const TRACE_KIND_PRIORITY: Record<TraceKind, number> = {
 };
 
 export interface TraceMaintenance {
-  action: "created" | "stabilized_fragment" | "added_next_step" | "promoted_decision" | null;
+  action: TraceMaintenanceAction | null;
   trace: TraceEntry;
 }
 

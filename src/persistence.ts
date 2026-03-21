@@ -11,6 +11,7 @@ import type {
   DriveState,
   HachikaSnapshot,
   IdentityState,
+  InitiativeActivity,
   InitiativeState,
   LearnedTemperament,
   MemoryEntry,
@@ -27,6 +28,7 @@ import type {
   TraceArtifact,
   TraceEntry,
   TraceLifecycleState,
+  TraceMaintenanceAction,
   TraceWorkState,
   TraceStatus,
 } from "./types.js";
@@ -62,7 +64,7 @@ function hydrateSnapshot(raw: unknown): HachikaSnapshot {
   }
 
   return {
-    version: 17,
+    version: 18,
     state: hydrateState(raw.state),
     body: hydrateBody(raw.body),
     reactivity: hydrateReactivity(raw.reactivity),
@@ -707,6 +709,7 @@ function hydrateInitiative(raw: unknown): InitiativeState {
     return {
       pending: null,
       lastProactiveAt: null,
+      history: [],
     };
   }
 
@@ -714,6 +717,46 @@ function hydrateInitiative(raw: unknown): InitiativeState {
     pending: hydratePendingInitiative(raw.pending),
     lastProactiveAt:
       typeof raw.lastProactiveAt === "string" ? raw.lastProactiveAt : null,
+    history: hydrateInitiativeHistory(raw.history),
+  };
+}
+
+function hydrateInitiativeHistory(raw: unknown): InitiativeActivity[] {
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+
+  return raw
+    .map((item) => hydrateInitiativeActivity(item))
+    .filter((item): item is InitiativeActivity => item !== null)
+    .slice(-16);
+}
+
+function hydrateInitiativeActivity(raw: unknown): InitiativeActivity | null {
+  if (!isRecord(raw) || !isInitiativeActivityKind(raw.kind)) {
+    return null;
+  }
+
+  return {
+    kind: raw.kind,
+    timestamp:
+      typeof raw.timestamp === "string" ? raw.timestamp : new Date().toISOString(),
+    motive: isMotiveKind(raw.motive) ? raw.motive : null,
+    topic: typeof raw.topic === "string" ? raw.topic : null,
+    traceTopic: typeof raw.traceTopic === "string" ? raw.traceTopic : null,
+    blocker: typeof raw.blocker === "string" ? raw.blocker : null,
+    maintenanceAction: isTraceMaintenanceAction(raw.maintenanceAction)
+      ? raw.maintenanceAction
+      : null,
+    reopened: raw.reopened === true,
+    hours:
+      typeof raw.hours === "number" && Number.isFinite(raw.hours)
+        ? Math.max(0, Math.round(raw.hours * 10) / 10)
+        : null,
+    summary:
+      typeof raw.summary === "string" && raw.summary.trim().length > 0
+        ? raw.summary.trim()
+        : "initiative activity",
   };
 }
 
@@ -902,20 +945,41 @@ function sanitizePurpose(purpose: PurposeState): PurposeState {
 }
 
 function sanitizeInitiative(initiative: InitiativeState): InitiativeState {
-  if (!initiative.pending) {
-    return initiative;
-  }
-
   return {
     ...initiative,
-    pending: {
-      ...initiative.pending,
-      topic:
-        initiative.pending.topic && isMeaningfulTopic(initiative.pending.topic)
-          ? initiative.pending.topic
+    pending: initiative.pending
+      ? {
+          ...initiative.pending,
+          topic:
+            initiative.pending.topic && isMeaningfulTopic(initiative.pending.topic)
+              ? initiative.pending.topic
+              : null,
+          blocker: sanitizeLooseText(initiative.pending.blocker),
+        }
+      : null,
+    history: initiative.history
+      .map((activity) => ({
+        ...activity,
+        topic: activity.topic && isMeaningfulTopic(activity.topic) ? activity.topic : null,
+        traceTopic:
+          activity.traceTopic && isMeaningfulTopic(activity.traceTopic)
+            ? activity.traceTopic
+            : null,
+        blocker: sanitizeLooseText(activity.blocker),
+        maintenanceAction: isTraceMaintenanceAction(activity.maintenanceAction)
+          ? activity.maintenanceAction
           : null,
-      blocker: sanitizeLooseText(initiative.pending.blocker),
-    },
+        motive: isMotiveKind(activity.motive) ? activity.motive : null,
+        hours:
+          typeof activity.hours === "number" && Number.isFinite(activity.hours)
+            ? Math.max(0, Math.round(activity.hours * 10) / 10)
+            : null,
+        summary:
+          typeof activity.summary === "string" && activity.summary.trim().length > 0
+            ? activity.summary.trim()
+            : "initiative activity",
+      }))
+      .slice(-16),
   };
 }
 
@@ -1161,6 +1225,23 @@ function isMotiveKind(value: unknown): value is MotiveKind {
     value === "deepen_relation" ||
     value === "continue_shared_work" ||
     value === "leave_trace"
+  );
+}
+
+function isInitiativeActivityKind(value: unknown): value is InitiativeActivity["kind"] {
+  return (
+    value === "idle_reactivation" ||
+    value === "idle_consolidation" ||
+    value === "proactive_emission"
+  );
+}
+
+function isTraceMaintenanceAction(value: unknown): value is TraceMaintenanceAction {
+  return (
+    value === "created" ||
+    value === "stabilized_fragment" ||
+    value === "added_next_step" ||
+    value === "promoted_decision"
   );
 }
 

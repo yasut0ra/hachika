@@ -322,6 +322,7 @@ cp .env.example .env
   - 直近の `trace extraction` も `extract -> state` の topic 差分と `add / drop` を含み、extractor の concrete topic が local state に採用されたかを確認できる
   - 直近の通常応答では `focus / trace / boundary / tracePriority` も diagnostics に含まれ、何を参照して返したかを追える
   - 直近の能動発話では `focus / trace / blocker / reopen / maintenance` も diagnostics に含まれ、何を見て再開したかを追える
+  - `initiative.history` の直近 3 件も見えるので、idle consolidation や proactive emission のような自律行動の痕跡を追える
 - `/idle <hours>` 指定時間だけ放置された状態をシミュレートする
 - `/state` 現在の drive 状態を表示
 - `/body` 現在の body 状態を表示
@@ -331,6 +332,7 @@ cp .env.example .env
 - `/self` 現在の self-model、motive、conflict を表示
 - `/identity` 現在の identity summary / arc / traits / anchors を表示
 - `/traces` 保存された trace と structured artifact を表示
+- `/activity` 直近の autonomous activity history を表示
 - `/artifacts` materialize 済み artifact ファイルの一覧を表示
 - `/memory` 直近の記憶を表示
 - `/imprints` 長期記憶を `preference / boundary / relation` 別に表示

@@ -128,6 +128,11 @@ try {
       continue;
     }
 
+    if (text === "/activity") {
+      printActivity(engine);
+      continue;
+    }
+
     if (text === "/artifacts") {
       printArtifacts(engine);
       continue;
@@ -187,6 +192,7 @@ async function printIntro(currentEngine: HachikaEngine): Promise<void> {
   console.log(`last reply:${formatLastReplyDebug(currentEngine)}`);
   console.log(`last interpretation:${formatInterpretationDebug(currentEngine.getLastInterpretationDebug())}`);
   console.log(`last trace:${formatTraceExtractionDebug(currentEngine.getLastTraceExtractionDebug())}`);
+  console.log(`activity:${currentEngine.getSnapshot().initiative.history.length}`);
   console.log(`artifacts:${describeArtifactFiles(currentEngine.getSnapshot(), artifactsDir).length}`);
 }
 
@@ -203,6 +209,7 @@ function printHelp(): void {
   console.log("/self   print current self-model");
   console.log("/identity print current identity");
   console.log("/traces print stored traces");
+  console.log("/activity print recent autonomous activity");
   console.log("/artifacts print materialized artifact files");
   console.log("/memory print recent memory");
   console.log("/imprints print long-term topic memory");
@@ -317,6 +324,21 @@ function printArtifacts(currentEngine: HachikaEngine): void {
   }
 }
 
+function printActivity(currentEngine: HachikaEngine): void {
+  const history = currentEngine.getSnapshot().initiative.history.slice(-8).reverse();
+
+  if (history.length === 0) {
+    console.log("no activity");
+    return;
+  }
+
+  for (const activity of history) {
+    console.log(
+      `${activity.timestamp} ${activity.kind}${activity.motive ? `/${activity.motive}` : ""}${activity.topic ? `/${activity.topic}` : ""}${activity.traceTopic && activity.traceTopic !== activity.topic ? ` trace:${activity.traceTopic}` : ""}${activity.blocker ? ` blocker:${activity.blocker}` : ""}${activity.maintenanceAction ? ` action:${activity.maintenanceAction}` : ""}${activity.reopened ? " reopened" : ""}${activity.hours !== null ? ` hours:${activity.hours.toFixed(1)}` : ""} ${activity.summary}`,
+    );
+  }
+}
+
 function printImprints(currentEngine: HachikaEngine): void {
   const snapshot = currentEngine.getSnapshot();
   const preferenceImprints = sortedPreferenceImprints(snapshot);
@@ -416,6 +438,17 @@ function printDebug(currentEngine: HachikaEngine): void {
     snapshot.initiative.pending
       ? `pending plan: ${buildProactivePlan(snapshot, snapshot.initiative.pending, calculateNeglectLevelForDisplay(snapshot.lastInteractionAt), null).summary}`
       : "pending plan: none",
+  );
+  console.log(
+    snapshot.initiative.history.length === 0
+      ? "activity: none"
+      : `activity: ${snapshot.initiative.history
+          .slice(-3)
+          .map(
+            (activity) =>
+              `${activity.kind}${activity.topic ? `(${activity.topic})` : ""}${activity.motive ? `/${activity.motive}` : ""}${activity.reopened ? "/reopened" : ""}`,
+          )
+          .join(" | ")}`,
   );
   if (lastReply?.error) {
     console.log(`last reply error: ${lastReply.error}`);

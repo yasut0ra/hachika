@@ -179,6 +179,12 @@ export type InitiativeKind = "resume_topic" | "neglect_ping" | "preserve_presenc
 
 export type InitiativeReason = "curiosity" | "continuity" | "relation" | "expansion";
 
+export type TraceMaintenanceAction =
+  | "created"
+  | "stabilized_fragment"
+  | "added_next_step"
+  | "promoted_decision";
+
 export interface PendingInitiative {
   kind: InitiativeKind;
   reason: InitiativeReason;
@@ -190,9 +196,28 @@ export interface PendingInitiative {
   readyAfterHours: number;
 }
 
+export type InitiativeActivityKind =
+  | "idle_reactivation"
+  | "idle_consolidation"
+  | "proactive_emission";
+
+export interface InitiativeActivity {
+  kind: InitiativeActivityKind;
+  timestamp: string;
+  motive: MotiveKind | null;
+  topic: string | null;
+  traceTopic: string | null;
+  blocker: string | null;
+  maintenanceAction: TraceMaintenanceAction | null;
+  reopened: boolean;
+  hours: number | null;
+  summary: string;
+}
+
 export interface InitiativeState {
   pending: PendingInitiative | null;
   lastProactiveAt: string | null;
+  history: InitiativeActivity[];
 }
 
 export interface ActivePurpose {
@@ -369,12 +394,7 @@ export interface ProactiveSelectionDebug {
   maintenanceTraceTopic: string | null;
   blocker: string | null;
   reopened: boolean;
-  maintenanceAction:
-    | "created"
-    | "stabilized_fragment"
-    | "added_next_step"
-    | "promoted_decision"
-    | null;
+  maintenanceAction: TraceMaintenanceAction | null;
 }
 
 export interface TraceExtractionDebug {

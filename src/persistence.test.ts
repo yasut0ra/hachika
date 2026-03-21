@@ -70,6 +70,32 @@ test("sanitizeSnapshot removes low-information topics and repairs polluted trace
     createdAt: "2026-03-21T00:00:00.000Z",
     readyAfterHours: 4,
   };
+  snapshot.initiative.history = [
+    {
+      kind: "idle_consolidation",
+      timestamp: "2026-03-21T00:30:00.000Z",
+      motive: null,
+      topic: "かな",
+      traceTopic: null,
+      blocker: null,
+      maintenanceAction: null,
+      reopened: false,
+      hours: 12,
+      summary: "静かな時間でかなのまとまりを寄せ直した。",
+    },
+    {
+      kind: "proactive_emission",
+      timestamp: "2026-03-21T01:00:00.000Z",
+      motive: "continue_shared_work",
+      topic: "自分",
+      traceTopic: "かな",
+      blocker: "次は",
+      maintenanceAction: "added_next_step",
+      reopened: false,
+      hours: null,
+      summary: "「自分」へ、自分から戻ろうとした。",
+    },
+  ];
 
   sanitizeSnapshot(snapshot);
 
@@ -89,6 +115,10 @@ test("sanitizeSnapshot removes low-information topics and repairs polluted trace
   assert.equal(snapshot.purpose.active?.topic, null);
   assert.equal(snapshot.initiative.pending?.topic, null);
   assert.equal(snapshot.initiative.pending?.blocker, null);
+  assert.equal(snapshot.initiative.history[0]?.topic, null);
+  assert.equal(snapshot.initiative.history[1]?.topic, "自分");
+  assert.equal(snapshot.initiative.history[1]?.traceTopic, null);
+  assert.equal(snapshot.initiative.history[1]?.blocker, null);
 });
 
 test("loadSnapshot and saveSnapshot apply sanitation to persisted files", async () => {
