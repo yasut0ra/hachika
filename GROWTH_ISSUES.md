@@ -14,7 +14,7 @@
 - 反応そのものの履歴依存カーブはまだ弱い
 - learned temperament は archive reopen / idle consolidation まで通ったが、purpose 閾値や growth metrics への反映はまだ薄い
 - idle 中の再編成は archive だけでなく memory / imprint / identity に広がり、弱い stale preference imprint の自然減衰、long-tail memory の圧縮と `consolidated memory` 化、identity anchor の再優先、relation/boundary の再配置まで入ったが、より長い horizon の consolidation はまだ薄い
-- 成長を比較する専用 metrics / doc は初期導入までで、temperament drift や consolidation quality の指標はまだ薄い
+- 成長を比較する専用 metrics / doc は `archive reopen / stress recovery / autonomous activity visibility / idle consolidation coverage / proactive maintenance rate` まで入ったが、temperament drift や longer-horizon consolidation quality の指標はまだ薄い
 
 改訂した推奨実装順:
 1. Issue 1 の残タスク: 飽和防止の先にある「履歴依存の反応曲線」

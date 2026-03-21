@@ -5,8 +5,8 @@ import {
   INITIAL_STATE,
   INITIAL_TEMPERAMENT,
 } from "./state.js";
-import type { HachikaSnapshot } from "./types.js";
-import type { ScenarioRun } from "./scenario-harness.js";
+import type { HachikaSnapshot, InitiativeActivity } from "./types.js";
+import type { ScenarioEvent, ScenarioRun } from "./scenario-harness.js";
 
 export interface GrowthMetrics {
   averageStateSaturationRatio: number;
@@ -14,6 +14,9 @@ export interface GrowthMetrics {
   motiveDiversity: number;
   identityDriftVisibility: number;
   archiveReopenRate: number;
+  autonomousActivityVisibility: number;
+  idleConsolidationCoverage: number;
+  proactiveMaintenanceRate: number;
   stressRecoveryLag: number | null;
 }
 
@@ -157,6 +160,59 @@ export function calculateStressRecoveryLag(run: ScenarioRun): number | null {
   return null;
 }
 
+export function calculateAutonomousActivityVisibility(run: ScenarioRun): number {
+  const deltas = collectScenarioActivityDeltas(run).filter(
+    ({ event }) => event.kind === "idle" || event.kind === "proactive",
+  );
+
+  if (deltas.length === 0) {
+    return 0;
+  }
+
+  const visible = deltas.filter(({ activities }) => activities.length > 0).length;
+  return round(visible / deltas.length);
+}
+
+export function calculateIdleConsolidationCoverage(run: ScenarioRun): number {
+  const deltas = collectScenarioActivityDeltas(run).filter(
+    ({ event }) => event.kind === "idle",
+  );
+
+  if (deltas.length === 0) {
+    return 0;
+  }
+
+  const covered = deltas.filter(({ activities }) =>
+    activities.some(
+      (activity) =>
+        activity.kind === "idle_consolidation" ||
+        activity.kind === "idle_reactivation",
+    ),
+  ).length;
+  return round(covered / deltas.length);
+}
+
+export function calculateProactiveMaintenanceRate(run: ScenarioRun): number {
+  const deltas = collectScenarioActivityDeltas(run).filter(
+    ({ event }) => event.kind === "proactive",
+  );
+
+  if (deltas.length === 0) {
+    return 0;
+  }
+
+  const maintained = deltas.filter(({ activities }) =>
+    activities.some(
+      (activity) =>
+        activity.kind === "proactive_emission" &&
+        (activity.maintenanceAction !== null ||
+          activity.reopened ||
+          activity.traceTopic !== null),
+    ),
+  ).length;
+  return round(maintained / deltas.length);
+}
+
 export function summarizeGrowthMetrics(run: ScenarioRun): GrowthMetrics {
   return {
     averageStateSaturationRatio: calculateAverageStateSaturationRatio(run),
@@ -164,6 +220,9 @@ export function summarizeGrowthMetrics(run: ScenarioRun): GrowthMetrics {
     motiveDiversity: calculateMotiveDiversity(run),
     identityDriftVisibility: calculateIdentityDriftVisibility(run),
     archiveReopenRate: calculateArchiveReopenRate(run),
+    autonomousActivityVisibility: calculateAutonomousActivityVisibility(run),
+    idleConsolidationCoverage: calculateIdleConsolidationCoverage(run),
+    proactiveMaintenanceRate: calculateProactiveMaintenanceRate(run),
     stressRecoveryLag: calculateStressRecoveryLag(run),
   };
 }
@@ -218,8 +277,63 @@ export function describeGrowthMetricBaselines(): Record<string, number | null> {
       lastInteractionAt: null,
       conversationCount: 0,
     }),
+    baselineAutonomousActivityVisibility: 0,
+    baselineIdleConsolidationCoverage: 0,
+    baselineProactiveMaintenanceRate: 0,
     baselineStressRecoveryLag: null,
   };
+}
+
+function collectScenarioActivityDeltas(
+  run: ScenarioRun,
+): Array<{ event: ScenarioEvent; activities: InitiativeActivity[] }> {
+  const deltas: Array<{ event: ScenarioEvent; activities: InitiativeActivity[] }> = [];
+  let previousHistory = run.initialSnapshot.initiative.history ?? [];
+
+  for (const event of run.events) {
+    const currentHistory = event.snapshot.initiative.history ?? [];
+    deltas.push({
+      event,
+      activities: diffInitiativeHistory(previousHistory, currentHistory),
+    });
+    previousHistory = currentHistory;
+  }
+
+  return deltas;
+}
+
+function diffInitiativeHistory(
+  previous: InitiativeActivity[],
+  current: InitiativeActivity[],
+): InitiativeActivity[] {
+  if (current.length === 0) {
+    return [];
+  }
+
+  if (
+    previous.length <= current.length &&
+    previous.every((activity, index) => initiativeActivityKey(activity) === initiativeActivityKey(current[index]!))
+  ) {
+    return current.slice(previous.length);
+  }
+
+  const previousKeys = new Set(previous.map(initiativeActivityKey));
+  return current.filter((activity) => !previousKeys.has(initiativeActivityKey(activity)));
+}
+
+function initiativeActivityKey(activity: InitiativeActivity): string {
+  return [
+    activity.kind,
+    activity.timestamp,
+    activity.motive ?? "",
+    activity.topic ?? "",
+    activity.traceTopic ?? "",
+    activity.blocker ?? "",
+    activity.maintenanceAction ?? "",
+    activity.reopened ? "1" : "0",
+    activity.hours ?? "",
+    activity.summary,
+  ].join("|");
 }
 
 function round(value: number): number {

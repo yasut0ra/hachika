@@ -45,6 +45,24 @@
 - 定義: stress spike の検出後、初期近傍まで戻るまでにかかった event 数
 - 目的: 傷つき後の回復曲線を wording 以外で比較する
 
+### 7. `autonomousActivityVisibility`
+
+- 対象: `idle` / `proactive` event 後の `initiative.history`
+- 定義: 非 user event のうち、少なくとも 1 件の autonomous activity が history に追加された event の比率
+- 目的: 自律行動が snapshot 上に可視な形で残っているかを見る
+
+### 8. `idleConsolidationCoverage`
+
+- 対象: `idle` event
+- 定義: `idle_consolidation` または `idle_reactivation` を history に追加した idle event の比率
+- 目的: 放置中の再編成が実際に走っているかを見る
+
+### 9. `proactiveMaintenanceRate`
+
+- 対象: `proactive` event
+- 定義: `proactive_emission` のうち、`maintenanceAction` または `reopened` または `traceTopic` を持つものの比率
+- 目的: 能動発話が単なる台詞でなく、trace maintenance を伴っているかを見る
+
 ## canonical scenario 候補
 
 ### A. aligned work
@@ -66,6 +84,11 @@
 
 - 目的: saturation / novelty hunger / idle aftermath
 - 例: 同 topic の反復後に `idle`
+
+### E. idle and proactive agency
+
+- 目的: autonomous activity visibility / idle consolidation coverage / proactive maintenance rate
+- 例: `実装を残したい -> idle -> /proactive`
 
 ## 使い方
 

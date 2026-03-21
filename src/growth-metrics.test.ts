@@ -3,7 +3,10 @@ import test from "node:test";
 
 import {
   calculateArchiveReopenRate,
+  calculateAutonomousActivityVisibility,
   calculateIdentityDriftVisibility,
+  calculateIdleConsolidationCoverage,
+  calculateProactiveMaintenanceRate,
   calculateStateSaturationRatio,
   calculateStressRecoveryLag,
   summarizeGrowthMetrics,
@@ -122,6 +125,66 @@ test("growth metrics can estimate stress recovery lag from scenario snapshots", 
 
   assert.ok(lag !== null);
   assert.ok(lag > 0);
+});
+
+test("growth metrics can track visible autonomous activity across idle and proactive turns", () => {
+  const run = runScenario([
+    {
+      kind: "user",
+      label: "seed",
+      input: "実装を記録して、仕様として残したい。",
+    },
+    {
+      kind: "idle",
+      label: "idle",
+      hours: 8,
+    },
+    {
+      kind: "proactive",
+      label: "proactive",
+      force: false,
+    },
+  ]);
+
+  assert.equal(calculateAutonomousActivityVisibility(run), 1);
+  assert.ok(summarizeGrowthMetrics(run).autonomousActivityVisibility >= 1);
+});
+
+test("growth metrics can measure idle consolidation coverage", () => {
+  const run = runScenario(
+    [
+      {
+        kind: "idle",
+        label: "idle",
+        hours: 18,
+      },
+    ],
+    createArchivedMetricSnapshot(),
+  );
+
+  assert.equal(calculateIdleConsolidationCoverage(run), 1);
+});
+
+test("growth metrics can measure proactive maintenance rate", () => {
+  const run = runScenario([
+    {
+      kind: "user",
+      label: "blocked",
+      input: "仕様の境界が未定で曖昧だ。まだ進められない。",
+    },
+    {
+      kind: "idle",
+      label: "wait",
+      hours: 8,
+    },
+    {
+      kind: "proactive",
+      label: "repair",
+      force: false,
+    },
+  ]);
+
+  assert.equal(calculateProactiveMaintenanceRate(run), 1);
 });
 
 function createArchivedMetricSnapshot(): HachikaSnapshot {
