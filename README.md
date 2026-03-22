@@ -315,7 +315,7 @@ loop は snapshot を定期的に読み込み、idle consolidation と proactive
 CLI と UI server は各操作の直前に snapshot を再読込するので、loop と併用しても state の見え方がずれにくくなっています。
 起動中は `data/resident-lock.json` と `data/resident-status.json` を使って多重起動防止と heartbeat/status 表示を行います。
 snapshot / resident status / artifact index の保存は atomic write を使うので、loop と併用しても途中書き込みが残りにくくなっています。
-snapshot には `revision` を持たせていて、CLI / UI / resident loop は stale revision の保存を拒否し、競合時は最新 snapshot を優先します。
+snapshot には `revision` を持たせていて、CLI / UI / resident loop は stale revision の保存を拒否し、競合時は最新 snapshot を取り込んで 1 回だけ自動 retry します。
 
 LLM wording を有効にする場合:
 

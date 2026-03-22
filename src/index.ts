@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { stdin as input, stdout as output } from "node:process";
 
 import { describeArtifactFiles, syncArtifacts } from "./artifacts.js";
+import { runWithConflictRetry } from "./conflict-retry.js";
 import { HachikaEngine } from "./engine.js";
 import { loadDotEnv } from "./env.js";
 import { summarizeLiveGrowthMetrics } from "./growth-metrics.js";
@@ -173,29 +174,40 @@ try {
     }
 
     if (text === "/reset") {
-      engine.reset(createInitialSnapshot());
-      if (!(await persistState(engine))) {
+      const resetResult = await runWithEngineConflictRetry<boolean>(engine, {
+        operate: () => {
+          engine.reset(createInitialSnapshot());
+          return true;
+        },
+      });
+
+      if (!resetResult.ok) {
         console.log("state conflict: latest snapshot reloaded");
         continue;
       }
+
       console.log("state reset");
       continue;
     }
 
-    const result = replyGenerator || inputInterpreter || responsePlanner || traceExtractor
-      ? await engine.respondAsync(text, {
-          replyGenerator,
-          inputInterpreter,
-          responsePlanner,
-          traceExtractor,
-        })
-      : engine.respond(text);
-    if (!(await persistState(engine))) {
+    const replyResult = await runWithEngineConflictRetry(engine, {
+      operate: () =>
+        replyGenerator || inputInterpreter || responsePlanner || traceExtractor
+          ? engine.respondAsync(text, {
+              replyGenerator,
+              inputInterpreter,
+              responsePlanner,
+              traceExtractor,
+            })
+          : Promise.resolve(engine.respond(text)),
+    });
+
+    if (!replyResult.ok || !replyResult.result) {
       console.log("state conflict: latest snapshot reloaded");
       continue;
     }
 
-    console.log(`hachika> ${result.reply}`);
+    console.log(`hachika> ${replyResult.result.reply}`);
   }
 } finally {
   rl.close();
@@ -719,39 +731,49 @@ async function readInput(
 }
 
 async function emitStartupInitiative(currentEngine: HachikaEngine): Promise<void> {
-  const message = replyGenerator
-    ? await currentEngine.emitInitiativeAsync({ replyGenerator })
-    : currentEngine.emitInitiative();
+  const emissionResult = await runWithEngineConflictRetry<string | null>(currentEngine, {
+    operate: () =>
+      replyGenerator
+        ? currentEngine.emitInitiativeAsync({ replyGenerator })
+        : Promise.resolve(currentEngine.emitInitiative()),
+    shouldPersist: (message) => message !== null,
+  });
 
-  if (!message) {
-    return;
-  }
-
-  if (!(await persistState(currentEngine))) {
+  if (!emissionResult.ok) {
     console.log("state conflict: latest snapshot reloaded");
     return;
   }
-  console.log(`hachika* ${message}`);
+
+  if (!emissionResult.result) {
+    return;
+  }
+
+  console.log(`hachika* ${emissionResult.result}`);
 }
 
 async function emitProactive(
   currentEngine: HachikaEngine,
   force: boolean,
 ): Promise<void> {
-  const message = replyGenerator
-    ? await currentEngine.emitInitiativeAsync({ force, replyGenerator })
-    : currentEngine.emitInitiative({ force });
+  const emissionResult = await runWithEngineConflictRetry<string | null>(currentEngine, {
+    operate: () =>
+      replyGenerator
+        ? currentEngine.emitInitiativeAsync({ force, replyGenerator })
+        : Promise.resolve(currentEngine.emitInitiative({ force })),
+    shouldPersist: (message) => message !== null,
+  });
 
-  if (!message) {
+  if (!emissionResult.ok) {
+    console.log("state conflict: latest snapshot reloaded");
+    return;
+  }
+
+  if (!emissionResult.result) {
     console.log("no proactive line");
     return;
   }
 
-  if (!(await persistState(currentEngine))) {
-    console.log("state conflict: latest snapshot reloaded");
-    return;
-  }
-  console.log(`hachika* ${message}`);
+  console.log(`hachika* ${emissionResult.result}`);
 }
 
 async function handleIdleCommand(
@@ -766,13 +788,28 @@ async function handleIdleCommand(
     return;
   }
 
-  currentEngine.rewindIdleHours(hours);
-  if (!(await persistState(currentEngine))) {
+  const idleResult = await runWithEngineConflictRetry<string | null>(currentEngine, {
+    operate: () => {
+      currentEngine.rewindIdleHours(hours);
+      return replyGenerator
+        ? currentEngine.emitInitiativeAsync({ replyGenerator })
+        : Promise.resolve(currentEngine.emitInitiative());
+    },
+  });
+
+  if (!idleResult.ok) {
     console.log("state conflict: latest snapshot reloaded");
     return;
   }
+
   console.log(`idled ${hours}h`);
-  await emitProactive(currentEngine, false);
+
+  if (!idleResult.result) {
+    console.log("no proactive line");
+    return;
+  }
+
+  console.log(`hachika* ${idleResult.result}`);
 }
 
 async function persistState(currentEngine: HachikaEngine): Promise<boolean> {
@@ -791,6 +828,25 @@ async function persistState(currentEngine: HachikaEngine): Promise<boolean> {
 
 async function refreshEngine(currentEngine: HachikaEngine): Promise<void> {
   currentEngine.syncSnapshot(await loadSnapshot(snapshotPath));
+}
+
+async function runWithEngineConflictRetry<T>(
+  currentEngine: HachikaEngine,
+  options: {
+    operate: () => Promise<T> | T;
+    shouldPersist?: (result: T) => boolean;
+  },
+): Promise<Awaited<ReturnType<typeof runWithConflictRetry<T>>>> {
+  return runWithConflictRetry<T>({
+    operate: async () => await options.operate(),
+    persist: async (result) => {
+      if (options.shouldPersist && !options.shouldPersist(result)) {
+        return true;
+      }
+
+      return persistState(currentEngine);
+    },
+  });
 }
 
 function formatResolvedPurpose(

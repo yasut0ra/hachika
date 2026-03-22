@@ -1,6 +1,7 @@
 import { resolve } from "node:path";
 
 import { syncArtifacts } from "./artifacts.js";
+import { runWithConflictRetry } from "./conflict-retry.js";
 import { loadDotEnv } from "./env.js";
 import { commitSnapshot, loadSnapshot } from "./persistence.js";
 import { createReplyGeneratorFromEnv, describeReplyGenerator } from "./reply-generator.js";
@@ -93,15 +94,27 @@ async function tick(): Promise<void> {
   status.heartbeatAt = new Date().toISOString();
 
   try {
-    const snapshot = await loadSnapshot(snapshotPath);
-    const result = await runResidentLoopTick(snapshot, {
-      idleHours: config.idleHoursPerTick,
-      replyGenerator,
+    const outcome = await runWithConflictRetry({
+      operate: async () => {
+        const snapshot = await loadSnapshot(snapshotPath);
+        return runResidentLoopTick(snapshot, {
+          idleHours: config.idleHoursPerTick,
+          replyGenerator,
+        });
+      },
+      persist: async (result) => {
+        const committed = await commitSnapshot(snapshotPath, result.snapshot);
+
+        if (!committed.ok) {
+          return false;
+        }
+
+        await syncArtifacts(committed.snapshot, artifactsDir);
+        return true;
+      },
     });
 
-    const committed = await commitSnapshot(snapshotPath, result.snapshot);
-
-    if (!committed.ok) {
+    if (!outcome.ok || !outcome.result) {
       status.active = true;
       status.heartbeatAt = new Date().toISOString();
       status.lastError = "snapshot_revision_conflict";
@@ -110,7 +123,7 @@ async function tick(): Promise<void> {
       return;
     }
 
-    await syncArtifacts(committed.snapshot, artifactsDir);
+    const result = outcome.result;
 
     const tickAt = new Date().toISOString();
     status.active = true;

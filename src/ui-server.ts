@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { extname, normalize, resolve } from "node:path";
 
 import { syncArtifacts } from "./artifacts.js";
+import { runWithConflictRetry } from "./conflict-retry.js";
 import { HachikaEngine } from "./engine.js";
 import { loadDotEnv } from "./env.js";
 import { createInputInterpreterFromEnv } from "./input-interpreter.js";
@@ -50,23 +51,27 @@ const server = createServer(async (request, response) => {
         return sendJson(response, 400, { error: "message_required" });
       }
 
-      const result = replyGenerator || inputInterpreter || responsePlanner || traceExtractor
-        ? await engine.respondAsync(text, {
-            replyGenerator,
-            inputInterpreter,
-            responsePlanner,
-            traceExtractor,
-          })
-        : engine.respond(text);
+      const replyResult = await runWithEngineConflictRetry(engine, {
+        operate: () =>
+          replyGenerator || inputInterpreter || responsePlanner || traceExtractor
+            ? engine.respondAsync(text, {
+                replyGenerator,
+                inputInterpreter,
+                responsePlanner,
+                traceExtractor,
+              })
+            : Promise.resolve(engine.respond(text)),
+      });
 
-      if (!(await persistState(engine))) {
+      if (!replyResult.ok || !replyResult.result) {
         return sendJson(response, 409, {
           error: "state_conflict",
           ui: buildUiState(engine, artifactsDir, residentStatusPath),
         });
       }
+
       return sendJson(response, 200, {
-        reply: result.reply,
+        reply: replyResult.result.reply,
         ui: buildUiState(engine, artifactsDir, residentStatusPath),
       });
     }
@@ -74,18 +79,24 @@ const server = createServer(async (request, response) => {
     if (url.pathname === "/api/proactive" && request.method === "POST") {
       const body = await readJsonBody(request);
       const force = body.force !== false;
-      const message = replyGenerator
-        ? await engine.emitInitiativeAsync({ force, replyGenerator })
-        : engine.emitInitiative({ force });
 
-      if (!(await persistState(engine))) {
+      const proactiveResult = await runWithEngineConflictRetry<string | null>(engine, {
+        operate: () =>
+          replyGenerator
+            ? engine.emitInitiativeAsync({ force, replyGenerator })
+            : Promise.resolve(engine.emitInitiative({ force })),
+        shouldPersist: (message) => message !== null,
+      });
+
+      if (!proactiveResult.ok) {
         return sendJson(response, 409, {
           error: "state_conflict",
           ui: buildUiState(engine, artifactsDir, residentStatusPath),
         });
       }
+
       return sendJson(response, 200, {
-        message,
+        message: proactiveResult.result,
         ui: buildUiState(engine, artifactsDir, residentStatusPath),
       });
     }
@@ -98,28 +109,38 @@ const server = createServer(async (request, response) => {
         return sendJson(response, 400, { error: "hours_must_be_positive" });
       }
 
-      engine.rewindIdleHours(hours);
-      let proactive: string | null = null;
-      proactive = replyGenerator
-        ? await engine.emitInitiativeAsync({ replyGenerator })
-        : engine.emitInitiative();
+      const idleResult = await runWithEngineConflictRetry<string | null>(engine, {
+        operate: () => {
+          engine.rewindIdleHours(hours);
+          return replyGenerator
+            ? engine.emitInitiativeAsync({ replyGenerator })
+            : Promise.resolve(engine.emitInitiative());
+        },
+      });
 
-      if (!(await persistState(engine))) {
+      if (!idleResult.ok) {
         return sendJson(response, 409, {
           error: "state_conflict",
           ui: buildUiState(engine, artifactsDir, residentStatusPath),
         });
       }
+
       return sendJson(response, 200, {
         hours,
-        proactive,
+        proactive: idleResult.result,
         ui: buildUiState(engine, artifactsDir, residentStatusPath),
       });
     }
 
     if (url.pathname === "/api/reset" && request.method === "POST") {
-      engine.reset(createInitialSnapshot());
-      if (!(await persistState(engine))) {
+      const resetResult = await runWithEngineConflictRetry<boolean>(engine, {
+        operate: () => {
+          engine.reset(createInitialSnapshot());
+          return true;
+        },
+      });
+
+      if (!resetResult.ok) {
         return sendJson(response, 409, {
           error: "state_conflict",
           ui: buildUiState(engine, artifactsDir, residentStatusPath),
@@ -163,6 +184,25 @@ async function persistState(currentEngine: HachikaEngine): Promise<boolean> {
 
 async function refreshEngine(currentEngine: HachikaEngine): Promise<void> {
   currentEngine.syncSnapshot(await loadSnapshot(snapshotPath));
+}
+
+async function runWithEngineConflictRetry<T>(
+  currentEngine: HachikaEngine,
+  options: {
+    operate: () => Promise<T> | T;
+    shouldPersist?: (result: T) => boolean;
+  },
+): Promise<Awaited<ReturnType<typeof runWithConflictRetry<T>>>> {
+  return runWithConflictRetry<T>({
+    operate: async () => await options.operate(),
+    persist: async (result) => {
+      if (options.shouldPersist && !options.shouldPersist(result)) {
+        return true;
+      }
+
+      return persistState(currentEngine);
+    },
+  });
 }
 
 async function readJsonBody(request: IncomingMessage): Promise<Record<string, unknown>> {
