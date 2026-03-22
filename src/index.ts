@@ -12,7 +12,7 @@ import {
   sortedPreferenceImprints,
   sortedRelationImprints,
 } from "./memory.js";
-import { loadSnapshot, saveSnapshot } from "./persistence.js";
+import { commitSnapshot, loadSnapshot } from "./persistence.js";
 import { createReplyGeneratorFromEnv, describeReplyGenerator } from "./reply-generator.js";
 import {
   deriveResidentLoopHealth,
@@ -174,7 +174,10 @@ try {
 
     if (text === "/reset") {
       engine.reset(createInitialSnapshot());
-      await persistState(engine);
+      if (!(await persistState(engine))) {
+        console.log("state conflict: latest snapshot reloaded");
+        continue;
+      }
       console.log("state reset");
       continue;
     }
@@ -187,7 +190,10 @@ try {
           traceExtractor,
         })
       : engine.respond(text);
-    await persistState(engine);
+    if (!(await persistState(engine))) {
+      console.log("state conflict: latest snapshot reloaded");
+      continue;
+    }
 
     console.log(`hachika> ${result.reply}`);
   }
@@ -721,7 +727,10 @@ async function emitStartupInitiative(currentEngine: HachikaEngine): Promise<void
     return;
   }
 
-  await persistState(currentEngine);
+  if (!(await persistState(currentEngine))) {
+    console.log("state conflict: latest snapshot reloaded");
+    return;
+  }
   console.log(`hachika* ${message}`);
 }
 
@@ -738,7 +747,10 @@ async function emitProactive(
     return;
   }
 
-  await persistState(currentEngine);
+  if (!(await persistState(currentEngine))) {
+    console.log("state conflict: latest snapshot reloaded");
+    return;
+  }
   console.log(`hachika* ${message}`);
 }
 
@@ -755,15 +767,26 @@ async function handleIdleCommand(
   }
 
   currentEngine.rewindIdleHours(hours);
-  await persistState(currentEngine);
+  if (!(await persistState(currentEngine))) {
+    console.log("state conflict: latest snapshot reloaded");
+    return;
+  }
   console.log(`idled ${hours}h`);
   await emitProactive(currentEngine, false);
 }
 
-async function persistState(currentEngine: HachikaEngine): Promise<void> {
+async function persistState(currentEngine: HachikaEngine): Promise<boolean> {
   const snapshot = currentEngine.getSnapshot();
-  await saveSnapshot(snapshotPath, snapshot);
-  await syncArtifacts(snapshot, artifactsDir);
+  const committed = await commitSnapshot(snapshotPath, snapshot);
+
+  if (!committed.ok) {
+    currentEngine.syncSnapshot(committed.snapshot);
+    return false;
+  }
+
+  currentEngine.syncSnapshot(committed.snapshot);
+  await syncArtifacts(committed.snapshot, artifactsDir);
+  return true;
 }
 
 async function refreshEngine(currentEngine: HachikaEngine): Promise<void> {

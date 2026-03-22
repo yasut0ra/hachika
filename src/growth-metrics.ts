@@ -322,6 +322,7 @@ export function describeGrowthMetricBaselines(): Record<string, number | null> {
   return {
     baselineSaturationRatio: calculateStateSaturationRatio({
       version: 18,
+      revision: 0,
       state: initial.state,
       body: initial.body,
       reactivity: initial.reactivity,

@@ -6,7 +6,7 @@ import { syncArtifacts } from "./artifacts.js";
 import { HachikaEngine } from "./engine.js";
 import { loadDotEnv } from "./env.js";
 import { createInputInterpreterFromEnv } from "./input-interpreter.js";
-import { loadSnapshot, saveSnapshot } from "./persistence.js";
+import { commitSnapshot, loadSnapshot } from "./persistence.js";
 import { createReplyGeneratorFromEnv } from "./reply-generator.js";
 import { createResponsePlannerFromEnv } from "./response-planner.js";
 import { createTraceExtractorFromEnv } from "./trace-extractor.js";
@@ -59,7 +59,12 @@ const server = createServer(async (request, response) => {
           })
         : engine.respond(text);
 
-      await persistState(engine);
+      if (!(await persistState(engine))) {
+        return sendJson(response, 409, {
+          error: "state_conflict",
+          ui: buildUiState(engine, artifactsDir, residentStatusPath),
+        });
+      }
       return sendJson(response, 200, {
         reply: result.reply,
         ui: buildUiState(engine, artifactsDir, residentStatusPath),
@@ -73,7 +78,12 @@ const server = createServer(async (request, response) => {
         ? await engine.emitInitiativeAsync({ force, replyGenerator })
         : engine.emitInitiative({ force });
 
-      await persistState(engine);
+      if (!(await persistState(engine))) {
+        return sendJson(response, 409, {
+          error: "state_conflict",
+          ui: buildUiState(engine, artifactsDir, residentStatusPath),
+        });
+      }
       return sendJson(response, 200, {
         message,
         ui: buildUiState(engine, artifactsDir, residentStatusPath),
@@ -94,7 +104,12 @@ const server = createServer(async (request, response) => {
         ? await engine.emitInitiativeAsync({ replyGenerator })
         : engine.emitInitiative();
 
-      await persistState(engine);
+      if (!(await persistState(engine))) {
+        return sendJson(response, 409, {
+          error: "state_conflict",
+          ui: buildUiState(engine, artifactsDir, residentStatusPath),
+        });
+      }
       return sendJson(response, 200, {
         hours,
         proactive,
@@ -104,7 +119,12 @@ const server = createServer(async (request, response) => {
 
     if (url.pathname === "/api/reset" && request.method === "POST") {
       engine.reset(createInitialSnapshot());
-      await persistState(engine);
+      if (!(await persistState(engine))) {
+        return sendJson(response, 409, {
+          error: "state_conflict",
+          ui: buildUiState(engine, artifactsDir, residentStatusPath),
+        });
+      }
       return sendJson(response, 200, {
         ok: true,
         ui: buildUiState(engine, artifactsDir, residentStatusPath),
@@ -127,10 +147,18 @@ server.listen(port, host, () => {
   console.log(`Hachika UI listening on http://${host}:${port}`);
 });
 
-async function persistState(currentEngine: HachikaEngine): Promise<void> {
+async function persistState(currentEngine: HachikaEngine): Promise<boolean> {
   const currentSnapshot = currentEngine.getSnapshot();
-  await saveSnapshot(snapshotPath, currentSnapshot);
-  await syncArtifacts(currentSnapshot, artifactsDir);
+  const committed = await commitSnapshot(snapshotPath, currentSnapshot);
+
+  if (!committed.ok) {
+    currentEngine.syncSnapshot(committed.snapshot);
+    return false;
+  }
+
+  currentEngine.syncSnapshot(committed.snapshot);
+  await syncArtifacts(committed.snapshot, artifactsDir);
+  return true;
 }
 
 async function refreshEngine(currentEngine: HachikaEngine): Promise<void> {

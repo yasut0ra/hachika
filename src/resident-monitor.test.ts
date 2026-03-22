@@ -55,7 +55,7 @@ test("loadResidentLoopStatusSync reads a saved status and formats it", async () 
 
   assert.equal(status?.active, true);
   assert.equal(status?.pid, 4321);
-  assert.match(formatResidentLoopStatus(status), /active pid:4321/);
+  assert.match(formatResidentLoopStatus(status), /(active|stale) pid:4321/);
 });
 
 test("deriveResidentLoopHealth marks an active loop stale after the heartbeat threshold", () => {

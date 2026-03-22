@@ -2,7 +2,7 @@ import { resolve } from "node:path";
 
 import { syncArtifacts } from "./artifacts.js";
 import { loadDotEnv } from "./env.js";
-import { loadSnapshot, saveSnapshot } from "./persistence.js";
+import { commitSnapshot, loadSnapshot } from "./persistence.js";
 import { createReplyGeneratorFromEnv, describeReplyGenerator } from "./reply-generator.js";
 import {
   acquireResidentLoopLock,
@@ -99,8 +99,18 @@ async function tick(): Promise<void> {
       replyGenerator,
     });
 
-    await saveSnapshot(snapshotPath, result.snapshot);
-    await syncArtifacts(result.snapshot, artifactsDir);
+    const committed = await commitSnapshot(snapshotPath, result.snapshot);
+
+    if (!committed.ok) {
+      status.active = true;
+      status.heartbeatAt = new Date().toISOString();
+      status.lastError = "snapshot_revision_conflict";
+      await flushStatus();
+      console.error("[loop] conflict: snapshot revision changed before save");
+      return;
+    }
+
+    await syncArtifacts(committed.snapshot, artifactsDir);
 
     const tickAt = new Date().toISOString();
     status.active = true;

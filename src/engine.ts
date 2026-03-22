@@ -416,6 +416,9 @@ export class HachikaEngine {
   }
 
   syncSnapshot(snapshot: HachikaSnapshot): void {
+    if (snapshot.revision < this.#snapshot.revision) {
+      return;
+    }
     this.#snapshot = structuredClone(snapshot);
   }
 

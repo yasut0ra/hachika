@@ -4,7 +4,12 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import test from "node:test";
 
-import { loadSnapshot, sanitizeSnapshot, saveSnapshot } from "./persistence.js";
+import {
+  commitSnapshot,
+  loadSnapshot,
+  sanitizeSnapshot,
+  saveSnapshot,
+} from "./persistence.js";
 import { createInitialSnapshot } from "./state.js";
 import type { TraceEntry } from "./types.js";
 
@@ -214,6 +219,28 @@ test("sanitizeSnapshot keeps consolidated memories normalized", () => {
   assert.deepEqual(snapshot.memories[0]?.topics, ["海辺"]);
   assert.equal(snapshot.memories[1]?.kind, "turn");
   assert.equal(snapshot.memories[1]?.weight, 1);
+});
+
+test("commitSnapshot rejects stale revisions and keeps the newer snapshot", async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), "hachika-commit-"));
+  const filePath = join(tempDir, "snapshot.json");
+
+  try {
+    const initial = createInitialSnapshot();
+    const saved = await saveSnapshot(filePath, initial);
+
+    const stale = structuredClone(initial);
+    stale.state.curiosity = 0.91;
+
+    const conflict = await commitSnapshot(filePath, stale);
+
+    assert.equal(conflict.ok, false);
+    assert.equal(conflict.conflict, true);
+    assert.equal(conflict.snapshot.revision, saved.revision);
+    assert.notEqual(conflict.snapshot.state.curiosity, 0.91);
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
 });
 
 function pollutedTrace(topic: string): TraceEntry {

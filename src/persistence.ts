@@ -33,6 +33,12 @@ import type {
   TraceStatus,
 } from "./types.js";
 
+export interface SnapshotCommitResult {
+  ok: boolean;
+  conflict: boolean;
+  snapshot: HachikaSnapshot;
+}
+
 export async function loadSnapshot(filePath: string): Promise<HachikaSnapshot> {
   try {
     const raw = await readFile(filePath, "utf8");
@@ -45,9 +51,38 @@ export async function loadSnapshot(filePath: string): Promise<HachikaSnapshot> {
 export async function saveSnapshot(
   filePath: string,
   snapshot: HachikaSnapshot,
-): Promise<void> {
-  sanitizeSnapshot(snapshot);
-  await writeTextFileAtomic(filePath, `${JSON.stringify(snapshot, null, 2)}\n`);
+): Promise<HachikaSnapshot> {
+  const current = await loadSnapshot(filePath);
+  const next = sanitizeSnapshot(structuredClone(snapshot));
+  next.revision = Math.max(current.revision, next.revision) + 1;
+  await writeTextFileAtomic(filePath, `${JSON.stringify(next, null, 2)}\n`);
+  return next;
+}
+
+export async function commitSnapshot(
+  filePath: string,
+  snapshot: HachikaSnapshot,
+  expectedRevision = snapshot.revision,
+): Promise<SnapshotCommitResult> {
+  const current = await loadSnapshot(filePath);
+
+  if (current.revision !== expectedRevision) {
+    return {
+      ok: false,
+      conflict: true,
+      snapshot: current,
+    };
+  }
+
+  const next = sanitizeSnapshot(structuredClone(snapshot));
+  next.revision = expectedRevision + 1;
+  await writeTextFileAtomic(filePath, `${JSON.stringify(next, null, 2)}\n`);
+
+  return {
+    ok: true,
+    conflict: false,
+    snapshot: next,
+  };
 }
 
 const LOW_SIGNAL_ARTIFACT_PATTERNS = [
@@ -64,6 +99,10 @@ function hydrateSnapshot(raw: unknown): HachikaSnapshot {
 
   return {
     version: 18,
+    revision:
+      typeof raw.revision === "number" && Number.isFinite(raw.revision)
+        ? Math.max(0, Math.round(raw.revision))
+        : initial.revision,
     state: hydrateState(raw.state),
     body: hydrateBody(raw.body),
     reactivity: hydrateReactivity(raw.reactivity),

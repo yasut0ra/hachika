@@ -247,6 +247,7 @@ export interface PurposeState {
 
 export interface HachikaSnapshot {
   version: number;
+  revision: number;
   state: DriveState;
   body: BodyState;
   reactivity: ReactivityState;

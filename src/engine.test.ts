@@ -2075,6 +2075,22 @@ test("syncSnapshot refreshes state without clearing local diagnostics", async ()
   assert.equal(engine.getLastInterpretationDebug()?.source, "rule");
 });
 
+test("syncSnapshot ignores an older revision", () => {
+  const newer = createInitialSnapshot();
+  newer.revision = 4;
+  newer.state.curiosity = 0.91;
+
+  const engine = new HachikaEngine(newer);
+  const older = createInitialSnapshot();
+  older.revision = 2;
+  older.state.curiosity = 0.2;
+
+  engine.syncSnapshot(older);
+
+  assert.equal(engine.getSnapshot().revision, 4);
+  assert.equal(engine.getSnapshot().state.curiosity, 0.91);
+});
+
 test("response and proactive diagnostics are preserved separately", () => {
   const engine = new HachikaEngine(createInitialSnapshot());
 
