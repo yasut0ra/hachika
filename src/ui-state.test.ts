@@ -43,6 +43,7 @@ test("buildUiState includes resident loop status when a status file exists", () 
         lastTickAt: "2026-03-22T00:05:00.000Z",
         lastActivityAt: "2026-03-22T00:05:00.000Z",
         lastProactiveAt: null,
+        lastTickAttempts: 2,
         lastError: null,
         lastActivities: ["idle_consolidation/continuity 仕様を温め直した"],
         reply: "openai",
@@ -67,6 +68,7 @@ test("buildUiState includes resident loop status when a status file exists", () 
 
   assert.equal(ui.summary.residentLoop?.active, true);
   assert.equal(ui.summary.residentLoop?.pid, 4242);
+  assert.equal(ui.summary.residentLoop?.lastTickAttempts, 2);
   assert.equal(ui.summary.residentLoopHealth?.state, "stale");
   assert.deepEqual(ui.summary.residentLoop?.lastActivities, [
     "idle_consolidation/continuity 仕様を温め直した",

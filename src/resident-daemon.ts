@@ -43,6 +43,7 @@ const status: ResidentLoopStatus = {
   lastTickAt: null,
   lastActivityAt: null,
   lastProactiveAt: null,
+  lastTickAttempts: null,
   lastError: null,
   lastActivities: [],
   reply: describeReplyGenerator(replyGenerator),
@@ -117,6 +118,7 @@ async function tick(): Promise<void> {
     if (!outcome.ok || !outcome.result) {
       status.active = true;
       status.heartbeatAt = new Date().toISOString();
+      status.lastTickAttempts = outcome.attempts;
       status.lastError = "snapshot_revision_conflict";
       await flushStatus();
       console.error("[loop] conflict: snapshot revision changed before save");
@@ -129,6 +131,7 @@ async function tick(): Promise<void> {
     status.active = true;
     status.heartbeatAt = tickAt;
     status.lastTickAt = tickAt;
+    status.lastTickAttempts = outcome.attempts;
     status.lastError = null;
     status.lastActivities = result.activities.map(formatResidentActivity).slice(-6);
 
@@ -152,6 +155,7 @@ async function tick(): Promise<void> {
   } catch (error) {
     status.active = true;
     status.heartbeatAt = new Date().toISOString();
+    status.lastTickAttempts = null;
     status.lastError =
       error instanceof Error ? error.message : "resident_loop_error";
     await flushStatus();

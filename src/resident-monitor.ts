@@ -12,6 +12,7 @@ export interface ResidentLoopStatus {
   lastTickAt: string | null;
   lastActivityAt: string | null;
   lastProactiveAt: string | null;
+  lastTickAttempts: number | null;
   lastError: string | null;
   lastActivities: string[];
   reply: string | null;
@@ -141,8 +142,12 @@ export function formatResidentLoopStatus(
   const pid = status.pid !== null ? ` pid:${status.pid}` : "";
   const heartbeat = status.heartbeatAt ? ` heartbeat:${status.heartbeatAt}` : "";
   const proactive = status.lastProactiveAt ? ` proactive:${status.lastProactiveAt}` : "";
+  const attempts =
+    typeof status.lastTickAttempts === "number" && status.lastTickAttempts > 1
+      ? ` attempts:${status.lastTickAttempts}`
+      : "";
   const error = status.lastError ? ` error:${status.lastError}` : "";
-  return `${state}${pid}${heartbeat}${proactive}${error}`;
+  return `${state}${pid}${heartbeat}${proactive}${attempts}${error}`;
 }
 
 export function deriveResidentLoopHealth(
@@ -226,6 +231,10 @@ function parseResidentLoopStatus(raw: unknown): ResidentLoopStatus | null {
     lastTickAt: typeof raw.lastTickAt === "string" ? raw.lastTickAt : null,
     lastActivityAt: typeof raw.lastActivityAt === "string" ? raw.lastActivityAt : null,
     lastProactiveAt: typeof raw.lastProactiveAt === "string" ? raw.lastProactiveAt : null,
+    lastTickAttempts:
+      typeof raw.lastTickAttempts === "number" && Number.isFinite(raw.lastTickAttempts)
+        ? Math.max(1, Math.round(raw.lastTickAttempts))
+        : null,
     lastError: typeof raw.lastError === "string" ? raw.lastError : null,
     lastActivities: Array.isArray(raw.lastActivities)
       ? raw.lastActivities

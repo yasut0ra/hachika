@@ -463,6 +463,23 @@ export class HachikaEngine {
     return this.#lastTraceExtractionDebug ? { ...this.#lastTraceExtractionDebug } : null;
   }
 
+  annotateLastRetryAttempts(attempts: number): void {
+    if (!this.#lastGeneratedDebug) {
+      return;
+    }
+
+    const retryAttempts = Math.max(1, Math.round(attempts));
+    this.#lastGeneratedDebug.retryAttempts = retryAttempts;
+
+    if (this.#lastGeneratedDebug.mode === "reply" && this.#lastResponseDebug) {
+      this.#lastResponseDebug.retryAttempts = retryAttempts;
+    }
+
+    if (this.#lastGeneratedDebug.mode === "proactive" && this.#lastProactiveDebug) {
+      this.#lastProactiveDebug.retryAttempts = retryAttempts;
+    }
+  }
+
   emitInitiative(options: { force?: boolean; now?: Date } = {}): string | null {
     const previousSnapshot = structuredClone(this.#snapshot);
     const nextSnapshot = structuredClone(this.#snapshot);
@@ -477,6 +494,7 @@ export class HachikaEngine {
       source: "rule",
       provider: null,
       model: null,
+      retryAttempts: 1,
       fallbackUsed: false,
       error: null,
       plan: emission.plan.summary,
@@ -517,6 +535,7 @@ export class HachikaEngine {
           source: "rule",
           provider: replyGenerator?.name ?? null,
           model: null,
+          retryAttempts: 1,
           fallbackUsed: false,
           error: null,
           plan: emission.plan.summary,
@@ -544,6 +563,7 @@ export class HachikaEngine {
         source: message === fallbackMessage ? "rule" : "llm",
         provider: generated?.provider ?? replyGenerator.name,
         model: generated?.model ?? null,
+        retryAttempts: 1,
         fallbackUsed: message === fallbackMessage,
         error: message === fallbackMessage ? "empty_reply" : null,
         plan: emission.plan.summary,
@@ -563,6 +583,7 @@ export class HachikaEngine {
         source: "rule",
         provider: replyGenerator.name,
         model: null,
+        retryAttempts: 1,
         fallbackUsed: true,
         error: formatReplyGenerationError(error),
         plan: emission.plan.summary,
@@ -623,6 +644,7 @@ export class HachikaEngine {
       source: "rule",
       provider: null,
       model: null,
+      retryAttempts: 1,
       fallbackUsed: false,
       error: null,
       plan: prepared.responsePlan.summary,
@@ -672,6 +694,7 @@ export class HachikaEngine {
         source: "rule",
         provider: null,
         model: null,
+        retryAttempts: 1,
         fallbackUsed: false,
         error: null,
         plan: prepared.responsePlan.summary,
@@ -698,6 +721,7 @@ export class HachikaEngine {
         source: reply === fallbackReply ? "rule" : "llm",
         provider: generated?.provider ?? replyGenerator.name,
         model: generated?.model ?? null,
+        retryAttempts: 1,
         fallbackUsed: reply === fallbackReply,
         error: reply === fallbackReply ? "empty_reply" : null,
         plan: prepared.responsePlan.summary,
@@ -717,6 +741,7 @@ export class HachikaEngine {
         source: "rule",
         provider: replyGenerator.name,
         model: null,
+        retryAttempts: 1,
         fallbackUsed: true,
         error: formatReplyGenerationError(error),
         plan: prepared.responsePlan.summary,

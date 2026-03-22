@@ -280,7 +280,7 @@ Hachika は、単に有用なだけでなく、
   - `expression.recentAssistantReplies / avoidOpenings` も payload に含め、直近の言い回しや入り方をそのままなぞりにくくしている
   - `expression.perspective.preferredAngle / options` により、その返答で identity を前に出すのか、trace を前に出すのか、body や preservation を前に出すのかを LLM に共有している
   - adapter が失敗した場合や空文字を返した場合は rule-based wording に fallback する
-  - 直近の生成が `reply` か `proactive` か、`llm` か `rule` か、どの provider / model を使ったか、fallback したか、どの `plan` で出したかに加えて、planner が `rule plan` をどう動かしたかも CLI から確認できる
+  - 直近の生成が `reply` か `proactive` か、`llm` か `rule` か、どの provider / model を使ったか、fallback したか、どの `plan` で出したかに加えて、planner が `rule plan` をどう動かしたかと、revision conflict で retry した回数も CLI / UI から確認できる
 - 内部状態に応じて応答のトーンと内容を変化させる
 - `data/hachika-state.json` に状態を保存し、セッションをまたいで継続性を残す
   - snapshot の load/save 時には低情報 topic、汚れた trace artifact、弱い focus / blocker を自動で正規化し、古い会話ログ由来のノイズが次回起動まで残り続けにくくしている
@@ -331,7 +331,7 @@ cp .env.example .env
 - `/help` コマンド一覧を表示
 - `/proactive` 能動発話を強制的に出す
 - `/llm` 現在の reply generator / input interpreter / response planner / trace extractor と直近の `reply/proactive/trace` diagnostics を表示
-- `/loop` resident loop の `heartbeat / stale 判定 / last tick / last activity / last proactive / error / recent activity` を表示
+- `/loop` resident loop の `heartbeat / stale 判定 / last tick / last activity / last proactive / last tick attempts / error / recent activity` を表示
 - `/metrics` 現在の live growth metrics を表示
 - `/debug` では `pending initiative` に加えて、その時点の `pending plan` も表示する
   - 直近の通常応答と直近の能動発話の diagnostics / plan は別々に保持される

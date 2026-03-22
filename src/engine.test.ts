@@ -2075,6 +2075,31 @@ test("syncSnapshot refreshes state without clearing local diagnostics", async ()
   assert.equal(engine.getLastInterpretationDebug()?.source, "rule");
 });
 
+test("annotateLastRetryAttempts updates the current reply diagnostics without touching older proactive diagnostics", async () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+
+  await engine.emitInitiativeAsync({
+    force: true,
+    replyGenerator: {
+      name: "mock",
+      async generateReply() {
+        return { reply: "unused", provider: "mock", model: "mock" };
+      },
+      async generateProactive() {
+        return { reply: "まだ切れていない。", provider: "mock", model: "mock" };
+      },
+    },
+  });
+  const proactiveRetryAttempts = engine.getLastProactiveDebug()?.retryAttempts;
+
+  await engine.respondAsync("仕様は？");
+  engine.annotateLastRetryAttempts(2);
+
+  assert.equal(engine.getLastReplyDebug()?.retryAttempts, 2);
+  assert.equal(engine.getLastResponseDebug()?.retryAttempts, 2);
+  assert.equal(engine.getLastProactiveDebug()?.retryAttempts, proactiveRetryAttempts);
+});
+
 test("syncSnapshot ignores an older revision", () => {
   const newer = createInitialSnapshot();
   newer.revision = 4;

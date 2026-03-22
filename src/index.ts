@@ -321,6 +321,7 @@ function printResidentLoop(): void {
   console.log(`last tick: ${status.lastTickAt ?? "none"}`);
   console.log(`last activity: ${status.lastActivityAt ?? "none"}`);
   console.log(`last proactive: ${status.lastProactiveAt ?? "none"}`);
+  console.log(`last tick attempts: ${status.lastTickAttempts ?? "none"}`);
   console.log(`stopped: ${status.stoppedAt ?? "none"}`);
   console.log(`reply: ${status.reply ?? "none"}`);
   console.log(
@@ -837,7 +838,7 @@ async function runWithEngineConflictRetry<T>(
     shouldPersist?: (result: T) => boolean;
   },
 ): Promise<Awaited<ReturnType<typeof runWithConflictRetry<T>>>> {
-  return runWithConflictRetry<T>({
+  const result = await runWithConflictRetry<T>({
     operate: async () => await options.operate(),
     persist: async (result) => {
       if (options.shouldPersist && !options.shouldPersist(result)) {
@@ -847,6 +848,12 @@ async function runWithEngineConflictRetry<T>(
       return persistState(currentEngine);
     },
   });
+
+  if (result.ok) {
+    currentEngine.annotateLastRetryAttempts(result.attempts);
+  }
+
+  return result;
 }
 
 function formatResolvedPurpose(
@@ -888,6 +895,10 @@ function formatGeneratedDebug(
   const model = debug.model ? ` model:${debug.model}` : "";
   const fallback = debug.fallbackUsed ? " fallback" : "";
   const error = debug.error ? ` error:${debug.error}` : "";
+  const retry =
+    typeof debug.retryAttempts === "number" && debug.retryAttempts > 1
+      ? ` retry:${debug.retryAttempts}`
+      : "";
   const plan = debug.plan ? ` plan:${debug.plan}` : "";
   const plannerRulePlan =
     debug.plannerRulePlan && debug.plannerRulePlan !== debug.plan
@@ -904,7 +915,7 @@ function formatGeneratedDebug(
       ? formatProactiveSelection(debug.proactiveSelection)
       : formatReplySelection(debug.selection);
 
-  return `${mode}${debug.source}${via}${model}${fallback}${error}${plan}${planner}${selection}`;
+  return `${mode}${debug.source}${via}${model}${fallback}${error}${retry}${plan}${planner}${selection}`;
 }
 
 function formatInterpretationDebug(

@@ -193,7 +193,7 @@ async function runWithEngineConflictRetry<T>(
     shouldPersist?: (result: T) => boolean;
   },
 ): Promise<Awaited<ReturnType<typeof runWithConflictRetry<T>>>> {
-  return runWithConflictRetry<T>({
+  const result = await runWithConflictRetry<T>({
     operate: async () => await options.operate(),
     persist: async (result) => {
       if (options.shouldPersist && !options.shouldPersist(result)) {
@@ -203,6 +203,12 @@ async function runWithEngineConflictRetry<T>(
       return persistState(currentEngine);
     },
   });
+
+  if (result.ok) {
+    currentEngine.annotateLastRetryAttempts(result.attempts);
+  }
+
+  return result;
 }
 
 async function readJsonBody(request: IncomingMessage): Promise<Record<string, unknown>> {

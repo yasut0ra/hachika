@@ -246,9 +246,13 @@ function formatGenerated(debug) {
   }
 
   const planner = `planner:${debug.plannerSource}`;
+  const retry =
+    typeof debug.retryAttempts === "number" && debug.retryAttempts > 1
+      ? ` · retry ${debug.retryAttempts}`
+      : "";
   return `${debug.mode}:${debug.source}${debug.provider ? ` via:${debug.provider}` : ""}${
     debug.fallbackUsed ? " fallback" : ""
-  }${debug.plan ? ` · ${debug.plan}` : ""} · ${planner}`;
+  }${retry}${debug.plan ? ` · ${debug.plan}` : ""} · ${planner}`;
 }
 
 function formatInterpretation(debug) {
@@ -283,8 +287,12 @@ function formatResidentLoop(status, health) {
   const state = health?.state ?? (status.active ? "active" : "inactive");
   const heartbeat = status.heartbeatAt ? ` · beat ${status.heartbeatAt}` : "";
   const proactive = status.lastProactiveAt ? ` · proactive ${status.lastProactiveAt}` : "";
+  const attempts =
+    typeof status.lastTickAttempts === "number" && status.lastTickAttempts > 1
+      ? ` · retry ${status.lastTickAttempts}`
+      : "";
   const error = status.lastError ? ` · err ${status.lastError}` : "";
-  return `${state}${heartbeat}${proactive}${error}`;
+  return `${state}${heartbeat}${proactive}${attempts}${error}`;
 }
 
 function formatResidentLoopDetail(status, health) {
@@ -305,6 +313,7 @@ function formatResidentLoopDetail(status, health) {
     status.lastTickAt ? `tick ${status.lastTickAt}` : null,
     status.lastActivityAt ? `activity ${status.lastActivityAt}` : null,
     status.lastProactiveAt ? `proactive ${status.lastProactiveAt}` : null,
+    typeof status.lastTickAttempts === "number" ? `attempts ${status.lastTickAttempts}` : null,
     status.config
       ? `interval ${status.config.intervalMs}ms / idle ${status.config.idleHoursPerTick}h`
       : null,

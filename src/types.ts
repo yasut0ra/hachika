@@ -420,6 +420,7 @@ export interface GeneratedTextDebug {
   source: "rule" | "llm";
   provider: string | null;
   model: string | null;
+  retryAttempts: number;
   fallbackUsed: boolean;
   error: string | null;
   plan: string | null;
