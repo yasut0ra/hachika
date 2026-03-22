@@ -32,6 +32,7 @@ import type {
   TraceMaintenanceAction,
   TraceWorkState,
   TraceStatus,
+  WorldActionKind,
   WorldEvent,
   WorldObjectState,
   WorldPhase,
@@ -911,6 +912,8 @@ function hydrateInitiativeActivity(raw: unknown): InitiativeActivity | null {
     topic: typeof raw.topic === "string" ? raw.topic : null,
     traceTopic: typeof raw.traceTopic === "string" ? raw.traceTopic : null,
     blocker: typeof raw.blocker === "string" ? raw.blocker : null,
+    place: isWorldPlaceId(raw.place) ? raw.place : null,
+    worldAction: isWorldActionKind(raw.worldAction) ? raw.worldAction : null,
     maintenanceAction: isTraceMaintenanceAction(raw.maintenanceAction)
       ? raw.maintenanceAction
       : null,
@@ -1012,6 +1015,8 @@ function hydratePendingInitiative(raw: unknown): PendingInitiative | null {
     motive,
     topic: typeof raw.topic === "string" ? raw.topic : null,
     blocker: typeof raw.blocker === "string" ? raw.blocker : null,
+    place: isWorldPlaceId(raw.place) ? raw.place : null,
+    worldAction: isWorldActionKind(raw.worldAction) ? raw.worldAction : null,
     concern: isPreservationConcern(raw.concern) ? raw.concern : null,
     createdAt:
       typeof raw.createdAt === "string" ? raw.createdAt : new Date().toISOString(),
@@ -1166,6 +1171,10 @@ function sanitizeInitiative(initiative: InitiativeState): InitiativeState {
               ? initiative.pending.topic
               : null,
           blocker: sanitizeLooseText(initiative.pending.blocker),
+          place: isWorldPlaceId(initiative.pending.place) ? initiative.pending.place : null,
+          worldAction: isWorldActionKind(initiative.pending.worldAction)
+            ? initiative.pending.worldAction
+            : null,
         }
       : null,
     history: initiative.history
@@ -1177,6 +1186,8 @@ function sanitizeInitiative(initiative: InitiativeState): InitiativeState {
             ? activity.traceTopic
             : null,
         blocker: sanitizeLooseText(activity.blocker),
+        place: isWorldPlaceId(activity.place) ? activity.place : null,
+        worldAction: isWorldActionKind(activity.worldAction) ? activity.worldAction : null,
         maintenanceAction: isTraceMaintenanceAction(activity.maintenanceAction)
           ? activity.maintenanceAction
           : null,
@@ -1511,6 +1522,10 @@ function isWorldPhase(value: unknown): value is WorldPhase {
 
 function isWorldPlaceId(value: unknown): value is WorldPlaceId {
   return typeof value === "string" && (WORLD_PLACE_IDS as readonly string[]).includes(value);
+}
+
+function isWorldActionKind(value: unknown): value is WorldActionKind {
+  return value === "observe" || value === "touch" || value === "leave";
 }
 
 function isTraceKind(value: unknown): value is TraceEntry["kind"] {

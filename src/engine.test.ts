@@ -919,12 +919,19 @@ test("pending initiative emits a proactive resume after idle", () => {
   const message = engine.emitInitiative();
   const snapshot = engine.getSnapshot();
   const lastActivity = snapshot.initiative.history.at(-1);
+  const proactiveSelection = engine.getLastProactiveDebug()?.proactiveSelection;
 
   assert.ok(message !== null);
   assert.match(message ?? "", /実装|設計/);
   assert.equal(snapshot.initiative.pending, null);
   assert.ok(snapshot.initiative.lastProactiveAt !== null);
   assert.equal(lastActivity?.kind, "proactive_emission");
+  assert.ok(lastActivity?.place !== null && lastActivity?.place !== undefined);
+  assert.ok(lastActivity?.worldAction !== null && lastActivity?.worldAction !== undefined);
+  assert.equal(snapshot.world.currentPlace, lastActivity?.place);
+  assert.equal(proactiveSelection?.place, lastActivity?.place);
+  assert.equal(proactiveSelection?.worldAction, lastActivity?.worldAction);
+  assert.equal(snapshot.world.recentEvents.at(-1)?.kind, lastActivity?.worldAction ?? null);
   assert.ok(lastActivity?.summary.includes("自分から"));
 });
 

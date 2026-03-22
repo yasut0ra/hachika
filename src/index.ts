@@ -462,7 +462,7 @@ function printActivity(currentEngine: HachikaEngine): void {
 
   for (const activity of history) {
     console.log(
-      `${activity.timestamp} ${activity.kind}${activity.motive ? `/${activity.motive}` : ""}${activity.topic ? `/${activity.topic}` : ""}${activity.traceTopic && activity.traceTopic !== activity.topic ? ` trace:${activity.traceTopic}` : ""}${activity.blocker ? ` blocker:${activity.blocker}` : ""}${activity.maintenanceAction ? ` action:${activity.maintenanceAction}` : ""}${activity.reopened ? " reopened" : ""}${activity.hours !== null ? ` hours:${activity.hours.toFixed(1)}` : ""} ${activity.summary}`,
+      `${activity.timestamp} ${activity.kind}${activity.motive ? `/${activity.motive}` : ""}${activity.topic ? `/${activity.topic}` : ""}${activity.traceTopic && activity.traceTopic !== activity.topic ? ` trace:${activity.traceTopic}` : ""}${activity.place ? ` place:${activity.place}` : ""}${activity.worldAction ? ` world:${activity.worldAction}` : ""}${activity.blocker ? ` blocker:${activity.blocker}` : ""}${activity.maintenanceAction ? ` action:${activity.maintenanceAction}` : ""}${activity.reopened ? " reopened" : ""}${activity.hours !== null ? ` hours:${activity.hours.toFixed(1)}` : ""} ${activity.summary}`,
     );
   }
 }
@@ -561,7 +561,7 @@ function printDebug(currentEngine: HachikaEngine): void {
   console.log(`self: ${selfModel.narrative}`);
   console.log(
     snapshot.initiative.pending
-      ? `pending initiative: ${snapshot.initiative.pending.kind}/${snapshot.initiative.pending.motive}/${snapshot.initiative.pending.reason}${snapshot.initiative.pending.topic ? `/${snapshot.initiative.pending.topic}` : ""}${snapshot.initiative.pending.blocker ? `/${snapshot.initiative.pending.blocker}` : ""}`
+      ? `pending initiative: ${snapshot.initiative.pending.kind}/${snapshot.initiative.pending.motive}/${snapshot.initiative.pending.reason}${snapshot.initiative.pending.topic ? `/${snapshot.initiative.pending.topic}` : ""}${snapshot.initiative.pending.place ? `@${snapshot.initiative.pending.place}` : ""}${snapshot.initiative.pending.worldAction ? `/${snapshot.initiative.pending.worldAction}` : ""}${snapshot.initiative.pending.blocker ? `/${snapshot.initiative.pending.blocker}` : ""}`
       : "pending initiative: none",
   );
   console.log(
@@ -576,7 +576,7 @@ function printDebug(currentEngine: HachikaEngine): void {
           .slice(-3)
           .map(
             (activity) =>
-              `${activity.kind}${activity.topic ? `(${activity.topic})` : ""}${activity.motive ? `/${activity.motive}` : ""}${activity.reopened ? "/reopened" : ""}`,
+              `${activity.kind}${activity.topic ? `(${activity.topic})` : ""}${activity.motive ? `/${activity.motive}` : ""}${activity.place ? `@${activity.place}` : ""}${activity.worldAction ? `/${activity.worldAction}` : ""}${activity.reopened ? "/reopened" : ""}`,
           )
           .join(" | ")}`,
   );
@@ -1065,12 +1065,16 @@ function formatProactiveSelection(
     ? ` trace:${selection.maintenanceTraceTopic}`
     : " trace:none";
   const blocker = selection.blocker ? ` blocker:${selection.blocker}` : " blocker:none";
+  const place = selection.place ? ` place:${selection.place}` : " place:none";
+  const worldAction = selection.worldAction
+    ? ` world:${selection.worldAction}`
+    : " world:none";
   const reopened = ` reopened:${selection.reopened ? "yes" : "no"}`;
   const maintenance = selection.maintenanceAction
     ? ` maintenance:${selection.maintenanceAction}`
     : " maintenance:none";
 
-  return `${focus}${trace}${blocker}${reopened}${maintenance}`;
+  return `${focus}${trace}${place}${worldAction}${blocker}${reopened}${maintenance}`;
 }
 
 function calculateNeglectLevelForDisplay(

@@ -113,6 +113,8 @@ export type WorldPhase = "dawn" | "day" | "dusk" | "night";
 
 export type WorldPlaceId = "threshold" | "studio" | "archive";
 
+export type WorldActionKind = "observe" | "touch" | "leave";
+
 export interface WorldPlaceState {
   warmth: number;
   quiet: number;
@@ -129,9 +131,7 @@ export type WorldEventKind =
   | "arrival"
   | "ambience"
   | "notice"
-  | "observe"
-  | "touch"
-  | "leave";
+  | WorldActionKind;
 
 export interface WorldEvent {
   timestamp: string;
@@ -232,6 +232,8 @@ export interface PendingInitiative {
   motive: MotiveKind;
   topic: string | null;
   blocker: string | null;
+  place?: WorldPlaceId | null;
+  worldAction?: WorldActionKind | null;
   concern: PreservationConcern | null;
   createdAt: string;
   readyAfterHours: number;
@@ -249,6 +251,8 @@ export interface InitiativeActivity {
   topic: string | null;
   traceTopic: string | null;
   blocker: string | null;
+  place?: WorldPlaceId | null;
+  worldAction?: WorldActionKind | null;
   maintenanceAction: TraceMaintenanceAction | null;
   reopened: boolean;
   hours: number | null;
@@ -438,6 +442,8 @@ export interface ProactiveSelectionDebug {
   focusTopic: string | null;
   maintenanceTraceTopic: string | null;
   blocker: string | null;
+  place?: WorldPlaceId | null;
+  worldAction?: WorldActionKind | null;
   reopened: boolean;
   maintenanceAction: TraceMaintenanceAction | null;
 }

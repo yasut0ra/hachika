@@ -1,6 +1,7 @@
 import type {
   HachikaSnapshot,
   InteractionSignals,
+  WorldActionKind,
   WorldEvent,
   WorldObjectState,
   WorldPhase,
@@ -10,8 +11,6 @@ import type {
 } from "./types.js";
 
 export const WORLD_PLACE_IDS = ["threshold", "studio", "archive"] as const satisfies readonly WorldPlaceId[];
-
-type WorldActionKind = "observe" | "touch" | "leave";
 
 const PLACE_LABELS: Record<WorldPlaceId, string> = {
   threshold: "threshold",
@@ -208,21 +207,42 @@ export function performWorldActionFromTurn(
     return;
   }
 
+  performWorldAction(snapshot, snapshot.world.currentPlace, action, focusTopic, now);
+}
+
+export function performWorldAction(
+  snapshot: HachikaSnapshot,
+  place: WorldPlaceId,
+  action: WorldActionKind,
+  focusTopic: string | null,
+  now: string = snapshot.lastInteractionAt ?? new Date().toISOString(),
+): void {
   const world = snapshot.world;
+  const previousPlace = world.currentPlace;
+
+  world.currentPlace = place;
+  world.lastUpdatedAt = now;
+  world.places[place].lastVisitedAt = now;
+
+  if (previousPlace !== place) {
+    pushWorldEvent(world, {
+      timestamp: now,
+      kind: "arrival",
+      place,
+      summary: `${describeWorldPlace(place)}へ自分から寄る。`,
+    });
+  }
+
   const object = findCurrentWorldObject(world);
   if (object) {
-    updateObject(
-      object,
-      buildWorldObjectActionState(world.currentPlace, action, focusTopic),
-      now,
-    );
+    updateObject(object, buildWorldObjectActionState(place, action, focusTopic), now);
   }
 
   pushWorldEvent(world, {
     timestamp: now,
     kind: action,
-    place: world.currentPlace,
-    summary: buildWorldActionSummary(world.currentPlace, action, focusTopic),
+    place,
+    summary: buildWorldActionSummary(place, action, focusTopic),
   });
 }
 

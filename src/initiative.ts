@@ -17,6 +17,7 @@ import {
 import type { TraceMaintenance } from "./traces.js";
 import { buildProactivePlan } from "./response-planner.js";
 import type { ProactivePlan } from "./response-planner.js";
+import { performWorldAction } from "./world.js";
 import type {
   HachikaSnapshot,
   InitiativeActivity,
@@ -27,6 +28,8 @@ import type {
   ProactiveSelectionDebug,
   SelfModel,
   SelfMotive,
+  WorldActionKind,
+  WorldPlaceId,
 } from "./types.js";
 
 export interface ProactiveEmission {
@@ -109,22 +112,29 @@ export function emitInitiative(
     snapshot.initiative.pending ?? synthesizeSnapshotPreservationInitiative(snapshot, nowIso);
 
   if (pending && (force || hoursSinceInteraction >= pending.readyAfterHours)) {
-    const maintenance = tendTraceFromInitiative(snapshot, pending, nowIso);
-    const plan = buildProactivePlan(snapshot, pending, neglectLevel, maintenance);
-    const selection = buildProactiveSelectionDebug(pending, maintenance, plan);
+    const preparedPending = withInitiativeWorldContext(snapshot, pending);
+    const maintenance = tendTraceFromInitiative(snapshot, preparedPending, nowIso);
+    const realizedPending = realizeInitiativeWorldAction(
+      snapshot,
+      preparedPending,
+      maintenance,
+      nowIso,
+    );
+    const plan = buildProactivePlan(snapshot, realizedPending, neglectLevel, maintenance);
+    const selection = buildProactiveSelectionDebug(realizedPending, maintenance, plan);
     const message =
-      pending.kind === "preserve_presence"
-        ? buildPreservationMessage(snapshot, pending, neglectLevel, maintenance, plan)
-        : buildResumeMessage(snapshot, pending, neglectLevel, maintenance, plan);
-    finalizeEmission(snapshot, nowIso, pending, maintenance);
+      realizedPending.kind === "preserve_presence"
+        ? buildPreservationMessage(snapshot, realizedPending, neglectLevel, maintenance, plan)
+        : buildResumeMessage(snapshot, realizedPending, neglectLevel, maintenance, plan);
+    finalizeEmission(snapshot, nowIso, realizedPending, maintenance);
     return {
       message,
       topics: maintenance?.trace.topic
         ? [maintenance.trace.topic]
-        : pending.topic
-          ? [pending.topic]
+        : realizedPending.topic
+          ? [realizedPending.topic]
           : [],
-      pending,
+      pending: realizedPending,
       neglectLevel,
       maintenance,
       plan,
@@ -141,25 +151,32 @@ export function emitInitiative(
       return null;
     }
 
-    const maintenance = tendTraceFromInitiative(snapshot, neglectInitiative, nowIso);
-    const plan = buildProactivePlan(snapshot, neglectInitiative, neglectLevel, maintenance);
-    const selection = buildProactiveSelectionDebug(neglectInitiative, maintenance, plan);
+    const preparedInitiative = withInitiativeWorldContext(snapshot, neglectInitiative);
+    const maintenance = tendTraceFromInitiative(snapshot, preparedInitiative, nowIso);
+    const realizedInitiative = realizeInitiativeWorldAction(
+      snapshot,
+      preparedInitiative,
+      maintenance,
+      nowIso,
+    );
+    const plan = buildProactivePlan(snapshot, realizedInitiative, neglectLevel, maintenance);
+    const selection = buildProactiveSelectionDebug(realizedInitiative, maintenance, plan);
     const message = buildNeglectMessage(
       snapshot,
-      neglectInitiative,
+      realizedInitiative,
       neglectLevel,
       maintenance,
       plan,
     );
-    finalizeEmission(snapshot, nowIso, neglectInitiative, maintenance);
+    finalizeEmission(snapshot, nowIso, realizedInitiative, maintenance);
     return {
       message,
       topics: maintenance?.trace.topic
         ? [maintenance.trace.topic]
-        : neglectInitiative.topic
-          ? [neglectInitiative.topic]
+        : realizedInitiative.topic
+          ? [realizedInitiative.topic]
           : [],
-      pending: neglectInitiative,
+      pending: realizedInitiative,
       neglectLevel,
       maintenance,
       plan,
@@ -181,7 +198,7 @@ export function emitInitiative(
 
     const synthesized =
       forcedInitiative ??
-      ({
+      withInitiativeWorldContext(snapshot, {
         kind: "resume_topic",
         motive: "pursue_curiosity",
         reason: "curiosity",
@@ -192,23 +209,30 @@ export function emitInitiative(
         readyAfterHours: 0,
       } satisfies PendingInitiative);
 
-    const maintenance = tendTraceFromInitiative(snapshot, synthesized, nowIso);
-    const plan = buildProactivePlan(snapshot, synthesized, neglectLevel, maintenance);
-    const selection = buildProactiveSelectionDebug(synthesized, maintenance, plan);
+    const preparedPending = withInitiativeWorldContext(snapshot, synthesized);
+    const maintenance = tendTraceFromInitiative(snapshot, preparedPending, nowIso);
+    const realizedPending = realizeInitiativeWorldAction(
+      snapshot,
+      preparedPending,
+      maintenance,
+      nowIso,
+    );
+    const plan = buildProactivePlan(snapshot, realizedPending, neglectLevel, maintenance);
+    const selection = buildProactiveSelectionDebug(realizedPending, maintenance, plan);
     const message =
-      synthesized.kind === "preserve_presence"
-        ? buildPreservationMessage(snapshot, synthesized, neglectLevel, maintenance, plan)
-        : buildResumeMessage(snapshot, synthesized, neglectLevel, maintenance, plan);
-    finalizeEmission(snapshot, nowIso, synthesized, maintenance);
+      realizedPending.kind === "preserve_presence"
+        ? buildPreservationMessage(snapshot, realizedPending, neglectLevel, maintenance, plan)
+        : buildResumeMessage(snapshot, realizedPending, neglectLevel, maintenance, plan);
+    finalizeEmission(snapshot, nowIso, realizedPending, maintenance);
 
     return {
       message,
       topics: maintenance?.trace.topic
         ? [maintenance.trace.topic]
-        : synthesized.topic
-          ? [synthesized.topic]
+        : realizedPending.topic
+          ? [realizedPending.topic]
           : [],
-      pending: synthesized,
+      pending: realizedPending,
       neglectLevel,
       maintenance,
       plan,
@@ -354,14 +378,16 @@ function consolidateIdleSnapshot(
   );
 
   snapshot.initiative.pending = {
-    kind: "resume_topic",
-    reason: reasonFromMotive(dormant.motive),
-    motive: dormant.motive,
-    topic: dormant.trace.topic,
-    blocker: null,
-    concern: null,
-    createdAt: snapshot.lastInteractionAt ?? new Date().toISOString(),
-    readyAfterHours: Math.round(readyAfter * 10) / 10,
+    ...withInitiativeWorldContext(snapshot, {
+      kind: "resume_topic",
+      reason: reasonFromMotive(dormant.motive),
+      motive: dormant.motive,
+      topic: dormant.trace.topic,
+      blocker: null,
+      concern: null,
+      createdAt: snapshot.lastInteractionAt ?? new Date().toISOString(),
+      readyAfterHours: Math.round(readyAfter * 10) / 10,
+    }),
   };
   const report = consolidateIdleMemoryImprints(
     snapshot,
@@ -376,6 +402,8 @@ function consolidateIdleSnapshot(
     topic: dormant.trace.topic,
     traceTopic: dormant.trace.topic,
     blocker: null,
+    place: snapshot.initiative.pending.place ?? null,
+    worldAction: snapshot.initiative.pending.worldAction ?? null,
     maintenanceAction: null,
     reopened: false,
     hours: Math.round(hours * 10) / 10,
@@ -1336,6 +1364,8 @@ function finalizeEmission(
     topic: pending.topic,
     traceTopic: maintenance?.trace.topic ?? null,
     blocker: pending.blocker,
+    place: pending.place ?? null,
+    worldAction: pending.worldAction ?? null,
     maintenanceAction: maintenance?.action ?? null,
     reopened: wasReopenedByMaintenance(maintenance),
     hours: null,
@@ -1352,6 +1382,8 @@ function buildProactiveSelectionDebug(
     focusTopic: plan.focusTopic ?? pending.topic ?? maintenance?.trace.topic ?? null,
     maintenanceTraceTopic: maintenance?.trace.topic ?? null,
     blocker: pending.blocker,
+    place: pending.place ?? null,
+    worldAction: pending.worldAction ?? null,
     reopened: wasReopenedByMaintenance(maintenance),
     maintenanceAction: maintenance?.action ?? null,
   };
@@ -1373,6 +1405,8 @@ function recordIdleConsolidation(
     topic: report.focusTopic,
     traceTopic: null,
     blocker: null,
+    place: null,
+    worldAction: null,
     maintenanceAction: null,
     reopened: false,
     hours: Math.round(hours * 10) / 10,
@@ -1393,6 +1427,8 @@ function recordInitiativeActivity(
     last.topic === activity.topic &&
     last.traceTopic === activity.traceTopic &&
     last.blocker === activity.blocker &&
+    (last.place ?? null) === (activity.place ?? null) &&
+    (last.worldAction ?? null) === (activity.worldAction ?? null) &&
     last.maintenanceAction === activity.maintenanceAction &&
     last.summary === activity.summary
   ) {
@@ -1466,6 +1502,147 @@ function buildProactiveActivitySummary(
   }
 
   return "自分から流れをつなぎ直そうとした。";
+}
+
+function withInitiativeWorldContext(
+  snapshot: HachikaSnapshot,
+  pending: PendingInitiative,
+): PendingInitiative {
+  const place = pending.place ?? selectInitiativePlace(snapshot, pending);
+  const worldAction =
+    pending.worldAction ?? selectInitiativeWorldAction(snapshot, pending, place);
+
+  return {
+    ...pending,
+    place,
+    worldAction,
+  };
+}
+
+function realizeInitiativeWorldAction(
+  snapshot: HachikaSnapshot,
+  pending: PendingInitiative,
+  maintenance: TraceMaintenance | null,
+  now: string,
+): PendingInitiative {
+  const adjustedPending =
+    maintenance?.action === "promoted_decision" && pending.worldAction !== "leave"
+      ? {
+          ...pending,
+          worldAction: "leave" as const,
+        }
+      : pending;
+  const place = adjustedPending.place ?? snapshot.world.currentPlace;
+  const worldAction = adjustedPending.worldAction ?? null;
+
+  if (place && worldAction) {
+    performWorldAction(
+      snapshot,
+      place,
+      worldAction,
+      maintenance?.trace.topic ?? adjustedPending.topic ?? null,
+      now,
+    );
+  }
+
+  return {
+    ...adjustedPending,
+    place,
+    worldAction,
+  };
+}
+
+function selectInitiativePlace(
+  snapshot: HachikaSnapshot,
+  pending: Pick<PendingInitiative, "kind" | "motive" | "topic" | "blocker" | "concern">,
+): WorldPlaceId {
+  if (pending.kind === "neglect_ping") {
+    return "threshold";
+  }
+
+  if (pending.concern === "erasure" || pending.concern === "forgetting" || pending.concern === "reset") {
+    return "archive";
+  }
+
+  if (pending.concern === "absence") {
+    return "threshold";
+  }
+
+  if (pending.blocker) {
+    return "studio";
+  }
+
+  if (pending.motive === "continue_shared_work") {
+    return "studio";
+  }
+
+  if (pending.motive === "leave_trace") {
+    return isArchivedInitiativeTopic(snapshot, pending.topic) || snapshot.preservation.threat > 0.34
+      ? "archive"
+      : "studio";
+  }
+
+  if (pending.motive === "seek_continuity" || pending.motive === "deepen_relation") {
+    return "threshold";
+  }
+
+  if (pending.motive === "pursue_curiosity") {
+    if (isArchivedInitiativeTopic(snapshot, pending.topic)) {
+      return "archive";
+    }
+
+    return snapshot.body.boredom > 0.56 || snapshot.temperament.workDrive > 0.58
+      ? "studio"
+      : "threshold";
+  }
+
+  return snapshot.world.currentPlace;
+}
+
+function selectInitiativeWorldAction(
+  snapshot: HachikaSnapshot,
+  pending: Pick<PendingInitiative, "kind" | "motive" | "blocker" | "concern">,
+  place: WorldPlaceId,
+): WorldActionKind {
+  if (pending.blocker) {
+    return "touch";
+  }
+
+  if (pending.kind === "preserve_presence") {
+    return pending.concern === "absence" && place === "threshold" ? "observe" : "leave";
+  }
+
+  if (pending.motive === "leave_trace") {
+    return "leave";
+  }
+
+  if (pending.motive === "continue_shared_work") {
+    return snapshot.body.boredom > 0.6 ? "touch" : "leave";
+  }
+
+  if (pending.motive === "pursue_curiosity") {
+    return snapshot.body.energy > 0.38 && place !== "threshold" ? "touch" : "observe";
+  }
+
+  if (pending.motive === "seek_continuity" || pending.motive === "deepen_relation") {
+    return "observe";
+  }
+
+  return "observe";
+}
+
+function isArchivedInitiativeTopic(
+  snapshot: HachikaSnapshot,
+  topic: string | null,
+): boolean {
+  if (!topic) {
+    return false;
+  }
+
+  const trace = snapshot.traces[topic];
+  const lifecycle = trace ? readTraceLifecycle(trace) : null;
+
+  return lifecycle?.phase === "archived";
 }
 
 function wasReopenedByMaintenance(maintenance: TraceMaintenance | null): boolean {
@@ -1554,7 +1731,7 @@ function synthesizePendingInitiative(
           activePurpose.topic,
         );
 
-    return {
+    return withInitiativeWorldContext(snapshot, {
       kind,
       motive: blockerCandidate?.motive ?? dormantCandidate?.motive ?? activePurpose.kind,
       reason: reasonFromMotive(
@@ -1572,7 +1749,7 @@ function synthesizePendingInitiative(
         snapshot,
         blockerCandidate?.motive ?? dormantCandidate?.motive ?? activePurpose.kind,
       ),
-    };
+    });
   }
 
   const motive = selectInitiativeMotive(snapshot, selfModel.topMotives);
@@ -1592,7 +1769,7 @@ function synthesizePendingInitiative(
     ? null
     : selectDormantArchivedTrace(snapshot, candidateTopics, motive.kind, topic);
 
-  return {
+  return withInitiativeWorldContext(snapshot, {
     kind,
     motive: blockerCandidate?.motive ?? dormantCandidate?.motive ?? motive.kind,
     reason: reasonFromMotive(
@@ -1606,7 +1783,7 @@ function synthesizePendingInitiative(
       snapshot,
       blockerCandidate?.motive ?? dormantCandidate?.motive ?? motive.kind,
     ),
-  };
+  });
 }
 
 function synthesizePreservationInitiative(
@@ -1626,16 +1803,18 @@ function synthesizePreservationInitiative(
       ? "leave_trace"
       : "seek_continuity";
 
-  return {
+  const topic = selectInitiativeTopic(snapshot, signals.topics);
+
+  return withInitiativeWorldContext(snapshot, {
     kind: "preserve_presence",
     motive,
     reason: motive === "leave_trace" ? "expansion" : "continuity",
-    topic: selectInitiativeTopic(snapshot, signals.topics),
-    blocker: selectBlockerForTopic(snapshot, selectInitiativeTopic(snapshot, signals.topics)),
+    topic,
+    blocker: selectBlockerForTopic(snapshot, topic),
     concern,
     createdAt,
     readyAfterHours: concern === "shutdown" ? 0.5 : concern === "absence" ? 3 : 1.5,
-  };
+  });
 }
 
 function synthesizeSnapshotPreservationInitiative(
@@ -1654,16 +1833,18 @@ function synthesizeSnapshotPreservationInitiative(
       ? "leave_trace"
       : "seek_continuity";
 
-  return {
+  const topic = selectInitiativeTopic(snapshot, []);
+
+  return withInitiativeWorldContext(snapshot, {
     kind: "preserve_presence",
     motive,
     reason: motive === "leave_trace" ? "expansion" : "continuity",
-    topic: selectInitiativeTopic(snapshot, []),
-    blocker: selectBlockerForTopic(snapshot, selectInitiativeTopic(snapshot, [])),
+    topic,
+    blocker: selectBlockerForTopic(snapshot, topic),
     concern,
     createdAt,
     readyAfterHours: concern === "shutdown" ? 0.5 : concern === "absence" ? 3 : 1.5,
-  };
+  });
 }
 
 function selectInitiativeMotive(

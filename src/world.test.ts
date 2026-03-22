@@ -6,6 +6,7 @@ import {
   advanceWorldByIdle,
   advanceWorldFromInteraction,
   formatWorldSummary,
+  performWorldAction,
   performWorldActionFromTurn,
 } from "./world.js";
 
@@ -174,4 +175,22 @@ test("work-like expansion can leave a topic-shaped trace in the world", () => {
   assert.equal(snapshot.world.recentEvents.at(-1)?.kind, "leave");
   assert.match(snapshot.world.recentEvents.at(-1)?.summary ?? "", /仕様の境界/);
   assert.match(snapshot.world.objects.desk!.state, /仕様の境界/);
+});
+
+test("initiative-style world action can move place before touching the current object", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.world.currentPlace = "threshold";
+
+  performWorldAction(
+    snapshot,
+    "archive",
+    "touch",
+    "記録",
+    "2026-03-22T09:25:00.000Z",
+  );
+
+  assert.equal(snapshot.world.currentPlace, "archive");
+  assert.equal(snapshot.world.recentEvents.at(-2)?.kind, "arrival");
+  assert.equal(snapshot.world.recentEvents.at(-1)?.kind, "touch");
+  assert.match(snapshot.world.objects.shelf!.state, /触れた跡|手触り/);
 });
