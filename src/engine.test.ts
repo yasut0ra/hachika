@@ -1588,6 +1588,65 @@ test("world inquiry replies can surface the current place without dragging stale
   assert.equal(/設計/.test(result.reply), false);
 });
 
+test("explicit new work topics do not surface unrelated stale trace or boundary context", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.preferences["冷笑"] = 0.92;
+  snapshot.topicCounts["冷笑"] = 12;
+  snapshot.traces["冷笑"] = {
+    topic: "冷笑",
+    kind: "decision",
+    status: "active",
+    lastAction: "preserved",
+    summary: "「冷笑」は決定として残っている。",
+    sourceMotive: "continue_shared_work",
+    artifact: {
+      memo: ["冷笑の断片"],
+      fragments: ["冷笑を具体化する"],
+      decisions: ["冷笑は解決した"],
+      nextSteps: ["冷笑の周辺を見直す"],
+    },
+    work: {
+      focus: "冷笑は解決した",
+      confidence: 1,
+      blockers: [],
+      staleAt: null,
+    },
+    lifecycle: {
+      phase: "live",
+      archivedAt: null,
+      reopenedAt: null,
+      reopenCount: 0,
+    },
+    worldContext: {
+      place: "studio",
+      objectId: "desk",
+      linkedAt: "2026-03-22T14:24:38.493Z",
+    },
+    salience: 1,
+    mentions: 49,
+    createdAt: "2026-03-21T14:05:53.975Z",
+    lastUpdatedAt: "2026-03-22T14:24:38.493Z",
+  };
+  snapshot.boundaryImprints["hostility:冷笑"] = {
+    kind: "hostility",
+    topic: "冷笑",
+    salience: 0.94,
+    intensity: 0.34,
+    violations: 5,
+    firstSeenAt: "2026-03-21T14:05:53.975Z",
+    lastSeenAt: "2026-03-22T14:24:31.504Z",
+  };
+
+  const engine = new HachikaEngine(snapshot);
+  const result = engine.respond("仕様の境界が未定で曖昧だ。どう整理する？");
+
+  assert.match(result.debug.reply.selection?.currentTopic ?? "", /仕様/);
+  assert.notEqual(result.debug.reply.selection?.relevantTraceTopic, "冷笑");
+  assert.equal(result.debug.reply.selection?.relevantBoundaryTopic, null);
+  assert.equal(/冷笑/.test(result.reply), false);
+  assert.match(result.reply, /仕様/);
+});
+
 test("object-first world inquiry can surface linked trace topics from the current object", () => {
   const snapshot = createInitialSnapshot();
   snapshot.world.currentPlace = "archive";

@@ -249,6 +249,40 @@ test("llm response planner normalization keeps concrete work on continue_work wh
   assert.equal(normalized?.summary, "continue_work/guarded/far on 仕様の境界");
 });
 
+test("llm response planner normalization can still soften into explore when the focus topic changes", () => {
+  const fallbackPlan = {
+    act: "continue_work",
+    stance: "measured",
+    distance: "measured",
+    focusTopic: "仕様の境界",
+    mentionTrace: true,
+    mentionIdentity: false,
+    mentionBoundary: false,
+    mentionWorld: false,
+    askBack: false,
+    variation: "textured",
+    summary: "continue_work/measured/measured on 仕様の境界",
+  } as const;
+
+  const normalized = normalizePlannedResponsePlan(
+    JSON.stringify({
+      act: "explore",
+      stance: "open",
+      distance: "mid",
+      focusTopic: "責務",
+      mentionTrace: true,
+      askBack: true,
+      variation: "questioning",
+    }),
+    fallbackPlan,
+    ["仕様の境界", "責務"],
+  );
+
+  assert.equal(normalized?.act, "explore");
+  assert.equal(normalized?.focusTopic, "責務");
+  assert.equal(normalized?.summary, "explore/open/measured on 責務");
+});
+
 test("proactive planner prioritizes blocker repair when a blocker is pending", () => {
   const snapshot = createInitialSnapshot();
   const pending = createPending({

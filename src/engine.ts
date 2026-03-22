@@ -10,6 +10,7 @@ import {
   isMeaningfulTopic,
   remember,
   topPreferredTopics,
+  topicsLooselyMatch,
 } from "./memory.js";
 import { pickFreshText, recentAssistantReplies } from "./expression.js";
 import {
@@ -1202,17 +1203,28 @@ function resolveReplySelection(
 ): ResolvedReplySelection {
   const socialTurn = isSocialTurnSignals(signals);
   const worldTurn = responsePlan.mentionWorld || signals.worldInquiry > 0.42;
+  const explicitTopics = uniqueTopics(
+    [responsePlan.focusTopic ?? "", ...signals.topics].filter((topic) => isMeaningfulTopic(topic)),
+  );
+  const allowGlobalFallback = explicitTopics.length === 0 && !socialTurn && !worldTurn;
   const currentTopic =
     responsePlan.focusTopic !== null
       ? responsePlan.focusTopic
       : socialTurn || worldTurn
         ? undefined
-        : topPreferredTopics(snapshot, 1)[0];
+        : explicitTopics[0] ?? topPreferredTopics(snapshot, 1)[0];
+  const replyTopics = uniqueTopics(
+    [currentTopic ?? "", ...explicitTopics].filter((topic) => isMeaningfulTopic(topic)),
+  );
   const relevantTrace = responsePlan.mentionTrace
-    ? findRelevantTrace(snapshot, signals.topics)
+    ? findRelevantTrace(snapshot, replyTopics, {
+        allowFallback: allowGlobalFallback,
+      })
     : undefined;
   const relevantBoundary = responsePlan.mentionBoundary
-    ? findRelevantBoundaryImprint(snapshot, signals.topics)
+    ? findRelevantBoundaryImprint(snapshot, replyTopics, {
+        allowFallback: allowGlobalFallback,
+      })
     : undefined;
   const prioritizeTraceLine = shouldPrioritizeTraceLine(
     relevantTrace,
@@ -3166,6 +3178,14 @@ function buildSelfModelLine(
     return null;
   }
 
+  if (
+    currentTopic &&
+    topMotive.topic &&
+    !topicsLooselyMatch(currentTopic, topMotive.topic)
+  ) {
+    return null;
+  }
+
   switch (topMotive.kind) {
     case "protect_boundary":
       return topMotive.topic
@@ -3256,6 +3276,14 @@ function buildIdentityLine(
     currentTopic &&
     ((snapshot.topicCounts[currentTopic] ?? 0) >= 2 ||
       (snapshot.preferenceImprints[currentTopic]?.salience ?? 0) >= 0.34);
+
+  if (
+    currentTopic &&
+    anchor &&
+    !topicsLooselyMatch(currentTopic, anchor)
+  ) {
+    return null;
+  }
 
   if (currentTopic && anchor && currentTopic !== anchor && stableCurrentTopic) {
     return null;

@@ -499,13 +499,41 @@ export function findRelevantPreferenceImprint(
 export function findRelevantBoundaryImprint(
   snapshot: HachikaSnapshot,
   topics: string[],
+  options?: {
+    allowFallback?: boolean;
+  },
 ): BoundaryImprint | undefined {
+  const meaningfulTopics = topics.filter((topic) => isMeaningfulTopic(topic));
+
   for (const topic of topics) {
     const direct = snapshot.boundaryImprints[boundaryKey("hostility", topic)];
 
     if (direct) {
       return direct;
     }
+  }
+
+  if (meaningfulTopics.length > 0) {
+    const related = Object.values(snapshot.boundaryImprints)
+      .filter((imprint) => imprint.topic !== null)
+      .sort((left, right) => {
+        if (right.salience !== left.salience) {
+          return right.salience - left.salience;
+        }
+
+        return right.violations - left.violations;
+      })
+      .find((imprint) =>
+        meaningfulTopics.some((topic) => topicsLooselyMatch(topic, imprint.topic)),
+      );
+
+    if (related) {
+      return related;
+    }
+  }
+
+  if (options?.allowFallback === false && meaningfulTopics.length > 0) {
+    return undefined;
   }
 
   return sortedBoundaryImprints(snapshot, 1)[0];
@@ -596,6 +624,37 @@ export function isMeaningfulTopic(topic: string): boolean {
   }
 
   return true;
+}
+
+export function topicsLooselyMatch(left: string, right: string | null | undefined): boolean {
+  if (!right) {
+    return false;
+  }
+
+  const normalizedLeft = left.normalize("NFKC").trim().toLowerCase();
+  const normalizedRight = right.normalize("NFKC").trim().toLowerCase();
+
+  if (!normalizedLeft || !normalizedRight) {
+    return false;
+  }
+
+  if (normalizedLeft === normalizedRight) {
+    return true;
+  }
+
+  if (
+    normalizedLeft.length < 2 ||
+    normalizedRight.length < 2 ||
+    !isMeaningfulTopic(normalizedLeft) ||
+    !isMeaningfulTopic(normalizedRight)
+  ) {
+    return false;
+  }
+
+  return (
+    normalizedLeft.includes(normalizedRight) ||
+    normalizedRight.includes(normalizedLeft)
+  );
 }
 
 function normalizeToken(token: string): string | null {

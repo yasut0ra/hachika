@@ -1,5 +1,5 @@
 import { clamp01 } from "./state.js";
-import { isMeaningfulTopic } from "./memory.js";
+import { isMeaningfulTopic, topicsLooselyMatch } from "./memory.js";
 import type {
   HachikaSnapshot,
   InteractionSignals,
@@ -271,11 +271,30 @@ export function sortedTraces(
 export function findRelevantTrace(
   snapshot: HachikaSnapshot,
   topics: string[],
+  options?: {
+    allowFallback?: boolean;
+  },
 ): TraceEntry | undefined {
+  const meaningfulTopics = topics.filter((topic) => isMeaningfulTopic(topic));
+
   for (const topic of topics) {
     if (snapshot.traces[topic]) {
       return snapshot.traces[topic];
     }
+  }
+
+  if (meaningfulTopics.length > 0) {
+    const related = sortedTraces(snapshot, Object.keys(snapshot.traces).length || 1).find(
+      (trace) => meaningfulTopics.some((topic) => topicsLooselyMatch(topic, trace.topic)),
+    );
+
+    if (related) {
+      return related;
+    }
+  }
+
+  if (options?.allowFallback === false && meaningfulTopics.length > 0) {
+    return undefined;
   }
 
   return sortedTraces(snapshot, 1)[0];
