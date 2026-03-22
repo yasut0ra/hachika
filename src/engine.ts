@@ -355,9 +355,23 @@ const REPAIR_META_TOPICS = new Set([
   "温度",
   "感じ",
   "ごめん",
+  "さっき",
   "落ち",
   "着い",
 ]);
+
+const WORLD_PSEUDO_TOPIC_PARTS = [
+  "残り",
+  "様子",
+  "気配",
+  "空気",
+  "周り",
+  "周囲",
+  "景色",
+  "棚",
+  "机",
+  "灯り",
+] as const;
 
 const RESET_THREAT_MARKERS = [
   "reset",
@@ -460,7 +474,9 @@ export class HachikaEngine {
   }
 
   reset(snapshot: HachikaSnapshot = createInitialSnapshot()): void {
-    this.#snapshot = structuredClone(snapshot);
+    const nextSnapshot = structuredClone(snapshot);
+    nextSnapshot.revision = Math.max(this.#snapshot.revision, nextSnapshot.revision);
+    this.#snapshot = nextSnapshot;
     this.#lastGeneratedDebug = null;
     this.#lastResponseDebug = null;
     this.#lastProactiveDebug = null;
@@ -1655,7 +1671,13 @@ function isSocialOnlyTopicTurn(signals: InteractionSignals): boolean {
     signals.negative < 0.18 &&
     signals.dismissal < 0.18 &&
     signals.workCue < 0.35 &&
-    Math.max(signals.greeting, signals.smalltalk, signals.repair, signals.selfInquiry) >= 0.38
+    Math.max(
+      signals.greeting,
+      signals.smalltalk,
+      signals.repair,
+      signals.selfInquiry,
+      signals.worldInquiry,
+    ) >= 0.38
   );
 }
 
@@ -1799,6 +1821,19 @@ function mergeInterpretedSignals(
     interpretation.topics.length === 0 &&
     workCue < 0.35 &&
     Math.max(greeting, smalltalk, repair, selfInquiry, worldInquiry) >= 0.38;
+  const repairCarryoverReset =
+    Math.max(localSignals.repair, repair) >= 0.42 &&
+    Math.max(localSignals.workCue, workCue) < 0.35 &&
+    (localSignals.topics.length === 0 || shouldClearRepairTopics(localSignals.topics)) &&
+    Math.max(localSignals.negative, negative) < 0.18 &&
+    Math.max(localSignals.dismissal, dismissal) < 0.18;
+  const worldTopicReset =
+    Math.max(localSignals.worldInquiry, worldInquiry) >= 0.45 &&
+    Math.max(localSignals.workCue, workCue) < 0.35 &&
+    localSignals.topics.length === 0 &&
+    interpretation.topics.every((topic) => isAmbientWorldTopic(topic)) &&
+    Math.max(localSignals.negative, negative) < 0.18 &&
+    Math.max(localSignals.dismissal, dismissal) < 0.18;
   const topicShiftOverride =
     Math.max(localSignals.abandonment, abandonment) >= 0.28 &&
     Math.max(localSignals.workCue, workCue) < 0.35 &&
@@ -1806,7 +1841,7 @@ function mergeInterpretedSignals(
     Math.max(localSignals.dismissal, dismissal) < 0.18;
   const topics = socialOverride
     ? []
-    : topicShiftOverride
+    : topicShiftOverride || repairCarryoverReset || worldTopicReset
       ? []
     : interpretation.topics.length > 0
       ? interpretation.topics
@@ -1898,6 +1933,20 @@ function finalizeInteractionSignals(
 
 function shouldClearRepairTopics(topics: readonly string[]): boolean {
   return topics.length > 0 && topics.every((topic) => REPAIR_META_TOPICS.has(topic));
+}
+
+function isAmbientWorldTopic(topic: string): boolean {
+  if (
+    topic === "世界" ||
+    topic === "場所" ||
+    topic === "世界の様子" ||
+    topic === "そっちの様子" ||
+    topic === "そっちの世界"
+  ) {
+    return true;
+  }
+
+  return WORLD_PSEUDO_TOPIC_PARTS.some((part) => topic.includes(part));
 }
 
 function applySignals(

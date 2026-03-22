@@ -513,7 +513,26 @@ function shouldCreateTrace(
     signals.negative < 0.18 &&
     signals.dismissal < 0.18 &&
     signals.workCue < 0.35 &&
-    Math.max(signals.greeting, signals.smalltalk, signals.repair, signals.selfInquiry) >= 0.38;
+    Math.max(
+      signals.greeting,
+      signals.smalltalk,
+      signals.repair,
+      signals.selfInquiry,
+      signals.worldInquiry,
+    ) >= 0.38;
+  const worldOnlyTurn =
+    signals.worldInquiry >= 0.42 &&
+    signals.workCue < 0.35 &&
+    signals.memoryCue < 0.1 &&
+    signals.expansionCue < 0.12 &&
+    signals.completion < 0.12 &&
+    signals.preservationThreat < 0.18 &&
+    signals.negative < 0.18 &&
+    signals.dismissal < 0.18;
+
+  if (worldOnlyTurn) {
+    return false;
+  }
 
   if (
     !extractedSignal &&

@@ -2197,6 +2197,115 @@ test("respondAsync does not let trace extraction contaminate social turns", asyn
   assert.deepEqual(result.snapshot.memories.at(-2)?.topics ?? [], []);
 });
 
+test("respondAsync does not let world inquiry pseudo-topics contaminate traces", async () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+
+  const inputInterpreter: InputInterpreter = {
+    name: "world-biased-interpreter",
+    async interpretInput() {
+      return {
+        provider: "world-biased-interpreter",
+        model: "stub",
+        interpretation: {
+          topics: ["棚の残り"],
+          positive: 0,
+          negative: 0,
+          question: 0.82,
+          intimacy: 0,
+          dismissal: 0,
+          memoryCue: 0,
+          expansionCue: 0,
+          completion: 0,
+          abandonment: 0,
+          preservationThreat: 0,
+          preservationConcern: null,
+          greeting: 0,
+          smalltalk: 0,
+          repair: 0,
+          selfInquiry: 0,
+          worldInquiry: 0.92,
+          workCue: 0.12,
+        },
+      };
+    },
+  };
+  const traceExtractor: TraceExtractor = {
+    name: "world-biased-trace",
+    async extractTrace() {
+      return {
+        provider: "world-biased-trace",
+        model: "stub",
+        extraction: {
+          topics: ["棚の残り"],
+          kindHint: "note",
+          completion: 0.2,
+          blockers: [],
+          memo: ["棚の残り"],
+          fragments: [],
+          decisions: [],
+          nextSteps: ["棚を見る"],
+        },
+      };
+    },
+  };
+
+  const result = await engine.respondAsync("棚には何が残ってる？", {
+    inputInterpreter,
+    traceExtractor,
+  });
+
+  assert.deepEqual(result.debug.signals.topics, []);
+  assert.equal(result.debug.reply.selection?.currentTopic, null);
+  assert.equal(result.debug.reply.selection?.relevantTraceTopic, null);
+  assert.equal(result.snapshot.traces["棚の残り"], undefined);
+  assert.equal(result.snapshot.topicCounts["棚の残り"] ?? 0, 0);
+  assert.deepEqual(result.snapshot.memories.at(-2)?.topics ?? [], []);
+});
+
+test("respondAsync clears carried work topics on pure repair turns", async () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+
+  engine.respond("仕様の境界が未定で曖昧だ。");
+
+  const inputInterpreter: InputInterpreter = {
+    name: "repair-carryover",
+    async interpretInput() {
+      return {
+        provider: "repair-carryover",
+        model: "stub",
+        interpretation: {
+          topics: ["仕様の境界"],
+          positive: 0.2,
+          negative: 0,
+          question: 0,
+          intimacy: 0.24,
+          dismissal: 0,
+          memoryCue: 0,
+          expansionCue: 0,
+          completion: 0,
+          abandonment: 0,
+          preservationThreat: 0,
+          preservationConcern: null,
+          greeting: 0,
+          smalltalk: 0.18,
+          repair: 0.94,
+          selfInquiry: 0,
+          worldInquiry: 0,
+          workCue: 0.12,
+        },
+      };
+    },
+  };
+
+  const result = await engine.respondAsync("ごめん、さっきの言い方は雑だった。落ち着いて話したい。", {
+    inputInterpreter,
+  });
+
+  assert.deepEqual(result.debug.signals.topics, []);
+  assert.equal(result.debug.reply.selection?.currentTopic, null);
+  assert.equal(result.debug.reply.selection?.relevantTraceTopic, null);
+});
+
 test("reset clears the last reply diagnostics", async () => {
   const engine = new HachikaEngine(createInitialSnapshot());
 
@@ -2213,6 +2322,17 @@ test("reset clears the last reply diagnostics", async () => {
   assert.equal(engine.getLastProactiveDebug(), null);
   assert.equal(engine.getLastInterpretationDebug(), null);
   assert.equal(engine.getLastTraceExtractionDebug(), null);
+});
+
+test("reset preserves the current snapshot revision", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.revision = 7;
+  snapshot.conversationCount = 3;
+  const engine = new HachikaEngine(snapshot);
+
+  engine.reset(createInitialSnapshot());
+
+  assert.equal(engine.getSnapshot().revision, 7);
 });
 
 test("syncSnapshot refreshes state without clearing local diagnostics", async () => {

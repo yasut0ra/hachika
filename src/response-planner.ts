@@ -550,9 +550,17 @@ export function normalizePlannedResponsePlan(
   const mentionBoundary = readBoolean(parsed.mentionBoundary, fallbackPlan.mentionBoundary);
   const mentionWorld = readBoolean(parsed.mentionWorld, fallbackPlan.mentionWorld);
   const askBack = readBoolean(parsed.askBack, fallbackPlan.askBack);
+  const normalizedAct =
+    fallbackPlan.act === "continue_work" &&
+    act === "explore" &&
+    fallbackPlan.focusTopic !== null &&
+    focusTopic === fallbackPlan.focusTopic &&
+    !mentionWorld
+      ? "continue_work"
+      : act;
 
   return {
-    act,
+    act: normalizedAct,
     stance,
     distance,
     focusTopic,
@@ -562,7 +570,7 @@ export function normalizePlannedResponsePlan(
     mentionWorld,
     askBack,
     variation,
-    summary: summarizePlan(act, stance, distance, focusTopic),
+    summary: summarizePlan(normalizedAct, stance, distance, focusTopic),
   };
 }
 
