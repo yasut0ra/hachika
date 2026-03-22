@@ -29,6 +29,7 @@ test("interaction can move the world toward the studio on focused work cues", ()
       smalltalk: 0,
       repair: 0,
       selfInquiry: 0,
+      worldInquiry: 0,
       workCue: 0.78,
       topics: ["仕様の境界"],
     },

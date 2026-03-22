@@ -511,6 +511,7 @@ function createSignals(
     smalltalk: 0,
     repair: 0,
     selfInquiry: 0,
+    worldInquiry: 0,
     workCue: 0,
     topics: [],
     ...overrides,

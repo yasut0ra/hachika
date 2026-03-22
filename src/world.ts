@@ -135,6 +135,53 @@ export function describeWorldPlace(place: WorldPlaceId): string {
   return PLACE_LABELS[place];
 }
 
+export function describeWorldPlaceJa(place: WorldPlaceId): string {
+  switch (place) {
+    case "threshold":
+      return "threshold の縁";
+    case "studio":
+      return "studio の机の近く";
+    case "archive":
+      return "archive の棚のあいだ";
+  }
+}
+
+export function describeWorldPhaseJa(phase: WorldPhase): string {
+  switch (phase) {
+    case "dawn":
+      return "朝の薄さ";
+    case "day":
+      return "昼の気配";
+    case "dusk":
+      return "夕方の色";
+    case "night":
+      return "夜の静けさ";
+  }
+}
+
+export function summarizeWorldForPrompt(world: WorldState): string {
+  const place = describeWorldPlaceJa(world.currentPlace);
+  const phase = describeWorldPhaseJa(world.phase);
+  const currentObject = Object.values(world.objects).find(
+    (object) => object.place === world.currentPlace,
+  );
+  const currentPlace = world.places[world.currentPlace];
+  const warmth =
+    currentPlace.warmth >= 0.64
+      ? "少しあたたかい"
+      : currentPlace.warmth <= 0.4
+        ? "少しひやりとしている"
+        : "温度はまだ均されている";
+  const quiet =
+    currentPlace.quiet >= 0.68
+      ? "静けさが濃い"
+      : currentPlace.quiet <= 0.34
+        ? "静けさは薄い"
+        : "静けさはまだやわらかい";
+
+  return `${place}。${phase}。${warmth}。${quiet}。${currentObject?.state ?? "周囲はまだ大きくは動いていない。"}`;
+}
+
 function deriveInteractionHours(signals: InteractionSignals): number {
   const weighted =
     0.18 +
@@ -430,16 +477,7 @@ function deriveWorldPhase(clockHour: number): WorldPhase {
 }
 
 function describePhase(phase: WorldPhase): string {
-  switch (phase) {
-    case "dawn":
-      return "朝の薄さ";
-    case "day":
-      return "昼の気配";
-    case "dusk":
-      return "夕方の色";
-    case "night":
-      return "夜の静けさ";
-  }
+  return describeWorldPhaseJa(phase);
 }
 
 function settleMetric(current: number, target: number, rate: number): number {

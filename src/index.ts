@@ -1014,6 +1014,7 @@ function formatInterpretationScores(
     ["smalltalk", scores.smalltalk],
     ["repair", scores.repair],
     ["self", scores.selfInquiry],
+    ["world", scores.worldInquiry],
     ["work", scores.workCue],
     ["memory", scores.memoryCue],
     ["expand", scores.expansionCue],

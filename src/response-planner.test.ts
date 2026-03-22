@@ -60,6 +60,33 @@ test("response planner prefers self disclosure for self inquiry", () => {
   assert.equal(plan.mentionTrace, false);
 });
 
+test("response planner can surface the current world without dragging stale work focus in", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.purpose.active = {
+    kind: "continue_shared_work",
+    topic: "設計",
+    summary: "設計を前へ進めたい。",
+    confidence: 0.66,
+    progress: 0.28,
+    createdAt: "2026-03-20T00:00:00.000Z",
+    lastUpdatedAt: "2026-03-20T00:00:00.000Z",
+    turnsActive: 1,
+  };
+  const signals = createSignals({
+    question: 0.84,
+    worldInquiry: 0.92,
+  });
+  const selfModel = createSelfModel("continue_shared_work", "設計");
+
+  const plan = buildResponsePlan(snapshot, "curious", "curiosity", signals, selfModel);
+
+  assert.equal(plan.act, "self_disclose");
+  assert.equal(plan.focusTopic, null);
+  assert.equal(plan.mentionTrace, false);
+  assert.equal(plan.mentionIdentity, false);
+  assert.equal(plan.mentionWorld, true);
+});
+
 test("response planner keeps repair turns loosely focused when no concrete topic is named", () => {
   const snapshot = createInitialSnapshot();
   snapshot.purpose.active = {
@@ -143,8 +170,11 @@ test("llm response planner payload surfaces rule plan and candidate topics", () 
 
   assert.equal(payload.rulePlan.act, rulePlan.act);
   assert.equal(payload.rulePlan.focusTopic, "設計");
+  assert.equal(payload.rulePlan.mentionWorld, false);
   assert.ok(payload.candidateTopics.includes("設計"));
   assert.equal(payload.traces[0]?.topic, "設計");
+  assert.equal(payload.world.currentPlace, nextSnapshot.world.currentPlace);
+  assert.match(payload.world.summary, /threshold|studio|archive|朝|昼|夕方|夜/);
 });
 
 test("llm response planner normalization keeps focus within candidate topics", () => {
@@ -156,6 +186,7 @@ test("llm response planner normalization keeps focus within candidate topics", (
     mentionTrace: true,
     mentionIdentity: false,
     mentionBoundary: false,
+    mentionWorld: false,
     askBack: false,
     variation: "textured",
     summary: "continue_work/measured/measured on 設計",
@@ -252,6 +283,7 @@ function createSignals(
     smalltalk: 0,
     repair: 0,
     selfInquiry: 0,
+    worldInquiry: 0,
     workCue: 0,
     topics: [],
     ...overrides,

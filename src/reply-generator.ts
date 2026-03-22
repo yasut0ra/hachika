@@ -11,6 +11,7 @@ import {
 } from "./expression.js";
 import type { ProactivePlan, ResponsePlan } from "./response-planner.js";
 import { deriveTraceTendingMode, pickPrimaryArtifactItem, readTraceLifecycle, sortedTraces } from "./traces.js";
+import { summarizeWorldForPrompt } from "./world.js";
 import type {
   DriveName,
   GeneratedTextDebug,
@@ -133,6 +134,18 @@ interface CommonGenerationPayload {
       salience: number;
       closeness: number;
     }>;
+  };
+  world: {
+    summary: string;
+    phase: HachikaSnapshot["world"]["phase"];
+    currentPlace: HachikaSnapshot["world"]["currentPlace"];
+    currentPlaceWarmth: number;
+    currentPlaceQuiet: number;
+    objectsHere: Array<{
+      id: string;
+      state: string;
+    }>;
+    recentEvents: string[];
   };
 }
 
@@ -364,6 +377,7 @@ export function buildOpenAIChatMessages(
         "The local engine is authoritative.",
         "Use responsePlan as the primary guide for stance, distance, and act.",
         "Use replySelection to stay faithful to the exact chosen focus, trace, boundary, and trace priority.",
+        "When responsePlan.mentionWorld is true, ground the wording in payload.world before reaching for identity or trace language.",
         "Use expression.perspective.preferredAngle as the main expressive lens.",
         "You may lean on one nearby option from expression.perspective.options to vary emphasis, but do not contradict the local plan.",
         "Avoid reusing the same opening fragments or sentence skeletons found in expression.recentAssistantReplies unless the local state makes it unavoidable.",
@@ -393,6 +407,7 @@ export function buildOpenAIProactiveMessages(
         "The local engine is authoritative.",
         "Use proactivePlan as the primary guide for stance, distance, act, and emphasis.",
         "Use proactiveSelection to stay faithful to the chosen focus topic, maintenance trace, blocker, and reopen state.",
+        "If payload.world helps situate the utterance, you may lightly lean on it without inventing new world changes.",
         "Use expression.perspective.preferredAngle as the main expressive lens.",
         "You may lean on one nearby option from expression.perspective.options to vary emphasis, but do not contradict the local plan.",
         "Avoid reusing the same opening fragments or sentence skeletons found in expression.recentAssistantReplies unless the local state makes it unavoidable.",
@@ -480,6 +495,21 @@ function buildCommonGenerationPayload(
         salience: imprint.salience,
         closeness: imprint.closeness,
       })),
+    },
+    world: {
+      summary: summarizeWorldForPrompt(snapshot.world),
+      phase: snapshot.world.phase,
+      currentPlace: snapshot.world.currentPlace,
+      currentPlaceWarmth: snapshot.world.places[snapshot.world.currentPlace].warmth,
+      currentPlaceQuiet: snapshot.world.places[snapshot.world.currentPlace].quiet,
+      objectsHere: Object.entries(snapshot.world.objects)
+        .filter(([, object]) => object.place === snapshot.world.currentPlace)
+        .map(([id, object]) => ({
+          id,
+          state: object.state,
+        }))
+        .slice(0, 3),
+      recentEvents: snapshot.world.recentEvents.slice(-3).map((event) => event.summary),
     },
   };
 }

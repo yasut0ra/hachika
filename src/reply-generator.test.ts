@@ -95,6 +95,7 @@ test("buildReplyGenerationPayload surfaces fallback intent and internal state su
       smalltalk: 0,
       repair: 0,
       selfInquiry: 0,
+      worldInquiry: 0,
       workCue: 0,
       topics: ["設計"],
     },
@@ -119,6 +120,7 @@ test("buildReplyGenerationPayload surfaces fallback intent and internal state su
       mentionTrace: true,
       mentionIdentity: false,
       mentionBoundary: false,
+      mentionWorld: false,
       askBack: false,
       variation: "textured",
       summary: "continue_work/measured/measured on 設計",
@@ -154,6 +156,8 @@ test("buildReplyGenerationPayload surfaces fallback intent and internal state su
   assert.ok(payload.traces[0]?.blockers.includes("責務が未定"));
   assert.equal(payload.imprints.preference[0]?.topic, "設計");
   assert.equal(payload.recentMemories[0]?.text, "設計をもう一段詰めたい。");
+  assert.equal(payload.world.currentPlace, nextSnapshot.world.currentPlace);
+  assert.match(payload.world.summary, /threshold|studio|archive|朝|昼|夕方|夜/);
 });
 
 test("buildProactiveGenerationPayload surfaces pending initiative and fallback proactive text", () => {
@@ -303,6 +307,7 @@ test("buildReplyGenerationPayload includes recent assistant replies as expressio
       smalltalk: 0.44,
       repair: 0,
       selfInquiry: 0,
+      worldInquiry: 0,
       workCue: 0,
       topics: [],
     },
@@ -320,6 +325,7 @@ test("buildReplyGenerationPayload includes recent assistant replies as expressio
       mentionTrace: false,
       mentionIdentity: false,
       mentionBoundary: false,
+      mentionWorld: false,
       askBack: false,
       variation: "brief",
       summary: "greet/open/close",

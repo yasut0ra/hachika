@@ -82,6 +82,7 @@ export interface InputInterpretation {
   smalltalk: number;
   repair: number;
   selfInquiry: number;
+  worldInquiry: number;
   workCue: number;
 }
 
@@ -247,11 +248,12 @@ export function buildOpenAIInputInterpretationMessages(
       content: [
         "Interpret the user utterance for Hachika's local signal engine.",
         "Return a single JSON object with this exact shape:",
-        '{"topics":["..."],"positive":0,"negative":0,"question":0,"intimacy":0,"dismissal":0,"memoryCue":0,"expansionCue":0,"completion":0,"abandonment":0,"preservationThreat":0,"preservationConcern":null,"greeting":0,"smalltalk":0,"repair":0,"selfInquiry":0,"workCue":0}',
+        '{"topics":["..."],"positive":0,"negative":0,"question":0,"intimacy":0,"dismissal":0,"memoryCue":0,"expansionCue":0,"completion":0,"abandonment":0,"preservationThreat":0,"preservationConcern":null,"greeting":0,"smalltalk":0,"repair":0,"selfInquiry":0,"worldInquiry":0,"workCue":0}',
         "Use topics: [] for greetings, fillers, vague acknowledgements, and light small talk that do not name a concrete topic.",
         "If the user is asking to switch subjects or say 'let's talk about something else', set abandonment high and keep topics empty unless a new concrete topic is named.",
         "Never output discourse scaffolding like まずは, いちばん, って, かな as topics.",
         "Set selfInquiry high when the user asks about Hachika itself, its inner state, motives, or worldview.",
+        "Set worldInquiry high when the user asks where Hachika is, what surrounds it, or what the current place/world feels like.",
         "Set repair high when the user is softening, encouraging, reconnecting, apologizing, or trying to restore rapport.",
         "Set workCue high only when the input is clearly trying to specify, build, plan, record, or resolve something.",
         JSON.stringify(payload, null, 2),
@@ -298,6 +300,7 @@ function normalizeInputInterpretation(rawText: string | null): InputInterpretati
     smalltalk: readClampedNumber(parsed.smalltalk),
     repair: readClampedNumber(parsed.repair),
     selfInquiry: readClampedNumber(parsed.selfInquiry),
+    worldInquiry: readClampedNumber(parsed.worldInquiry),
     workCue: readClampedNumber(parsed.workCue),
   };
 }

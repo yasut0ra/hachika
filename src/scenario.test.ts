@@ -402,6 +402,7 @@ test("scenario: async interpreter can drop a local topic and keep reply selectio
           smalltalk: 0.68,
           repair: 0,
           selfInquiry: 0,
+          worldInquiry: 0,
           workCue: 0,
         },
       };

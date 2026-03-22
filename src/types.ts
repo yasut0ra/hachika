@@ -323,6 +323,7 @@ export interface InteractionSignals {
   smalltalk: number;
   repair: number;
   selfInquiry: number;
+  worldInquiry: number;
   workCue: number;
   topics: string[];
 }
@@ -408,6 +409,7 @@ export interface InterpretationScoresDebug {
   smalltalk: number;
   repair: number;
   selfInquiry: number;
+  worldInquiry: number;
   workCue: number;
   memoryCue: number;
   expansionCue: number;

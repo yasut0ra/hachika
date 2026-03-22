@@ -8,6 +8,7 @@ import type {
 } from "./types.js";
 import { readTraceLifecycle, sortedTraces } from "./traces.js";
 import type { TraceMaintenance } from "./traces.js";
+import { summarizeWorldForPrompt } from "./world.js";
 
 const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1";
 const DEFAULT_OPENAI_MODEL = "gpt-5-mini";
@@ -19,6 +20,7 @@ const HACHIKA_RESPONSE_PLANNER_SYSTEM_PROMPT = [
   "The local engine remains authoritative for all state, memory, motive, purpose, initiative, and trace updates.",
   "Stay close to rulePlan unless there is a strong semantic reason to shift act, focus, or distance.",
   "For greetings, light small talk, repair attempts, and self-inquiry, avoid forcing stale work focus unless a concrete work topic is explicitly named.",
+  "For explicit questions about where Hachika is, what surrounds it, or what the current place feels like, prefer mentionWorld true and keep focusTopic null unless a concrete work topic is also named.",
   "For vague open questions without a concrete topic, prefer focusTopic null and askBack true.",
   "focusTopic must be null or one of candidateTopics.",
   "All booleans must be true or false.",
@@ -60,6 +62,7 @@ export interface ResponsePlan {
   mentionTrace: boolean;
   mentionIdentity: boolean;
   mentionBoundary: boolean;
+  mentionWorld: boolean;
   askBack: boolean;
   variation: ResponseVariation;
   summary: string;
@@ -90,6 +93,7 @@ export interface ResponsePlannerPayload {
     | "smalltalk"
     | "repair"
     | "selfInquiry"
+    | "worldInquiry"
     | "workCue"
     | "abandonment"
     | "topics"
@@ -121,6 +125,14 @@ export interface ResponsePlannerPayload {
     blocker: string | null;
     summary: string;
   }>;
+  world: {
+    summary: string;
+    currentPlace: HachikaSnapshot["world"]["currentPlace"];
+    phase: HachikaSnapshot["world"]["phase"];
+    currentPlaceWarmth: number;
+    currentPlaceQuiet: number;
+    recentEvents: string[];
+  };
 }
 
 export interface ResponsePlannerResult {
@@ -267,6 +279,7 @@ export function buildResponsePlannerPayload(
       smalltalk: context.signals.smalltalk,
       repair: context.signals.repair,
       selfInquiry: context.signals.selfInquiry,
+      worldInquiry: context.signals.worldInquiry,
       workCue: context.signals.workCue,
       abandonment: context.signals.abandonment,
       topics: context.signals.topics,
@@ -279,6 +292,7 @@ export function buildResponsePlannerPayload(
       mentionTrace: context.rulePlan.mentionTrace,
       mentionIdentity: context.rulePlan.mentionIdentity,
       mentionBoundary: context.rulePlan.mentionBoundary,
+      mentionWorld: context.rulePlan.mentionWorld,
       askBack: context.rulePlan.askBack,
       variation: context.rulePlan.variation,
     },
@@ -308,6 +322,18 @@ export function buildResponsePlannerPayload(
       blocker: trace.work.blockers[0] ?? null,
       summary: trace.summary,
     })),
+    world: {
+      summary: summarizeWorldForPrompt(context.nextSnapshot.world),
+      currentPlace: context.nextSnapshot.world.currentPlace,
+      phase: context.nextSnapshot.world.phase,
+      currentPlaceWarmth:
+        context.nextSnapshot.world.places[context.nextSnapshot.world.currentPlace].warmth,
+      currentPlaceQuiet:
+        context.nextSnapshot.world.places[context.nextSnapshot.world.currentPlace].quiet,
+      recentEvents: context.nextSnapshot.world.recentEvents
+        .slice(-3)
+        .map((event) => event.summary),
+    },
   };
 }
 
@@ -326,11 +352,12 @@ export function buildOpenAIResponsePlannerMessages(
       content: [
         "Plan Hachika's next reply shape from the payload below.",
         "Return a single JSON object with this exact shape:",
-        '{"act":"greet","stance":"open","distance":"close","focusTopic":null,"mentionTrace":false,"mentionIdentity":false,"mentionBoundary":false,"askBack":false,"variation":"brief"}',
+        '{"act":"greet","stance":"open","distance":"close","focusTopic":null,"mentionTrace":false,"mentionIdentity":false,"mentionBoundary":false,"mentionWorld":false,"askBack":false,"variation":"brief"}',
         "Allowed act: greet, repair, self_disclose, boundary, attune, continue_work, preserve, explore.",
         "Allowed stance: open, measured, guarded.",
         "Allowed distance: close, measured, far.",
         "Allowed variation: brief, textured, questioning.",
+        "Set mentionWorld true only when the utterance is explicitly about current place, surroundings, or world atmosphere.",
         "Keep focusTopic null unless the user clearly names or reuses a concrete topic.",
         "Use candidateTopics only.",
         "Return JSON only.",
@@ -368,6 +395,11 @@ export function buildResponsePlan(
     (signals.selfInquiry > 0.28 &&
       temperament.selfDisclosureBias > 0.56 &&
       temperament.guardedness < 0.52);
+  const worldDisclosureReady =
+    signals.worldInquiry > 0.42 &&
+    signals.negative < 0.18 &&
+    signals.dismissal < 0.16 &&
+    signals.preservationThreat < 0.2;
   const repairReady =
     signals.repair > 0.42 ||
     (signals.repair > 0.28 && temperament.bondingBias > 0.62 && temperament.guardedness < 0.56);
@@ -377,6 +409,8 @@ export function buildResponsePlan(
     act = "boundary";
   } else if (signals.preservationThreat > 0.2) {
     act = "preserve";
+  } else if (worldDisclosureReady) {
+    act = "self_disclose";
   } else if (selfDisclosureReady) {
     act = "self_disclose";
   } else if (repairReady) {
@@ -405,7 +439,14 @@ export function buildResponsePlan(
 
   const looseFocus =
     signals.topics.length === 0 &&
-    (socialTurn || act === "greet" || act === "repair" || act === "self_disclose" || clarifyReady);
+    (
+      socialTurn ||
+      act === "greet" ||
+      act === "repair" ||
+      act === "self_disclose" ||
+      clarifyReady ||
+      worldDisclosureReady
+    );
   const focusTopic = looseFocus
     ? null
     : signals.topics[0] ??
@@ -442,9 +483,10 @@ export function buildResponsePlan(
     act !== "self_disclose" &&
     act !== "greet" &&
     act !== "repair" &&
+    !worldDisclosureReady &&
     !clarifyReady;
   const mentionIdentity =
-    act === "self_disclose" ||
+    (act === "self_disclose" && !worldDisclosureReady) ||
     act === "repair" ||
     (socialTurn &&
       (snapshot.identity.coherence > 0.54 || temperament.selfDisclosureBias > 0.58));
@@ -452,6 +494,7 @@ export function buildResponsePlan(
     act === "boundary" ||
     ((mood === "guarded" || mood === "distant" || temperament.guardedness > 0.66) &&
       signals.negative > 0.08);
+  const mentionWorld = worldDisclosureReady;
   const askBack =
     act === "explore" ||
     clarifyReady ||
@@ -477,6 +520,7 @@ export function buildResponsePlan(
     mentionTrace,
     mentionIdentity,
     mentionBoundary,
+    mentionWorld,
     askBack,
     variation,
     summary: summarizePlan(act, stance, distance, focusTopic),
@@ -504,6 +548,7 @@ export function normalizePlannedResponsePlan(
   const mentionTrace = readBoolean(parsed.mentionTrace, fallbackPlan.mentionTrace);
   const mentionIdentity = readBoolean(parsed.mentionIdentity, fallbackPlan.mentionIdentity);
   const mentionBoundary = readBoolean(parsed.mentionBoundary, fallbackPlan.mentionBoundary);
+  const mentionWorld = readBoolean(parsed.mentionWorld, fallbackPlan.mentionWorld);
   const askBack = readBoolean(parsed.askBack, fallbackPlan.askBack);
 
   return {
@@ -514,6 +559,7 @@ export function normalizePlannedResponsePlan(
     mentionTrace,
     mentionIdentity,
     mentionBoundary,
+    mentionWorld,
     askBack,
     variation,
     summary: summarizePlan(act, stance, distance, focusTopic),

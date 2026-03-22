@@ -211,14 +211,15 @@ Hachika は、単に有用なだけでなく、
 - `rewardSaturation / stressLoad / noveltyHunger` の反応感度 state を保持する
 - `attachment` を長期的な関係指標として保持する
 - ユーザー入力を相互作用イベントに変換し、状態を更新する
-  - rule-based な signal 抽出に加えて、OpenAI 互換の `input interpreter` を使えば greeting / smalltalk / repair / self-inquiry / work を LLM で正規化できる
+  - rule-based な signal 抽出に加えて、OpenAI 互換の `input interpreter` を使えば greeting / smalltalk / repair / self-inquiry / world-inquiry / work を LLM で正規化できる
   - 挨拶や相槌のような低情報入力を topic / trace として扱いにくくし、雑談や自己開示要求を stale work と切り分けやすくしている
   - `まずは / いちばん / って / かな / 納得` のような discourse scaffolding や相槌は topic として採りにくくし、既存の preference に残っていても優先 topic として使いにくくしている
   - `別の話` のような明示的な topic shift は abandonment として扱い、old purpose / trace をそのまま前景化しにくくしている
 - 応答直前には `response planner` が `act / stance / distance / focus` を決め、rule-based reply と LLM wording の両方が同じ返答意図を共有する
   - greeting / repair / self-disclosure のような social turn では stale trace を引っ込め、関係の温度や自己開示を優先しやすくしている
+  - `今どこにいるの` や `周りはどんな感じ` のような world inquiry では `mentionWorld` を立て、stale work より current place / phase / object state を返答に出しやすくしている
   - `askBack / variation` も rule-based reply に反映され、雑談や explore では問い返しや文面の揺れ方が planner に従う
-  - OpenAI 互換の `response planner` を使えば、rule plan を土台にしつつ `act / stance / distance / focus / askBack` を LLM が structured に補正できる
+  - OpenAI 互換の `response planner` を使えば、rule plan を土台にしつつ `act / stance / distance / focus / mentionWorld / askBack` を LLM が structured に補正できる
   - planner が空応答や不正 JSON を返した場合は rule plan に fallback し、`/llm` と `/debug` から planner の source / fallback に加えて `rule -> final` の plan 差分も追える
   - 能動発話でも `proactive plan` が `act / stance / distance / emphasis` を決め、rule-based proactive と LLM wording が同じ切り出し方を共有する
   - wording 直前にはさらに `expression perspective` が `identity / motive / drive / body / relation / trace / preservation` のどこを前景化するかを選び、同じ state でも毎回同じ角度だけから喋り続けにくくしている
@@ -279,6 +280,7 @@ Hachika は、単に有用なだけでなく、
 - OpenAI 互換の `reply generator` を env から有効化でき、local engine が決めた state / motive / purpose / traces を保ったまま通常応答と能動発話の wording だけを LLM に委譲できる
   - 通常応答では `responsePlan` を payload に含め、fallback 文面の言い換えだけでなく「どういう向きで返すか」も LLM に渡している
   - 通常応答ではさらに `replySelection` も payload に含め、どの topic / trace / boundary を参照して返しているかを LLM に共有している
+  - world inquiry が立っているときは `payload.world` も渡し、LLM wording でも current place / phase / object state を自然に織り込みやすくしている
   - 能動発話でも `proactivePlan` を payload に含め、blocker を前に出すのか、reopen を前に出すのか、保存寄りに切り出すのかを LLM に共有している
   - `expression.recentAssistantReplies / avoidOpenings` も payload に含め、直近の言い回しや入り方をそのままなぞりにくくしている
   - `expression.perspective.preferredAngle / options` により、その返答で identity を前に出すのか、trace を前に出すのか、body や preservation を前に出すのかを LLM に共有している

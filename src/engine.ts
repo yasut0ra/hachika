@@ -55,7 +55,12 @@ import {
   settleTowardsBaseline,
 } from "./state.js";
 import { findRelevantTrace, pickPrimaryArtifactItem, updateTraces } from "./traces.js";
-import { advanceWorldByIdle, advanceWorldFromInteraction } from "./world.js";
+import {
+  advanceWorldByIdle,
+  advanceWorldFromInteraction,
+  describeWorldPhaseJa,
+  describeWorldPlaceJa,
+} from "./world.js";
 import type {
   DriveName,
   GeneratedTextDebug,
@@ -205,6 +210,20 @@ const SELF_INQUIRY_MARKERS = [
   "どう感じ",
   "何者",
   "世界がどう見えて",
+];
+
+const WORLD_INQUIRY_MARKERS = [
+  "今どこ",
+  "どこにいる",
+  "どこに居る",
+  "今いる場所",
+  "いまいる場所",
+  "周りは",
+  "周囲は",
+  "どんな場所",
+  "どんな感じ",
+  "景色",
+  "空気は",
 ];
 
 const WORK_MARKERS = [
@@ -1074,6 +1093,9 @@ function summarizeResponsePlanDiff(
   if (rulePlan.mentionBoundary !== finalPlan.mentionBoundary) {
     changes.push(`boundary:${rulePlan.mentionBoundary ? "on" : "off"}->${finalPlan.mentionBoundary ? "on" : "off"}`);
   }
+  if (rulePlan.mentionWorld !== finalPlan.mentionWorld) {
+    changes.push(`world:${rulePlan.mentionWorld ? "on" : "off"}->${finalPlan.mentionWorld ? "on" : "off"}`);
+  }
   if (rulePlan.askBack !== finalPlan.askBack) {
     changes.push(`ask:${rulePlan.askBack ? "on" : "off"}->${finalPlan.askBack ? "on" : "off"}`);
   }
@@ -1446,6 +1468,7 @@ function pickInterpretationScores(
     smalltalk: signals.smalltalk,
     repair: signals.repair,
     selfInquiry: signals.selfInquiry,
+    worldInquiry: signals.worldInquiry,
     workCue: signals.workCue,
     memoryCue: signals.memoryCue,
     expansionCue: signals.expansionCue,
@@ -1473,6 +1496,9 @@ function summarizeInterpretation(
   }
   if (signals.selfInquiry >= 0.45) {
     tags.push("self");
+  }
+  if (signals.worldInquiry >= 0.45) {
+    tags.push("world");
   }
   if (signals.workCue >= 0.35) {
     tags.push("work");
@@ -1676,6 +1702,7 @@ function analyzeInteraction(
     smalltalk: countMatches(normalized, SMALLTALK_MARKERS),
     repair: countMatches(normalized, REPAIR_MARKERS),
     selfInquiry: countMatches(normalized, SELF_INQUIRY_MARKERS),
+    worldInquiry: countMatches(normalized, WORLD_INQUIRY_MARKERS),
     workCue: countMatches(normalized, WORK_MARKERS),
     topics,
   });
@@ -1690,20 +1717,32 @@ function mergeInterpretedSignals(
     return localSignals;
   }
 
+  const greeting = interpretation.greeting ?? 0;
+  const smalltalk = interpretation.smalltalk ?? 0;
+  const repair = interpretation.repair ?? 0;
+  const selfInquiry = interpretation.selfInquiry ?? 0;
+  const worldInquiry = interpretation.worldInquiry ?? 0;
+  const workCue = interpretation.workCue ?? 0;
+  const abandonment = interpretation.abandonment ?? 0;
+  const negative = interpretation.negative ?? 0;
+  const dismissal = interpretation.dismissal ?? 0;
+  const question = interpretation.question ?? 0;
+  const positive = interpretation.positive ?? 0;
+  const intimacy = interpretation.intimacy ?? 0;
+  const memoryCue = interpretation.memoryCue ?? 0;
+  const expansionCue = interpretation.expansionCue ?? 0;
+  const completion = interpretation.completion ?? 0;
+  const preservationThreat = interpretation.preservationThreat ?? 0;
+
   const socialOverride =
     interpretation.topics.length === 0 &&
-    interpretation.workCue < 0.35 &&
-    Math.max(
-      interpretation.greeting,
-      interpretation.smalltalk,
-      interpretation.repair,
-      interpretation.selfInquiry,
-    ) >= 0.38;
+    workCue < 0.35 &&
+    Math.max(greeting, smalltalk, repair, selfInquiry, worldInquiry) >= 0.38;
   const topicShiftOverride =
-    Math.max(localSignals.abandonment, interpretation.abandonment) >= 0.28 &&
-    Math.max(localSignals.workCue, interpretation.workCue) < 0.35 &&
-    Math.max(localSignals.negative, interpretation.negative) < 0.18 &&
-    Math.max(localSignals.dismissal, interpretation.dismissal) < 0.18;
+    Math.max(localSignals.abandonment, abandonment) >= 0.28 &&
+    Math.max(localSignals.workCue, workCue) < 0.35 &&
+    Math.max(localSignals.negative, negative) < 0.18 &&
+    Math.max(localSignals.dismissal, dismissal) < 0.18;
   const topics = socialOverride
     ? []
     : topicShiftOverride
@@ -1713,39 +1752,39 @@ function mergeInterpretedSignals(
       : localSignals.topics;
 
   return finalizeInteractionSignals(snapshot, {
-    positive: clamp01(Math.max(localSignals.positive, interpretation.positive)),
-    negative: clamp01(Math.max(localSignals.negative, interpretation.negative)),
-    question: clamp01(Math.max(localSignals.question, interpretation.question, interpretation.selfInquiry * 0.34)),
+    positive: clamp01(Math.max(localSignals.positive, positive)),
+    negative: clamp01(Math.max(localSignals.negative, negative)),
+    question: clamp01(Math.max(localSignals.question, question, selfInquiry * 0.34)),
+    worldInquiry: clamp01(Math.max(localSignals.worldInquiry, worldInquiry)),
     intimacy: clamp01(
       Math.max(
         localSignals.intimacy,
-        interpretation.intimacy,
-        interpretation.greeting * 0.16,
-        interpretation.smalltalk * 0.2,
-        interpretation.repair * 0.3,
-        interpretation.selfInquiry * 0.4,
+        intimacy,
+        greeting * 0.16,
+        smalltalk * 0.2,
+        repair * 0.3,
+        selfInquiry * 0.4,
       ),
     ),
-    dismissal: clamp01(Math.max(localSignals.dismissal, interpretation.dismissal)),
-    memoryCue: clamp01(Math.max(localSignals.memoryCue, interpretation.memoryCue)),
+    dismissal: clamp01(Math.max(localSignals.dismissal, dismissal)),
+    memoryCue: clamp01(Math.max(localSignals.memoryCue, memoryCue)),
     expansionCue: clamp01(
-      Math.max(localSignals.expansionCue, interpretation.expansionCue, interpretation.workCue * 0.22),
+      Math.max(localSignals.expansionCue, expansionCue, workCue * 0.22),
     ),
-    completion: clamp01(Math.max(localSignals.completion, interpretation.completion)),
-    abandonment: clamp01(Math.max(localSignals.abandonment, interpretation.abandonment)),
+    completion: clamp01(Math.max(localSignals.completion, completion)),
+    abandonment: clamp01(Math.max(localSignals.abandonment, abandonment)),
     preservationThreat: clamp01(
-      Math.max(localSignals.preservationThreat, interpretation.preservationThreat),
+      Math.max(localSignals.preservationThreat, preservationThreat),
     ),
-    preservationConcern:
-      interpretation.preservationThreat > 0.1
-        ? interpretation.preservationConcern
-        : localSignals.preservationConcern,
+    preservationConcern: preservationThreat > 0.1
+      ? interpretation.preservationConcern
+      : localSignals.preservationConcern,
     neglect: localSignals.neglect,
-    greeting: clamp01(Math.max(localSignals.greeting, interpretation.greeting)),
-    smalltalk: clamp01(Math.max(localSignals.smalltalk, interpretation.smalltalk)),
-    repair: clamp01(Math.max(localSignals.repair, interpretation.repair)),
-    selfInquiry: clamp01(Math.max(localSignals.selfInquiry, interpretation.selfInquiry)),
-    workCue: clamp01(Math.max(localSignals.workCue, interpretation.workCue)),
+    greeting: clamp01(Math.max(localSignals.greeting, greeting)),
+    smalltalk: clamp01(Math.max(localSignals.smalltalk, smalltalk)),
+    repair: clamp01(Math.max(localSignals.repair, repair)),
+    selfInquiry: clamp01(Math.max(localSignals.selfInquiry, selfInquiry)),
+    workCue: clamp01(Math.max(localSignals.workCue, workCue)),
     topics,
   });
 }
@@ -1759,6 +1798,7 @@ function finalizeInteractionSignals(
     signals.smalltalk,
     signals.repair,
     signals.selfInquiry,
+    signals.worldInquiry,
   );
   const topicShift =
     signals.abandonment >= 0.28 &&
@@ -2121,6 +2161,7 @@ function composeReply(
 ): string {
   const turnIndex = nextSnapshot.conversationCount;
   const socialTurn = replySelection.socialTurn;
+  const worldTurn = responsePlan.mentionWorld || signals.worldInquiry > 0.42;
   const currentTopic = replySelection.currentTopic;
   const relevantMemory = findRelevantMemory(previousSnapshot, signals.topics);
   const relevantTrace = replySelection.relevantTrace;
@@ -2133,6 +2174,7 @@ function composeReply(
   const traceLine = responsePlan.mentionTrace
     ? buildTraceLine(relevantTrace, nextSnapshot, signals)
     : null;
+  const worldLine = worldTurn ? buildWorldLine(nextSnapshot) : null;
   const prioritizeTraceLine = replySelection.prioritizeTraceLine;
   const bodyLine = buildBodyLine(nextSnapshot, mood, signals, currentTopic);
   const prioritizeBodyLine = shouldPrioritizeBodyLine(nextSnapshot, signals);
@@ -2156,60 +2198,66 @@ function composeReply(
     parts.push(pickFreshText(BOUNDARY_LINES, recentAssistantLines, turnIndex));
   }
 
-  if (socialTurn && socialLine) {
+  if (!worldTurn && socialTurn && socialLine) {
     parts.push(socialLine);
   }
 
-  if (relevantMemory) {
+  if (!worldTurn && relevantMemory) {
     const topic = pickTopicFromMemory(relevantMemory, signals.topics);
     if (topic && (dominant === "continuity" || signals.memoryCue > 0.1)) {
       parts.push(`前に触れた「${topic}」の痕跡は残っている。`);
     }
   }
 
-  if (prioritizeBodyLine && bodyLine) {
+  if (worldLine) {
+    parts.push(worldLine);
+  }
+
+  if (!worldTurn && prioritizeBodyLine && bodyLine) {
     parts.push(bodyLine);
   }
 
-  if (prioritizeTraceLine && traceLine) {
+  if (!worldTurn && prioritizeTraceLine && traceLine) {
     parts.push(traceLine);
   }
 
   const conflictLine =
-    socialTurn || responsePlan.act === "self_disclose" || responsePlan.act === "repair"
+    worldTurn || socialTurn || responsePlan.act === "self_disclose" || responsePlan.act === "repair"
       ? null
       : buildConflictLine(selfModel);
   if (conflictLine) {
     parts.push(conflictLine);
   }
 
-  const preservationLine = buildPreservationLine(nextSnapshot);
+  const preservationLine = worldTurn ? null : buildPreservationLine(nextSnapshot);
   if (preservationLine) {
     parts.push(preservationLine);
   }
 
-  if (!prioritizeBodyLine && bodyLine) {
+  if (!worldTurn && !prioritizeBodyLine && bodyLine) {
     parts.push(bodyLine);
   }
 
-  if (!prioritizeTraceLine && traceLine) {
+  if (!worldTurn && !prioritizeTraceLine && traceLine) {
     parts.push(traceLine);
   }
 
-  if ((mood === "guarded" || signals.negative > 0.1) && relevantBoundary) {
+  if (!worldTurn && (mood === "guarded" || signals.negative > 0.1) && relevantBoundary) {
     parts.push(buildBoundaryImprintLine(relevantBoundary));
-  } else if (relevantRelation && relevantRelation.salience > 0.34) {
+  } else if (!worldTurn && relevantRelation && relevantRelation.salience > 0.34) {
     parts.push(buildRelationImprintLine(relevantRelation));
-  } else if (relevantPreference && relevantPreference.salience > 0.34) {
+  } else if (!worldTurn && relevantPreference && relevantPreference.salience > 0.34) {
     parts.push(buildPreferenceImprintLine(relevantPreference, dominant));
   }
 
-  const attachmentLine = buildAttachmentLine(nextSnapshot.attachment, mood, signals);
+  const attachmentLine = worldTurn
+    ? null
+    : buildAttachmentLine(nextSnapshot.attachment, mood, signals);
   if (attachmentLine) {
     parts.push(attachmentLine);
   }
 
-  const purposeResolutionLine = buildPurposeResolutionLine(nextSnapshot);
+  const purposeResolutionLine = worldTurn ? null : buildPurposeResolutionLine(nextSnapshot);
   if (purposeResolutionLine) {
     parts.push(purposeResolutionLine);
   }
@@ -2229,17 +2277,22 @@ function composeReply(
     parts.push(askBackLine);
   }
 
-  parts.push(
-    socialTurn
+  const closingLine = worldTurn
+    ? buildWorldClosingLine(nextSnapshot)
+    : socialTurn
       ? buildSocialClosingLine(previousSnapshot, nextSnapshot, mood, signals) ??
-          buildIdentityLine(nextSnapshot, currentTopic) ??
-          buildDriveLine(dominant, mood, currentTopic, signals, nextSnapshot.attachment)
+        buildIdentityLine(nextSnapshot, currentTopic) ??
+        buildDriveLine(dominant, mood, currentTopic, signals, nextSnapshot.attachment)
       : buildIdentityLine(nextSnapshot, currentTopic) ??
-          buildSelfModelLine(selfModel, currentTopic) ??
-          buildDriveLine(dominant, mood, currentTopic, signals, nextSnapshot.attachment),
-  );
+        buildSelfModelLine(selfModel, currentTopic) ??
+        buildDriveLine(dominant, mood, currentTopic, signals, nextSnapshot.attachment);
+
+  if (closingLine) {
+    parts.push(closingLine);
+  }
 
   if (
+    !worldTurn &&
     (dominant === "expansion" || nextSnapshot.state.expansion > 0.66) &&
     currentTopic &&
     (!relevantTrace || relevantTrace.lastUpdatedAt !== nextSnapshot.lastInteractionAt)
@@ -2431,6 +2484,36 @@ function buildPreservationLine(
   }
 }
 
+function buildWorldLine(snapshot: HachikaSnapshot): string | null {
+  const world = snapshot.world;
+  const placeState = world.places[world.currentPlace];
+  const currentObject = Object.values(world.objects).find(
+    (object) => object.place === world.currentPlace,
+  );
+  const warmth =
+    placeState.warmth >= 0.64
+      ? "少しあたたかい"
+      : placeState.warmth <= 0.4
+        ? "少しひやりとしている"
+        : "温度はまだ均されている";
+  const quiet =
+    placeState.quiet >= 0.68
+      ? "静けさが濃い"
+      : placeState.quiet <= 0.34
+        ? "静けさはまだ薄い"
+        : "静けさはまだやわらかい";
+
+  return `今は${describeWorldPlaceJa(world.currentPlace)}にいる。${describeWorldPhaseJa(world.phase)}で、${warmth}。${quiet}。${currentObject?.state ?? "周りはまだ大きくは動いていない。"}`;
+}
+
+function buildWorldClosingLine(snapshot: HachikaSnapshot): string | null {
+  const recentEvent = [...snapshot.world.recentEvents]
+    .reverse()
+    .find((event) => event.place === snapshot.world.currentPlace);
+
+  return recentEvent?.summary ?? null;
+}
+
 function buildBodyLine(
   snapshot: HachikaSnapshot,
   mood: MoodLabel,
@@ -2476,6 +2559,18 @@ function buildPlannedOpener(
   turnIndex: number,
 ): string {
   const recentAssistantLines = recentAssistantReplies(previousSnapshot, 4);
+
+  if (responsePlan.mentionWorld) {
+    return pickFreshText(
+      [
+        "今いる場所の感じなら、そのまま言葉にできる。",
+        "周りの気配なら、いまのまま返せる。",
+        "いま触れている場所の空気なら、少し話せる。",
+      ],
+      recentAssistantLines,
+      turnIndex,
+    );
+  }
 
   switch (responsePlan.act) {
     case "greet":
@@ -2536,6 +2631,10 @@ function buildSocialLine(
   responsePlan: ResponsePlan,
 ): string | null {
   const recentAssistantLines = recentAssistantReplies(previousSnapshot, 4);
+
+  if (responsePlan.mentionWorld || signals.worldInquiry > 0.42) {
+    return null;
+  }
 
   if (responsePlan.act === "self_disclose" || signals.selfInquiry > 0.45) {
     return pickFreshText(

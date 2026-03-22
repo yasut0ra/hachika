@@ -1501,6 +1501,25 @@ test("ambiguous question asks for a concrete direction instead of inventing a to
   assert.match(result.reply, /雑談|作業|ひとつ話題|軽く話す|深く掘る/);
 });
 
+test("world inquiry replies can surface the current place without dragging stale work along", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.world.currentPlace = "archive";
+  snapshot.world.phase = "night";
+  snapshot.world.places.archive.quiet = 0.84;
+  snapshot.world.places.archive.warmth = 0.36;
+  snapshot.world.objects.shelf!.state = "棚が少しだけざわついている。";
+
+  const engine = new HachikaEngine(snapshot);
+  engine.respond("設計を一緒に進めて、記録として残したい。");
+  const result = engine.respond("今どこにいるの？");
+
+  assert.ok(result.debug.signals.worldInquiry > 0.4);
+  assert.equal(result.debug.reply.selection?.currentTopic, null);
+  assert.equal(result.debug.reply.selection?.relevantTraceTopic, null);
+  assert.match(result.reply, /threshold|studio|archive|棚|静けさ|夜/);
+  assert.equal(/設計/.test(result.reply), false);
+});
+
 test("identity can surface in a generic follow-up reply", () => {
   const engine = new HachikaEngine(createInitialSnapshot());
 
@@ -1695,6 +1714,7 @@ test("respondAsync can use an input interpreter to keep greetings non-topical an
           smalltalk: 0.68,
           repair: 0,
           selfInquiry: 0,
+          worldInquiry: 0,
           workCue: 0,
         },
       };
@@ -1745,6 +1765,7 @@ test("respondAsync can forward interpreted reply selection into the llm payload"
           smalltalk: 0.68,
           repair: 0,
           selfInquiry: 0,
+          worldInquiry: 0,
           workCue: 0,
         },
       };
