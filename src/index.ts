@@ -5,6 +5,7 @@ import { stdin as input, stdout as output } from "node:process";
 import { describeArtifactFiles, syncArtifacts } from "./artifacts.js";
 import { HachikaEngine } from "./engine.js";
 import { loadDotEnv } from "./env.js";
+import { summarizeLiveGrowthMetrics } from "./growth-metrics.js";
 import { createInputInterpreterFromEnv, describeInputInterpreter } from "./input-interpreter.js";
 import {
   sortedBoundaryImprints,
@@ -93,6 +94,11 @@ try {
 
     if (text === "/loop") {
       printResidentLoop();
+      continue;
+    }
+
+    if (text === "/metrics") {
+      printGrowthMetrics(engine);
       continue;
     }
 
@@ -215,6 +221,7 @@ function printHelp(): void {
   console.log("/proactive force a proactive line now");
   console.log("/llm    print current reply generator");
   console.log("/loop   print resident loop status");
+  console.log("/metrics print live growth metrics");
   console.log("/idle N simulate N hours of inactivity");
   console.log("/state  print current drives");
   console.log("/body   print current body state");
@@ -309,6 +316,18 @@ function printResidentLoop(): void {
       ? `recent activity: ${status.lastActivities.join(" | ")}`
       : "recent activity: none",
   );
+}
+
+function printGrowthMetrics(currentEngine: HachikaEngine): void {
+  const metrics = summarizeLiveGrowthMetrics(currentEngine.getSnapshot());
+
+  console.log(`state saturation: ${metrics.stateSaturationRatio.toFixed(3)}`);
+  console.log(`archive reopen rate: ${metrics.archiveReopenRate.toFixed(3)}`);
+  console.log(`archived trace share: ${metrics.archivedTraceShare.toFixed(3)}`);
+  console.log(`autonomous activity count: ${metrics.autonomousActivityCount}`);
+  console.log(`recent autonomous activity: ${metrics.recentAutonomousActivityCount}`);
+  console.log(`idle consolidation share: ${metrics.idleConsolidationShare.toFixed(3)}`);
+  console.log(`proactive maintenance rate: ${metrics.proactiveMaintenanceRate.toFixed(3)}`);
 }
 
 function printTraces(currentEngine: HachikaEngine): void {

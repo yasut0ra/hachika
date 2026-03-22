@@ -2,13 +2,17 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  calculateArchivedTraceShare,
   calculateArchiveReopenRate,
   calculateAutonomousActivityVisibility,
   calculateIdentityDriftVisibility,
   calculateIdleConsolidationCoverage,
+  calculateProactiveMaintenanceRateFromSnapshot,
+  calculateSnapshotArchiveReopenRate,
   calculateProactiveMaintenanceRate,
   calculateStateSaturationRatio,
   calculateStressRecoveryLag,
+  summarizeLiveGrowthMetrics,
   summarizeGrowthMetrics,
 } from "./growth-metrics.js";
 import { runScenario } from "./scenario-harness.js";
@@ -185,6 +189,56 @@ test("growth metrics can measure proactive maintenance rate", () => {
   ]);
 
   assert.equal(calculateProactiveMaintenanceRate(run), 1);
+});
+
+test("live growth metrics summarize archive, activity, and maintenance signals from a snapshot", () => {
+  const snapshot = createArchivedMetricSnapshot();
+  const trace = snapshot.traces.設計!;
+  trace.lifecycle!.reopenCount = 1;
+  trace.lifecycle!.reopenedAt = "2026-03-19T02:00:00.000Z";
+  snapshot.initiative.history = [
+    {
+      kind: "idle_consolidation",
+      timestamp: "2026-03-19T03:00:00.000Z",
+      motive: null,
+      topic: "設計",
+      traceTopic: null,
+      blocker: null,
+      maintenanceAction: null,
+      reopened: false,
+      hours: 8,
+      summary: "静かな時間で設計を寄せ直した。",
+    },
+    {
+      kind: "proactive_emission",
+      timestamp: "2026-03-19T04:00:00.000Z",
+      motive: "continue_shared_work",
+      topic: "設計",
+      traceTopic: "設計",
+      blocker: null,
+      maintenanceAction: "promoted_decision",
+      reopened: true,
+      hours: null,
+      summary: "設計へ戻ろうとした。",
+    },
+  ];
+
+  const metrics = summarizeLiveGrowthMetrics(snapshot);
+
+  assert.equal(metrics.archiveReopenRate, 1);
+  assert.equal(metrics.archivedTraceShare, 1);
+  assert.equal(metrics.autonomousActivityCount, 2);
+  assert.equal(metrics.recentAutonomousActivityCount, 2);
+  assert.equal(metrics.idleConsolidationShare, 0.5);
+  assert.equal(metrics.proactiveMaintenanceRate, 1);
+});
+
+test("live growth metric helpers return zero when there is no trace or activity history", () => {
+  const snapshot = createInitialSnapshot();
+
+  assert.equal(calculateSnapshotArchiveReopenRate(snapshot), 0);
+  assert.equal(calculateArchivedTraceShare(snapshot), 0);
+  assert.equal(calculateProactiveMaintenanceRateFromSnapshot(snapshot), 0);
 });
 
 function createArchivedMetricSnapshot(): HachikaSnapshot {

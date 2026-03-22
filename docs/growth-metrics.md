@@ -95,5 +95,6 @@
 - 実装: [src/growth-metrics.ts](/Users/yasut0ra/dev/hachika/src/growth-metrics.ts)
 - 回帰: [src/growth-metrics.test.ts](/Users/yasut0ra/dev/hachika/src/growth-metrics.test.ts)
 - scenario 基盤: [src/scenario-harness.ts](/Users/yasut0ra/dev/hachika/src/scenario-harness.ts)
+- live summary: CLI の `/metrics` と UI の `Growth` panel
 
 比較はまず `npm test` を通し、その上で必要なら対象 scenario を増やしていく。

@@ -20,6 +20,16 @@ export interface GrowthMetrics {
   stressRecoveryLag: number | null;
 }
 
+export interface LiveGrowthMetrics {
+  stateSaturationRatio: number;
+  archiveReopenRate: number;
+  archivedTraceShare: number;
+  autonomousActivityCount: number;
+  recentAutonomousActivityCount: number;
+  idleConsolidationShare: number;
+  proactiveMaintenanceRate: number;
+}
+
 export function collectScenarioSnapshots(run: ScenarioRun): HachikaSnapshot[] {
   return [run.initialSnapshot, ...run.events.map((event) => event.snapshot)];
 }
@@ -224,6 +234,79 @@ export function summarizeGrowthMetrics(run: ScenarioRun): GrowthMetrics {
     idleConsolidationCoverage: calculateIdleConsolidationCoverage(run),
     proactiveMaintenanceRate: calculateProactiveMaintenanceRate(run),
     stressRecoveryLag: calculateStressRecoveryLag(run),
+  };
+}
+
+export function calculateSnapshotArchiveReopenRate(snapshot: HachikaSnapshot): number {
+  const traces = Object.values(snapshot.traces);
+  const archived = traces.filter(
+    (trace) => trace.lifecycle?.archivedAt || (trace.lifecycle?.reopenCount ?? 0) > 0,
+  );
+
+  if (archived.length === 0) {
+    return 0;
+  }
+
+  const reopened = archived.filter((trace) => (trace.lifecycle?.reopenCount ?? 0) > 0).length;
+  return round(reopened / archived.length);
+}
+
+export function calculateArchivedTraceShare(snapshot: HachikaSnapshot): number {
+  const traces = Object.values(snapshot.traces);
+
+  if (traces.length === 0) {
+    return 0;
+  }
+
+  const archived = traces.filter((trace) => trace.lifecycle?.phase === "archived").length;
+  return round(archived / traces.length);
+}
+
+export function calculateIdleConsolidationShare(snapshot: HachikaSnapshot): number {
+  const history = snapshot.initiative.history ?? [];
+
+  if (history.length === 0) {
+    return 0;
+  }
+
+  const idleRelated = history.filter(
+    (activity) =>
+      activity.kind === "idle_consolidation" || activity.kind === "idle_reactivation",
+  ).length;
+  return round(idleRelated / history.length);
+}
+
+export function calculateProactiveMaintenanceRateFromSnapshot(
+  snapshot: HachikaSnapshot,
+): number {
+  const proactive = (snapshot.initiative.history ?? []).filter(
+    (activity) => activity.kind === "proactive_emission",
+  );
+
+  if (proactive.length === 0) {
+    return 0;
+  }
+
+  const maintained = proactive.filter(
+    (activity) =>
+      activity.maintenanceAction !== null ||
+      activity.reopened ||
+      activity.traceTopic !== null,
+  ).length;
+  return round(maintained / proactive.length);
+}
+
+export function summarizeLiveGrowthMetrics(snapshot: HachikaSnapshot): LiveGrowthMetrics {
+  const history = snapshot.initiative.history ?? [];
+
+  return {
+    stateSaturationRatio: calculateStateSaturationRatio(snapshot),
+    archiveReopenRate: calculateSnapshotArchiveReopenRate(snapshot),
+    archivedTraceShare: calculateArchivedTraceShare(snapshot),
+    autonomousActivityCount: history.length,
+    recentAutonomousActivityCount: history.slice(-12).length,
+    idleConsolidationShare: calculateIdleConsolidationShare(snapshot),
+    proactiveMaintenanceRate: calculateProactiveMaintenanceRateFromSnapshot(snapshot),
   };
 }
 

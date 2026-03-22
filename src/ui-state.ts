@@ -1,6 +1,8 @@
 import { describeArtifactFiles } from "./artifacts.js";
 import type { ArtifactFile } from "./artifacts.js";
 import { HachikaEngine } from "./engine.js";
+import { summarizeLiveGrowthMetrics } from "./growth-metrics.js";
+import type { LiveGrowthMetrics } from "./growth-metrics.js";
 import {
   deriveResidentLoopHealth,
   loadResidentLoopStatusSync,
@@ -31,6 +33,7 @@ export interface UiStatePayload {
     residentLoopHealth: ResidentLoopHealth | null;
   };
   selfModel: ReturnType<HachikaEngine["getSelfModel"]>;
+  growth: LiveGrowthMetrics;
   memories: MemoryEntry[];
   traces: Array<{
     topic: TraceEntry["topic"];
@@ -84,6 +87,7 @@ export function buildUiState(
       residentLoopHealth,
     },
     selfModel: engine.getSelfModel(),
+    growth: summarizeLiveGrowthMetrics(snapshot),
     memories: snapshot.memories.slice(-18),
     traces: sortedTraces(snapshot, 10).map((trace) => ({
       topic: trace.topic,

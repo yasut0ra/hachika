@@ -2,6 +2,7 @@ const messagesNode = document.getElementById("messages");
 const stateNode = document.getElementById("state-metrics");
 const identityNode = document.getElementById("identity-panel");
 const diagnosticsNode = document.getElementById("diagnostics-panel");
+const growthNode = document.getElementById("growth-metrics");
 const tracesNode = document.getElementById("traces-panel");
 const artifactsNode = document.getElementById("artifacts-panel");
 const connectionNode = document.getElementById("connection-status");
@@ -41,6 +42,7 @@ function render(ui) {
   renderState(ui.summary);
   renderIdentity(ui.summary, ui.selfModel);
   renderDiagnostics(ui.diagnostics, ui.summary.residentLoop, ui.summary.residentLoopHealth);
+  renderGrowth(ui.growth);
   renderTraces(ui.traces);
   renderArtifacts(ui.artifacts);
 }
@@ -145,6 +147,33 @@ function renderDiagnostics(diagnostics, residentLoop, residentLoopHealth) {
     stackCard("Interpretation", formatInterpretation(diagnostics.lastInterpretation)),
     stackCard("Trace", formatTrace(diagnostics.lastTrace)),
   );
+}
+
+function renderGrowth(growth) {
+  growthNode.innerHTML = "";
+
+  const block = document.createElement("section");
+  block.className = "metric-block";
+  block.innerHTML = "<h3>Live Signals</h3>";
+
+  const rows = [
+    ["state saturation", formatNumber(growth.stateSaturationRatio)],
+    ["archive reopen", formatNumber(growth.archiveReopenRate)],
+    ["archived trace share", formatNumber(growth.archivedTraceShare)],
+    ["activity count", String(growth.autonomousActivityCount)],
+    ["recent activity", String(growth.recentAutonomousActivityCount)],
+    ["idle consolidation", formatNumber(growth.idleConsolidationShare)],
+    ["proactive maintenance", formatNumber(growth.proactiveMaintenanceRate)],
+  ];
+
+  for (const [label, value] of rows) {
+    const row = document.createElement("div");
+    row.className = "metric-row";
+    row.innerHTML = `<span>${label}</span><strong>${value}</strong>`;
+    block.append(row);
+  }
+
+  growthNode.append(block);
 }
 
 function renderTraces(traces) {

@@ -331,6 +331,7 @@ cp .env.example .env
 - `/proactive` 能動発話を強制的に出す
 - `/llm` 現在の reply generator / input interpreter / response planner / trace extractor と直近の `reply/proactive/trace` diagnostics を表示
 - `/loop` resident loop の `heartbeat / stale 判定 / last tick / last activity / last proactive / error / recent activity` を表示
+- `/metrics` 現在の live growth metrics を表示
 - `/debug` では `pending initiative` に加えて、その時点の `pending plan` も表示する
   - 直近の通常応答と直近の能動発話の diagnostics / plan は別々に保持される
   - 直近の `input interpretation` も `rule / llm / fallback / topics` に加えて、主要 score と `local -> final` の topic 差分付きで確認できる
@@ -349,6 +350,7 @@ cp .env.example .env
 - `/traces` 保存された trace と structured artifact を表示
 - `/activity` 直近の autonomous activity history を表示
 - `/artifacts` materialize 済み artifact ファイルの一覧を表示
+- UI では `Growth` panel から `state saturation / archive reopen / archived trace share / activity count / idle consolidation / proactive maintenance` を見られる
 - `/memory` 直近の記憶を表示
 - `/imprints` 長期記憶を `preference / boundary / relation` 別に表示
 - `/debug` 嗜好、identity、traces、preservation threat、purpose progress、直近の purpose 解決、dominant conflict、`reply/proactive` diagnostics を含む状態概要を表示
