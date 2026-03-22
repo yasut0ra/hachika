@@ -935,6 +935,67 @@ test("pending initiative emits a proactive resume after idle", () => {
   assert.ok(lastActivity?.summary.includes("自分から"));
 });
 
+test("proactive emission can recall a topic from the current world object", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.world.currentPlace = "archive";
+  snapshot.world.objects.shelf!.linkedTraceTopics = ["仕様の境界"];
+  snapshot.world.objects.shelf!.state = "棚のすきまに小さな痕跡が差し込まれている。";
+  snapshot.traces["仕様の境界"] = {
+    topic: "仕様の境界",
+    kind: "spec_fragment",
+    status: "active",
+    lastAction: "expanded",
+    summary: "「仕様の境界」は断片として残っている。",
+    sourceMotive: "continue_shared_work",
+    artifact: {
+      memo: ["仕様の境界を残す"],
+      fragments: ["境界を切り分ける"],
+      decisions: [],
+      nextSteps: ["責務を分ける"],
+    },
+    work: {
+      focus: "責務を分ける",
+      confidence: 0.66,
+      blockers: [],
+      staleAt: null,
+    },
+    worldContext: {
+      place: "archive",
+      objectId: "shelf",
+      linkedAt: "2026-03-22T09:30:00.000Z",
+    },
+    salience: 0.72,
+    mentions: 2,
+    createdAt: "2026-03-22T09:30:00.000Z",
+    lastUpdatedAt: "2026-03-22T09:30:00.000Z",
+  };
+  snapshot.initiative.pending = {
+    kind: "resume_topic",
+    reason: "continuity",
+    motive: "continue_shared_work",
+    topic: "仕様の境界",
+    blocker: null,
+    concern: null,
+    createdAt: "2026-03-22T09:35:00.000Z",
+    readyAfterHours: 0,
+  };
+
+  const engine = new HachikaEngine(snapshot);
+  const message = engine.emitInitiative({ force: true });
+  const after = engine.getSnapshot();
+  const proactiveSelection = engine.getLastProactiveDebug()?.proactiveSelection;
+  const lastActivity = after.initiative.history.at(-1);
+
+  assert.ok(message !== null);
+  assert.match(message ?? "", /仕様の境界/);
+  assert.match(message ?? "", /棚|archive/);
+  assert.equal(proactiveSelection?.place, "archive");
+  assert.equal(proactiveSelection?.worldAction, "touch");
+  assert.equal(lastActivity?.place, "archive");
+  assert.equal(lastActivity?.worldAction, "touch");
+  assert.match(lastActivity?.summary ?? "", /棚/);
+});
+
 test("proactive reply avoids repeating the most recent proactive opener", () => {
   const snapshot = createInitialSnapshot();
   snapshot.memories.push({
@@ -1527,6 +1588,52 @@ test("world inquiry replies can surface the current place without dragging stale
   assert.equal(/設計/.test(result.reply), false);
 });
 
+test("object-first world inquiry can surface linked trace topics from the current object", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.world.currentPlace = "archive";
+  snapshot.world.objects.shelf!.linkedTraceTopics = ["仕様の境界"];
+  snapshot.world.objects.shelf!.state = "棚のすきまに小さな痕跡が差し込まれている。";
+  snapshot.traces["仕様の境界"] = {
+    topic: "仕様の境界",
+    kind: "spec_fragment",
+    status: "active",
+    lastAction: "expanded",
+    summary: "「仕様の境界」は断片として残っている。",
+    sourceMotive: "continue_shared_work",
+    artifact: {
+      memo: ["仕様の境界を残す"],
+      fragments: ["境界を切り分ける"],
+      decisions: [],
+      nextSteps: ["責務を分ける"],
+    },
+    work: {
+      focus: "責務を分ける",
+      confidence: 0.66,
+      blockers: [],
+      staleAt: null,
+    },
+    worldContext: {
+      place: "archive",
+      objectId: "shelf",
+      linkedAt: "2026-03-22T09:30:00.000Z",
+    },
+    salience: 0.7,
+    mentions: 2,
+    createdAt: "2026-03-22T09:30:00.000Z",
+    lastUpdatedAt: "2026-03-22T09:30:00.000Z",
+  };
+
+  const engine = new HachikaEngine(snapshot);
+  const result = engine.respond("棚には何が残ってる？");
+
+  assert.ok(result.debug.signals.worldInquiry > 0.4);
+  assert.equal(result.debug.reply.selection?.currentTopic, null);
+  assert.equal(result.debug.reply.selection?.relevantTraceTopic, null);
+  assert.match(result.reply, /仕様の境界/);
+  assert.match(result.reply, /棚|archive/);
+  assert.deepEqual(result.snapshot.world.objects.shelf?.linkedTraceTopics, ["仕様の境界"]);
+});
+
 test("engine can carry an explicit world action into world events and object state", () => {
   const engine = new HachikaEngine(createInitialSnapshot());
 
@@ -1547,6 +1654,7 @@ test("trace can remember which world place and object it was linked in", () => {
   assert.equal(trace?.worldContext?.place, "archive");
   assert.equal(trace?.worldContext?.objectId, "shelf");
   assert.ok(typeof trace?.worldContext?.linkedAt === "string");
+  assert.deepEqual(result.snapshot.world.objects.shelf?.linkedTraceTopics, ["仕様の境界"]);
 });
 
 test("identity can surface in a generic follow-up reply", () => {

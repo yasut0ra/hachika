@@ -273,6 +273,7 @@ Hachika は、単に有用なだけでなく、
   - さらに turn ごとに最小の world action layer があり、`observe / touch / leave` の action が current place の object state と recent events に残る
   - initiative も `place / worldAction` を持つので、自発行動が「何を再開するか」だけでなく「どこで何をするか」まで持てる
   - trace / artifact も `place / object` に結びつくので、どの場所で残された痕跡かを後から追える
+  - object 側には linked traces の逆参照もあり、棚や机に触れる world inquiry では、その object に引っかかっている topic を手がかりに思い出せる
   - CLI の `/world` と Web UI の `World` panel から、今どこにいるか、時間帯がどう変わったか、最近どんな出来事があったかを見られる
 - `scenario harness` により、複数ターンの対話シナリオを fixture として検証できる
   - active purpose の継続と解決、blocker maintenance、archive/reopen、preservation threat、body drift による wording 変化を長めの回帰テストとして固定している

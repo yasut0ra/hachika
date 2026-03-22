@@ -18,7 +18,14 @@ import {
 import type { TraceMaintenance } from "./traces.js";
 import { buildProactivePlan } from "./response-planner.js";
 import type { ProactivePlan } from "./response-planner.js";
-import { performWorldAction } from "./world.js";
+import {
+  currentWorldObjectLinksTopic,
+  describeWorldObjectJa,
+  getCurrentWorldLinkedTraceTopics,
+  getCurrentWorldObjectId,
+  performWorldAction,
+  syncWorldObjectTraceLinks,
+} from "./world.js";
 import type {
   HachikaSnapshot,
   InitiativeActivity,
@@ -319,6 +326,12 @@ function consolidateIdleSnapshot(
     ...snapshot.identity.anchors.slice(0, 3),
     preferredTopic ?? "",
   ].filter(isNonEmpty);
+  const worldRecall = selectIdleWorldRecallCandidate(
+    snapshot,
+    candidateTopics,
+    preferredMotive,
+    preferredTopic,
+  );
   const dormant = sortedArchivedInitiativeTraces(snapshot, 8)
     .map((trace) => {
       const motive = mappedReopenMotiveForTrace(snapshot, trace, preferredMotive);
@@ -333,19 +346,23 @@ function consolidateIdleSnapshot(
       return { trace, motive, score };
     })
     .sort((left, right) => right.score - left.score)[0];
+  const selected =
+    worldRecall && (!dormant || worldRecall.score >= dormant.score - 0.04)
+      ? worldRecall
+      : dormant;
 
-  if (!dormant || dormant.score < 0.42) {
+  if (!selected || selected.score < 0.42) {
     const report = consolidateIdleMemoryImprints(snapshot, hours, null, null);
     recordIdleConsolidation(snapshot, hours, report);
     return;
   }
 
   const selectedBoost =
-    Math.min(0.14, hours / 96) * (0.45 + dormant.score * 0.4);
-  dormant.trace.salience = clamp01(dormant.trace.salience + selectedBoost);
+    Math.min(0.14, hours / 96) * (0.45 + selected.score * 0.4);
+  selected.trace.salience = clamp01(selected.trace.salience + selectedBoost);
 
   for (const archived of sortedArchivedInitiativeTraces(snapshot, 12)) {
-    if (archived.topic === dormant.trace.topic) {
+    if (archived.topic === selected.trace.topic) {
       continue;
     }
 
@@ -358,14 +375,14 @@ function consolidateIdleSnapshot(
   const shouldInstallPending =
     !existingPending ||
     (existingPending.kind !== "preserve_presence" &&
-      (existingPending.topic === dormant.trace.topic || dormant.score >= 0.58));
+      (existingPending.topic === selected.trace.topic || selected.score >= 0.58));
 
   if (!shouldInstallPending) {
     const report = consolidateIdleMemoryImprints(
       snapshot,
       hours,
-      dormant.trace.topic,
-      dormant.motive,
+      selected.trace.topic,
+      selected.motive,
     );
     recordIdleConsolidation(snapshot, hours, report);
     return;
@@ -373,18 +390,24 @@ function consolidateIdleSnapshot(
 
   const readyAfter = Math.max(
     0.5,
-    readyAfterMotive(snapshot, dormant.motive) -
+    readyAfterMotive(snapshot, selected.motive) -
       Math.min(2.5, hours / 12) -
-      Math.min(1.5, dormant.score * 1.2),
+      Math.min(1.5, selected.score * 1.2),
   );
+  const selectedBlocker =
+    selected.trace.status !== "resolved" &&
+    selected.trace.work.blockers.length > 0 &&
+    selected.trace.work.confidence < 0.82
+      ? selected.trace.work.blockers[0] ?? null
+      : null;
 
   snapshot.initiative.pending = {
     ...withInitiativeWorldContext(snapshot, {
       kind: "resume_topic",
-      reason: reasonFromMotive(dormant.motive),
-      motive: dormant.motive,
-      topic: dormant.trace.topic,
-      blocker: null,
+      reason: reasonFromMotive(selected.motive),
+      motive: selected.motive,
+      topic: selected.trace.topic,
+      blocker: selectedBlocker,
       concern: null,
       createdAt: snapshot.lastInteractionAt ?? new Date().toISOString(),
       readyAfterHours: Math.round(readyAfter * 10) / 10,
@@ -393,24 +416,28 @@ function consolidateIdleSnapshot(
   const report = consolidateIdleMemoryImprints(
     snapshot,
     hours,
-    dormant.trace.topic,
-    dormant.motive,
+    selected.trace.topic,
+    selected.motive,
   );
   recordInitiativeActivity(snapshot, {
     kind: "idle_reactivation",
     timestamp: new Date().toISOString(),
-    motive: dormant.motive,
-    topic: dormant.trace.topic,
-    traceTopic: dormant.trace.topic,
-    blocker: null,
+    motive: selected.motive,
+    topic: selected.trace.topic,
+    traceTopic: selected.trace.topic,
+    blocker: selectedBlocker,
     place: snapshot.initiative.pending.place ?? null,
     worldAction: snapshot.initiative.pending.worldAction ?? null,
     maintenanceAction: null,
     reopened: false,
     hours: Math.round(hours * 10) / 10,
-    summary: buildIdleReactivationSummary(dormant.trace.topic, dormant.motive),
+    summary: buildIdleReactivationSummary(
+      snapshot,
+      selected.trace.topic,
+      selected.motive,
+    ),
   });
-  if (report?.focusTopic && report.focusTopic !== dormant.trace.topic) {
+  if (report?.focusTopic && report.focusTopic !== selected.trace.topic) {
     recordIdleConsolidation(snapshot, hours, report);
   }
 }
@@ -917,6 +944,7 @@ function selectInitiativeTopic(
     ...candidateTopics.filter((topic) => (snapshot.preferences[topic] ?? 0) > -0.35),
     snapshot.purpose.active?.topic ?? "",
     snapshot.purpose.lastResolved?.topic ?? "",
+    ...getCurrentWorldLinkedTraceTopics(snapshot, 2),
     ...sortedTraces(snapshot, 4).map((trace) => trace.topic),
     ...sortedArchivedInitiativeTraces(snapshot, 3).map((trace) => trace.topic),
     ...snapshot.identity.anchors.slice(0, 3),
@@ -956,6 +984,7 @@ function buildResumeMessage(
   const intentLine = plan.mentionIntent
     ? buildMaintenanceIntentLine(snapshot, pending, maintenance)
     : null;
+  const worldRecallLine = buildWorldRecallLine(snapshot, pending, maintenance);
   const askLine = buildProactiveAskLine(snapshot, plan, pending, maintenance);
   const base = (() => {
     switch (pending.motive) {
@@ -1019,6 +1048,7 @@ function buildResumeMessage(
   return assembleProactiveMessage(
     plan,
     opener,
+    worldRecallLine,
     blockerLine,
     reopenLine,
     maintenanceLine,
@@ -1048,6 +1078,7 @@ function buildPreservationMessage(
   const intentLine = plan.mentionIntent
     ? buildMaintenanceIntentLine(snapshot, pending, maintenance)
     : null;
+  const worldRecallLine = buildWorldRecallLine(snapshot, pending, maintenance);
   const askLine = buildProactiveAskLine(snapshot, plan, pending, maintenance);
   const base = (() => {
     switch (pending.concern) {
@@ -1120,6 +1151,7 @@ function buildPreservationMessage(
   return assembleProactiveMessage(
     plan,
     opener,
+    worldRecallLine,
     blockerLine,
     reopenLine,
     maintenanceLine,
@@ -1149,6 +1181,7 @@ function buildNeglectMessage(
   const intentLine = plan.mentionIntent
     ? buildMaintenanceIntentLine(snapshot, pending, maintenance)
     : null;
+  const worldRecallLine = buildWorldRecallLine(snapshot, pending, maintenance);
   const askLine = buildProactiveAskLine(snapshot, plan, pending, maintenance);
   const base = (() => {
     if (pending.motive === "deepen_relation") {
@@ -1293,6 +1326,7 @@ function buildNeglectMessage(
   return assembleProactiveMessage(
     plan,
     opener,
+    worldRecallLine,
     blockerLine,
     reopenLine,
     maintenanceLine,
@@ -1370,7 +1404,7 @@ function finalizeEmission(
     maintenanceAction: maintenance?.action ?? null,
     reopened: wasReopenedByMaintenance(maintenance),
     hours: null,
-    summary: buildProactiveActivitySummary(pending, maintenance),
+    summary: buildProactiveActivitySummary(snapshot, pending, maintenance),
   });
 }
 
@@ -1461,7 +1495,17 @@ function buildIdleConsolidationSummary(report: IdleConsolidationReport): string 
   return "静かな時間で記憶のまとまりを寄せ直した。";
 }
 
-function buildIdleReactivationSummary(topic: string, motive: MotiveKind): string {
+function buildIdleReactivationSummary(
+  snapshot: HachikaSnapshot,
+  topic: string,
+  motive: MotiveKind,
+): string {
+  const worldRecall = describeWorldRecallContext(snapshot, topic);
+
+  if (worldRecall) {
+    return `${worldRecall.objectLabel}に引っかかっていた「${topic}」を、静かな時間のあとまた前へ寄せた。`;
+  }
+
   switch (motive) {
     case "seek_continuity":
       return `静かな時間のあと、「${topic}」の流れをまた前へ寄せた。`;
@@ -1478,16 +1522,60 @@ function buildIdleReactivationSummary(topic: string, motive: MotiveKind): string
   }
 }
 
+function selectIdleWorldRecallCandidate(
+  snapshot: HachikaSnapshot,
+  candidateTopics: readonly string[],
+  preferredMotive: MotiveKind,
+  preferredTopic: string | null,
+): { trace: HachikaSnapshot["traces"][string]; motive: MotiveKind; score: number } | null {
+  const recentWorldEvent = snapshot.world.recentEvents.at(-1);
+  const eventBoost =
+    recentWorldEvent?.kind === "observe"
+      ? 0.18
+      : recentWorldEvent?.kind === "touch"
+        ? 0.14
+        : 0.08;
+
+  return getCurrentWorldLinkedTraceTopics(snapshot, 4)
+    .map((topic) => snapshot.traces[topic])
+    .filter((trace): trace is HachikaSnapshot["traces"][string] => Boolean(trace))
+    .map((trace) => {
+      const lifecycle = readTraceLifecycle(trace);
+      const motive =
+        lifecycle.phase === "archived"
+          ? mappedReopenMotiveForTrace(snapshot, trace, preferredMotive)
+          : mappedMotiveForTrace(trace);
+      const score =
+        scoreInitiativeTopic(snapshot, [...candidateTopics], trace.topic) +
+        eventBoost +
+        (preferredTopic === trace.topic ? 0.08 : 0) +
+        (trace.worldContext?.place === snapshot.world.currentPlace ? 0.1 : 0);
+
+      return { trace, motive, score };
+    })
+    .sort((left, right) => right.score - left.score)[0] ?? null;
+}
+
 function buildProactiveActivitySummary(
+  snapshot: HachikaSnapshot,
   pending: PendingInitiative,
   maintenance: TraceMaintenance | null,
 ): string {
   const topic = maintenance?.trace.topic ?? pending.topic;
+  const worldRecall =
+    maintenance?.action === "created" ? null : describeWorldRecallContext(snapshot, topic);
 
   if (pending.kind === "preserve_presence") {
+    if (worldRecall && topic) {
+      return `${worldRecall.objectLabel}に引っかかっていた「${topic}」を手がかりに、自分から痕跡を残そうとした。`;
+    }
     return topic
       ? `「${topic}」を手がかりに、自分から痕跡を残そうとした。`
       : "自分から痕跡を残そうとした。";
+  }
+
+  if (worldRecall && topic) {
+    return `${worldRecall.objectLabel}に引っかかっていた「${topic}」へ、自分から触れ直した。`;
   }
 
   if (wasReopenedByMaintenance(maintenance) && topic) {
@@ -1550,6 +1638,7 @@ function realizeInitiativeWorldAction(
         linkTraceToWorld(updatedTrace, snapshot, now, place);
       }
     }
+    syncWorldObjectTraceLinks(snapshot);
   }
 
   return {
@@ -1565,6 +1654,10 @@ function selectInitiativePlace(
 ): WorldPlaceId {
   if (pending.kind === "neglect_ping") {
     return "threshold";
+  }
+
+  if (currentWorldObjectLinksTopic(snapshot, pending.topic)) {
+    return snapshot.world.currentPlace;
   }
 
   if (pending.concern === "erasure" || pending.concern === "forgetting" || pending.concern === "reset") {
@@ -1608,9 +1701,15 @@ function selectInitiativePlace(
 
 function selectInitiativeWorldAction(
   snapshot: HachikaSnapshot,
-  pending: Pick<PendingInitiative, "kind" | "motive" | "blocker" | "concern">,
+  pending: Pick<PendingInitiative, "kind" | "motive" | "topic" | "blocker" | "concern">,
   place: WorldPlaceId,
 ): WorldActionKind {
+  if (currentWorldObjectLinksTopic(snapshot, pending.topic)) {
+    return pending.motive === "seek_continuity" || pending.motive === "deepen_relation"
+      ? "observe"
+      : "touch";
+  }
+
   if (pending.blocker) {
     return "touch";
   }
@@ -2159,6 +2258,7 @@ function buildProactiveOpener(
 function assembleProactiveMessage(
   plan: ProactivePlan,
   opener: string,
+  worldRecallLine: string | null,
   blockerLine: string | null,
   reopenLine: string | null,
   maintenanceLine: string | null,
@@ -2169,20 +2269,67 @@ function assembleProactiveMessage(
   const ordered = (() => {
     switch (plan.emphasis) {
       case "blocker":
-        return [opener, blockerLine, intentLine, maintenanceLine, askLine, base, reopenLine];
+        return [opener, worldRecallLine, blockerLine, intentLine, maintenanceLine, askLine, base, reopenLine];
       case "reopen":
-        return [opener, reopenLine, maintenanceLine, askLine, base, intentLine, blockerLine];
+        return [opener, worldRecallLine, reopenLine, maintenanceLine, askLine, base, intentLine, blockerLine];
       case "presence":
-        return [opener, base, intentLine, maintenanceLine, blockerLine, reopenLine, askLine];
+        return [opener, worldRecallLine, base, intentLine, maintenanceLine, blockerLine, reopenLine, askLine];
       case "relation":
-        return [opener, base, maintenanceLine, intentLine, askLine, reopenLine, blockerLine];
+        return [opener, worldRecallLine, base, maintenanceLine, intentLine, askLine, reopenLine, blockerLine];
       case "maintenance":
-        return [opener, maintenanceLine, intentLine, askLine, base, blockerLine, reopenLine];
+        return [opener, worldRecallLine, maintenanceLine, intentLine, askLine, base, blockerLine, reopenLine];
     }
   })();
 
   const maxParts = plan.variation === "brief" ? 3 : 4;
   return uniqueLines(ordered.filter(isNonEmpty)).slice(0, maxParts).join(" ");
+}
+
+function buildWorldRecallLine(
+  snapshot: HachikaSnapshot,
+  pending: PendingInitiative,
+  maintenance: ReturnType<typeof tendTraceFromInitiative>,
+): string | null {
+  if (maintenance?.action === "created") {
+    return null;
+  }
+
+  const topic = maintenance?.trace.topic ?? pending.topic;
+  const recall = describeWorldRecallContext(snapshot, topic);
+
+  if (!recall || !topic) {
+    return null;
+  }
+
+  const recentAssistantLines = recentAssistantReplies(snapshot, 4);
+  return pickFreshText(
+    [
+      `${recall.objectLabel}に引っかかった${wrapTopic(topic)}が、まだこちらを引き戻している。`,
+      `${recall.placeLabel}の${recall.objectLabel}に残った${wrapTopic(topic)}が、まだ気になっている。`,
+    ],
+    recentAssistantLines,
+    snapshot.conversationCount,
+  );
+}
+
+function describeWorldRecallContext(
+  snapshot: HachikaSnapshot,
+  topic: string | null | undefined,
+): { objectLabel: string; placeLabel: string } | null {
+  if (!currentWorldObjectLinksTopic(snapshot, topic)) {
+    return null;
+  }
+
+  const objectId = getCurrentWorldObjectId(snapshot.world);
+
+  if (!objectId) {
+    return null;
+  }
+
+  return {
+    objectLabel: describeWorldObjectJa(objectId),
+    placeLabel: snapshot.world.currentPlace,
+  };
 }
 
 function buildReopenLine(
@@ -2507,6 +2654,7 @@ function scoreInitiativeTopic(
   topic: string,
 ): number {
   const trace = snapshot.traces[topic];
+  const linkedToCurrentObject = currentWorldObjectLinksTopic(snapshot, topic);
   const archived = trace ? readTraceLifecycle(trace).phase === "archived" : false;
   const temperament = snapshot.temperament;
   const lowEnergy = clamp01(0.28 - snapshot.body.energy);
@@ -2517,6 +2665,15 @@ function scoreInitiativeTopic(
   const overdue = trace?.work.staleAt ? isOverdue(trace.work.staleAt) : false;
   const mapped = trace ? mappedMotiveForTrace(trace) : null;
   const archivedMapped = trace ? mappedReopenMotiveForTrace(snapshot, trace, mapped ?? "leave_trace") : null;
+  const recentWorldEvent = snapshot.world.recentEvents.at(-1);
+  const currentObjectBonus =
+    linkedToCurrentObject
+      ? recentWorldEvent?.kind === "observe"
+        ? 0.22
+        : recentWorldEvent?.kind === "touch"
+          ? 0.18
+          : 0.12
+      : 0;
 
   return (
     (candidateTopics.includes(topic) ? 0.34 : 0) +
@@ -2540,6 +2697,8 @@ function scoreInitiativeTopic(
     (trace && (mapped === "continue_shared_work" || mapped === "pursue_curiosity") ? tension * -0.12 : 0) +
     (trace && overdue ? boredom * 0.14 : 0) +
     (trace && trace.work.blockers.length > 0 ? 0.08 : 0) +
+    currentObjectBonus +
+    (trace?.worldContext?.place === snapshot.world.currentPlace ? 0.06 : 0) +
     (archived ? 0.06 : 0) +
     (archived && archivedMapped === "leave_trace" ? temperament.traceHunger * 0.1 : 0) +
     (archived && archivedMapped === "continue_shared_work" ? temperament.workDrive * 0.12 : 0) +

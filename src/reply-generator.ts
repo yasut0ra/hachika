@@ -144,6 +144,7 @@ interface CommonGenerationPayload {
     objectsHere: Array<{
       id: string;
       state: string;
+      linkedTraceTopics: string[];
     }>;
     recentEvents: string[];
   };
@@ -507,6 +508,7 @@ function buildCommonGenerationPayload(
         .map(([id, object]) => ({
           id,
           state: object.state,
+          linkedTraceTopics: [...(object.linkedTraceTopics ?? [])],
         }))
         .slice(0, 3),
       recentEvents: snapshot.world.recentEvents.slice(-3).map((event) => event.summary),

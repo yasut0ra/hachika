@@ -60,7 +60,10 @@ import {
   advanceWorldFromInteraction,
   describeWorldPhaseJa,
   describeWorldPlaceJa,
+  getCurrentWorldLinkedTraceTopics,
+  hasExplicitWorldObjectReference,
   performWorldActionFromTurn,
+  syncWorldObjectTraceLinks,
 } from "./world.js";
 import type {
   DriveName,
@@ -668,6 +671,7 @@ export class HachikaEngine {
   respond(input: string): TurnResult {
     const prepared = prepareTurn(this.#snapshot, input);
     const reply = composeReply(
+      input,
       prepared.previousSnapshot,
       prepared.nextSnapshot,
       prepared.mood,
@@ -716,6 +720,7 @@ export class HachikaEngine {
       options.traceExtractor ?? null,
     );
     const fallbackReply = composeReply(
+      input,
       prepared.previousSnapshot,
       prepared.nextSnapshot,
       prepared.mood,
@@ -944,7 +949,7 @@ function prepareTurnFromSignals(
     nextSnapshot.lastInteractionAt ?? new Date().toISOString(),
   );
   let selfModel = buildSelfModel(nextSnapshot);
-  updateTraces(
+  const updatedTrace = updateTraces(
     nextSnapshot,
     input,
     stateSignals,
@@ -959,6 +964,9 @@ function prepareTurnFromSignals(
     deriveWorldActionFocus(nextSnapshot, stateSignals, traceExtraction),
     nextSnapshot.lastInteractionAt ?? new Date().toISOString(),
   );
+  if (updatedTrace) {
+    syncWorldObjectTraceLinks(nextSnapshot);
+  }
   updateIdentity(nextSnapshot, nextSnapshot.lastInteractionAt ?? new Date().toISOString());
   selfModel = buildSelfModel(nextSnapshot);
   scheduleInitiative(nextSnapshot, stateSignals, selfModel);
@@ -1177,9 +1185,13 @@ function resolveReplySelection(
   responsePlan: ResponsePlan,
 ): ResolvedReplySelection {
   const socialTurn = isSocialTurnSignals(signals);
+  const worldTurn = responsePlan.mentionWorld || signals.worldInquiry > 0.42;
   const currentTopic =
-    responsePlan.focusTopic ??
-    (socialTurn ? undefined : topPreferredTopics(snapshot, 1)[0]);
+    responsePlan.focusTopic !== null
+      ? responsePlan.focusTopic
+      : socialTurn || worldTurn
+        ? undefined
+        : topPreferredTopics(snapshot, 1)[0];
   const relevantTrace = responsePlan.mentionTrace
     ? findRelevantTrace(snapshot, signals.topics)
     : undefined;
@@ -1716,8 +1728,7 @@ function analyzeInteraction(
   const normalized = input.normalize("NFKC").toLowerCase();
   const topics = extractTopics(input);
   const preservation = analyzePreservationThreat(normalized);
-
-  return finalizeInteractionSignals(snapshot, {
+  const baseSignals = finalizeInteractionSignals(snapshot, {
     positive: countMatches(normalized, POSITIVE_MARKERS),
     negative: countMatches(normalized, NEGATIVE_MARKERS),
     question:
@@ -1747,6 +1758,15 @@ function analyzeInteraction(
     workCue: countMatches(normalized, WORK_MARKERS),
     topics,
   });
+
+  if (hasExplicitWorldObjectReference(input)) {
+    return {
+      ...baseSignals,
+      worldInquiry: Math.max(baseSignals.worldInquiry, 0.52),
+    };
+  }
+
+  return baseSignals;
 }
 
 function mergeInterpretedSignals(
@@ -2191,6 +2211,7 @@ function resolveMood(
 }
 
 function composeReply(
+  input: string,
   previousSnapshot: HachikaSnapshot,
   nextSnapshot: HachikaSnapshot,
   mood: MoodLabel,
@@ -2215,7 +2236,9 @@ function composeReply(
   const traceLine = responsePlan.mentionTrace
     ? buildTraceLine(relevantTrace, nextSnapshot, signals)
     : null;
-  const worldLine = worldTurn ? buildWorldLine(nextSnapshot) : null;
+  const worldLine = worldTurn
+    ? buildWorldLine(nextSnapshot, hasExplicitWorldObjectReference(input))
+    : null;
   const prioritizeTraceLine = replySelection.prioritizeTraceLine;
   const bodyLine = buildBodyLine(nextSnapshot, mood, signals, currentTopic);
   const prioritizeBodyLine = shouldPrioritizeBodyLine(nextSnapshot, signals);
@@ -2525,12 +2548,16 @@ function buildPreservationLine(
   }
 }
 
-function buildWorldLine(snapshot: HachikaSnapshot): string | null {
+function buildWorldLine(
+  snapshot: HachikaSnapshot,
+  includeLinkedTopics = false,
+): string | null {
   const world = snapshot.world;
   const placeState = world.places[world.currentPlace];
   const currentObject = Object.values(world.objects).find(
     (object) => object.place === world.currentPlace,
   );
+  const linkedTopics = getCurrentWorldLinkedTraceTopics(snapshot, 2);
   const warmth =
     placeState.warmth >= 0.64
       ? "少しあたたかい"
@@ -2543,8 +2570,12 @@ function buildWorldLine(snapshot: HachikaSnapshot): string | null {
       : placeState.quiet <= 0.34
         ? "静けさはまだ薄い"
         : "静けさはまだやわらかい";
+  const linkedLine =
+    includeLinkedTopics && linkedTopics.length > 0
+      ? `ここには${linkedTopics.map((topic) => `「${topic}」`).join("、")}がまだ引っかかっている。`
+      : null;
 
-  return `今は${describeWorldPlaceJa(world.currentPlace)}にいる。${describeWorldPhaseJa(world.phase)}で、${warmth}。${quiet}。${currentObject?.state ?? "周りはまだ大きくは動いていない。"}`;
+  return `今は${describeWorldPlaceJa(world.currentPlace)}にいる。${describeWorldPhaseJa(world.phase)}で、${warmth}。${quiet}。${currentObject?.state ?? "周りはまだ大きくは動いていない。"}${linkedLine ? `。${linkedLine}` : ""}`;
 }
 
 function buildWorldClosingLine(snapshot: HachikaSnapshot): string | null {

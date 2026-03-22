@@ -5,9 +5,12 @@ import { createInitialSnapshot } from "./state.js";
 import {
   advanceWorldByIdle,
   advanceWorldFromInteraction,
+  formatWorldObjectState,
   formatWorldSummary,
+  getCurrentWorldLinkedTraceTopics,
   performWorldAction,
   performWorldActionFromTurn,
+  syncWorldObjectTraceLinks,
 } from "./world.js";
 
 test("interaction can move the world toward the studio on focused work cues", () => {
@@ -193,4 +196,46 @@ test("initiative-style world action can move place before touching the current o
   assert.equal(snapshot.world.recentEvents.at(-2)?.kind, "arrival");
   assert.equal(snapshot.world.recentEvents.at(-1)?.kind, "touch");
   assert.match(snapshot.world.objects.shelf!.state, /触れた跡|手触り/);
+});
+
+test("world object formatting can surface linked trace topics", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.world.currentPlace = "archive";
+  snapshot.traces["仕様の境界"] = {
+    topic: "仕様の境界",
+    kind: "spec_fragment",
+    status: "active",
+    lastAction: "expanded",
+    summary: "「仕様の境界」は断片として残っている。",
+    sourceMotive: "continue_shared_work",
+    artifact: {
+      memo: ["仕様の境界を残す"],
+      fragments: ["責務の境界を切る"],
+      decisions: [],
+      nextSteps: ["責務を分ける"],
+    },
+    work: {
+      focus: "責務を分ける",
+      confidence: 0.62,
+      blockers: [],
+      staleAt: null,
+    },
+    worldContext: {
+      place: "archive",
+      objectId: "shelf",
+      linkedAt: "2026-03-22T09:30:00.000Z",
+    },
+    salience: 0.6,
+    mentions: 1,
+    createdAt: "2026-03-22T09:30:00.000Z",
+    lastUpdatedAt: "2026-03-22T09:30:00.000Z",
+  };
+
+  syncWorldObjectTraceLinks(snapshot);
+
+  assert.match(
+    formatWorldObjectState("shelf", snapshot.world.objects.shelf!),
+    /traces:仕様の境界/,
+  );
+  assert.deepEqual(getCurrentWorldLinkedTraceTopics(snapshot), ["仕様の境界"]);
 });

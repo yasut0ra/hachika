@@ -56,6 +56,71 @@ test("resident loop can surface idle reactivation activity", async () => {
   assert.notEqual(result.snapshot.world.clockHour, snapshot.world.clockHour);
 });
 
+test("resident loop can reactivate a current world object trace after quiet observation", async () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.lastInteractionAt = "2026-03-20T10:00:00.000Z";
+  snapshot.world.currentPlace = "archive";
+  snapshot.world.objects.shelf!.linkedTraceTopics = ["仕様の境界"];
+  snapshot.world.recentEvents = [
+    {
+      timestamp: "2026-03-20T09:50:00.000Z",
+      kind: "observe",
+      place: "archive",
+      summary: "archive の棚のあいだを見ている。",
+    },
+  ];
+  snapshot.body.energy = 0.52;
+  snapshot.body.boredom = 0.72;
+  snapshot.body.tension = 0.16;
+  snapshot.temperament.workDrive = 0.82;
+  snapshot.traces["仕様の境界"] = {
+    topic: "仕様の境界",
+    kind: "spec_fragment",
+    status: "active",
+    lastAction: "expanded",
+    summary: "「仕様の境界」は断片として残っている。",
+    sourceMotive: "continue_shared_work",
+    artifact: {
+      memo: ["仕様の境界を残す"],
+      fragments: ["責務を分ける"],
+      decisions: [],
+      nextSteps: ["責務を分ける"],
+    },
+    work: {
+      focus: "責務を分ける",
+      confidence: 0.72,
+      blockers: [],
+      staleAt: null,
+    },
+    lifecycle: {
+      phase: "live",
+      archivedAt: null,
+      reopenedAt: null,
+      reopenCount: 0,
+    },
+    worldContext: {
+      place: "archive",
+      objectId: "shelf",
+      linkedAt: "2026-03-20T09:45:00.000Z",
+    },
+    salience: 0.76,
+    mentions: 3,
+    createdAt: "2026-03-20T09:40:00.000Z",
+    lastUpdatedAt: "2026-03-20T09:45:00.000Z",
+  };
+
+  const result = await runResidentLoopTick(snapshot, { idleHours: 12 });
+  const reactivation = result.activities.find((activity) => activity.kind === "idle_reactivation");
+  const emission = result.activities.find((activity) => activity.kind === "proactive_emission");
+
+  assert.ok(result.proactiveMessage !== null);
+  assert.equal(emission?.topic, "仕様の境界");
+  assert.equal(emission?.place, "archive");
+  assert.equal(emission?.worldAction, "touch");
+  assert.match(reactivation?.summary ?? "", /棚/);
+  assert.match(result.proactiveMessage ?? "", /棚/);
+});
+
 test("resident loop can emit proactive wording and record the emission", async () => {
   const snapshot = createInitialSnapshot();
   snapshot.lastInteractionAt = "2026-03-20T10:00:00.000Z";

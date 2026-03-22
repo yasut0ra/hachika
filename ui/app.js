@@ -152,7 +152,12 @@ function renderWorld(world) {
       : "none";
 
   const objects = Object.entries(world.objects)
-    .map(([id, object]) => `${id}@${object.place} · ${object.state}`)
+    .map(
+      ([id, object]) =>
+        `${id}@${object.place} · ${object.state}${
+          object.linkedTraceTopics?.length ? ` · traces ${object.linkedTraceTopics.join(", ")}` : ""
+        }`,
+    )
     .join("<br />");
 
   worldNode.append(

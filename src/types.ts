@@ -125,6 +125,7 @@ export interface WorldObjectState {
   place: WorldPlaceId;
   state: string;
   lastChangedAt: string | null;
+  linkedTraceTopics?: string[];
 }
 
 export type WorldEventKind =

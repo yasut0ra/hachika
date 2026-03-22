@@ -55,6 +55,12 @@ test("sanitizeSnapshot removes low-information topics and repairs polluted trace
   snapshot.identity.anchors = ["自分", "かな", "まずは"];
   snapshot.traces.自分 = pollutedTrace("自分");
   snapshot.traces.かな = pollutedTrace("かな");
+  snapshot.traces.自分.worldContext = {
+    place: "archive",
+    objectId: "shelf",
+    linkedAt: "2026-03-21T00:00:00.000Z",
+  };
+  snapshot.world.objects.shelf!.linkedTraceTopics = ["かな", "自分"];
   snapshot.purpose.active = {
     kind: "continue_shared_work",
     topic: "かな",
@@ -113,6 +119,7 @@ test("sanitizeSnapshot removes low-information topics and repairs polluted trace
   assert.deepEqual(snapshot.traces.自分?.artifact.decisions, ["自分 を決まった形として残す"]);
   assert.deepEqual(snapshot.traces.自分?.artifact.nextSteps, []);
   assert.equal(snapshot.traces.自分?.work.focus, "自分 を決まった形として残す");
+  assert.deepEqual(snapshot.world.objects.shelf?.linkedTraceTopics, ["自分"]);
   assert.equal(
     snapshot.traces.自分?.summary,
     "「自分」は「自分 を決まった形として残す」という決定として残す。",

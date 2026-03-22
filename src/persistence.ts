@@ -4,7 +4,7 @@ import { writeTextFileAtomic } from "./atomic-file.js";
 import { extractTopics, isMeaningfulTopic } from "./memory.js";
 import { clamp01, clampSigned, createInitialSnapshot } from "./state.js";
 import { isInformativeTraceClause } from "./traces.js";
-import { WORLD_PLACE_IDS } from "./world.js";
+import { syncWorldObjectTraceLinks, WORLD_PLACE_IDS } from "./world.js";
 import type {
   ActivePurpose,
   BoundaryImprint,
@@ -163,6 +163,7 @@ export function sanitizeSnapshot(snapshot: HachikaSnapshot): HachikaSnapshot {
   snapshot.boundaryImprints = sanitizeBoundaryImprints(snapshot.boundaryImprints);
   snapshot.identity = sanitizeIdentity(snapshot.identity);
   snapshot.traces = sanitizeTraces(snapshot.traces);
+  syncWorldObjectTraceLinks(snapshot);
   snapshot.purpose = sanitizePurpose(snapshot.purpose);
   snapshot.initiative = sanitizeInitiative(snapshot.initiative);
 
@@ -1114,6 +1115,7 @@ function sanitizeWorldObjects(raw: Record<string, WorldObjectState>): Record<str
       place: object.place,
       state: object.state.trim(),
       lastChangedAt: typeof object.lastChangedAt === "string" ? object.lastChangedAt : null,
+      linkedTraceTopics: hydrateTraceArtifactItems(object.linkedTraceTopics),
     };
   }
 

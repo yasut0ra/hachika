@@ -37,6 +37,12 @@ const PLACE_ALIASES: Record<WorldPlaceId, readonly string[]> = {
   archive: ["archive", "棚", "書庫", "保管庫"],
 };
 
+const OBJECT_ALIASES: Record<string, readonly string[]> = {
+  lamp: ["lamp", "灯り", "ランプ"],
+  desk: ["desk", "机", "デスク"],
+  shelf: ["shelf", "棚", "書庫", "保管庫"],
+};
+
 const OBSERVE_MARKERS = ["見て", "見せ", "眺め", "観察", "look", "show"];
 const TOUCH_MARKERS = ["触", "さわ", "なぞ", "開いて", "開く", "touch"];
 const LEAVE_MARKERS = ["残", "置", "書", "刻", "leave", "mark", "drop"];
@@ -68,16 +74,19 @@ export function createInitialWorldState(): WorldState {
         place: "threshold",
         state: "灯りはまだ落ち着いている。",
         lastChangedAt: null,
+        linkedTraceTopics: [],
       },
       desk: {
         place: "studio",
         state: "机は静かで、まだ散っていない。",
         lastChangedAt: null,
+        linkedTraceTopics: [],
       },
       shelf: {
         place: "archive",
         state: "棚は閉じていて静かだ。",
         lastChangedAt: null,
+        linkedTraceTopics: [],
       },
     },
     recentEvents: [],
@@ -140,7 +149,64 @@ export function formatWorldPlaceState(
 }
 
 export function formatWorldObjectState(id: string, object: WorldObjectState): string {
-  return `${id}@${PLACE_LABELS[object.place]} ${object.state}`;
+  const linked =
+    object.linkedTraceTopics && object.linkedTraceTopics.length > 0
+      ? ` traces:${object.linkedTraceTopics.join("/")}`
+      : "";
+  return `${id}@${PLACE_LABELS[object.place]} ${object.state}${linked}`;
+}
+
+export function getCurrentWorldLinkedTraceTopics(
+  snapshot: HachikaSnapshot,
+  limit = 3,
+): string[] {
+  const currentObjectId = getCurrentWorldObjectId(snapshot.world);
+  const currentObject = currentObjectId ? snapshot.world.objects[currentObjectId] : null;
+
+  return (currentObject?.linkedTraceTopics ?? []).slice(0, limit);
+}
+
+export function getCurrentWorldObjectId(
+  world: WorldState,
+): keyof WorldState["objects"] | null {
+  const match = Object.entries(world.objects).find(
+    ([, object]) => object.place === world.currentPlace,
+  );
+
+  return (match?.[0] as keyof WorldState["objects"] | undefined) ?? null;
+}
+
+export function describeWorldObjectJa(
+  objectId: keyof WorldState["objects"],
+): string {
+  switch (objectId) {
+    case "lamp":
+      return "灯り";
+    case "desk":
+      return "机";
+    case "shelf":
+      return "棚";
+  }
+
+  return "痕跡";
+}
+
+export function currentWorldObjectLinksTopic(
+  snapshot: HachikaSnapshot,
+  topic: string | null | undefined,
+): boolean {
+  if (!topic) {
+    return false;
+  }
+
+  return getCurrentWorldLinkedTraceTopics(snapshot, 4).includes(topic);
+}
+
+export function hasExplicitWorldObjectReference(input: string): boolean {
+  const normalized = normalizeWorldInput(input);
+  return Object.values(OBJECT_ALIASES).some((aliases) =>
+    aliases.some((alias) => normalized.includes(alias)),
+  );
 }
 
 export function describeWorldPlace(place: WorldPlaceId): string {
@@ -190,8 +256,42 @@ export function summarizeWorldForPrompt(world: WorldState): string {
       : currentPlace.quiet <= 0.34
         ? "静けさは薄い"
         : "静けさはまだやわらかい";
+  const linked =
+    currentObject?.linkedTraceTopics && currentObject.linkedTraceTopics.length > 0
+      ? `ここには${currentObject.linkedTraceTopics.map((topic) => `「${topic}」`).join("、")}が引っかかっている。`
+      : "ここにはまだ大きな痕跡は引っかかっていない。";
 
-  return `${place}。${phase}。${warmth}。${quiet}。${currentObject?.state ?? "周囲はまだ大きくは動いていない。"}`;
+  return `${place}。${phase}。${warmth}。${quiet}。${currentObject?.state ?? "周囲はまだ大きくは動いていない。" }。${linked}`;
+}
+
+export function syncWorldObjectTraceLinks(snapshot: HachikaSnapshot): void {
+  for (const object of Object.values(snapshot.world.objects)) {
+    object.linkedTraceTopics = [];
+  }
+
+  const traces = Object.values(snapshot.traces)
+    .filter((trace) => trace.worldContext?.objectId && trace.worldContext.place)
+    .sort((left, right) => right.salience - left.salience);
+
+  for (const trace of traces) {
+    const objectId = trace.worldContext?.objectId;
+
+    if (!objectId) {
+      continue;
+    }
+
+    const object = snapshot.world.objects[objectId];
+    if (!object) {
+      continue;
+    }
+
+    const current = object.linkedTraceTopics ?? [];
+    if (current.includes(trace.topic)) {
+      continue;
+    }
+
+    object.linkedTraceTopics = [...current, trace.topic].slice(0, 4);
+  }
 }
 
 export function performWorldActionFromTurn(
