@@ -233,6 +233,8 @@ function renderTraces(traces) {
         <span>confidence: ${formatNumber(trace.confidence)}</span>
         <span>lifecycle: ${trace.lifecycle}</span>
         <span>stale: ${trace.effectiveStaleAt ?? trace.staleAt ?? "none"}</span>
+        <span>place: ${trace.place ?? "none"}</span>
+        <span>object: ${trace.objectId ?? "none"}</span>
       </div>
       <div class="chips">${trace.blockers.map((item) => `<span>${escapeHtml(item)}</span>`).join("")}</div>
     `;
@@ -262,6 +264,8 @@ function renderArtifacts(artifacts) {
         <span>confidence: ${formatNumber(artifact.confidence)}</span>
         <span>pending: ${artifact.pendingNextStep ?? "none"}</span>
         <span>updated: ${artifact.updatedAt}</span>
+        <span>place: ${artifact.place ?? "none"}</span>
+        <span>object: ${artifact.objectId ?? "none"}</span>
       </div>
     `;
     artifactsNode.append(card);

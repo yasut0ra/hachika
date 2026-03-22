@@ -200,6 +200,12 @@ export interface TraceLifecycleState {
   reopenCount: number;
 }
 
+export interface TraceWorldContext {
+  place: WorldPlaceId | null;
+  objectId: string | null;
+  linkedAt: string | null;
+}
+
 export interface TraceEntry {
   topic: string;
   kind: TraceKind;
@@ -210,6 +216,7 @@ export interface TraceEntry {
   artifact: TraceArtifact;
   work: TraceWorkState;
   lifecycle?: TraceLifecycleState;
+  worldContext?: TraceWorldContext;
   salience: number;
   mentions: number;
   createdAt: string;

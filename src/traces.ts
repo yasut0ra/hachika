@@ -17,6 +17,8 @@ import type {
   TraceStatus,
   TraceTendingMode,
   TraceWorkState,
+  TraceWorldContext,
+  WorldPlaceId,
 } from "./types.js";
 
 const TRACE_KIND_PRIORITY: Record<TraceKind, number> = {
@@ -134,6 +136,16 @@ const TRACE_META_TOPICS = new Set([
   "感じ",
 ]);
 
+export function linkTraceToWorld(
+  trace: TraceEntry,
+  snapshot: HachikaSnapshot,
+  timestamp = snapshot.lastInteractionAt ?? new Date().toISOString(),
+  place: WorldPlaceId | null = snapshot.world.currentPlace,
+): TraceEntry {
+  trace.worldContext = deriveTraceWorldContext(snapshot, timestamp, place);
+  return trace;
+}
+
 export function readTraceLifecycle(
   trace: { lifecycle?: TraceLifecycleState },
 ): TraceLifecycleState {
@@ -234,6 +246,7 @@ export function updateTraces(
     artifact,
     work,
     lifecycle,
+    worldContext: deriveTraceWorldContext(snapshot, timestamp),
     salience,
     mentions: (previous?.mentions ?? 0) + 1,
     createdAt: previous?.createdAt ?? timestamp,
@@ -449,6 +462,7 @@ export function tendTraceFromInitiative(
     { timestamp },
   );
   trace.salience = clamp01(trace.salience + profile.salienceBoost);
+  linkTraceToWorld(trace, snapshot, timestamp);
   trace.lastUpdatedAt = timestamp;
   snapshot.traces[topic] = trace;
   pruneTraces(snapshot, 10);
@@ -1055,11 +1069,39 @@ function createInitiativeTrace(
       reopenedAt: null,
       reopenCount: 0,
     },
+    worldContext: deriveTraceWorldContext(snapshot, timestamp),
     salience,
     mentions: 1,
     createdAt: timestamp,
     lastUpdatedAt: timestamp,
   };
+}
+
+function deriveTraceWorldContext(
+  snapshot: HachikaSnapshot,
+  timestamp: string,
+  place: WorldPlaceId | null = snapshot.world.currentPlace,
+): TraceWorldContext {
+  const resolvedPlace = place ?? snapshot.world.currentPlace ?? null;
+
+  return {
+    place: resolvedPlace,
+    objectId: resolvedPlace ? findWorldObjectIdAtPlace(snapshot, resolvedPlace) : null,
+    linkedAt: timestamp,
+  };
+}
+
+function findWorldObjectIdAtPlace(
+  snapshot: HachikaSnapshot,
+  place: WorldPlaceId,
+): string | null {
+  for (const [id, object] of Object.entries(snapshot.world.objects)) {
+    if (object.place === place) {
+      return id;
+    }
+  }
+
+  return null;
 }
 
 function deriveTraceStatus(kind: TraceKind): TraceStatus {

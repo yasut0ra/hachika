@@ -9,6 +9,7 @@ import { buildSelfModel } from "./self-model.js";
 import { clamp01, clampSigned, INITIAL_REACTIVITY, settleTowardsBaseline } from "./state.js";
 import { rewindTemperamentHours } from "./temperament.js";
 import {
+  linkTraceToWorld,
   pickPrimaryArtifactItem,
   readTraceLifecycle,
   sortedTraces,
@@ -1543,6 +1544,12 @@ function realizeInitiativeWorldAction(
       maintenance?.trace.topic ?? adjustedPending.topic ?? null,
       now,
     );
+    if (maintenance?.trace.topic) {
+      const updatedTrace = snapshot.traces[maintenance.trace.topic];
+      if (updatedTrace) {
+        linkTraceToWorld(updatedTrace, snapshot, now, place);
+      }
+    }
   }
 
   return {

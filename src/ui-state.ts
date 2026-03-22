@@ -43,6 +43,8 @@ export interface UiStatePayload {
     summary: TraceEntry["summary"];
     tending: string;
     lifecycle: string;
+    place: string | null;
+    objectId: string | null;
     blockers: string[];
     focus: string | null;
     confidence: number;
@@ -101,6 +103,8 @@ export function buildUiState(
           ? "archive"
           : artifacts.find((file) => file.topic === trace.topic)?.tending ?? "steady",
       lifecycle: trace.lifecycle?.phase ?? "live",
+      place: trace.worldContext?.place ?? null,
+      objectId: trace.worldContext?.objectId ?? null,
       blockers: [...trace.work.blockers],
       focus: trace.work.focus,
       confidence: trace.work.confidence,

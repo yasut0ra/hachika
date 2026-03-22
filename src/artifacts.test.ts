@@ -34,6 +34,11 @@ test("renderArtifactDocument includes structured sections", () => {
       blockers: ["境界が曖昧"],
       staleAt: "2026-03-21T01:00:00.000Z",
     },
+    worldContext: {
+      place: "studio",
+      objectId: "desk",
+      linkedAt: "2026-03-19T01:00:00.000Z",
+    },
     salience: 0.82,
     mentions: 2,
     createdAt: "2026-03-19T00:00:00.000Z",
@@ -47,6 +52,9 @@ test("renderArtifactDocument includes structured sections", () => {
   assert.match(markdown, /Lifecycle: live/);
   assert.match(markdown, /Last Action: expanded/);
   assert.match(markdown, /Tending: preserve/);
+  assert.match(markdown, /Place: studio/);
+  assert.match(markdown, /Object: desk/);
+  assert.match(markdown, /Linked At: 2026-03-19T01:00:00.000Z/);
   assert.match(markdown, /Focus: 責務ごとに整理する/);
   assert.match(markdown, /Confidence: 0.68/);
   assert.match(markdown, /Blockers: 境界が曖昧/);
@@ -128,6 +136,8 @@ test("syncArtifacts writes markdown files and index", async () => {
     assert.match(indexBody, /lifecycle: archived/);
     assert.match(indexBody, /last action: resolved/);
     assert.match(indexBody, /tending: steady/);
+    assert.match(indexBody, /place: none/);
+    assert.match(indexBody, /object: none/);
     assert.match(indexBody, /confidence: 0.94/);
     assert.match(archiveIndexBody, /^# Hachika Artifacts: Archive/m);
     assert.match(archiveIndexBody, /Root Index: \.\.\/index\.md/);

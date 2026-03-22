@@ -31,6 +31,8 @@ export interface ArtifactFile {
   reopenedAt: string | null;
   reopenCount: number;
   tending: TraceTendingMode;
+  place: string | null;
+  objectId: string | null;
   focus: string | null;
   confidence: number;
   blockers: string[];
@@ -74,6 +76,8 @@ export function describeArtifactFiles(
       reopenedAt: lifecycle.reopenedAt,
       reopenCount: lifecycle.reopenCount,
       tending,
+      place: trace.worldContext?.place ?? null,
+      objectId: trace.worldContext?.objectId ?? null,
       focus: trace.work.focus,
       confidence: trace.work.confidence,
       blockers: trace.work.blockers,
@@ -285,6 +289,8 @@ function appendArtifactIndexEntry(
   lines.push(`  - lifecycle: ${file.lifecyclePhase}`);
   lines.push(`  - last action: ${trace.lastAction}`);
   lines.push(`  - tending: ${file.tending}`);
+  lines.push(`  - place: ${file.place ?? "none"}`);
+  lines.push(`  - object: ${file.objectId ?? "none"}`);
   if (file.archivedAt) {
     lines.push(`  - archived at: ${file.archivedAt}`);
   }
@@ -353,6 +359,9 @@ export function renderArtifactDocument(
   lines.push(`- Lifecycle: ${lifecycle.phase}`);
   lines.push(`- Last Action: ${trace.lastAction}`);
   lines.push(`- Tending: ${tending}`);
+  lines.push(`- Place: ${trace.worldContext?.place ?? "none"}`);
+  lines.push(`- Object: ${trace.worldContext?.objectId ?? "none"}`);
+  lines.push(`- Linked At: ${trace.worldContext?.linkedAt ?? "none"}`);
   lines.push(`- Source Motive: ${trace.sourceMotive}`);
   lines.push(`- Focus: ${trace.work.focus ?? "none"}`);
   lines.push(`- Confidence: ${trace.work.confidence.toFixed(2)}`);

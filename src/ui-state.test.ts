@@ -24,6 +24,8 @@ test("buildUiState exposes recent memories, traces, and diagnostics for the web 
   assert.ok(ui.memories.length >= 2);
   assert.equal(ui.memories.at(-1)?.role, "hachika");
   assert.ok(ui.traces.some((trace) => trace.topic === "仕様"));
+  assert.equal(ui.traces.find((trace) => trace.topic === "仕様")?.place, "studio");
+  assert.equal(ui.traces.find((trace) => trace.topic === "仕様")?.objectId, "desk");
   assert.ok(ui.diagnostics.lastResponse !== null);
 });
 

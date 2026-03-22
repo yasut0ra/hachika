@@ -1537,6 +1537,18 @@ test("engine can carry an explicit world action into world events and object sta
   assert.match(result.snapshot.world.objects.shelf!.state, /触れた跡|手触り/);
 });
 
+test("trace can remember which world place and object it was linked in", () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+
+  const result = engine.respond("archive で仕様の境界を記録として残したい。");
+  const trace = result.snapshot.traces["仕様の境界"];
+
+  assert.ok(trace);
+  assert.equal(trace?.worldContext?.place, "archive");
+  assert.equal(trace?.worldContext?.objectId, "shelf");
+  assert.ok(typeof trace?.worldContext?.linkedAt === "string");
+});
+
 test("identity can surface in a generic follow-up reply", () => {
   const engine = new HachikaEngine(createInitialSnapshot());
 

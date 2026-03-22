@@ -31,6 +31,7 @@ import type {
   TraceLifecycleState,
   TraceMaintenanceAction,
   TraceWorkState,
+  TraceWorldContext,
   TraceStatus,
   WorldActionKind,
   WorldEvent,
@@ -675,6 +676,7 @@ function hydrateTraces(raw: unknown): Record<string, TraceEntry> {
           work: hydrateTraceWork(value.work, topic, kind),
         },
       ),
+      worldContext: hydrateTraceWorldContext(value.worldContext),
       salience: typeof value.salience === "number" ? clamp01(value.salience) : 0.3,
       mentions:
         typeof value.mentions === "number" && Number.isFinite(value.mentions)
@@ -759,6 +761,22 @@ function hydrateTraceLifecycle(
       typeof raw.reopenCount === "number" && Number.isFinite(raw.reopenCount)
         ? Math.max(0, Math.round(raw.reopenCount))
         : 0,
+  };
+}
+
+function hydrateTraceWorldContext(raw: unknown): TraceWorldContext {
+  if (!isRecord(raw)) {
+    return {
+      place: null,
+      objectId: null,
+      linkedAt: null,
+    };
+  }
+
+  return {
+    place: isWorldPlaceId(raw.place) ? raw.place : null,
+    objectId: sanitizeWorldObjectId(raw.objectId),
+    linkedAt: typeof raw.linkedAt === "string" ? raw.linkedAt : null,
   };
 }
 
@@ -1245,10 +1263,21 @@ function sanitizeTraces(record: Record<string, TraceEntry>): Record<string, Trac
         artifact,
         work,
       }),
+      worldContext: sanitizeTraceWorldContext(trace.worldContext),
     };
   }
 
   return result;
+}
+
+function sanitizeTraceWorldContext(
+  worldContext: TraceWorldContext | undefined,
+): TraceWorldContext {
+  return {
+    place: isWorldPlaceId(worldContext?.place) ? worldContext.place : null,
+    objectId: sanitizeWorldObjectId(worldContext?.objectId),
+    linkedAt: typeof worldContext?.linkedAt === "string" ? worldContext.linkedAt : null,
+  };
 }
 
 function sanitizeTraceArtifact(
@@ -1429,6 +1458,15 @@ function sanitizeLooseText(value: string | null): string | null {
   }
 
   return extractTopics(normalized).length > 0 || normalized.length >= 8 ? normalized : null;
+}
+
+function sanitizeWorldObjectId(value: unknown): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const normalized = value.normalize("NFKC").trim();
+  return normalized.length > 0 ? normalized.slice(0, 32) : null;
 }
 
 function normalizeWorldClock(value: number): number {
