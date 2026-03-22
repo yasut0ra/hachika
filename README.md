@@ -269,6 +269,8 @@ Hachika は、単に有用なだけでなく、
 - trace の優先順位と artifact の surfaced order も身体状態の影響を受け、低 energy では残しやすい痕跡が、高 boredom では stale な未完了が前に出やすくなる
 - さらに `threshold / studio / archive` の最小の閉じた world を持ち、clock / phase / current place / object state / recent events を snapshot に保持する
   - 対話と idle の両方で world が少し進み、social turn では `threshold`、shared work では `studio`、continuity / preservation 側では `archive` に寄りやすい
+  - 明示的に `archive / studio / threshold` や `棚 / 机 / 灯り` に触れる入力は current place の選択に影響し、world の中での move が起きうる
+  - さらに turn ごとに最小の world action layer があり、`observe / touch / leave` の action が current place の object state と recent events に残る
   - CLI の `/world` と Web UI の `World` panel から、今どこにいるか、時間帯がどう変わったか、最近どんな出来事があったかを見られる
 - `scenario harness` により、複数ターンの対話シナリオを fixture として検証できる
   - active purpose の継続と解決、blocker maintenance、archive/reopen、preservation threat、body drift による wording 変化を長めの回帰テストとして固定している

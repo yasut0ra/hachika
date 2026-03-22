@@ -60,6 +60,7 @@ import {
   advanceWorldFromInteraction,
   describeWorldPhaseJa,
   describeWorldPlaceJa,
+  performWorldActionFromTurn,
 } from "./world.js";
 import type {
   DriveName,
@@ -224,6 +225,19 @@ const WORLD_INQUIRY_MARKERS = [
   "どんな感じ",
   "景色",
   "空気は",
+];
+
+const WORLD_REFERENCE_MARKERS = [
+  "threshold",
+  "studio",
+  "archive",
+  "入口",
+  "灯り",
+  "ランプ",
+  "机",
+  "デスク",
+  "棚",
+  "書庫",
 ];
 
 const WORK_MARKERS = [
@@ -918,6 +932,7 @@ function prepareTurnFromSignals(
     nextSnapshot,
     stateSignals,
     nextSnapshot.lastInteractionAt ?? new Date().toISOString(),
+    input,
   );
   const mood = resolveMood(nextSnapshot, stateSignals);
   const dominant = dominantDrive(nextSnapshot.state);
@@ -936,6 +951,13 @@ function prepareTurnFromSignals(
     selfModel,
     nextSnapshot.lastInteractionAt ?? new Date().toISOString(),
     traceExtraction,
+  );
+  performWorldActionFromTurn(
+    nextSnapshot,
+    input,
+    stateSignals,
+    deriveWorldActionFocus(nextSnapshot, stateSignals, traceExtraction),
+    nextSnapshot.lastInteractionAt ?? new Date().toISOString(),
   );
   updateIdentity(nextSnapshot, nextSnapshot.lastInteractionAt ?? new Date().toISOString());
   selfModel = buildSelfModel(nextSnapshot);
@@ -1554,6 +1576,20 @@ function summarizeTraceExtractionDebug(
   return tags.length > 0 ? tags.join("/") : "none";
 }
 
+function deriveWorldActionFocus(
+  snapshot: HachikaSnapshot,
+  signals: InteractionSignals,
+  traceExtraction: StructuredTraceExtraction | null,
+): string | null {
+  return (
+    traceExtraction?.topics[0] ??
+    signals.topics[0] ??
+    snapshot.purpose.active?.topic ??
+    snapshot.identity.anchors[0] ??
+    null
+  );
+}
+
 function deriveResponseSignals(
   signals: InteractionSignals,
   traceExtraction: StructuredTraceExtraction | null,
@@ -1702,7 +1738,12 @@ function analyzeInteraction(
     smalltalk: countMatches(normalized, SMALLTALK_MARKERS),
     repair: countMatches(normalized, REPAIR_MARKERS),
     selfInquiry: countMatches(normalized, SELF_INQUIRY_MARKERS),
-    worldInquiry: countMatches(normalized, WORLD_INQUIRY_MARKERS),
+    worldInquiry: clamp01(
+      Math.max(
+        countMatches(normalized, WORLD_INQUIRY_MARKERS),
+        countMatches(normalized, WORLD_REFERENCE_MARKERS) * 0.7,
+      ),
+    ),
     workCue: countMatches(normalized, WORK_MARKERS),
     topics,
   });

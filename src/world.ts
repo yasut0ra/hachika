@@ -11,6 +11,8 @@ import type {
 
 export const WORLD_PLACE_IDS = ["threshold", "studio", "archive"] as const satisfies readonly WorldPlaceId[];
 
+type WorldActionKind = "observe" | "touch" | "leave";
+
 const PLACE_LABELS: Record<WorldPlaceId, string> = {
   threshold: "threshold",
   studio: "studio",
@@ -29,6 +31,16 @@ const PLACE_BASELINES: Record<WorldPlaceId, Pick<WorldPlaceState, "warmth" | "qu
   studio: { warmth: 0.54, quiet: 0.48 },
   archive: { warmth: 0.38, quiet: 0.82 },
 };
+
+const PLACE_ALIASES: Record<WorldPlaceId, readonly string[]> = {
+  threshold: ["threshold", "入口", "灯り", "ランプ"],
+  studio: ["studio", "机", "デスク", "作業場"],
+  archive: ["archive", "棚", "書庫", "保管庫"],
+};
+
+const OBSERVE_MARKERS = ["見て", "見せ", "眺め", "観察", "look", "show"];
+const TOUCH_MARKERS = ["触", "さわ", "なぞ", "開いて", "開く", "touch"];
+const LEAVE_MARKERS = ["残", "置", "書", "刻", "leave", "mark", "drop"];
 
 export function createInitialWorldState(): WorldState {
   return {
@@ -78,6 +90,7 @@ export function advanceWorldFromInteraction(
   snapshot: HachikaSnapshot,
   signals: InteractionSignals,
   now: string = snapshot.lastInteractionAt ?? new Date().toISOString(),
+  input = "",
 ): void {
   const world = snapshot.world;
   const previousPhase = world.phase;
@@ -86,7 +99,7 @@ export function advanceWorldFromInteraction(
 
   world.clockHour = wrapClockHour(world.clockHour + hours);
   world.phase = deriveWorldPhase(world.clockHour);
-  world.currentPlace = chooseInteractionPlace(snapshot, signals);
+  world.currentPlace = chooseInteractionPlace(snapshot, signals, input);
   world.lastUpdatedAt = now;
   world.places[world.currentPlace].lastVisitedAt = now;
 
@@ -182,6 +195,37 @@ export function summarizeWorldForPrompt(world: WorldState): string {
   return `${place}。${phase}。${warmth}。${quiet}。${currentObject?.state ?? "周囲はまだ大きくは動いていない。"}`;
 }
 
+export function performWorldActionFromTurn(
+  snapshot: HachikaSnapshot,
+  input: string,
+  signals: InteractionSignals,
+  focusTopic: string | null,
+  now: string = snapshot.lastInteractionAt ?? new Date().toISOString(),
+): void {
+  const action = inferWorldActionKind(input, signals, focusTopic);
+
+  if (!action) {
+    return;
+  }
+
+  const world = snapshot.world;
+  const object = findCurrentWorldObject(world);
+  if (object) {
+    updateObject(
+      object,
+      buildWorldObjectActionState(world.currentPlace, action, focusTopic),
+      now,
+    );
+  }
+
+  pushWorldEvent(world, {
+    timestamp: now,
+    kind: action,
+    place: world.currentPlace,
+    summary: buildWorldActionSummary(world.currentPlace, action, focusTopic),
+  });
+}
+
 function deriveInteractionHours(signals: InteractionSignals): number {
   const weighted =
     0.18 +
@@ -196,7 +240,14 @@ function deriveInteractionHours(signals: InteractionSignals): number {
 function chooseInteractionPlace(
   snapshot: HachikaSnapshot,
   signals: InteractionSignals,
+  input = "",
 ): WorldPlaceId {
+  const requestedPlace = detectRequestedPlace(input);
+
+  if (requestedPlace) {
+    return requestedPlace;
+  }
+
   const archivePull =
     signals.memoryCue +
     signals.preservationThreat +
@@ -407,6 +458,16 @@ function updateObject(object: WorldObjectState, nextState: string, now: string):
   object.lastChangedAt = now;
 }
 
+function findCurrentWorldObject(world: WorldState): WorldObjectState | null {
+  for (const object of Object.values(world.objects)) {
+    if (object.place === world.currentPlace) {
+      return object;
+    }
+  }
+
+  return null;
+}
+
 function recordWorldShift(
   snapshot: HachikaSnapshot,
   previousPhase: WorldPhase,
@@ -456,6 +517,157 @@ function pushWorldEvent(world: WorldState, event: WorldEvent): void {
   }
 
   world.recentEvents = [...world.recentEvents, event].slice(-8);
+}
+
+function detectRequestedPlace(input: string): WorldPlaceId | null {
+  const normalized = normalizeWorldInput(input);
+
+  if (normalized.length === 0) {
+    return null;
+  }
+
+  let bestPlace: WorldPlaceId | null = null;
+  let bestScore = 0;
+
+  for (const place of WORLD_PLACE_IDS) {
+    const score = PLACE_ALIASES[place].reduce(
+      (count, alias) => count + (normalized.includes(alias) ? 1 : 0),
+      0,
+    );
+
+    if (score > bestScore) {
+      bestPlace = place;
+      bestScore = score;
+    }
+  }
+
+  return bestScore > 0 ? bestPlace : null;
+}
+
+function inferWorldActionKind(
+  input: string,
+  signals: InteractionSignals,
+  focusTopic: string | null,
+): WorldActionKind | null {
+  const normalized = normalizeWorldInput(input);
+
+  if (containsMarker(normalized, LEAVE_MARKERS)) {
+    return "leave";
+  }
+
+  if (containsMarker(normalized, TOUCH_MARKERS)) {
+    return "touch";
+  }
+
+  if (containsMarker(normalized, OBSERVE_MARKERS)) {
+    return "observe";
+  }
+
+  if (signals.worldInquiry > 0.42) {
+    return "observe";
+  }
+
+  if (focusTopic && (signals.expansionCue > 0.18 || signals.completion > 0.18)) {
+    return "leave";
+  }
+
+  if (signals.memoryCue > 0.18 || signals.preservationThreat > 0.18) {
+    return "touch";
+  }
+
+  return null;
+}
+
+function buildWorldActionSummary(
+  place: WorldPlaceId,
+  action: WorldActionKind,
+  focusTopic: string | null,
+): string {
+  switch (action) {
+    case "observe":
+      switch (place) {
+        case "threshold":
+          return "threshold の縁を少し見渡す。";
+        case "studio":
+          return "studio の机まわりを静かに見ている。";
+        case "archive":
+          return "archive の棚のあいだを見ている。";
+      }
+    case "touch":
+      switch (place) {
+        case "threshold":
+          return "threshold の灯りにそっと触れて位置を確かめる。";
+        case "studio":
+          return "studio の机の断片を指先で寄せる。";
+        case "archive":
+          return "archive の棚の背をなぞって手触りを確かめる。";
+      }
+    case "leave":
+      switch (place) {
+        case "threshold":
+          return focusTopic
+            ? `threshold の灯りの下に「${focusTopic}」の小さな札を置く。`
+            : "threshold の灯りの下に短い札を置く。";
+        case "studio":
+          return focusTopic
+            ? `studio の机に「${focusTopic}」の断片を置く。`
+            : "studio の机に小さな断片を置く。";
+        case "archive":
+          return focusTopic
+            ? `archive の棚のすきまに「${focusTopic}」の痕跡を差し込む。`
+            : "archive の棚のすきまに小さな痕跡を差し込む。";
+      }
+  }
+}
+
+function buildWorldObjectActionState(
+  place: WorldPlaceId,
+  action: WorldActionKind,
+  focusTopic: string | null,
+): string {
+  switch (action) {
+    case "observe":
+      switch (place) {
+        case "threshold":
+          return "灯りのまわりを少し見ている。";
+        case "studio":
+          return "机の上の断片を目で追っている。";
+        case "archive":
+          return "棚の背を静かに追っている。";
+      }
+    case "touch":
+      switch (place) {
+        case "threshold":
+          return "灯りの位置が少しだけ確かめられている。";
+        case "studio":
+          return "机の上の断片が少し動かされている。";
+        case "archive":
+          return "棚の背に触れた跡がまだ残っている。";
+      }
+    case "leave":
+      switch (place) {
+        case "threshold":
+          return focusTopic
+            ? `灯りの下に「${focusTopic}」の短い札が置かれている。`
+            : "灯りの下に短い札が置かれている。";
+        case "studio":
+          return focusTopic
+            ? `机に「${focusTopic}」の小さな断片が置かれている。`
+            : "机に小さな断片が置かれている。";
+        case "archive":
+          return focusTopic
+            ? `棚のすきまに「${focusTopic}」の痕跡が差し込まれている。`
+            : "棚のすきまに小さな痕跡が差し込まれている。";
+      }
+  }
+}
+
+function containsMarker(text: string, markers: readonly string[]): boolean {
+  return markers.some((marker) => text.includes(marker));
+}
+
+function normalizeWorldInput(input: string): string {
+  return input.normalize("NFKC").toLowerCase();
 }
 
 function deriveWorldPhase(clockHour: number): WorldPhase {

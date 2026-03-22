@@ -125,7 +125,13 @@ export interface WorldObjectState {
   lastChangedAt: string | null;
 }
 
-export type WorldEventKind = "arrival" | "ambience" | "notice";
+export type WorldEventKind =
+  | "arrival"
+  | "ambience"
+  | "notice"
+  | "observe"
+  | "touch"
+  | "leave";
 
 export interface WorldEvent {
   timestamp: string;

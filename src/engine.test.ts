@@ -1520,6 +1520,16 @@ test("world inquiry replies can surface the current place without dragging stale
   assert.equal(/設計/.test(result.reply), false);
 });
 
+test("engine can carry an explicit world action into world events and object state", () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+
+  const result = engine.respond("archive に行って棚に触れて。");
+
+  assert.equal(result.snapshot.world.currentPlace, "archive");
+  assert.ok(result.snapshot.world.recentEvents.some((event) => event.kind === "touch"));
+  assert.match(result.snapshot.world.objects.shelf!.state, /触れた跡|手触り/);
+});
+
 test("identity can surface in a generic follow-up reply", () => {
   const engine = new HachikaEngine(createInitialSnapshot());
 
