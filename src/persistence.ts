@@ -4,6 +4,7 @@ import { writeTextFileAtomic } from "./atomic-file.js";
 import { extractTopics, isMeaningfulTopic } from "./memory.js";
 import { clamp01, clampSigned, createInitialSnapshot } from "./state.js";
 import { isInformativeTraceClause } from "./traces.js";
+import { WORLD_PLACE_IDS } from "./world.js";
 import type {
   ActivePurpose,
   BoundaryImprint,
@@ -31,6 +32,12 @@ import type {
   TraceMaintenanceAction,
   TraceWorkState,
   TraceStatus,
+  WorldEvent,
+  WorldObjectState,
+  WorldPhase,
+  WorldPlaceId,
+  WorldPlaceState,
+  WorldState,
 } from "./types.js";
 
 export interface SnapshotCommitResult {
@@ -98,7 +105,7 @@ function hydrateSnapshot(raw: unknown): HachikaSnapshot {
   }
 
   return {
-    version: 18,
+    version: 19,
     revision:
       typeof raw.revision === "number" && Number.isFinite(raw.revision)
         ? Math.max(0, Math.round(raw.revision))
@@ -109,6 +116,7 @@ function hydrateSnapshot(raw: unknown): HachikaSnapshot {
     temperament: hydrateTemperament(raw.temperament),
     attachment:
       typeof raw.attachment === "number" ? clamp01(raw.attachment) : initial.attachment,
+    world: hydrateWorld(raw.world),
     preferences: hydrateNumberRecord(raw.preferences, clampSigned),
     topicCounts: hydrateNumberRecord(raw.topicCounts, (value) =>
       Math.max(0, Math.round(value)),
@@ -137,6 +145,7 @@ export function sanitizeSnapshot(snapshot: HachikaSnapshot): HachikaSnapshot {
   );
   snapshot.reactivity = sanitizeReactivity(snapshot.reactivity);
   snapshot.temperament = sanitizeTemperament(snapshot.temperament);
+  snapshot.world = sanitizeWorld(snapshot.world);
   snapshot.memories = snapshot.memories
     .map((memory) => ({
       ...memory,
@@ -235,6 +244,30 @@ function hydrateTemperament(raw: unknown): LearnedTemperament {
   };
 }
 
+function hydrateWorld(raw: unknown): WorldState {
+  const initial = createInitialSnapshot().world;
+
+  if (!isRecord(raw)) {
+    return initial;
+  }
+
+  const clockHour =
+    typeof raw.clockHour === "number" && Number.isFinite(raw.clockHour)
+      ? normalizeWorldClock(raw.clockHour)
+      : initial.clockHour;
+  const phase = isWorldPhase(raw.phase) ? raw.phase : inferWorldPhase(clockHour);
+
+  return {
+    clockHour,
+    phase,
+    currentPlace: isWorldPlaceId(raw.currentPlace) ? raw.currentPlace : initial.currentPlace,
+    places: hydrateWorldPlaces(raw.places),
+    objects: hydrateWorldObjects(raw.objects),
+    recentEvents: hydrateWorldEvents(raw.recentEvents),
+    lastUpdatedAt: typeof raw.lastUpdatedAt === "string" ? raw.lastUpdatedAt : null,
+  };
+}
+
 function hydrateNumberRecord(
   raw: unknown,
   normalize: (value: number) => number,
@@ -252,6 +285,101 @@ function hydrateNumberRecord(
   }
 
   return result;
+}
+
+function hydrateWorldPlaces(raw: unknown): Record<WorldPlaceId, WorldPlaceState> {
+  const initial = createInitialSnapshot().world.places;
+
+  return {
+    threshold: hydrateWorldPlace(raw, "threshold", initial.threshold),
+    studio: hydrateWorldPlace(raw, "studio", initial.studio),
+    archive: hydrateWorldPlace(raw, "archive", initial.archive),
+  };
+}
+
+function hydrateWorldPlace(
+  raw: unknown,
+  place: WorldPlaceId,
+  fallback: WorldPlaceState,
+): WorldPlaceState {
+  const value = isRecord(raw) && isRecord(raw[place]) ? raw[place] : null;
+
+  if (!value) {
+    return fallback;
+  }
+
+  return {
+    warmth: typeof value.warmth === "number" ? clamp01(value.warmth) : fallback.warmth,
+    quiet: typeof value.quiet === "number" ? clamp01(value.quiet) : fallback.quiet,
+    lastVisitedAt:
+      typeof value.lastVisitedAt === "string" ? value.lastVisitedAt : fallback.lastVisitedAt,
+  };
+}
+
+function hydrateWorldObjects(raw: unknown): Record<string, WorldObjectState> {
+  const initial = createInitialSnapshot().world.objects;
+
+  if (!isRecord(raw)) {
+    return structuredClone(initial);
+  }
+
+  const result: Record<string, WorldObjectState> = {};
+
+  for (const [key, fallback] of Object.entries(initial)) {
+    const value = isRecord(raw[key]) ? raw[key] : null;
+    result[key] = {
+      place: value && isWorldPlaceId(value.place) ? value.place : fallback.place,
+      state:
+        value && typeof value.state === "string" && value.state.trim().length > 0
+          ? value.state.trim()
+          : fallback.state,
+      lastChangedAt:
+        value && typeof value.lastChangedAt === "string" ? value.lastChangedAt : fallback.lastChangedAt,
+    };
+  }
+
+  return result;
+}
+
+function hydrateWorldEvents(raw: unknown): WorldEvent[] {
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+
+  return raw
+    .map((item) => hydrateWorldEvent(item))
+    .filter((item): item is WorldEvent => item !== null)
+    .slice(-8);
+}
+
+function hydrateWorldEvent(raw: unknown): WorldEvent | null {
+  if (!isRecord(raw)) {
+    return null;
+  }
+
+  if (!isWorldPlaceId(raw.place)) {
+    return null;
+  }
+
+  const kind =
+    raw.kind === "arrival" || raw.kind === "ambience" || raw.kind === "notice"
+      ? raw.kind
+      : null;
+  const summary =
+    typeof raw.summary === "string" && raw.summary.trim().length > 0
+      ? raw.summary.trim()
+      : null;
+
+  if (!kind || !summary) {
+    return null;
+  }
+
+  return {
+    timestamp: typeof raw.timestamp === "string" ? raw.timestamp : new Date().toISOString(),
+    kind,
+    place: raw.place,
+    summary,
+  };
 }
 
 function hydrateMemories(raw: unknown): MemoryEntry[] {
@@ -924,6 +1052,51 @@ function sanitizeTemperament(temperament: LearnedTemperament): LearnedTemperamen
   };
 }
 
+function sanitizeWorld(world: WorldState): WorldState {
+  const initial = createInitialSnapshot().world;
+  const clockHour = normalizeWorldClock(world.clockHour);
+  const phase = inferWorldPhase(clockHour);
+  const places = hydrateWorldPlaces(world.places);
+  const currentPlace = isWorldPlaceId(world.currentPlace) ? world.currentPlace : initial.currentPlace;
+
+  return {
+    clockHour,
+    phase,
+    currentPlace,
+    places: {
+      threshold: sanitizeWorldPlace(places.threshold),
+      studio: sanitizeWorldPlace(places.studio),
+      archive: sanitizeWorldPlace(places.archive),
+    },
+    objects: sanitizeWorldObjects(world.objects),
+    recentEvents: hydrateWorldEvents(world.recentEvents),
+    lastUpdatedAt: typeof world.lastUpdatedAt === "string" ? world.lastUpdatedAt : null,
+  };
+}
+
+function sanitizeWorldPlace(place: WorldPlaceState): WorldPlaceState {
+  return {
+    warmth: clamp01(place.warmth),
+    quiet: clamp01(place.quiet),
+    lastVisitedAt: typeof place.lastVisitedAt === "string" ? place.lastVisitedAt : null,
+  };
+}
+
+function sanitizeWorldObjects(raw: Record<string, WorldObjectState>): Record<string, WorldObjectState> {
+  const base = hydrateWorldObjects(raw);
+  const result: Record<string, WorldObjectState> = {};
+
+  for (const [key, object] of Object.entries(base)) {
+    result[key] = {
+      place: object.place,
+      state: object.state.trim(),
+      lastChangedAt: typeof object.lastChangedAt === "string" ? object.lastChangedAt : null,
+    };
+  }
+
+  return result;
+}
+
 function sanitizePreferenceImprints(
   record: Record<string, PreferenceImprint>,
 ): Record<string, PreferenceImprint> {
@@ -1247,6 +1420,30 @@ function sanitizeLooseText(value: string | null): string | null {
   return extractTopics(normalized).length > 0 || normalized.length >= 8 ? normalized : null;
 }
 
+function normalizeWorldClock(value: number): number {
+  const wrapped = value % 24;
+  const normalized = wrapped < 0 ? wrapped + 24 : wrapped;
+  return Math.round(normalized * 1000) / 1000;
+}
+
+function inferWorldPhase(clockHour: number): WorldPhase {
+  const normalized = normalizeWorldClock(clockHour);
+
+  if (normalized >= 5 && normalized < 8) {
+    return "dawn";
+  }
+
+  if (normalized >= 8 && normalized < 17) {
+    return "day";
+  }
+
+  if (normalized >= 17 && normalized < 21) {
+    return "dusk";
+  }
+
+  return "night";
+}
+
 function unique(values: string[]): string[] {
   return values.filter((value, index) => values.indexOf(value) === index);
 }
@@ -1306,6 +1503,14 @@ function isIdentityTrait(value: unknown): value is IdentityState["traits"][numbe
     value === "collaborative" ||
     value === "inquisitive"
   );
+}
+
+function isWorldPhase(value: unknown): value is WorldPhase {
+  return value === "dawn" || value === "day" || value === "dusk" || value === "night";
+}
+
+function isWorldPlaceId(value: unknown): value is WorldPlaceId {
+  return typeof value === "string" && (WORLD_PLACE_IDS as readonly string[]).includes(value);
 }
 
 function isTraceKind(value: unknown): value is TraceEntry["kind"] {

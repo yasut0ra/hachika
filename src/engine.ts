@@ -55,6 +55,7 @@ import {
   settleTowardsBaseline,
 } from "./state.js";
 import { findRelevantTrace, pickPrimaryArtifactItem, updateTraces } from "./traces.js";
+import { advanceWorldByIdle, advanceWorldFromInteraction } from "./world.js";
 import type {
   DriveName,
   GeneratedTextDebug,
@@ -443,6 +444,10 @@ export class HachikaEngine {
     return structuredClone(this.#snapshot.body);
   }
 
+  getWorld(): HachikaSnapshot["world"] {
+    return structuredClone(this.#snapshot.world);
+  }
+
   getLastReplyDebug(): TurnResult["debug"]["reply"] | null {
     return this.#lastGeneratedDebug ? { ...this.#lastGeneratedDebug } : null;
   }
@@ -622,6 +627,7 @@ export class HachikaEngine {
   rewindIdleHours(hours: number): void {
     const nextSnapshot = structuredClone(this.#snapshot);
     rewindSnapshotHours(nextSnapshot, hours);
+    advanceWorldByIdle(nextSnapshot, hours);
     updateIdentity(nextSnapshot, new Date().toISOString());
     this.#snapshot = nextSnapshot;
   }
@@ -889,6 +895,11 @@ function prepareTurnFromSignals(
   );
   const sentimentScore = scoreSentiment(stateSignals);
   const nextSnapshot = applySignals(snapshot, stateSignals, sentimentScore);
+  advanceWorldFromInteraction(
+    nextSnapshot,
+    stateSignals,
+    nextSnapshot.lastInteractionAt ?? new Date().toISOString(),
+  );
   const mood = resolveMood(nextSnapshot, stateSignals);
   const dominant = dominantDrive(nextSnapshot.state);
   const preliminarySelfModel = buildSelfModel(nextSnapshot);

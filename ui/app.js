@@ -1,5 +1,6 @@
 const messagesNode = document.getElementById("messages");
 const stateNode = document.getElementById("state-metrics");
+const worldNode = document.getElementById("world-panel");
 const identityNode = document.getElementById("identity-panel");
 const diagnosticsNode = document.getElementById("diagnostics-panel");
 const growthNode = document.getElementById("growth-metrics");
@@ -40,6 +41,7 @@ function render(ui) {
   connectionNode.textContent = "Local UI online";
   renderMessages(ui.memories);
   renderState(ui.summary);
+  renderWorld(ui.summary.world);
   renderIdentity(ui.summary, ui.selfModel);
   renderDiagnostics(ui.diagnostics, ui.summary.residentLoop, ui.summary.residentLoopHealth);
   renderGrowth(ui.growth);
@@ -134,6 +136,39 @@ function renderIdentity(summary, selfModel) {
         : "none",
     ),
     stackCard("Narrative", selfModel.narrative),
+  );
+}
+
+function renderWorld(world) {
+  worldNode.innerHTML = "";
+
+  const events =
+    world.recentEvents.length > 0
+      ? world.recentEvents
+          .slice(-4)
+          .reverse()
+          .map((event) => `${event.kind} · ${event.place} · ${event.summary}`)
+          .join("<br />")
+      : "none";
+
+  const objects = Object.entries(world.objects)
+    .map(([id, object]) => `${id}@${object.place} · ${object.state}`)
+    .join("<br />");
+
+  worldNode.append(
+    stackCard("Clock", `${formatWorldClock(world.clockHour)} · ${world.phase}`),
+    stackCard("Current Place", world.currentPlace),
+    stackCard(
+      "Places",
+      Object.entries(world.places)
+        .map(
+          ([place, state]) =>
+            `${place} · warmth ${formatNumber(state.warmth)} · quiet ${formatNumber(state.quiet)}`,
+        )
+        .join("<br />"),
+    ),
+    stackCard("Objects", objects || "none"),
+    stackCard("Recent Events", events),
   );
 }
 
@@ -345,6 +380,14 @@ function formatDurationMs(ms) {
   }
 
   return `${(ms / 3600000).toFixed(1)}h`;
+}
+
+function formatWorldClock(clockHour) {
+  const hours = Math.floor(clockHour);
+  const minutes = Math.round((clockHour - hours) * 60);
+  const normalizedMinutes = minutes === 60 ? 0 : minutes;
+  const normalizedHours = minutes === 60 ? (hours + 1) % 24 : hours;
+  return `${String((normalizedHours + 24) % 24).padStart(2, "0")}:${String(normalizedMinutes).padStart(2, "0")}`;
 }
 
 function escapeHtml(value) {

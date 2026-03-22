@@ -40,6 +40,12 @@ import {
   sortedTraces,
 } from "./traces.js";
 import type { ResolvedPurpose } from "./types.js";
+import {
+  WORLD_PLACE_IDS,
+  formatWorldObjectState,
+  formatWorldPlaceState,
+  formatWorldSummary,
+} from "./world.js";
 
 const snapshotPath = resolve(process.cwd(), "data/hachika-state.json");
 const artifactsDir = resolve(process.cwd(), "data/artifacts");
@@ -120,6 +126,11 @@ try {
 
     if (text === "/body") {
       printBody(engine);
+      continue;
+    }
+
+    if (text === "/world") {
+      printWorld(engine);
       continue;
     }
 
@@ -221,6 +232,7 @@ async function printIntro(currentEngine: HachikaEngine): Promise<void> {
   console.log(formatReactivityState(currentEngine.getSnapshot().reactivity));
   console.log(formatTemperamentState(currentEngine.getSnapshot().temperament));
   console.log(`attachment:${currentEngine.getSnapshot().attachment.toFixed(2)}`);
+  console.log(`world:${formatWorldSummary(currentEngine.getSnapshot().world)}`);
   console.log(`identity:${currentEngine.getIdentity().summary}`);
   console.log(`reply:${describeReplyGenerator(replyGenerator)}`);
   console.log(`interpret:${describeInputInterpreter(inputInterpreter)}`);
@@ -243,6 +255,7 @@ function printHelp(): void {
   console.log("/idle N simulate N hours of inactivity");
   console.log("/state  print current drives");
   console.log("/body   print current body state");
+  console.log("/world  print current world state");
   console.log("/reactivity print current response sensitivity");
   console.log("/temperament print current learned temperament");
   console.log("/purpose print active purpose");
@@ -275,6 +288,29 @@ function printMemories(currentEngine: HachikaEngine): void {
 
 function printBody(currentEngine: HachikaEngine): void {
   console.log(formatBodyState(currentEngine.getBody()));
+}
+
+function printWorld(currentEngine: HachikaEngine): void {
+  const world = currentEngine.getWorld();
+
+  console.log(formatWorldSummary(world));
+
+  for (const place of WORLD_PLACE_IDS) {
+    console.log(formatWorldPlaceState(place, world.places[place]));
+  }
+
+  for (const [id, object] of Object.entries(world.objects)) {
+    console.log(formatWorldObjectState(id, object));
+  }
+
+  if (world.recentEvents.length === 0) {
+    console.log("world events: none");
+    return;
+  }
+
+  for (const event of world.recentEvents.slice(-6).reverse()) {
+    console.log(`${event.timestamp} ${event.kind}/${event.place} ${event.summary}`);
+  }
 }
 
 function printReactivity(currentEngine: HachikaEngine): void {
@@ -497,6 +533,7 @@ function printDebug(currentEngine: HachikaEngine): void {
   console.log(formatReactivityState(snapshot.reactivity));
   console.log(formatTemperamentState(snapshot.temperament));
   console.log(`attachment: ${snapshot.attachment.toFixed(2)}`);
+  console.log(`world: ${formatWorldSummary(snapshot.world)}`);
   console.log(`reply generator: ${describeReplyGenerator(replyGenerator)}`);
   console.log(`response planner: ${describeResponsePlanner(responsePlanner)}`);
   console.log(`trace extractor: ${describeTraceExtractor(traceExtractor)}`);

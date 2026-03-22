@@ -1,4 +1,5 @@
 import {
+  createInitialSnapshot,
   INITIAL_ATTACHMENT,
   INITIAL_BODY,
   INITIAL_REACTIVITY,
@@ -318,49 +319,15 @@ export function describeGrowthMetricBaselines(): Record<string, number | null> {
     reactivity: INITIAL_REACTIVITY,
     temperament: INITIAL_TEMPERAMENT,
   };
+  const baselineSnapshot = createInitialSnapshot();
+  baselineSnapshot.state = initial.state;
+  baselineSnapshot.body = initial.body;
+  baselineSnapshot.attachment = initial.attachment;
+  baselineSnapshot.reactivity = initial.reactivity;
+  baselineSnapshot.temperament = initial.temperament;
 
   return {
-    baselineSaturationRatio: calculateStateSaturationRatio({
-      version: 18,
-      revision: 0,
-      state: initial.state,
-      body: initial.body,
-      reactivity: initial.reactivity,
-      temperament: initial.temperament,
-      attachment: initial.attachment,
-      preferences: {},
-      topicCounts: {},
-      memories: [],
-      preferenceImprints: {},
-      boundaryImprints: {},
-      relationImprints: {},
-      preservation: {
-        threat: 0,
-        concern: null,
-        lastThreatAt: null,
-      },
-      identity: {
-        summary: "",
-        currentArc: "",
-        traits: [],
-        anchors: [],
-        coherence: 0,
-        updatedAt: null,
-      },
-      traces: {},
-      purpose: {
-        active: null,
-        lastResolved: null,
-        lastShiftAt: null,
-      },
-      initiative: {
-        pending: null,
-        lastProactiveAt: null,
-        history: [],
-      },
-      lastInteractionAt: null,
-      conversationCount: 0,
-    }),
+    baselineSaturationRatio: calculateStateSaturationRatio(baselineSnapshot),
     baselineAutonomousActivityVisibility: 0,
     baselineIdleConsolidationCoverage: 0,
     baselineProactiveMaintenanceRate: 0,

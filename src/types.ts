@@ -109,6 +109,41 @@ export interface IdentityState {
   updatedAt: string | null;
 }
 
+export type WorldPhase = "dawn" | "day" | "dusk" | "night";
+
+export type WorldPlaceId = "threshold" | "studio" | "archive";
+
+export interface WorldPlaceState {
+  warmth: number;
+  quiet: number;
+  lastVisitedAt: string | null;
+}
+
+export interface WorldObjectState {
+  place: WorldPlaceId;
+  state: string;
+  lastChangedAt: string | null;
+}
+
+export type WorldEventKind = "arrival" | "ambience" | "notice";
+
+export interface WorldEvent {
+  timestamp: string;
+  kind: WorldEventKind;
+  place: WorldPlaceId;
+  summary: string;
+}
+
+export interface WorldState {
+  clockHour: number;
+  phase: WorldPhase;
+  currentPlace: WorldPlaceId;
+  places: Record<WorldPlaceId, WorldPlaceState>;
+  objects: Record<string, WorldObjectState>;
+  recentEvents: WorldEvent[];
+  lastUpdatedAt: string | null;
+}
+
 export type TraceKind =
   | "note"
   | "continuity_marker"
@@ -253,6 +288,7 @@ export interface HachikaSnapshot {
   reactivity: ReactivityState;
   temperament: LearnedTemperament;
   attachment: number;
+  world: WorldState;
   preferences: Record<string, number>;
   topicCounts: Record<string, number>;
   memories: MemoryEntry[];

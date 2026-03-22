@@ -19,6 +19,7 @@ test("buildUiState exposes recent memories, traces, and diagnostics for the web 
   assert.equal(ui.summary.conversationCount, 1);
   assert.ok(ui.summary.identity.summary.length > 0);
   assert.equal(ui.summary.residentLoop, null);
+  assert.equal(ui.summary.world.currentPlace, "studio");
   assert.equal(ui.growth.autonomousActivityCount, 0);
   assert.ok(ui.memories.length >= 2);
   assert.equal(ui.memories.at(-1)?.role, "hachika");
@@ -69,6 +70,7 @@ test("buildUiState includes resident loop status when a status file exists", () 
   assert.equal(ui.summary.residentLoop?.active, true);
   assert.equal(ui.summary.residentLoop?.pid, 4242);
   assert.equal(ui.summary.residentLoop?.lastTickAttempts, 2);
+  assert.equal(ui.summary.world.currentPlace, "threshold");
   assert.equal(ui.summary.residentLoopHealth?.state, "stale");
   assert.deepEqual(ui.summary.residentLoop?.lastActivities, [
     "idle_consolidation/continuity 仕様を温め直した",

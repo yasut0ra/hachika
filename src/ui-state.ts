@@ -24,6 +24,7 @@ export interface UiStatePayload {
     reactivity: ReturnType<HachikaEngine["getSnapshot"]>["reactivity"];
     temperament: ReturnType<HachikaEngine["getSnapshot"]>["temperament"];
     attachment: number;
+    world: ReturnType<HachikaEngine["getSnapshot"]>["world"];
     conversationCount: number;
     lastInteractionAt: string | null;
     identity: ReturnType<HachikaEngine["getSnapshot"]>["identity"];
@@ -78,6 +79,7 @@ export function buildUiState(
       reactivity: snapshot.reactivity,
       temperament: snapshot.temperament,
       attachment: snapshot.attachment,
+      world: snapshot.world,
       conversationCount: snapshot.conversationCount,
       lastInteractionAt: snapshot.lastInteractionAt,
       identity: snapshot.identity,

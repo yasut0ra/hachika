@@ -266,6 +266,9 @@ Hachika は、単に有用なだけでなく、
 - identity summary / current arc と initiative motive / topic / blocker selection も身体状態の影響を受ける
 - identity summary は learned temperament も織り込み、「残したがりながら雑には開かない」「関係の内側で少しずつ自分を見せる」などの持続的な気質差を出す
 - trace の優先順位と artifact の surfaced order も身体状態の影響を受け、低 energy では残しやすい痕跡が、高 boredom では stale な未完了が前に出やすくなる
+- さらに `threshold / studio / archive` の最小の閉じた world を持ち、clock / phase / current place / object state / recent events を snapshot に保持する
+  - 対話と idle の両方で world が少し進み、social turn では `threshold`、shared work では `studio`、continuity / preservation 側では `archive` に寄りやすい
+  - CLI の `/world` と Web UI の `World` panel から、今どこにいるか、時間帯がどう変わったか、最近どんな出来事があったかを見られる
 - `scenario harness` により、複数ターンの対話シナリオを fixture として検証できる
   - active purpose の継続と解決、blocker maintenance、archive/reopen、preservation threat、body drift による wording 変化を長めの回帰テストとして固定している
   - async scenario では LLM adapter の `reply / proactive` fallback でも local state 更新と maintenance が保たれること、input interpreter が local topic を落として social reply selection へ寄せること、proactive selection が blocker repair / archive reopen の payload まで届くことを検証している
@@ -343,6 +346,7 @@ cp .env.example .env
 - `/idle <hours>` 指定時間だけ放置された状態をシミュレートする
 - `/state` 現在の drive 状態を表示
 - `/body` 現在の body 状態を表示
+- `/world` 現在の world state と recent events を表示
 - `/reactivity` 現在の反応感度 state を表示
 - `/temperament` 現在の learned temperament を表示
 - `/purpose` 現在の active purpose と直近の解決済み purpose を表示
@@ -352,6 +356,7 @@ cp .env.example .env
 - `/activity` 直近の autonomous activity history を表示
 - `/artifacts` materialize 済み artifact ファイルの一覧を表示
 - UI では `Growth` panel から `state saturation / archive reopen / archived trace share / activity count / idle consolidation / proactive maintenance` を見られる
+- UI では `World` panel から `clock / phase / current place / object state / recent events` を見られる
 - `/memory` 直近の記憶を表示
 - `/imprints` 長期記憶を `preference / boundary / relation` 別に表示
 - `/debug` 嗜好、identity、traces、preservation threat、purpose progress、直近の purpose 解決、dominant conflict、`reply/proactive` diagnostics を含む状態概要を表示

@@ -52,6 +52,8 @@ test("resident loop can surface idle reactivation activity", async () => {
     result.activities.some((activity) => activity.kind === "idle_reactivation"),
   );
   assert.equal(result.snapshot.initiative.history.length > 0, true);
+  assert.equal(result.snapshot.world.currentPlace, "studio");
+  assert.notEqual(result.snapshot.world.clockHour, snapshot.world.clockHour);
 });
 
 test("resident loop can emit proactive wording and record the emission", async () => {
