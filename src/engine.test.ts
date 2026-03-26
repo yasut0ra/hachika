@@ -1558,6 +1558,16 @@ test("repair turn can release prior work focus instead of carrying the old topic
   assert.equal(/設計/.test(result.reply), false);
 });
 
+test("self inquiry does not immediately collapse into a self-referential work trace or purpose", () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+
+  const result = engine.respond("ハチカってどんな存在？");
+
+  assert.equal(result.snapshot.traces.ハチカ, undefined);
+  assert.notEqual(result.snapshot.purpose.active?.topic, "ハチカ");
+  assert.equal(result.snapshot.identity.anchors.includes("ハチカ"), false);
+});
+
 test("ambiguous question asks for a concrete direction instead of inventing a topic", () => {
   const engine = new HachikaEngine(createInitialSnapshot());
 

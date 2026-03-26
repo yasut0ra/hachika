@@ -188,6 +188,29 @@ test("structured trace extraction can supply blockers and next steps to updateTr
   assert.ok(trace?.artifact.nextSteps.includes("API の責務を分ける"));
 });
 
+test("self inquiry alone does not turn a self-referential topic into a trace", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.lastInteractionAt = "2026-03-19T12:00:00.000Z";
+
+  const trace = updateTraces(
+    snapshot,
+    "ハチカってどんな存在？",
+    createSignals({
+      selfInquiry: 1,
+      question: 0.6,
+      topics: ["ハチカ"],
+    }),
+    createSelfModel([
+      { kind: "deepen_relation", score: 0.62, topic: "ハチカ", reason: "ハチカを知りたい" },
+      { kind: "pursue_curiosity", score: 0.58, topic: "ハチカ", reason: "ハチカが気になる" },
+    ]),
+    "2026-03-19T12:00:00.000Z",
+  );
+
+  assert.equal(trace, null);
+  assert.equal(snapshot.traces.ハチカ, undefined);
+});
+
 test("low energy maintenance preserves a resume as continuity instead of deepening it", () => {
   const snapshot = createInitialSnapshot();
   snapshot.body.energy = 0.08;

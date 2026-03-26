@@ -1,3 +1,4 @@
+import { requiresConcreteTopicSupport } from "./memory.js";
 import { clamp01 } from "./state.js";
 import type {
   ActivePurpose,
@@ -123,7 +124,14 @@ function selectPurposeCandidate(
   motives: readonly SelfMotive[],
 ): SelfMotive | null {
   const viable = motives.filter((motive) => motive.score >= 0.44);
-  const primary = viable[0];
+  const filtered = viable.filter(
+    (motive) =>
+      !motive.topic ||
+      !requiresConcreteTopicSupport(motive.topic) ||
+      motive.kind === "protect_boundary" ||
+      motive.score >= 0.7,
+  );
+  const primary = filtered[0];
 
   if (!primary) {
     return null;

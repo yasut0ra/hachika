@@ -80,6 +80,7 @@ const STOPWORDS = new Set([
   "この",
   "あの",
   "そう",
+  "どんな",
   "なんか",
   "じゃあ",
   "ひとつ",
@@ -150,6 +151,41 @@ const OVERBROAD_TOPIC_PARTS = new Set([
   "雰囲気",
   "温度",
   "感じ",
+]);
+
+const BROAD_ABSTRACT_TOPICS = new Set([
+  "静けさ",
+  "退屈",
+  "雰囲気",
+  "感じ",
+  "温度",
+  "輪郭",
+  "気配",
+  "向き",
+  "距離",
+  "関係",
+  "世界",
+  "存在",
+  "手触り",
+  "あり方",
+  "内面",
+  "内側",
+  "外側",
+  "周辺",
+  "具体的",
+  "具体化",
+  "棚の残り",
+]);
+
+const SELF_REFERENTIAL_TOPICS = new Set([
+  "自分",
+  "自己",
+  "identity",
+  "アイデンティティ",
+  "今の目的",
+  "目的",
+  "ハチカ",
+  "hachika",
 ]);
 
 export function extractTopics(text: string): string[] {
@@ -624,6 +660,20 @@ export function isMeaningfulTopic(topic: string): boolean {
   }
 
   return true;
+}
+
+export function isBroadAbstractTopic(topic: string): boolean {
+  const normalized = topic.normalize("NFKC").trim().toLowerCase();
+  return normalized.length > 0 && BROAD_ABSTRACT_TOPICS.has(normalized);
+}
+
+export function isSelfReferentialTopic(topic: string): boolean {
+  const normalized = topic.normalize("NFKC").trim().toLowerCase();
+  return normalized.length > 0 && SELF_REFERENTIAL_TOPICS.has(normalized);
+}
+
+export function requiresConcreteTopicSupport(topic: string): boolean {
+  return isBroadAbstractTopic(topic) || isSelfReferentialTopic(topic);
 }
 
 export function topicsLooselyMatch(left: string, right: string | null | undefined): boolean {

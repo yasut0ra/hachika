@@ -153,6 +153,110 @@ test("sanitizeSnapshot removes low-information topics and repairs polluted trace
   assert.equal(snapshot.generationHistory[0]?.summary, "noisy quality");
 });
 
+test("sanitizeSnapshot drops weak abstract and self-referential topics but keeps supported ones", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.preferences = {
+    世界: 0.41,
+    存在: 0.24,
+    棚の残り: 0.2,
+    今の目的: 0.22,
+  };
+  snapshot.topicCounts = {
+    世界: 4,
+    存在: 1,
+    棚の残り: 1,
+    今の目的: 1,
+  };
+  snapshot.memories = [
+    {
+      role: "user",
+      text: "今どこにいるの？",
+      timestamp: "2026-03-22T14:23:19.335Z",
+      topics: ["世界"],
+      sentiment: "neutral",
+    },
+    {
+      role: "user",
+      text: "棚には何が残ってる？",
+      timestamp: "2026-03-22T14:23:34.399Z",
+      topics: ["棚の残り"],
+      sentiment: "neutral",
+    },
+    {
+      role: "user",
+      text: "ハチカってどんな存在？",
+      timestamp: "2026-03-22T14:24:00.000Z",
+      topics: ["存在", "今の目的"],
+      sentiment: "neutral",
+    },
+  ];
+  snapshot.preferenceImprints = {
+    世界: {
+      topic: "世界",
+      salience: 0.91,
+      affinity: -0.24,
+      mentions: 4,
+      firstSeenAt: "2026-03-22T12:30:00.082Z",
+      lastSeenAt: "2026-03-22T14:23:17.731Z",
+    },
+  };
+  snapshot.identity.anchors = ["世界", "存在", "今の目的"];
+  snapshot.traces.世界 = pollutedTrace("世界");
+  snapshot.traces.存在 = pollutedTrace("存在");
+  snapshot.traces["棚の残り"] = pollutedTrace("棚の残り");
+  snapshot.purpose.active = {
+    kind: "protect_boundary",
+    topic: "今の目的",
+    summary: "今の目的まわりの扱いを警戒している",
+    confidence: 0.71,
+    progress: 0.33,
+    createdAt: "2026-03-22T14:24:12.573Z",
+    lastUpdatedAt: "2026-03-22T14:24:38.493Z",
+    turnsActive: 2,
+  };
+  snapshot.initiative.pending = {
+    kind: "resume_topic",
+    reason: "continuity",
+    motive: "seek_continuity",
+    topic: "存在",
+    blocker: "次は",
+    concern: null,
+    createdAt: "2026-03-22T14:24:00.000Z",
+    readyAfterHours: 3,
+  };
+  snapshot.generationHistory = [
+    {
+      timestamp: "2026-03-22T14:24:40.418Z",
+      mode: "reply",
+      source: "llm",
+      provider: "openai",
+      model: "gpt-5.4-mini",
+      fallbackUsed: false,
+      focus: "存在",
+      fallbackOverlap: 0.42,
+      openerEcho: false,
+      abstractTermRatio: 0.62,
+      concreteDetailScore: 0.18,
+      focusMentioned: true,
+      summary: "abstract self topic drift",
+    },
+  ];
+
+  sanitizeSnapshot(snapshot);
+
+  assert.deepEqual(Object.keys(snapshot.preferences).sort(), ["世界"]);
+  assert.deepEqual(Object.keys(snapshot.topicCounts).sort(), ["世界"]);
+  assert.deepEqual(snapshot.memories[0]?.topics, ["世界"]);
+  assert.deepEqual(snapshot.memories[1]?.topics, []);
+  assert.deepEqual(snapshot.memories[2]?.topics, []);
+  assert.deepEqual(Object.keys(snapshot.preferenceImprints), ["世界"]);
+  assert.deepEqual(snapshot.identity.anchors, ["世界"]);
+  assert.deepEqual(Object.keys(snapshot.traces), ["世界"]);
+  assert.equal(snapshot.purpose.active?.topic, null);
+  assert.equal(snapshot.initiative.pending?.topic, null);
+  assert.equal(snapshot.generationHistory[0]?.focus, null);
+});
+
 test("loadSnapshot and saveSnapshot apply sanitation to persisted files", async () => {
   const tempDir = await mkdtemp(join(tmpdir(), "hachika-persistence-"));
   const filePath = join(tempDir, "snapshot.json");

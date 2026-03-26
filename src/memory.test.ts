@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { extractTopics, isMeaningfulTopic, topPreferredTopics } from "./memory.js";
+import {
+  extractTopics,
+  isMeaningfulTopic,
+  requiresConcreteTopicSupport,
+  topPreferredTopics,
+} from "./memory.js";
 import { createInitialSnapshot } from "./state.js";
 
 test("extractTopics drops discourse scaffolding and vague tail fragments", () => {
@@ -30,7 +35,17 @@ test("isMeaningfulTopic rejects low-information conversational fragments", () =>
   assert.equal(isMeaningfulTopic("かな"), false);
   assert.equal(isMeaningfulTopic("って"), false);
   assert.equal(isMeaningfulTopic("まずは"), false);
+  assert.equal(isMeaningfulTopic("どんな"), false);
   assert.equal(isMeaningfulTopic("自分"), true);
+});
+
+test("requiresConcreteTopicSupport marks abstract and self-referential topics as higher risk", () => {
+  assert.equal(requiresConcreteTopicSupport("静けさ"), true);
+  assert.equal(requiresConcreteTopicSupport("棚の残り"), true);
+  assert.equal(requiresConcreteTopicSupport("ハチカ"), true);
+  assert.equal(requiresConcreteTopicSupport("今の目的"), true);
+  assert.equal(requiresConcreteTopicSupport("仕様の境界"), false);
+  assert.equal(requiresConcreteTopicSupport("世界観"), false);
 });
 
 test("topPreferredTopics ignores previously stored low-information topics", () => {

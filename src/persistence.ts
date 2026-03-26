@@ -1,7 +1,11 @@
 import { readFile } from "node:fs/promises";
 
 import { writeTextFileAtomic } from "./atomic-file.js";
-import { extractTopics, isMeaningfulTopic } from "./memory.js";
+import {
+  extractTopics,
+  isMeaningfulTopic,
+  requiresConcreteTopicSupport,
+} from "./memory.js";
 import { clamp01, clampSigned, createInitialSnapshot } from "./state.js";
 import { isInformativeTraceClause } from "./traces.js";
 import { syncWorldObjectTraceLinks, WORLD_PLACE_IDS } from "./world.js";
@@ -162,13 +166,27 @@ export function sanitizeSnapshot(snapshot: HachikaSnapshot): HachikaSnapshot {
     }))
     .slice(-24);
   snapshot.preferenceImprints = sanitizePreferenceImprints(snapshot.preferenceImprints);
+  const supportedTopics = deriveSupportedSnapshotTopics(snapshot);
+  snapshot.preferences = filterSupportedTopicRecord(snapshot.preferences, supportedTopics);
+  snapshot.topicCounts = filterSupportedTopicRecord(snapshot.topicCounts, supportedTopics);
+  snapshot.memories = snapshot.memories.map((memory) => ({
+    ...memory,
+    topics: memory.topics.filter((topic) => shouldKeepSupportedTopic(topic, supportedTopics)),
+  }));
+  snapshot.preferenceImprints = filterSupportedImprints(
+    snapshot.preferenceImprints,
+    supportedTopics,
+  );
   snapshot.boundaryImprints = sanitizeBoundaryImprints(snapshot.boundaryImprints);
-  snapshot.identity = sanitizeIdentity(snapshot.identity);
-  snapshot.traces = sanitizeTraces(snapshot.traces);
+  snapshot.identity = sanitizeIdentity(snapshot.identity, supportedTopics);
+  snapshot.traces = sanitizeTraces(snapshot.traces, supportedTopics);
   syncWorldObjectTraceLinks(snapshot);
-  snapshot.purpose = sanitizePurpose(snapshot.purpose);
-  snapshot.initiative = sanitizeInitiative(snapshot.initiative);
-  snapshot.generationHistory = sanitizeGenerationHistory(snapshot.generationHistory);
+  snapshot.purpose = sanitizePurpose(snapshot.purpose, supportedTopics);
+  snapshot.initiative = sanitizeInitiative(snapshot.initiative, supportedTopics);
+  snapshot.generationHistory = sanitizeGenerationHistory(
+    snapshot.generationHistory,
+    supportedTopics,
+  );
 
   return snapshot;
 }
@@ -1147,6 +1165,100 @@ function sanitizePreferenceImprints(
   return result;
 }
 
+function deriveSupportedSnapshotTopics(snapshot: HachikaSnapshot): Set<string> {
+  const topics = new Set<string>();
+  const memoryWeights = new Map<string, number>();
+
+  for (const memory of snapshot.memories) {
+    for (const topic of memory.topics) {
+      memoryWeights.set(topic, (memoryWeights.get(topic) ?? 0) + (memory.weight ?? 1));
+    }
+  }
+
+  const candidates = new Set<string>([
+    ...Object.keys(snapshot.preferences),
+    ...Object.keys(snapshot.topicCounts),
+    ...Object.keys(snapshot.preferenceImprints),
+    ...Object.keys(snapshot.traces),
+    ...snapshot.identity.anchors,
+    ...snapshot.memories.flatMap((memory) => memory.topics),
+    snapshot.purpose.active?.topic ?? "",
+    snapshot.purpose.lastResolved?.topic ?? "",
+    snapshot.initiative.pending?.topic ?? "",
+    ...snapshot.initiative.history.flatMap((activity) => [
+      activity.topic ?? "",
+      activity.traceTopic ?? "",
+    ]),
+    ...snapshot.generationHistory.flatMap((entry) => [entry.focus ?? ""]),
+  ]);
+
+  for (const rawTopic of candidates) {
+    const topic = rawTopic.trim();
+    if (!isMeaningfulTopic(topic)) {
+      continue;
+    }
+
+    if (!requiresConcreteTopicSupport(topic)) {
+      topics.add(topic);
+      continue;
+    }
+
+    const topicCount = snapshot.topicCounts[topic] ?? 0;
+    const preferenceStrength = Math.abs(snapshot.preferences[topic] ?? 0);
+    const imprint = snapshot.preferenceImprints[topic];
+    const memoryWeight = memoryWeights.get(topic) ?? 0;
+    const repeated = topicCount >= 2 || memoryWeight >= 2 || (imprint?.mentions ?? 0) >= 2;
+    const strongSignal =
+      preferenceStrength >= 0.2 ||
+      (imprint?.salience ?? 0) >= 0.5 ||
+      (imprint?.affinity !== undefined && Math.abs(imprint.affinity) >= 0.14);
+    const durable =
+      topicCount >= 3 ||
+      memoryWeight >= 3 ||
+      ((imprint?.mentions ?? 0) >= 2 && (imprint?.salience ?? 0) >= 0.38);
+
+    if (durable || (repeated && strongSignal)) {
+      topics.add(topic);
+    }
+  }
+
+  return topics;
+}
+
+function shouldKeepSupportedTopic(topic: string, supportedTopics: Set<string>): boolean {
+  return !requiresConcreteTopicSupport(topic) || supportedTopics.has(topic);
+}
+
+function filterSupportedTopicRecord<T extends number>(
+  record: Record<string, T>,
+  supportedTopics: Set<string>,
+): Record<string, T> {
+  const next: Record<string, T> = {};
+
+  for (const [topic, value] of Object.entries(record)) {
+    if (shouldKeepSupportedTopic(topic, supportedTopics)) {
+      next[topic] = value;
+    }
+  }
+
+  return next;
+}
+
+function filterSupportedImprints(
+  record: Record<string, PreferenceImprint>,
+  supportedTopics: Set<string>,
+): Record<string, PreferenceImprint> {
+  const next: Record<string, PreferenceImprint> = {};
+
+  for (const [topic, imprint] of Object.entries(record)) {
+    if (shouldKeepSupportedTopic(topic, supportedTopics)) {
+      next[topic] = imprint;
+    }
+  }
+
+  return next;
+}
+
 function sanitizeBoundaryImprints(
   record: Record<string, BoundaryImprint>,
 ): Record<string, BoundaryImprint> {
@@ -1168,29 +1280,46 @@ function sanitizeBoundaryImprints(
   return result;
 }
 
-function sanitizeIdentity(identity: IdentityState): IdentityState {
+function sanitizeIdentity(
+  identity: IdentityState,
+  supportedTopics: Set<string>,
+): IdentityState {
   return {
     ...identity,
-    anchors: unique(identity.anchors.filter((anchor) => isMeaningfulTopic(anchor))).slice(0, 4),
+    anchors: unique(
+      identity.anchors.filter(
+        (anchor) => isMeaningfulTopic(anchor) && shouldKeepSupportedTopic(anchor, supportedTopics),
+      ),
+    ).slice(0, 4),
   };
 }
 
-function sanitizePurpose(purpose: PurposeState): PurposeState {
+function sanitizePurpose(
+  purpose: PurposeState,
+  supportedTopics: Set<string>,
+): PurposeState {
   return {
     ...purpose,
-    active: purpose.active ? sanitizeActivePurpose(purpose.active) : null,
-    lastResolved: purpose.lastResolved ? sanitizeResolvedPurpose(purpose.lastResolved) : null,
+    active: purpose.active ? sanitizeActivePurpose(purpose.active, supportedTopics) : null,
+    lastResolved: purpose.lastResolved
+      ? sanitizeResolvedPurpose(purpose.lastResolved, supportedTopics)
+      : null,
   };
 }
 
-function sanitizeInitiative(initiative: InitiativeState): InitiativeState {
+function sanitizeInitiative(
+  initiative: InitiativeState,
+  supportedTopics: Set<string>,
+): InitiativeState {
   return {
     ...initiative,
     pending: initiative.pending
       ? {
           ...initiative.pending,
           topic:
-            initiative.pending.topic && isMeaningfulTopic(initiative.pending.topic)
+            initiative.pending.topic &&
+            isMeaningfulTopic(initiative.pending.topic) &&
+            shouldKeepSupportedTopic(initiative.pending.topic, supportedTopics)
               ? initiative.pending.topic
               : null,
           blocker: sanitizeLooseText(initiative.pending.blocker),
@@ -1203,10 +1332,17 @@ function sanitizeInitiative(initiative: InitiativeState): InitiativeState {
     history: initiative.history
       .map((activity) => ({
         ...activity,
-        topic: activity.topic && isMeaningfulTopic(activity.topic) ? activity.topic : null,
+        topic:
+          activity.topic &&
+          isMeaningfulTopic(activity.topic) &&
+          shouldKeepSupportedTopic(activity.topic, supportedTopics)
+            ? activity.topic
+            : null,
         traceTopic:
           activity.traceTopic && isMeaningfulTopic(activity.traceTopic)
-            ? activity.traceTopic
+            ? shouldKeepSupportedTopic(activity.traceTopic, supportedTopics)
+              ? activity.traceTopic
+              : null
             : null,
         blocker: sanitizeLooseText(activity.blocker),
         place: isWorldPlaceId(activity.place) ? activity.place : null,
@@ -1267,11 +1403,19 @@ function hydrateGenerationHistory(raw: unknown): GenerationHistoryEntry[] {
     }));
 }
 
-function sanitizeGenerationHistory(history: GenerationHistoryEntry[]): GenerationHistoryEntry[] {
+function sanitizeGenerationHistory(
+  history: GenerationHistoryEntry[],
+  supportedTopics: Set<string>,
+): GenerationHistoryEntry[] {
   return history
     .map((entry) => ({
       ...entry,
-      focus: entry.focus && isMeaningfulTopic(entry.focus) ? entry.focus : null,
+      focus:
+        entry.focus &&
+        isMeaningfulTopic(entry.focus) &&
+        shouldKeepSupportedTopic(entry.focus, supportedTopics)
+          ? entry.focus
+          : null,
       fallbackOverlap: clamp01(entry.fallbackOverlap),
       abstractTermRatio: clamp01(entry.abstractTermRatio),
       concreteDetailScore: clamp01(entry.concreteDetailScore),
@@ -1283,27 +1427,41 @@ function sanitizeGenerationHistory(history: GenerationHistoryEntry[]): Generatio
     .slice(-24);
 }
 
-function sanitizeActivePurpose(active: ActivePurpose): ActivePurpose {
+function sanitizeActivePurpose(
+  active: ActivePurpose,
+  supportedTopics: Set<string>,
+): ActivePurpose {
   return {
     ...active,
-    topic: active.topic && isMeaningfulTopic(active.topic) ? active.topic : null,
+    topic:
+      active.topic &&
+      isMeaningfulTopic(active.topic) &&
+      shouldKeepSupportedTopic(active.topic, supportedTopics)
+        ? active.topic
+        : null,
   };
 }
 
-function sanitizeResolvedPurpose(resolved: ResolvedPurpose): ResolvedPurpose {
+function sanitizeResolvedPurpose(
+  resolved: ResolvedPurpose,
+  supportedTopics: Set<string>,
+): ResolvedPurpose {
   return {
-    ...sanitizeActivePurpose(resolved),
+    ...sanitizeActivePurpose(resolved, supportedTopics),
     outcome: resolved.outcome,
     resolution: resolved.resolution,
     resolvedAt: resolved.resolvedAt,
   };
 }
 
-function sanitizeTraces(record: Record<string, TraceEntry>): Record<string, TraceEntry> {
+function sanitizeTraces(
+  record: Record<string, TraceEntry>,
+  supportedTopics: Set<string>,
+): Record<string, TraceEntry> {
   const result: Record<string, TraceEntry> = {};
 
   for (const [topic, trace] of Object.entries(record)) {
-    if (!isMeaningfulTopic(topic)) {
+    if (!isMeaningfulTopic(topic) || !shouldKeepSupportedTopic(topic, supportedTopics)) {
       continue;
     }
 

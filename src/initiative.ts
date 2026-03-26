@@ -1,5 +1,6 @@
 import {
   isMeaningfulTopic,
+  requiresConcreteTopicSupport,
   sortedPreferenceImprints,
   topPreferredTopics,
 } from "./memory.js";
@@ -950,7 +951,7 @@ function selectInitiativeTopic(
     ...snapshot.identity.anchors.slice(0, 3),
     ...topPreferredTopics(snapshot, 2),
     sortedPreferenceImprints(snapshot, 2)[0]?.topic ?? "",
-  ]);
+  ]).filter((topic) => !shouldSuppressInitiativeTopic(snapshot, topic));
 
   if (candidates.length === 0) {
     return null;
@@ -1822,11 +1823,14 @@ function synthesizePendingInitiative(
     activePurpose.confidence >= 0.46 &&
     (activePurpose.kind !== "protect_boundary" || kind === "neglect_ping")
   ) {
+    const activePurposeTopic = shouldSuppressInitiativeTopic(snapshot, activePurpose.topic)
+      ? null
+      : activePurpose.topic;
     const blockerCandidate = selectInitiativeBlocker(
       snapshot,
       candidateTopics,
       activePurpose.kind,
-      activePurpose.topic,
+      activePurposeTopic,
     );
     const dormantCandidate = blockerCandidate
       ? null
@@ -1834,7 +1838,7 @@ function synthesizePendingInitiative(
           snapshot,
           candidateTopics,
           activePurpose.kind,
-          activePurpose.topic,
+          activePurposeTopic,
         );
 
     return withInitiativeWorldContext(snapshot, {
@@ -1846,7 +1850,7 @@ function synthesizePendingInitiative(
       topic:
         blockerCandidate?.topic ??
         dormantCandidate?.topic ??
-        activePurpose.topic ??
+        activePurposeTopic ??
         selectInitiativeTopic(snapshot, candidateTopics),
       blocker: blockerCandidate?.blocker ?? null,
       concern: null,
@@ -1864,7 +1868,9 @@ function synthesizePendingInitiative(
     return null;
   }
 
-  const topic = motive.topic ?? selectInitiativeTopic(snapshot, candidateTopics);
+  const topic =
+    (shouldSuppressInitiativeTopic(snapshot, motive.topic) ? null : motive.topic) ??
+    selectInitiativeTopic(snapshot, candidateTopics);
   const blockerCandidate = selectInitiativeBlocker(
     snapshot,
     candidateTopics,
@@ -2674,6 +2680,12 @@ function scoreInitiativeTopic(
           ? 0.18
           : 0.12
       : 0;
+  const supportPenalty =
+    shouldSuppressInitiativeTopic(snapshot, topic)
+      ? 0.4
+      : requiresConcreteTopicSupport(topic)
+        ? 0.12
+        : 0;
 
   return (
     (candidateTopics.includes(topic) ? 0.34 : 0) +
@@ -2706,8 +2718,32 @@ function scoreInitiativeTopic(
     (archived && archivedMapped === "seek_continuity" ? loneliness * 0.18 + lowEnergy * 0.12 : 0) +
     (archived && archivedMapped === "continue_shared_work" ? boredom * 0.24 : 0) +
     (archived && archivedMapped === "pursue_curiosity" ? boredom * 0.2 : 0) +
-    (archived && archivedMapped === "leave_trace" ? lowEnergy * 0.14 + tension * 0.08 : 0)
+    (archived && archivedMapped === "leave_trace" ? lowEnergy * 0.14 + tension * 0.08 : 0) -
+    supportPenalty
   );
+}
+
+function shouldSuppressInitiativeTopic(
+  snapshot: HachikaSnapshot,
+  topic: string | null | undefined,
+): boolean {
+  if (!topic || !requiresConcreteTopicSupport(topic)) {
+    return false;
+  }
+
+  if (snapshot.traces[topic]) {
+    return false;
+  }
+
+  if ((snapshot.topicCounts[topic] ?? 0) >= 2) {
+    return false;
+  }
+
+  if (currentWorldObjectLinksTopic(snapshot, topic)) {
+    return false;
+  }
+
+  return true;
 }
 
 function scoreInitiativeBlocker(

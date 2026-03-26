@@ -1,5 +1,9 @@
 import { clamp01 } from "./state.js";
-import { isMeaningfulTopic, topicsLooselyMatch } from "./memory.js";
+import {
+  isMeaningfulTopic,
+  requiresConcreteTopicSupport,
+  topicsLooselyMatch,
+} from "./memory.js";
 import type {
   HachikaSnapshot,
   InteractionSignals,
@@ -134,6 +138,15 @@ const TRACE_META_TOPICS = new Set([
   "雰囲気",
   "温度",
   "感じ",
+  "静けさ",
+  "退屈",
+  "存在",
+  "世界",
+  "目的",
+  "今の目的",
+  "identity",
+  "自分",
+  "ハチカ",
 ]);
 
 export function linkTraceToWorld(
@@ -183,7 +196,9 @@ export function updateTraces(
 
   if (
     kind === "decision" &&
-    ((!previous && signals.completion < 0.72) || TRACE_META_TOPICS.has(topic))
+    ((!previous && signals.completion < 0.72) ||
+      TRACE_META_TOPICS.has(topic) ||
+      requiresConcreteTopicSupport(topic))
   ) {
     kind =
       sourceMotive === "seek_continuity" && signals.memoryCue > signals.expansionCue
@@ -528,6 +543,7 @@ function shouldCreateTrace(
   extraction: StructuredTraceExtraction | null = null,
 ): boolean {
   const extractedSignal = hasStructuredTraceSignal(extraction);
+  const requiresSupport = requiresConcreteTopicSupport(topic);
   const socialTurn =
     signals.negative < 0.18 &&
     signals.dismissal < 0.18 &&
@@ -572,6 +588,29 @@ function shouldCreateTrace(
     signals.expansionCue < 0.12 &&
     signals.completion < 0.12 &&
     signals.preservationThreat < 0.18
+  ) {
+    return false;
+  }
+
+  if (
+    requiresSupport &&
+    signals.selfInquiry >= 0.38 &&
+    signals.workCue < 0.54 &&
+    signals.expansionCue < 0.28 &&
+    signals.completion < 0.24 &&
+    !extractedSignal
+  ) {
+    return false;
+  }
+
+  if (
+    requiresSupport &&
+    !extractedSignal &&
+    signals.workCue < 0.54 &&
+    signals.expansionCue < 0.28 &&
+    signals.completion < 0.24 &&
+    signals.memoryCue < 0.12 &&
+    (snapshot.topicCounts[topic] ?? 0) < 2
   ) {
     return false;
   }
@@ -957,6 +996,13 @@ function scoreTraceTopicCandidate(
     return score + motive.score * (index === 0 ? 0.36 : index === 1 ? 0.24 : 0.16);
   }, 0);
   const trace = snapshot.traces[topic];
+  const supportPenalty = requiresConcreteTopicSupport(topic)
+    ? extractedIndex >= 0 || (signalIndex >= 0 && signals.workCue > 0.52)
+      ? 0.08
+      : 0.28
+    : 0;
+  const selfInquiryPenalty =
+    requiresConcreteTopicSupport(topic) && signals.selfInquiry >= 0.38 ? 0.24 : 0;
 
   return (
     extractionBoost +
@@ -971,7 +1017,9 @@ function scoreTraceTopicCandidate(
     (snapshot.topicCounts[topic] ?? 0) * 0.04 +
     (snapshot.preferenceImprints[topic]?.salience ?? 0) * 0.16 +
     motiveScore +
-    (trace ? tracePriorityScore(snapshot, trace) * 0.32 : 0)
+    (trace ? tracePriorityScore(snapshot, trace) * 0.32 : 0) -
+    supportPenalty -
+    selfInquiryPenalty
   );
 }
 
@@ -1698,6 +1746,10 @@ function inferTraceFragment(
     }
   }
 
+  if (requiresConcreteTopicSupport(topic)) {
+    return `${topic} について具体例を一つ出して輪郭を確かめる`;
+  }
+
   switch (pending.motive) {
     case "continue_shared_work":
       return `${topic} を前に進める断片として整理する`;
@@ -1740,6 +1792,10 @@ function inferTraceNextStep(
   }
 
   if (pending.motive === "continue_shared_work" && fragment) {
+    if (requiresConcreteTopicSupport(topic)) {
+      return `${topic} について具体例か場面を一つ出す`;
+    }
+
     return `${truncate(fragment, 26)} をもう少し具体化する`;
   }
 

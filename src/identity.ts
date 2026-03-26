@@ -1,5 +1,6 @@
 import {
   isMeaningfulTopic,
+  requiresConcreteTopicSupport,
   sortedBoundaryImprints,
   sortedPreferenceImprints,
   topPreferredTopics,
@@ -154,9 +155,33 @@ function deriveIdentityAnchors(snapshot: HachikaSnapshot): string[] {
   const recentMemoryScores = scoreRecentMemoryAnchorTopics(snapshot);
   const previousAnchors = snapshot.identity.anchors;
 
-  accumulateAnchorScore(scores, snapshot.purpose.active?.topic ?? null, 1.2);
-  accumulateAnchorScore(scores, snapshot.purpose.lastResolved?.topic ?? null, 0.72);
-  accumulateAnchorScore(scores, snapshot.initiative.pending?.topic ?? null, 0.88);
+  const activeTopic = snapshot.purpose.active?.topic ?? null;
+  if (
+    activeTopic &&
+    qualifiesIdentityAnchor(snapshot, activeTopic, recentMemoryScores.get(activeTopic) ?? 0)
+  ) {
+    accumulateAnchorScore(scores, activeTopic, 1.2);
+  }
+
+  const resolvedTopic = snapshot.purpose.lastResolved?.topic ?? null;
+  if (
+    resolvedTopic &&
+    qualifiesIdentityAnchor(
+      snapshot,
+      resolvedTopic,
+      recentMemoryScores.get(resolvedTopic) ?? 0,
+    )
+  ) {
+    accumulateAnchorScore(scores, resolvedTopic, 0.72);
+  }
+
+  const pendingTopic = snapshot.initiative.pending?.topic ?? null;
+  if (
+    pendingTopic &&
+    qualifiesIdentityAnchor(snapshot, pendingTopic, recentMemoryScores.get(pendingTopic) ?? 0)
+  ) {
+    accumulateAnchorScore(scores, pendingTopic, 0.88);
+  }
 
   for (const trace of sortedTraces(snapshot, 6)) {
     if (!qualifiesIdentityAnchor(snapshot, trace.topic, recentMemoryScores.get(trace.topic) ?? 0)) {
@@ -173,6 +198,10 @@ function deriveIdentityAnchors(snapshot: HachikaSnapshot): string[] {
   }
 
   for (const topic of topPreferredTopics(snapshot, 6)) {
+    if (!qualifiesIdentityAnchor(snapshot, topic, recentMemoryScores.get(topic) ?? 0)) {
+      continue;
+    }
+
     accumulateAnchorScore(
       scores,
       topic,
@@ -231,11 +260,13 @@ function qualifiesIdentityAnchor(
   topic: string,
   recentMemoryScore = 0,
 ): boolean {
+  const requiresSupport = requiresConcreteTopicSupport(topic);
+
   return (
-    (snapshot.topicCounts[topic] ?? 0) >= 2 ||
-    (snapshot.preferenceImprints[topic]?.salience ?? 0) >= 0.38 ||
-    (snapshot.traces[topic]?.salience ?? 0) >= 0.42 ||
-    recentMemoryScore >= 1.4
+    (snapshot.topicCounts[topic] ?? 0) >= (requiresSupport ? 3 : 2) ||
+    (snapshot.preferenceImprints[topic]?.salience ?? 0) >= (requiresSupport ? 0.56 : 0.38) ||
+    (snapshot.traces[topic]?.salience ?? 0) >= (requiresSupport ? 0.64 : 0.42) ||
+    recentMemoryScore >= (requiresSupport ? 2.2 : 1.4)
   );
 }
 
