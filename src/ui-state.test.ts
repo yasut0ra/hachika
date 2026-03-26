@@ -21,6 +21,8 @@ test("buildUiState exposes recent memories, traces, and diagnostics for the web 
   assert.equal(ui.summary.residentLoop, null);
   assert.equal(ui.summary.world.currentPlace, "studio");
   assert.equal(ui.growth.autonomousActivityCount, 0);
+  assert.equal(ui.growth.recentGeneratedCount, 1);
+  assert.ok(ui.growth.generationConcreteDetail > 0);
   assert.ok(ui.memories.length >= 2);
   assert.equal(ui.memories.at(-1)?.role, "hachika");
   assert.ok(ui.traces.some((trace) => trace.topic === "仕様"));

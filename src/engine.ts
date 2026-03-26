@@ -21,6 +21,7 @@ import {
 import type { ProactiveEmission } from "./initiative.js";
 import { applyBodyFromSignals } from "./body.js";
 import { updateIdentity } from "./identity.js";
+import { evaluateGeneratedTextQuality } from "./generation-quality.js";
 import type {
   InputInterpretation,
   InputInterpretationResult,
@@ -565,6 +566,12 @@ export class HachikaEngine {
       plannerError: null,
       selection: null,
       proactiveSelection: emission.selection,
+      quality: evaluateGeneratedTextQuality({
+        text: emission.message,
+        fallbackText: emission.message,
+        previousSnapshot,
+        primaryFocus: emission.selection.focusTopic ?? emission.pending.topic ?? null,
+      }),
     });
   }
 
@@ -606,6 +613,12 @@ export class HachikaEngine {
           plannerError: null,
           selection: null,
           proactiveSelection: emission.selection,
+          quality: evaluateGeneratedTextQuality({
+            text: fallbackMessage,
+            fallbackText: fallbackMessage,
+            previousSnapshot,
+            primaryFocus: emission.selection.focusTopic ?? emission.pending.topic ?? null,
+          }),
         },
       );
     }
@@ -634,6 +647,12 @@ export class HachikaEngine {
         plannerError: null,
         selection: null,
         proactiveSelection: emission.selection,
+        quality: evaluateGeneratedTextQuality({
+          text: message,
+          fallbackText: fallbackMessage,
+          previousSnapshot,
+          primaryFocus: emission.selection.focusTopic ?? emission.pending.topic ?? null,
+        }),
       });
     } catch (error) {
       return this.#finalizeProactiveEmission(previousSnapshot, nextSnapshot, fallbackMessage, emission.topics, {
@@ -654,6 +673,12 @@ export class HachikaEngine {
         plannerError: null,
         selection: null,
         proactiveSelection: emission.selection,
+        quality: evaluateGeneratedTextQuality({
+          text: fallbackMessage,
+          fallbackText: fallbackMessage,
+          previousSnapshot,
+          primaryFocus: emission.selection.focusTopic ?? emission.pending.topic ?? null,
+        }),
       });
     }
   }
@@ -666,6 +691,12 @@ export class HachikaEngine {
     replyDebug: GeneratedTextDebug,
   ): string {
     remember(nextSnapshot, "hachika", message, topics, "neutral");
+    recordGeneratedQuality(
+      nextSnapshot,
+      replyDebug,
+      replyDebug.proactiveSelection?.focusTopic ?? null,
+      nextSnapshot.initiative.lastProactiveAt ?? new Date().toISOString(),
+    );
     updateIdentity(
       nextSnapshot,
       nextSnapshot.initiative.lastProactiveAt ?? new Date().toISOString(),
@@ -717,6 +748,12 @@ export class HachikaEngine {
       plannerError: prepared.planningDebug.error,
       selection: prepared.replySelection.debug,
       proactiveSelection: null,
+      quality: evaluateGeneratedTextQuality({
+        text: reply,
+        fallbackText: reply,
+        previousSnapshot: prepared.previousSnapshot,
+        primaryFocus: prepared.replySelection.debug.currentTopic,
+      }),
     });
   }
 
@@ -768,6 +805,12 @@ export class HachikaEngine {
         plannerError: prepared.planningDebug.error,
         selection: prepared.replySelection.debug,
         proactiveSelection: null,
+        quality: evaluateGeneratedTextQuality({
+          text: fallbackReply,
+          fallbackText: fallbackReply,
+          previousSnapshot: prepared.previousSnapshot,
+          primaryFocus: prepared.replySelection.debug.currentTopic,
+        }),
       });
     }
 
@@ -795,6 +838,12 @@ export class HachikaEngine {
         plannerError: prepared.planningDebug.error,
         selection: prepared.replySelection.debug,
         proactiveSelection: null,
+        quality: evaluateGeneratedTextQuality({
+          text: reply,
+          fallbackText: fallbackReply,
+          previousSnapshot: prepared.previousSnapshot,
+          primaryFocus: prepared.replySelection.debug.currentTopic,
+        }),
       });
     } catch (error) {
       return this.#finalizeTurn(input, prepared, fallbackReply, {
@@ -815,6 +864,12 @@ export class HachikaEngine {
         plannerError: prepared.planningDebug.error,
         selection: prepared.replySelection.debug,
         proactiveSelection: null,
+        quality: evaluateGeneratedTextQuality({
+          text: fallbackReply,
+          fallbackText: fallbackReply,
+          previousSnapshot: prepared.previousSnapshot,
+          primaryFocus: prepared.replySelection.debug.currentTopic,
+        }),
       });
     }
   }
@@ -829,6 +884,12 @@ export class HachikaEngine {
 
     remember(prepared.nextSnapshot, "user", input, prepared.signals.topics, sentiment);
     remember(prepared.nextSnapshot, "hachika", reply, prepared.signals.topics, "neutral");
+    recordGeneratedQuality(
+      prepared.nextSnapshot,
+      replyDebug,
+      replyDebug.selection?.currentTopic ?? null,
+      prepared.nextSnapshot.lastInteractionAt ?? new Date().toISOString(),
+    );
 
     this.#snapshot = prepared.nextSnapshot;
     this.#lastGeneratedDebug = { ...replyDebug };
@@ -850,6 +911,33 @@ export class HachikaEngine {
       },
     };
   }
+}
+
+function recordGeneratedQuality(
+  snapshot: HachikaSnapshot,
+  debug: GeneratedTextDebug,
+  focus: string | null,
+  timestamp: string,
+): void {
+  if (!debug.quality) {
+    return;
+  }
+
+  snapshot.generationHistory.push({
+    timestamp,
+    mode: debug.mode,
+    source: debug.source,
+    provider: debug.provider,
+    model: debug.model,
+    fallbackUsed: debug.fallbackUsed,
+    focus: focus && isMeaningfulTopic(focus) ? focus : null,
+    fallbackOverlap: debug.quality.fallbackOverlap,
+    openerEcho: debug.quality.openerEcho,
+    abstractTermRatio: debug.quality.abstractTermRatio,
+    concreteDetailScore: debug.quality.concreteDetailScore,
+    focusMentioned: debug.quality.focusMentioned,
+    summary: debug.quality.summary,
+  });
 }
 
 interface PreparedTurn {

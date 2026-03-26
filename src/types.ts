@@ -273,6 +273,22 @@ export interface InitiativeState {
   history: InitiativeActivity[];
 }
 
+export interface GenerationHistoryEntry {
+  timestamp: string;
+  mode: "reply" | "proactive";
+  source: "rule" | "llm";
+  provider: string | null;
+  model: string | null;
+  fallbackUsed: boolean;
+  focus: string | null;
+  fallbackOverlap: number;
+  openerEcho: boolean;
+  abstractTermRatio: number;
+  concreteDetailScore: number;
+  focusMentioned: boolean | null;
+  summary: string;
+}
+
 export interface ActivePurpose {
   kind: MotiveKind;
   topic: string | null;
@@ -318,6 +334,7 @@ export interface HachikaSnapshot {
   traces: Record<string, TraceEntry>;
   purpose: PurposeState;
   initiative: InitiativeState;
+  generationHistory: GenerationHistoryEntry[];
   lastInteractionAt: string | null;
   conversationCount: number;
 }
@@ -491,4 +508,12 @@ export interface GeneratedTextDebug {
   plannerError: string | null;
   selection: ReplySelectionDebug | null;
   proactiveSelection: ProactiveSelectionDebug | null;
+  quality: {
+    fallbackOverlap: number;
+    openerEcho: boolean;
+    abstractTermRatio: number;
+    concreteDetailScore: number;
+    focusMentioned: boolean | null;
+    summary: string;
+  } | null;
 }

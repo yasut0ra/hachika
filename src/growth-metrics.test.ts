@@ -222,6 +222,38 @@ test("live growth metrics summarize archive, activity, and maintenance signals f
       summary: "設計へ戻ろうとした。",
     },
   ];
+  snapshot.generationHistory = [
+    {
+      timestamp: "2026-03-19T04:00:00.000Z",
+      mode: "reply",
+      source: "llm",
+      provider: "openai",
+      model: "gpt-5.4-mini",
+      fallbackUsed: false,
+      focus: "設計",
+      fallbackOverlap: 0.22,
+      openerEcho: false,
+      abstractTermRatio: 0.11,
+      concreteDetailScore: 0.64,
+      focusMentioned: true,
+      summary: "overlap:0.22 abstract:0.11 concrete:0.64 echo:no focus:yes",
+    },
+    {
+      timestamp: "2026-03-19T04:03:00.000Z",
+      mode: "reply",
+      source: "rule",
+      provider: null,
+      model: null,
+      fallbackUsed: true,
+      focus: "設計",
+      fallbackOverlap: 0.74,
+      openerEcho: true,
+      abstractTermRatio: 0.26,
+      concreteDetailScore: 0.18,
+      focusMentioned: false,
+      summary: "overlap:0.74 abstract:0.26 concrete:0.18 echo:yes focus:no",
+    },
+  ];
 
   const metrics = summarizeLiveGrowthMetrics(snapshot);
 
@@ -231,6 +263,13 @@ test("live growth metrics summarize archive, activity, and maintenance signals f
   assert.equal(metrics.recentAutonomousActivityCount, 2);
   assert.equal(metrics.idleConsolidationShare, 0.5);
   assert.equal(metrics.proactiveMaintenanceRate, 1);
+  assert.equal(metrics.recentGeneratedCount, 2);
+  assert.equal(metrics.generationFallbackRate, 0.5);
+  assert.equal(metrics.generationAverageOverlap, 0.48);
+  assert.equal(metrics.generationAbstractRatio, 0.185);
+  assert.equal(metrics.generationConcreteDetail, 0.41);
+  assert.equal(metrics.generationOpenerEchoRate, 0.5);
+  assert.equal(metrics.generationFocusMentionRate, 0.5);
 });
 
 test("live growth metric helpers return zero when there is no trace or activity history", () => {

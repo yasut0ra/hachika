@@ -281,6 +281,8 @@ Hachika は、単に有用なだけでなく、
 - `initiative.history` により、idle consolidation / idle reactivation / proactive emission の自律行動が snapshot に残る
 - `docs/growth-metrics.md` に growth comparison 用の lightweight metrics と canonical scenario を整理している
   - 現在は saturation / motive diversity / identity drift / archive reopen / stress recovery に加えて、autonomous activity visibility / idle consolidation coverage / proactive maintenance rate も比較できる
+- 直近の generated text quality は snapshot に rolling history として保持される
+  - `fallback overlap / opener echo / abstract ratio / concrete detail / focus mention` を live metrics として CLI / UI から確認できる
 - async reply では optional な `input interpreter` を通せるため、挨拶・雑談・関係修復・自己質問が stale trace や弱い topic に吸われにくい
 - OpenAI 互換の `reply generator` を env から有効化でき、local engine が決めた state / motive / purpose / traces を保ったまま通常応答と能動発話の wording だけを LLM に委譲できる
   - 通常応答では `responsePlan` を payload に含め、fallback 文面の言い換えだけでなく「どういう向きで返すか」も LLM に渡している
@@ -363,7 +365,7 @@ cp .env.example .env
 - `/traces` 保存された trace と structured artifact を表示
 - `/activity` 直近の autonomous activity history を表示
 - `/artifacts` materialize 済み artifact ファイルの一覧を表示
-- UI では `Growth` panel から `state saturation / archive reopen / archived trace share / activity count / idle consolidation / proactive maintenance` を見られる
+- UI では `Growth` panel から `state saturation / archive reopen / archived trace share / activity count / idle consolidation / proactive maintenance` に加えて、`generation fallback / overlap / abstract / concrete / echo / focus` を見られる
 - UI では `World` panel から `clock / phase / current place / object state / recent events` を見られる
 - `/memory` 直近の記憶を表示
 - `/imprints` 長期記憶を `preference / boundary / relation` 別に表示

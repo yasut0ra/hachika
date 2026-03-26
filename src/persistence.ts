@@ -9,6 +9,7 @@ import type {
   ActivePurpose,
   BoundaryImprint,
   BodyState,
+  GenerationHistoryEntry,
   DriveState,
   HachikaSnapshot,
   IdentityState,
@@ -107,7 +108,7 @@ function hydrateSnapshot(raw: unknown): HachikaSnapshot {
   }
 
   return {
-    version: 19,
+    version: 20,
     revision:
       typeof raw.revision === "number" && Number.isFinite(raw.revision)
         ? Math.max(0, Math.round(raw.revision))
@@ -132,6 +133,7 @@ function hydrateSnapshot(raw: unknown): HachikaSnapshot {
     traces: hydrateTraces(raw.traces),
     purpose: hydratePurpose(raw.purpose),
     initiative: hydrateInitiative(raw.initiative),
+    generationHistory: hydrateGenerationHistory(raw.generationHistory),
     lastInteractionAt: typeof raw.lastInteractionAt === "string" ? raw.lastInteractionAt : null,
     conversationCount:
       typeof raw.conversationCount === "number" && Number.isFinite(raw.conversationCount)
@@ -166,6 +168,7 @@ export function sanitizeSnapshot(snapshot: HachikaSnapshot): HachikaSnapshot {
   syncWorldObjectTraceLinks(snapshot);
   snapshot.purpose = sanitizePurpose(snapshot.purpose);
   snapshot.initiative = sanitizeInitiative(snapshot.initiative);
+  snapshot.generationHistory = sanitizeGenerationHistory(snapshot.generationHistory);
 
   return snapshot;
 }
@@ -1223,6 +1226,61 @@ function sanitizeInitiative(initiative: InitiativeState): InitiativeState {
       }))
       .slice(-16),
   };
+}
+
+function hydrateGenerationHistory(raw: unknown): GenerationHistoryEntry[] {
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+
+  return raw
+    .filter(isRecord)
+    .map((entry) => ({
+      timestamp:
+        typeof entry.timestamp === "string" && entry.timestamp.trim().length > 0
+          ? entry.timestamp
+          : new Date().toISOString(),
+      mode: entry.mode === "proactive" ? "proactive" : "reply",
+      source: entry.source === "llm" ? "llm" : "rule",
+      provider: typeof entry.provider === "string" ? entry.provider : null,
+      model: typeof entry.model === "string" ? entry.model : null,
+      fallbackUsed: entry.fallbackUsed === true,
+      focus:
+        typeof entry.focus === "string" && entry.focus.trim().length > 0
+          ? entry.focus.trim()
+          : null,
+      fallbackOverlap:
+        typeof entry.fallbackOverlap === "number" ? clamp01(entry.fallbackOverlap) : 0,
+      openerEcho: entry.openerEcho === true,
+      abstractTermRatio:
+        typeof entry.abstractTermRatio === "number" ? clamp01(entry.abstractTermRatio) : 0,
+      concreteDetailScore:
+        typeof entry.concreteDetailScore === "number"
+          ? clamp01(entry.concreteDetailScore)
+          : 0,
+      focusMentioned:
+        typeof entry.focusMentioned === "boolean" ? entry.focusMentioned : null,
+      summary:
+        typeof entry.summary === "string" && entry.summary.trim().length > 0
+          ? entry.summary.trim()
+          : "generated quality",
+    }));
+}
+
+function sanitizeGenerationHistory(history: GenerationHistoryEntry[]): GenerationHistoryEntry[] {
+  return history
+    .map((entry) => ({
+      ...entry,
+      focus: entry.focus && isMeaningfulTopic(entry.focus) ? entry.focus : null,
+      fallbackOverlap: clamp01(entry.fallbackOverlap),
+      abstractTermRatio: clamp01(entry.abstractTermRatio),
+      concreteDetailScore: clamp01(entry.concreteDetailScore),
+      summary:
+        typeof entry.summary === "string" && entry.summary.trim().length > 0
+          ? entry.summary.trim()
+          : "generated quality",
+    }))
+    .slice(-24);
 }
 
 function sanitizeActivePurpose(active: ActivePurpose): ActivePurpose {

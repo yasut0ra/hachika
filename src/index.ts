@@ -383,6 +383,19 @@ function printGrowthMetrics(currentEngine: HachikaEngine): void {
   console.log(`recent autonomous activity: ${metrics.recentAutonomousActivityCount}`);
   console.log(`idle consolidation share: ${metrics.idleConsolidationShare.toFixed(3)}`);
   console.log(`proactive maintenance rate: ${metrics.proactiveMaintenanceRate.toFixed(3)}`);
+  console.log(`recent generated count: ${metrics.recentGeneratedCount}`);
+  console.log(`generation fallback rate: ${metrics.generationFallbackRate.toFixed(3)}`);
+  console.log(`generation overlap: ${metrics.generationAverageOverlap.toFixed(3)}`);
+  console.log(`generation abstract ratio: ${metrics.generationAbstractRatio.toFixed(3)}`);
+  console.log(`generation concrete detail: ${metrics.generationConcreteDetail.toFixed(3)}`);
+  console.log(`generation opener echo rate: ${metrics.generationOpenerEchoRate.toFixed(3)}`);
+  console.log(
+    `generation focus mention rate: ${
+      metrics.generationFocusMentionRate === null
+        ? "n/a"
+        : metrics.generationFocusMentionRate.toFixed(3)
+    }`,
+  );
 }
 
 function printTraces(currentEngine: HachikaEngine): void {
@@ -947,12 +960,13 @@ function formatGeneratedDebug(
   const plannerFallback = debug.plannerFallbackUsed ? " fallback" : "";
   const plannerError = debug.plannerError ? ` error:${debug.plannerError}` : "";
   const planner = ` planner:${debug.plannerSource}${plannerVia}${plannerModel}${plannerFallback}${plannerError}${plannerRulePlan}${plannerDiff}`;
+  const quality = debug.quality ? ` quality:${debug.quality.summary}` : "";
   const selection =
     debug.mode === "proactive"
       ? formatProactiveSelection(debug.proactiveSelection)
       : formatReplySelection(debug.selection);
 
-  return `${mode}${debug.source}${via}${model}${fallback}${error}${retry}${plan}${planner}${selection}`;
+  return `${mode}${debug.source}${via}${model}${fallback}${error}${retry}${plan}${planner}${quality}${selection}`;
 }
 
 function formatInterpretationDebug(

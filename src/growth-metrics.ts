@@ -29,6 +29,13 @@ export interface LiveGrowthMetrics {
   recentAutonomousActivityCount: number;
   idleConsolidationShare: number;
   proactiveMaintenanceRate: number;
+  recentGeneratedCount: number;
+  generationFallbackRate: number;
+  generationAverageOverlap: number;
+  generationAbstractRatio: number;
+  generationConcreteDetail: number;
+  generationOpenerEchoRate: number;
+  generationFocusMentionRate: number | null;
 }
 
 export function collectScenarioSnapshots(run: ScenarioRun): HachikaSnapshot[] {
@@ -299,6 +306,8 @@ export function calculateProactiveMaintenanceRateFromSnapshot(
 
 export function summarizeLiveGrowthMetrics(snapshot: HachikaSnapshot): LiveGrowthMetrics {
   const history = snapshot.initiative.history ?? [];
+  const generation = snapshot.generationHistory.slice(-12);
+  const focusSamples = generation.filter((entry) => entry.focusMentioned !== null);
 
   return {
     stateSaturationRatio: calculateStateSaturationRatio(snapshot),
@@ -308,6 +317,34 @@ export function summarizeLiveGrowthMetrics(snapshot: HachikaSnapshot): LiveGrowt
     recentAutonomousActivityCount: history.slice(-12).length,
     idleConsolidationShare: calculateIdleConsolidationShare(snapshot),
     proactiveMaintenanceRate: calculateProactiveMaintenanceRateFromSnapshot(snapshot),
+    recentGeneratedCount: generation.length,
+    generationFallbackRate: averageGenerationMetric(
+      generation,
+      (entry) => (entry.fallbackUsed ? 1 : 0),
+    ),
+    generationAverageOverlap: averageGenerationMetric(
+      generation,
+      (entry) => entry.fallbackOverlap,
+    ),
+    generationAbstractRatio: averageGenerationMetric(
+      generation,
+      (entry) => entry.abstractTermRatio,
+    ),
+    generationConcreteDetail: averageGenerationMetric(
+      generation,
+      (entry) => entry.concreteDetailScore,
+    ),
+    generationOpenerEchoRate: averageGenerationMetric(
+      generation,
+      (entry) => (entry.openerEcho ? 1 : 0),
+    ),
+    generationFocusMentionRate:
+      focusSamples.length === 0
+        ? null
+        : averageGenerationMetric(
+            focusSamples,
+            (entry) => (entry.focusMentioned ? 1 : 0),
+          ),
   };
 }
 
@@ -389,4 +426,15 @@ function initiativeActivityKey(activity: InitiativeActivity): string {
 
 function round(value: number): number {
   return Math.round(value * 1000) / 1000;
+}
+
+function averageGenerationMetric<T>(
+  entries: T[],
+  read: (entry: T) => number,
+): number {
+  if (entries.length === 0) {
+    return 0;
+  }
+
+  return round(entries.reduce((sum, entry) => sum + read(entry), 0) / entries.length);
 }

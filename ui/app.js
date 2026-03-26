@@ -204,6 +204,18 @@ function renderGrowth(growth) {
     ["recent activity", String(growth.recentAutonomousActivityCount)],
     ["idle consolidation", formatNumber(growth.idleConsolidationShare)],
     ["proactive maintenance", formatNumber(growth.proactiveMaintenanceRate)],
+    ["recent generated", String(growth.recentGeneratedCount)],
+    ["generation fallback", formatNumber(growth.generationFallbackRate)],
+    ["generation overlap", formatNumber(growth.generationAverageOverlap)],
+    ["generation abstract", formatNumber(growth.generationAbstractRatio)],
+    ["generation concrete", formatNumber(growth.generationConcreteDetail)],
+    ["generation echo", formatNumber(growth.generationOpenerEchoRate)],
+    [
+      "generation focus",
+      growth.generationFocusMentionRate === null
+        ? "n/a"
+        : formatNumber(growth.generationFocusMentionRate),
+    ],
   ];
 
   for (const [label, value] of rows) {
@@ -290,13 +302,14 @@ function formatGenerated(debug) {
   }
 
   const planner = `planner:${debug.plannerSource}`;
+  const quality = debug.quality ? ` · ${debug.quality.summary}` : "";
   const retry =
     typeof debug.retryAttempts === "number" && debug.retryAttempts > 1
       ? ` · retry ${debug.retryAttempts}`
       : "";
   return `${debug.mode}:${debug.source}${debug.provider ? ` via:${debug.provider}` : ""}${
     debug.fallbackUsed ? " fallback" : ""
-  }${retry}${debug.plan ? ` · ${debug.plan}` : ""} · ${planner}`;
+  }${retry}${debug.plan ? ` · ${debug.plan}` : ""} · ${planner}${quality}`;
 }
 
 function formatInterpretation(debug) {

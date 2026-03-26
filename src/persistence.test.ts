@@ -107,6 +107,23 @@ test("sanitizeSnapshot removes low-information topics and repairs polluted trace
       summary: "「自分」へ、自分から戻ろうとした。",
     },
   ];
+  snapshot.generationHistory = [
+    {
+      timestamp: "2026-03-21T01:10:00.000Z",
+      mode: "reply",
+      source: "llm",
+      provider: "openai",
+      model: "gpt-5.4-mini",
+      fallbackUsed: false,
+      focus: "かな",
+      fallbackOverlap: 1.2,
+      openerEcho: true,
+      abstractTermRatio: 0.4,
+      concreteDetailScore: 0.2,
+      focusMentioned: true,
+      summary: "  noisy quality  ",
+    },
+  ];
 
   sanitizeSnapshot(snapshot);
 
@@ -131,6 +148,9 @@ test("sanitizeSnapshot removes low-information topics and repairs polluted trace
   assert.equal(snapshot.initiative.history[1]?.topic, "自分");
   assert.equal(snapshot.initiative.history[1]?.traceTopic, null);
   assert.equal(snapshot.initiative.history[1]?.blocker, null);
+  assert.equal(snapshot.generationHistory[0]?.focus, null);
+  assert.equal(snapshot.generationHistory[0]?.fallbackOverlap, 1);
+  assert.equal(snapshot.generationHistory[0]?.summary, "noisy quality");
 });
 
 test("loadSnapshot and saveSnapshot apply sanitation to persisted files", async () => {
