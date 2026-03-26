@@ -1574,6 +1574,18 @@ test("self inquiry does not immediately collapse into a self-referential work tr
   assert.match(result.reply, /threshold|灯り|慎重|残した|温度|寄りやすい|目が戻る/);
 });
 
+test("world inquiry does not keep ambient world topics in live state without concrete support", () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+
+  const result = engine.respond("今どこにいるの？");
+
+  assert.deepEqual(result.debug.signals.topics, []);
+  assert.equal(result.snapshot.topicCounts["世界"], undefined);
+  assert.equal(result.snapshot.preferences["世界"], undefined);
+  assert.deepEqual(result.snapshot.memories.at(-2)?.topics ?? [], []);
+  assert.equal(result.snapshot.traces["世界"], undefined);
+});
+
 test("ambiguous question asks for a concrete direction instead of inventing a topic", () => {
   const engine = new HachikaEngine(createInitialSnapshot());
 
@@ -2071,6 +2083,49 @@ test("respondAsync can use an input interpreter to keep greetings non-topical an
   assert.ok(result.debug.signals.smalltalk > 0.5);
   assert.equal(Object.keys(result.snapshot.traces).length, 0);
   assert.ok(result.snapshot.state.relation >= createInitialSnapshot().state.relation);
+});
+
+test("respondAsync drops interpreter-proposed abstract self topics on pure self inquiry turns", async () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+
+  const inputInterpreter: InputInterpreter = {
+    name: "test-interpreter",
+    async interpretInput() {
+      return {
+        provider: "test-interpreter",
+        model: "stub",
+        interpretation: {
+          topics: ["存在"],
+          positive: 0.06,
+          negative: 0,
+          question: 0.52,
+          intimacy: 0.16,
+          dismissal: 0,
+          memoryCue: 0,
+          expansionCue: 0,
+          completion: 0,
+          abandonment: 0,
+          preservationThreat: 0,
+          preservationConcern: null,
+          greeting: 0,
+          smalltalk: 0,
+          repair: 0,
+          selfInquiry: 0.94,
+          worldInquiry: 0,
+          workCue: 0,
+        },
+      };
+    },
+  };
+
+  const result = await engine.respondAsync("君はどんな存在？", { inputInterpreter });
+
+  assert.deepEqual(result.debug.signals.topics, []);
+  assert.equal(result.snapshot.topicCounts["存在"], undefined);
+  assert.equal(result.snapshot.preferences["存在"], undefined);
+  assert.equal(result.snapshot.traces["存在"], undefined);
+  assert.ok(result.debug.interpretation.topics.includes("存在"));
+  assert.ok(result.debug.interpretation.droppedTopics.includes("存在"));
 });
 
 test("respondAsync can forward interpreted reply selection into the llm payload", async () => {

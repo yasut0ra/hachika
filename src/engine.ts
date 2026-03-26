@@ -2175,7 +2175,9 @@ function finalizeInteractionSignals(
     topicShift && signals.question >= 0.2 && signals.negative < 0.18
       ? Math.min(signals.dismissal, 0.08)
       : signals.dismissal;
-  const topics = topicShift || repairTopicReset || abstractSocialTopicReset ? [] : signals.topics;
+  const candidateTopics =
+    topicShift || repairTopicReset || abstractSocialTopicReset ? [] : signals.topics;
+  const topics = filterLiveTopicsBySupport(snapshot, candidateTopics, signals);
   const completion =
     socialWeight >= 0.42 && signals.workCue < 0.3
       ? clamp01(signals.completion * 0.3)
@@ -2198,6 +2200,127 @@ function finalizeInteractionSignals(
     novelty: clamp01(noveltyBase + (newTopics > 0 && newTopics === topics.length ? 0.12 : 0)),
     repetition: clamp01(repetitionBase),
   };
+}
+
+function filterLiveTopicsBySupport(
+  snapshot: HachikaSnapshot,
+  topics: readonly string[],
+  signals: Pick<
+    InteractionSignals,
+    | "positive"
+    | "negative"
+    | "dismissal"
+    | "memoryCue"
+    | "expansionCue"
+    | "completion"
+    | "greeting"
+    | "smalltalk"
+    | "repair"
+    | "selfInquiry"
+    | "worldInquiry"
+    | "abandonment"
+    | "workCue"
+  >,
+): string[] {
+  const dedupedTopics = uniqueTopics([...topics]);
+
+  if (dedupedTopics.length === 0) {
+    return dedupedTopics;
+  }
+
+  return dedupedTopics.filter((topic) =>
+    shouldKeepLiveTopic(snapshot, topic, dedupedTopics, signals),
+  );
+}
+
+function shouldKeepLiveTopic(
+  snapshot: HachikaSnapshot,
+  topic: string,
+  topics: readonly string[],
+  signals: Pick<
+    InteractionSignals,
+    | "positive"
+    | "negative"
+    | "dismissal"
+    | "memoryCue"
+    | "expansionCue"
+    | "completion"
+    | "greeting"
+    | "smalltalk"
+    | "repair"
+    | "selfInquiry"
+    | "worldInquiry"
+    | "abandonment"
+    | "workCue"
+  >,
+): boolean {
+  const supportSensitive = requiresConcreteTopicSupport(topic) || isAmbientWorldTopic(topic);
+
+  if (!supportSensitive) {
+    return true;
+  }
+
+  const hasConcreteCompanion = topics.some(
+    (candidate) =>
+      candidate !== topic &&
+      !requiresConcreteTopicSupport(candidate) &&
+      !isAmbientWorldTopic(candidate) &&
+      !topicsLooselyMatch(candidate, topic),
+  );
+  const hasConcreteTurnCue =
+    Math.max(signals.workCue, signals.memoryCue, signals.expansionCue) >= 0.18 ||
+    signals.completion >= 0.2 ||
+    signals.negative >= 0.22 ||
+    signals.dismissal >= 0.18 ||
+    signals.positive >= 0.28;
+
+  if (hasConcreteCompanion || hasConcreteTurnCue) {
+    return true;
+  }
+
+  return hasStrongLiveTopicSupport(snapshot, topic);
+}
+
+function hasStrongLiveTopicSupport(snapshot: HachikaSnapshot, topic: string): boolean {
+  const topicCount = snapshot.topicCounts[topic] ?? 0;
+  const preferenceImprint = snapshot.preferenceImprints[topic];
+  const concreteTraceSupport = Object.values(snapshot.traces).some((trace) =>
+    hasConcreteLiveTraceSupport(trace, topic),
+  );
+
+  return (
+    concreteTraceSupport ||
+    topicCount >= 5 ||
+    ((preferenceImprint?.mentions ?? 0) >= 4 && (preferenceImprint?.salience ?? 0) >= 0.72)
+  );
+}
+
+function hasConcreteLiveTraceSupport(trace: HachikaSnapshot["traces"][string], topic: string): boolean {
+  if (!topicsLooselyMatch(trace.topic, topic)) {
+    return false;
+  }
+
+  if (trace.worldContext?.objectId) {
+    return true;
+  }
+
+  const artifactItems = [
+    ...trace.artifact.memo,
+    ...trace.artifact.fragments,
+    ...trace.artifact.decisions,
+    ...trace.artifact.nextSteps,
+  ];
+
+  return artifactItems.some((item) =>
+    extractTopics(item).some(
+      (candidate) =>
+        candidate !== topic &&
+        candidate.length >= 2 &&
+        !requiresConcreteTopicSupport(candidate) &&
+        !isAmbientWorldTopic(candidate) &&
+        !topicsLooselyMatch(candidate, topic),
+    ),
+  );
 }
 
 function shouldClearRepairTopics(topics: readonly string[]): boolean {

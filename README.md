@@ -215,6 +215,7 @@ Hachika は、単に有用なだけでなく、
   - 挨拶や相槌のような低情報入力を topic / trace として扱いにくくし、雑談や自己開示要求を stale work と切り分けやすくしている
   - `まずは / いちばん / って / かな / 納得` のような discourse scaffolding や相槌は topic として採りにくくし、既存の preference に残っていても優先 topic として使いにくくしている
   - `静けさ / 存在 / 今の目的 / 棚の残り` のような broad / self / pseudo topic は、繰り返しや具体的な支えが弱い限り trace / purpose / initiative / identity anchor / persisted state に残りにくくしている
+  - pure な self / world inquiry で一時的に出た `存在 / 世界` のような抽象 topic は、live の memory / topicCounts にも乗りにくくして、次の保存までのあいだに増幅しにくくしている
   - `別の話` のような明示的な topic shift は abandonment として扱い、old purpose / trace をそのまま前景化しにくくしている
 - 応答直前には `response planner` が `act / stance / distance / focus` を決め、rule-based reply と LLM wording の両方が同じ返答意図を共有する
   - greeting / repair / self-disclosure のような social turn では stale trace を引っ込め、関係の温度や自己開示を優先しやすくしている

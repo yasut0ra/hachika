@@ -5,6 +5,7 @@ import {
   extractTopics,
   isMeaningfulTopic,
   requiresConcreteTopicSupport,
+  topicsLooselyMatch,
 } from "./memory.js";
 import { clamp01, clampSigned, createInitialSnapshot } from "./state.js";
 import { isInformativeTraceClause } from "./traces.js";
@@ -1168,10 +1169,17 @@ function sanitizePreferenceImprints(
 function deriveSupportedSnapshotTopics(snapshot: HachikaSnapshot): Set<string> {
   const topics = new Set<string>();
   const memoryWeights = new Map<string, number>();
+  const substantiveMemoryWeights = new Map<string, number>();
 
   for (const memory of snapshot.memories) {
     for (const topic of memory.topics) {
-      memoryWeights.set(topic, (memoryWeights.get(topic) ?? 0) + (memory.weight ?? 1));
+      const baseWeight = Math.max(1, memory.weight ?? 1);
+      memoryWeights.set(topic, (memoryWeights.get(topic) ?? 0) + baseWeight);
+      substantiveMemoryWeights.set(
+        topic,
+        (substantiveMemoryWeights.get(topic) ?? 0) +
+          estimateSupportedTopicMemoryWeight(memory, topic),
+      );
     }
   }
 
@@ -1207,23 +1215,110 @@ function deriveSupportedSnapshotTopics(snapshot: HachikaSnapshot): Set<string> {
     const preferenceStrength = Math.abs(snapshot.preferences[topic] ?? 0);
     const imprint = snapshot.preferenceImprints[topic];
     const memoryWeight = memoryWeights.get(topic) ?? 0;
-    const repeated = topicCount >= 2 || memoryWeight >= 2 || (imprint?.mentions ?? 0) >= 2;
+    const substantiveMemoryWeight = substantiveMemoryWeights.get(topic) ?? 0;
+    const concreteTraceSupport = hasConcreteTraceSupport(snapshot.traces[topic], topic);
+    const repeated = topicCount >= 3 || memoryWeight >= 3 || (imprint?.mentions ?? 0) >= 3;
     const strongSignal =
-      preferenceStrength >= 0.2 ||
-      (imprint?.salience ?? 0) >= 0.5 ||
-      (imprint?.affinity !== undefined && Math.abs(imprint.affinity) >= 0.14);
+      preferenceStrength >= 0.24 ||
+      (imprint?.salience ?? 0) >= 0.56 ||
+      (imprint?.affinity !== undefined && Math.abs(imprint.affinity) >= 0.16) ||
+      substantiveMemoryWeight >= 1.8 ||
+      concreteTraceSupport;
     const durable =
-      topicCount >= 3 ||
-      memoryWeight >= 3 ||
-      ((imprint?.mentions ?? 0) >= 2 && (imprint?.salience ?? 0) >= 0.38);
+      topicCount >= 4 ||
+      substantiveMemoryWeight >= 2.8 ||
+      concreteTraceSupport ||
+      ((imprint?.mentions ?? 0) >= 3 && (imprint?.salience ?? 0) >= 0.42);
+    const concreteAnchor = substantiveMemoryWeight >= 1.8 || concreteTraceSupport;
 
-    if (durable || (repeated && strongSignal)) {
+    if (concreteAnchor && (durable || (repeated && strongSignal))) {
       topics.add(topic);
     }
   }
 
   return topics;
 }
+
+function estimateSupportedTopicMemoryWeight(
+  memory: MemoryEntry,
+  topic: string,
+): number {
+  const baseWeight = Math.max(1, memory.weight ?? 1);
+
+  if (!requiresConcreteTopicSupport(topic)) {
+    return baseWeight;
+  }
+
+  const concreteCompanions = extractTopics(memory.text).filter(
+    (candidate) =>
+      candidate !== topic &&
+      !requiresConcreteTopicSupport(candidate) &&
+      !topicsLooselyMatch(candidate, topic),
+  );
+
+  if (concreteCompanions.length > 0) {
+    return baseWeight * (1 + Math.min(0.5, concreteCompanions.length * 0.18));
+  }
+
+  const text = memory.text.normalize("NFKC");
+  const isQuestionLike =
+    /[?？]/u.test(text) || /(何|どこ|どう|どんな|なぜ|例えば|たとえば)/u.test(text);
+  const isSelfWorldProbe = SUPPORTED_TOPIC_PROBE_PATTERNS.some((pattern) => pattern.test(text));
+
+  if (isSelfWorldProbe) {
+    return baseWeight * 0.18;
+  }
+
+  if (isQuestionLike && memory.role === "user") {
+    return baseWeight * 0.32;
+  }
+
+  if (isQuestionLike && memory.role === "hachika") {
+    return baseWeight * 0.42;
+  }
+
+  return baseWeight * 0.64;
+}
+
+function hasConcreteTraceSupport(trace: TraceEntry | undefined, topic: string): boolean {
+  if (!trace) {
+    return false;
+  }
+
+  if (trace.worldContext?.objectId) {
+    return true;
+  }
+
+  const artifactItems = [
+    ...trace.artifact.memo,
+    ...trace.artifact.fragments,
+    ...trace.artifact.decisions,
+    ...trace.artifact.nextSteps,
+  ];
+
+  return artifactItems
+    .filter((item) => isInformativeTraceClause(item, topic))
+    .some((item) =>
+      extractTopics(item).some(
+        (candidate) =>
+          candidate !== topic &&
+          candidate.length >= 2 &&
+          !requiresConcreteTopicSupport(candidate) &&
+          !topicsLooselyMatch(candidate, topic),
+      ),
+    );
+}
+
+const SUPPORTED_TOPIC_PROBE_PATTERNS = [
+  /どんな存在/u,
+  /どういう存在/u,
+  /今どこにいる/u,
+  /どこにいる/u,
+  /周りはどんな/u,
+  /棚には何が残/u,
+  /最近何を気にしてる/u,
+  /今の目的/u,
+] as const;
 
 function shouldKeepSupportedTopic(topic: string, supportedTopics: Set<string>): boolean {
   return !requiresConcreteTopicSupport(topic) || supportedTopics.has(topic);

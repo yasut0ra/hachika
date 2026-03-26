@@ -189,6 +189,13 @@ test("sanitizeSnapshot drops weak abstract and self-referential topics but keeps
       topics: ["存在", "今の目的"],
       sentiment: "neutral",
     },
+    {
+      role: "hachika",
+      text: "threshold の灯りのそばなら、世界も少し具体的に見える。",
+      timestamp: "2026-03-22T14:24:10.000Z",
+      topics: ["世界"],
+      sentiment: "neutral",
+    },
   ];
   snapshot.preferenceImprints = {
     世界: {
@@ -202,6 +209,11 @@ test("sanitizeSnapshot drops weak abstract and self-referential topics but keeps
   };
   snapshot.identity.anchors = ["世界", "存在", "今の目的"];
   snapshot.traces.世界 = pollutedTrace("世界");
+  snapshot.traces.世界.worldContext = {
+    place: "threshold",
+    objectId: "lamp",
+    linkedAt: "2026-03-22T14:24:10.000Z",
+  };
   snapshot.traces.存在 = pollutedTrace("存在");
   snapshot.traces["棚の残り"] = pollutedTrace("棚の残り");
   snapshot.purpose.active = {
@@ -257,6 +269,64 @@ test("sanitizeSnapshot drops weak abstract and self-referential topics but keeps
   assert.equal(snapshot.generationHistory[0]?.focus, null);
 });
 
+test("sanitizeSnapshot drops abstract world topics when they only come from inquiry prompts", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.preferences = {
+    世界: 0.42,
+    存在: 0.28,
+  };
+  snapshot.topicCounts = {
+    世界: 5,
+    存在: 3,
+  };
+  snapshot.memories = [
+    {
+      role: "user",
+      text: "今どこにいるの？",
+      timestamp: "2026-03-22T14:23:19.335Z",
+      topics: ["世界"],
+      sentiment: "neutral",
+    },
+    {
+      role: "user",
+      text: "そっちの世界はどんな感じ？",
+      timestamp: "2026-03-22T14:23:29.335Z",
+      topics: ["世界"],
+      sentiment: "neutral",
+    },
+    {
+      role: "user",
+      text: "ハチカってどんな存在？",
+      timestamp: "2026-03-22T14:24:00.000Z",
+      topics: ["存在"],
+      sentiment: "neutral",
+    },
+  ];
+  snapshot.preferenceImprints = {
+    世界: {
+      topic: "世界",
+      salience: 0.9,
+      affinity: 0.18,
+      mentions: 5,
+      firstSeenAt: "2026-03-22T12:30:00.082Z",
+      lastSeenAt: "2026-03-22T14:23:29.335Z",
+    },
+  };
+  snapshot.identity.anchors = ["世界", "存在"];
+  snapshot.traces.世界 = pollutedTrace("世界");
+  snapshot.traces.存在 = pollutedTrace("存在");
+
+  sanitizeSnapshot(snapshot);
+
+  assert.deepEqual(snapshot.preferences, {});
+  assert.deepEqual(snapshot.topicCounts, {});
+  assert.deepEqual(snapshot.memories[0]?.topics, []);
+  assert.deepEqual(snapshot.memories[1]?.topics, []);
+  assert.deepEqual(snapshot.memories[2]?.topics, []);
+  assert.deepEqual(snapshot.identity.anchors, []);
+  assert.deepEqual(snapshot.traces, {});
+});
+
 test("loadSnapshot and saveSnapshot apply sanitation to persisted files", async () => {
   const tempDir = await mkdtemp(join(tmpdir(), "hachika-persistence-"));
   const filePath = join(tempDir, "snapshot.json");
@@ -308,8 +378,8 @@ test("loadSnapshot and saveSnapshot apply sanitation to persisted files", async 
     const loaded = await loadSnapshot(filePath);
 
     assert.equal(loaded.preferences.かな, undefined);
-    assert.deepEqual(loaded.memories[0]?.topics, ["自分"]);
-    assert.deepEqual(loaded.identity.anchors, ["自分"]);
+    assert.deepEqual(loaded.memories[0]?.topics, []);
+    assert.deepEqual(loaded.identity.anchors, []);
     assert.equal(loaded.traces.かな, undefined);
     assert.deepEqual(loaded.temperament, createInitialSnapshot().temperament);
 
