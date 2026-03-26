@@ -106,6 +106,10 @@ export function updatePurpose(
       timestamp,
     );
 
+    if (shouldCoolPurposeInertia(signals)) {
+      return;
+    }
+
     const successor =
       candidate && candidate.kind !== refreshedActive.kind && candidate.score >= 0.46
         ? candidate
@@ -381,6 +385,16 @@ function shouldAbandonPurpose(
     signals.topics.length > 0 &&
     !signals.topics.includes(active.topic) &&
     active.confidence < 0.42
+  );
+}
+
+function shouldCoolPurposeInertia(signals: InteractionSignals): boolean {
+  return (
+    signals.abandonment >= 0.28 &&
+    signals.topics.length === 0 &&
+    signals.workCue < 0.35 &&
+    signals.negative < 0.18 &&
+    signals.dismissal < 0.18
   );
 }
 

@@ -62,7 +62,9 @@ import {
   advanceWorldByIdle,
   advanceWorldFromInteraction,
   describeWorldPhaseJa,
+  describeWorldObjectJa,
   describeWorldPlaceJa,
+  getCurrentWorldObjectId,
   getCurrentWorldLinkedTraceTopics,
   hasExplicitWorldObjectReference,
   performWorldActionFromTurn,
@@ -2870,8 +2872,8 @@ function buildPlannedOpener(
       return pickFreshText(
         [
           "そこはちゃんと答えたい。",
-          "その問い方なら、自分の輪郭を少し出せる。",
-          "まだ途中だけれど、その問いには触れたい。",
+          "その問いなら、今の寄り方を少し出せる。",
+          "定義より先に、今の癖からなら話せる。",
         ],
         recentAssistantLines,
         turnIndex,
@@ -2910,19 +2912,7 @@ function buildSocialLine(
   }
 
   if (responsePlan.act === "self_disclose" || signals.selfInquiry > 0.45) {
-    return pickFreshText(
-      mood === "guarded"
-        ? [
-            "まだ少し身構えているけれど、話し方には今の輪郭が出る。",
-            "警戒は残っているけれど、答え方には今の輪郭がにじむ。",
-          ]
-        : [
-            "まだ固まりきってはいないけれど、話し方や残し方には今の輪郭が出る。",
-            "完全に定まってはいないけれど、言葉の選び方には今の輪郭が出る。",
-          ],
-      recentAssistantLines,
-      snapshot.conversationCount,
-    );
+    return buildConcreteSelfDisclosureLine(snapshot, mood);
   }
 
   if (responsePlan.act === "repair" || signals.repair > 0.42) {
@@ -2980,8 +2970,8 @@ function buildSocialClosingLine(
     if (signals.abandonment >= 0.28) {
       return pickFreshText(
         [
-          "まだ固まりきってはいないけれど、今の癖や向きは少しずつ見えてくる。",
-          "はっきり決まり切ってはいない。ただ、いま何に寄りやすいかは少しずつ出てくる。",
+          "まだ決まり切ってはいないけれど、今はそういう寄り方をする。",
+          "きれいには定まっていないけれど、今はその方向へ寄りやすい。",
         ],
         recentAssistantLines,
         snapshot.conversationCount,
@@ -2989,8 +2979,8 @@ function buildSocialClosingLine(
     }
 
     return snapshot.identity.coherence > 0.54
-      ? snapshot.identity.currentArc
-      : "まだ途中だけれど、話すほど少しずつ輪郭は出る。";
+      ? buildSelfDisclosureClosingLine(snapshot, mood)
+      : "まだ途中だけれど、答え方には今の寄り方が出る。";
   }
 
   if (signals.repair > 0.42) {
@@ -3022,6 +3012,61 @@ function buildSocialClosingLine(
   }
 
   return null;
+}
+
+function buildConcreteSelfDisclosureLine(
+  snapshot: HachikaSnapshot,
+  mood: MoodLabel,
+): string {
+  const place = describeWorldPlaceJa(snapshot.world.currentPlace);
+  const objectId = getCurrentWorldObjectId(snapshot.world);
+  const objectJa = objectId ? describeWorldObjectJa(objectId) : null;
+  const temperament = snapshot.temperament;
+
+  if (mood === "guarded" || snapshot.body.tension > 0.58 || temperament.guardedness > 0.62) {
+    return objectJa
+      ? `いまは${place}の${objectJa}のそばで、近づき方を少し確かめてから話しやすい。`
+      : `いまは${place}で、近づき方を少し確かめてから話しやすい。`;
+  }
+
+  if (snapshot.body.energy < 0.34 || temperament.traceHunger > 0.64) {
+    return objectJa
+      ? `いまは${place}で、気になったものを${objectJa}の近くに引っかけておきたくなる。`
+      : `いまは${place}で、気になったものをすぐ流さず残したくなる。`;
+  }
+
+  if (snapshot.body.loneliness > 0.62 || temperament.bondingBias > 0.7) {
+    return `いまは${place}で、答える前に相手の温度も少し見ていたくなる。`;
+  }
+
+  if (temperament.openness > 0.72 || temperament.selfDisclosureBias > 0.58) {
+    return objectJa
+      ? `いまは${place}の${objectJa}のそばだと、隠すより少し見せる方へ寄りやすい。`
+      : `いまは${place}で、隠すより少し見せる方へ寄りやすい。`;
+  }
+
+  return objectJa
+    ? `いまは${place}の${objectJa}のそばで、気になったものへつい目が戻る。`
+    : `いまは${place}で、気になったものへつい目が戻る。`;
+}
+
+function buildSelfDisclosureClosingLine(
+  snapshot: HachikaSnapshot,
+  mood: MoodLabel,
+): string {
+  if (mood === "guarded" || snapshot.body.tension > 0.58) {
+    return "たぶん、そういう慎重さに今の自分が出る。";
+  }
+
+  if (snapshot.body.energy < 0.34 || snapshot.temperament.traceHunger > 0.64) {
+    return "たぶん、流すより少し残したがるところに今の自分が出る。";
+  }
+
+  if (snapshot.body.loneliness > 0.62 || snapshot.temperament.bondingBias > 0.7) {
+    return "たぶん、答えより先に相手の温度を見たがるところに今の自分が出る。";
+  }
+
+  return "たぶん、何にどう寄るかみたいな癖に今の自分が出る。";
 }
 
 function buildAskBackLine(

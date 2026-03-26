@@ -62,6 +62,11 @@ export function scheduleInitiative(
   signals: InteractionSignals,
   selfModel: SelfModel,
 ): void {
+  if (shouldCoolInitiativeInertia(signals)) {
+    snapshot.initiative.pending = null;
+    return;
+  }
+
   const preservationPending = synthesizePreservationInitiative(
     snapshot,
     signals,
@@ -2142,6 +2147,16 @@ function reasonFromMotive(motive: MotiveKind): InitiativeReason {
     case "protect_boundary":
       return "curiosity";
   }
+}
+
+function shouldCoolInitiativeInertia(signals: InteractionSignals): boolean {
+  return (
+    signals.abandonment >= 0.28 &&
+    signals.topics.length === 0 &&
+    signals.workCue < 0.35 &&
+    signals.negative < 0.18 &&
+    signals.dismissal < 0.18
+  );
 }
 
 function buildMaintenanceLine(

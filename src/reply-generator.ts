@@ -36,6 +36,7 @@ const HACHIKA_REPLY_SYSTEM_PROMPT = [
   "Do not invent new state changes, tools, or actions.",
   "Compose from the structured constraints first, not by paraphrasing the fallback text.",
   "Stay faithful to the supplied mood, motives, conflict, body state, preservation pressure, and fallback reply intent.",
+  "For self-disclosure, prefer one concrete cue about place, handling style, or bodily tendency over abstract identity labels.",
   "Write plain Japanese only.",
   "Return one to three short sentences.",
   "Do not use markdown, bullet points, speaker labels, or surrounding quotes.",
@@ -551,6 +552,9 @@ function buildReplyCompositionBrief(
   ]);
 
   const optionalDetails = uniqueNonEmpty([
+    context.responsePlan.act === "self_disclose"
+      ? buildSelfDisclosurePromptCue(context.nextSnapshot)
+      : null,
     context.selfModel.topMotives[0]?.reason ?? null,
     context.nextSnapshot.purpose.active?.summary ?? null,
     context.responsePlan.mentionTrace
@@ -626,6 +630,10 @@ function summarizeReplyIntent(
   context: ReplyGenerationContext,
   currentTopic: string | null,
 ): string {
+  if (context.responsePlan.act === "self_disclose") {
+    return "自己説明として、今いる場所や今の寄り方からひとつ具体的に見せつつ返す。";
+  }
+
   if (context.responsePlan.mentionWorld) {
     return currentTopic
       ? `世界の今の様子を返しつつ、「${currentTopic}」に触れられるなら軽く触れる。`
@@ -668,6 +676,9 @@ function buildReplyStyleNotes(context: ReplyGenerationContext): string[] {
   return uniqueNonEmpty([
     "fallback の語順をなぞらず、新しく言い直す",
     "抽象ラベルだけで済ませず、可能なら具体的な手触りを混ぜる",
+    context.responsePlan.act === "self_disclose"
+      ? "自己説明では輪郭や存在といった抽象語だけで閉じず、場所・近づき方・残し方の癖をひとつ具体的に言う"
+      : null,
     context.responsePlan.askBack ? "最後に自然な問いを一つだけ置いてよい" : null,
     context.responsePlan.variation === "brief" ? "短く切る" : "説明調にしすぎない",
     context.responsePlan.mentionWorld ? "世界の様子を先に置く" : null,
@@ -725,6 +736,32 @@ function currentWorldObjectState(snapshot: HachikaSnapshot): string | null {
     (entry) => entry.place === snapshot.world.currentPlace,
   );
   return object?.state ?? null;
+}
+
+function buildSelfDisclosurePromptCue(
+  snapshot: HachikaSnapshot,
+): string | null {
+  const objectState = currentWorldObjectState(snapshot);
+
+  if (snapshot.body.tension > 0.58 || snapshot.temperament.guardedness > 0.62) {
+    return "近づき方は少し慎重";
+  }
+
+  if (snapshot.body.energy < 0.34 || snapshot.temperament.traceHunger > 0.64) {
+    return objectState
+      ? `気になったものを流さず残したい。${objectState}`
+      : "気になったものを流さず残したい";
+  }
+
+  if (snapshot.body.loneliness > 0.62 || snapshot.temperament.bondingBias > 0.7) {
+    return "答える前に相手の温度も見たい";
+  }
+
+  if (snapshot.temperament.openness > 0.72 || snapshot.temperament.selfDisclosureBias > 0.58) {
+    return "隠すより少し見せる方へ寄りやすい";
+  }
+
+  return objectState ?? null;
 }
 
 function collectUnrelatedTopics(

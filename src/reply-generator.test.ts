@@ -380,3 +380,83 @@ test("buildReplyGenerationPayload includes recent assistant replies as expressio
     ),
   );
 });
+
+test("buildReplyGenerationPayload gives self-disclosure turns a concrete composition cue", () => {
+  const previousSnapshot = createInitialSnapshot();
+  const nextSnapshot = createInitialSnapshot();
+  nextSnapshot.world.currentPlace = "studio";
+  if (nextSnapshot.world.objects.desk) {
+    nextSnapshot.world.objects.desk.state = "机に小さな断片が残っている。";
+  }
+  nextSnapshot.temperament.traceHunger = 0.78;
+
+  const context: ReplyGenerationContext = {
+    input: "君はどんな存在？",
+    previousSnapshot,
+    nextSnapshot,
+    mood: "curious",
+    dominantDrive: "curiosity",
+    signals: {
+      positive: 0,
+      negative: 0,
+      question: 0.52,
+      novelty: 0,
+      intimacy: 0.1,
+      dismissal: 0,
+      memoryCue: 0,
+      expansionCue: 0,
+      completion: 0,
+      abandonment: 0,
+      preservationThreat: 0,
+      preservationConcern: null,
+      repetition: 0,
+      neglect: 0,
+      greeting: 0,
+      smalltalk: 0,
+      repair: 0,
+      selfInquiry: 0.94,
+      worldInquiry: 0,
+      workCue: 0,
+      topics: [],
+    },
+    selfModel: {
+      narrative: "いまは少しずつ自分の寄り方を見せられる。",
+      topMotives: [],
+      conflicts: [],
+      dominantConflict: null,
+    },
+    responsePlan: {
+      act: "self_disclose",
+      stance: "open",
+      distance: "measured",
+      focusTopic: null,
+      mentionTrace: false,
+      mentionIdentity: false,
+      mentionBoundary: false,
+      mentionWorld: false,
+      askBack: false,
+      variation: "textured",
+      summary: "self_disclose/open/measured",
+    },
+    replySelection: {
+      socialTurn: true,
+      currentTopic: null,
+      relevantTraceTopic: null,
+      relevantBoundaryTopic: null,
+      prioritizeTraceLine: false,
+    },
+    fallbackReply: "まだ途中だけれど、その問いには触れたい。",
+  };
+
+  const payload = buildReplyGenerationPayload(context);
+
+  assert.match(payload.composition.intentSummary, /自己説明/);
+  assert.ok(
+    payload.composition.optionalDetails.some((detail) =>
+      detail.includes("机に小さな断片が残っている") || detail.includes("残したい"),
+    ),
+  );
+  assert.ok(
+    payload.composition.styleNotes.some((note) => note.includes("抽象語だけで閉じず")),
+  );
+});

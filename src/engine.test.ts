@@ -700,6 +700,8 @@ test("explicit topic shift abandons the old purpose and avoids extracting vague 
   assert.deepEqual(result.debug.signals.topics, []);
   assert.equal(result.snapshot.purpose.lastResolved?.topic, "自分");
   assert.equal(result.snapshot.purpose.lastResolved?.outcome, "abandoned");
+  assert.equal(result.snapshot.purpose.active, null);
+  assert.equal(result.snapshot.initiative.pending, null);
   assert.deepEqual(userMemory?.topics ?? [], []);
   assert.doesNotMatch(result.reply, /「自分」/);
 });
@@ -1568,6 +1570,8 @@ test("self inquiry does not immediately collapse into a self-referential work tr
   assert.equal(result.snapshot.traces.ハチカ, undefined);
   assert.notEqual(result.snapshot.purpose.active?.topic, "ハチカ");
   assert.equal(result.snapshot.identity.anchors.includes("ハチカ"), false);
+  assert.doesNotMatch(result.reply, /輪郭|固まりきって|完全に定まって/);
+  assert.match(result.reply, /threshold|灯り|慎重|残した|温度|寄りやすい|目が戻る/);
 });
 
 test("ambiguous question asks for a concrete direction instead of inventing a topic", () => {
@@ -1666,6 +1670,21 @@ test("topic shift question does not keep an abstract stale topic in focus", () =
   assert.equal(result.debug.reply.selection?.relevantTraceTopic ?? null, null);
   assert.equal(result.debug.reply.selection?.relevantBoundaryTopic ?? null, null);
   assert.equal(/存在/.test(result.reply), false);
+});
+
+test("topic shift question cools a current concrete work concern instead of carrying it forward", () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+
+  engine.respond("仕様の境界が未定で曖昧だ。どう整理する？");
+  const result = engine.respond("別の話をしよう。最近何を気にしてる？");
+
+  assert.deepEqual(result.debug.signals.topics, []);
+  assert.equal(result.debug.reply.selection?.currentTopic ?? null, null);
+  assert.equal(result.snapshot.purpose.lastResolved?.topic, "仕様の境界");
+  assert.equal(result.snapshot.purpose.lastResolved?.outcome, "abandoned");
+  assert.equal(result.snapshot.purpose.active, null);
+  assert.equal(result.snapshot.initiative.pending, null);
+  assert.equal(/仕様の境界/.test(result.reply), false);
 });
 
 test("explicit new work topics do not surface unrelated stale trace or boundary context", () => {
