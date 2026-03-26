@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { extname, normalize, resolve } from "node:path";
 
 import { syncArtifacts } from "./artifacts.js";
+import { createBehaviorDirectorFromEnv } from "./behavior-director.js";
 import { runWithConflictRetry } from "./conflict-retry.js";
 import { HachikaEngine } from "./engine.js";
 import { loadDotEnv } from "./env.js";
@@ -25,6 +26,7 @@ const snapshot = await loadSnapshot(snapshotPath);
 const engine = new HachikaEngine(snapshot);
 const replyGenerator = createReplyGeneratorFromEnv();
 const inputInterpreter = createInputInterpreterFromEnv();
+const behaviorDirector = createBehaviorDirectorFromEnv();
 const responsePlanner = createResponsePlannerFromEnv();
 const traceExtractor = createTraceExtractorFromEnv();
 
@@ -53,10 +55,11 @@ const server = createServer(async (request, response) => {
 
       const replyResult = await runWithEngineConflictRetry(engine, {
         operate: () =>
-          replyGenerator || inputInterpreter || responsePlanner || traceExtractor
+          replyGenerator || inputInterpreter || behaviorDirector || responsePlanner || traceExtractor
             ? engine.respondAsync(text, {
                 replyGenerator,
                 inputInterpreter,
+                behaviorDirector,
                 responsePlanner,
                 traceExtractor,
               })

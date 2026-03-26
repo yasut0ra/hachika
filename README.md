@@ -218,6 +218,7 @@ Hachika は、単に有用なだけでなく、
   - pure な self / world inquiry で一時的に出た `存在 / 世界` のような抽象 topic は、live の memory / topicCounts にも乗りにくくして、次の保存までのあいだに増幅しにくくしている
   - `別の話` のような明示的な topic shift は abandonment として扱い、old purpose / trace をそのまま前景化しにくくしている
 - 応答直前には `response planner` が `act / stance / distance / focus` を決め、rule-based reply と LLM wording の両方が同じ返答意図を共有する
+  - その手前には optional な `behavior director` も置けるため、trace / purpose / initiative をこの turn で本当に harden してよいか、topic shift や repair でいったん冷やすべきか、自己開示や world inquiry では先に直接答えるべきかを LLM が structured に裁ける
   - greeting / repair / self-disclosure のような social turn では stale trace を引っ込め、関係の温度や自己開示を優先しやすくしている
   - `今どこにいるの` や `周りはどんな感じ` のような world inquiry では `mentionWorld` を立て、stale work より current place / phase / object state を返答に出しやすくしている
   - `askBack / variation` も rule-based reply に反映され、雑談や explore では問い返しや文面の揺れ方が planner に従う
@@ -340,14 +341,14 @@ LLM wording を有効にする場合:
 cp .env.example .env
 ```
 
-`.env` に `OPENAI_API_KEY` を入れると、CLI は OpenAI reply generator / input interpreter / response planner / trace extractor を使います。  
-返答のモデルは `OPENAI_MODEL`、入力解釈だけ別に変えたい場合は `OPENAI_INTERPRETER_MODEL`、planner だけ別に変えたい場合は `OPENAI_PLANNER_MODEL`、trace 抽出だけ別に変えたい場合は `OPENAI_TRACE_MODEL` を使えます。未設定時はどれも `gpt-5-mini` です。
+`.env` に `OPENAI_API_KEY` を入れると、CLI は OpenAI reply generator / input interpreter / behavior director / response planner / trace extractor を使います。  
+返答のモデルは `OPENAI_MODEL`、入力解釈だけ別に変えたい場合は `OPENAI_INTERPRETER_MODEL`、behavior 境界だけ別に変えたい場合は `OPENAI_BEHAVIOR_MODEL`、planner だけ別に変えたい場合は `OPENAI_PLANNER_MODEL`、trace 抽出だけ別に変えたい場合は `OPENAI_TRACE_MODEL` を使えます。未設定時はどれも `gpt-5-mini` です。
 
 主なコマンド:
 
 - `/help` コマンド一覧を表示
 - `/proactive` 能動発話を強制的に出す
-- `/llm` 現在の reply generator / input interpreter / response planner / trace extractor と直近の `reply/proactive/trace` diagnostics を表示
+- `/llm` 現在の reply generator / input interpreter / behavior director / response planner / trace extractor と直近の `reply/proactive/behavior/trace` diagnostics を表示
 - `/loop` resident loop の `heartbeat / stale 判定 / last tick / last activity / last proactive / last tick attempts / error / recent activity` を表示
 - `/metrics` 現在の live growth metrics を表示
 - `/debug` では `pending initiative` に加えて、その時点の `pending plan` も表示する

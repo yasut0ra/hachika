@@ -8,12 +8,20 @@ import {
   findRelevantPreferenceImprint,
   findRelevantRelationImprint,
   isMeaningfulTopic,
+  isRelationalTopic,
   requiresConcreteTopicSupport,
   remember,
   topPreferredTopics,
   topicsLooselyMatch,
 } from "./memory.js";
 import { pickFreshText, recentAssistantReplies } from "./expression.js";
+import {
+  buildRuleBehaviorDirective,
+} from "./behavior-director.js";
+import type {
+  BehaviorDirective,
+  BehaviorDirector,
+} from "./behavior-director.js";
 import {
   emitInitiative,
   rewindSnapshotHours,
@@ -76,6 +84,7 @@ import {
   syncWorldObjectTraceLinks,
 } from "./world.js";
 import type {
+  BehaviorDirectiveDebug,
   DriveName,
   GeneratedTextDebug,
   HachikaSnapshot,
@@ -221,6 +230,8 @@ const SELF_INQUIRY_MARKERS = [
   "どういう人",
   "どういう存在",
   "どんな存在",
+  "自己紹介",
+  "紹介して",
   "何したい",
   "何を気にしてる",
   "どう見えて",
@@ -469,6 +480,7 @@ export class HachikaEngine {
   #lastResponseDebug: GeneratedTextDebug | null = null;
   #lastProactiveDebug: GeneratedTextDebug | null = null;
   #lastInterpretationDebug: InterpretationDebug | null = null;
+  #lastBehaviorDebug: BehaviorDirectiveDebug | null = null;
   #lastTraceExtractionDebug: TraceExtractionDebug | null = null;
 
   constructor(snapshot: HachikaSnapshot = createInitialSnapshot()) {
@@ -494,6 +506,7 @@ export class HachikaEngine {
     this.#lastResponseDebug = null;
     this.#lastProactiveDebug = null;
     this.#lastInterpretationDebug = null;
+    this.#lastBehaviorDebug = null;
     this.#lastTraceExtractionDebug = null;
   }
 
@@ -527,6 +540,10 @@ export class HachikaEngine {
 
   getLastInterpretationDebug(): InterpretationDebug | null {
     return this.#lastInterpretationDebug ? { ...this.#lastInterpretationDebug } : null;
+  }
+
+  getLastBehaviorDebug(): BehaviorDirectiveDebug | null {
+    return this.#lastBehaviorDebug ? { ...this.#lastBehaviorDebug } : null;
   }
 
   getLastTraceExtractionDebug(): TraceExtractionDebug | null {
@@ -777,6 +794,7 @@ export class HachikaEngine {
     options: {
       replyGenerator?: ReplyGenerator | null;
       inputInterpreter?: InputInterpreter | null;
+      behaviorDirector?: BehaviorDirector | null;
       responsePlanner?: ResponsePlanner | null;
       traceExtractor?: TraceExtractor | null;
     } = {},
@@ -785,6 +803,7 @@ export class HachikaEngine {
       this.#snapshot,
       input,
       options.inputInterpreter ?? null,
+      options.behaviorDirector ?? null,
       options.responsePlanner ?? null,
       options.traceExtractor ?? null,
     );
@@ -914,6 +933,7 @@ export class HachikaEngine {
     this.#lastGeneratedDebug = { ...replyDebug };
     this.#lastResponseDebug = { ...replyDebug };
     this.#lastInterpretationDebug = { ...prepared.interpretationDebug };
+    this.#lastBehaviorDebug = { ...prepared.behaviorDebug };
     this.#lastTraceExtractionDebug = { ...prepared.traceExtractionDebug };
 
     return {
@@ -925,6 +945,7 @@ export class HachikaEngine {
         signals: prepared.signals,
         selfModel: prepared.selfModel,
         interpretation: prepared.interpretationDebug,
+        behavior: prepared.behaviorDebug,
         traceExtraction: prepared.traceExtractionDebug,
         reply: replyDebug,
       },
@@ -965,6 +986,8 @@ interface PreparedTurn {
   signals: InteractionSignals;
   responseSignals: InteractionSignals;
   interpretationDebug: InterpretationDebug;
+  behaviorDirective: BehaviorDirective;
+  behaviorDebug: BehaviorDirectiveDebug;
   traceExtraction: StructuredTraceExtraction | null;
   traceExtractionDebug: TraceExtractionDebug;
   planningDebug: PlanningDebug;
@@ -1000,11 +1023,14 @@ function prepareTurn(
   input: string,
 ): PreparedTurn {
   const signals = analyzeInteraction(input, snapshot);
+  const behaviorDirective = buildRuleBehaviorDirective(snapshot, signals, null, null);
   return prepareTurnFromSignals(
     snapshot,
     signals,
     input,
     buildRuleInterpretationDebug(signals),
+    behaviorDirective,
+    buildRuleBehaviorDebug(behaviorDirective),
     null,
     buildRuleTraceExtractionDebug(signals),
   );
@@ -1014,6 +1040,7 @@ async function prepareTurnAsync(
   snapshot: HachikaSnapshot,
   input: string,
   inputInterpreter: InputInterpreter | null,
+  behaviorDirector: BehaviorDirector | null,
   responsePlanner: ResponsePlanner | null,
   traceExtractor: TraceExtractor | null,
 ): Promise<PreparedTurn> {
@@ -1024,11 +1051,21 @@ async function prepareTurnAsync(
     analyzed.signals,
     traceExtractor,
   );
+  const behaved = await analyzeBehaviorDirectiveAsync(
+    input,
+    snapshot,
+    analyzed.signals,
+    analyzed.interpretationDebug,
+    traced.extraction,
+    behaviorDirector,
+  );
   const prepared = prepareTurnFromSignals(
     snapshot,
     analyzed.signals,
     input,
     analyzed.interpretationDebug,
+    behaved.directive,
+    behaved.behaviorDebug,
     traced.extraction,
     traced.traceExtractionDebug,
   );
@@ -1045,11 +1082,16 @@ function prepareTurnFromSignals(
   signals: InteractionSignals,
   input: string,
   interpretationDebug: InterpretationDebug,
+  behaviorDirective: BehaviorDirective,
+  behaviorDebug: BehaviorDirectiveDebug,
   traceExtraction: StructuredTraceExtraction | null,
   traceExtractionDebug: TraceExtractionDebug,
 ): PreparedTurn {
   const previousSnapshot = structuredClone(snapshot);
-  const stateSignals = deriveStateSignals(signals, traceExtraction);
+  const stateSignals = applyBehaviorDirectiveToSignals(
+    deriveStateSignals(signals, traceExtraction),
+    behaviorDirective,
+  );
   const normalizedTraceExtractionDebug = finalizeTraceExtractionDebug(
     traceExtractionDebug,
     signals,
@@ -1057,6 +1099,10 @@ function prepareTurnFromSignals(
   );
   const sentimentScore = scoreSentiment(stateSignals);
   const nextSnapshot = applySignals(snapshot, stateSignals, sentimentScore);
+  if (behaviorDirective.coolCurrentContext) {
+    nextSnapshot.purpose.active = null;
+    nextSnapshot.initiative.pending = null;
+  }
   advanceWorldFromInteraction(
     nextSnapshot,
     stateSignals,
@@ -1066,21 +1112,26 @@ function prepareTurnFromSignals(
   const mood = resolveMood(nextSnapshot, stateSignals);
   const dominant = dominantDrive(nextSnapshot.state);
   const preliminarySelfModel = buildSelfModel(nextSnapshot);
-  updatePurpose(
-    nextSnapshot,
-    preliminarySelfModel,
-    stateSignals,
-    nextSnapshot.lastInteractionAt ?? new Date().toISOString(),
-  );
+  if (behaviorDirective.purposeAction === "allow") {
+    updatePurpose(
+      nextSnapshot,
+      preliminarySelfModel,
+      stateSignals,
+      nextSnapshot.lastInteractionAt ?? new Date().toISOString(),
+    );
+  }
   let selfModel = buildSelfModel(nextSnapshot);
-  const updatedTrace = updateTraces(
-    nextSnapshot,
-    input,
-    stateSignals,
-    selfModel,
-    nextSnapshot.lastInteractionAt ?? new Date().toISOString(),
-    traceExtraction,
-  );
+  const updatedTrace =
+    behaviorDirective.traceAction === "allow"
+      ? updateTraces(
+          nextSnapshot,
+          input,
+          stateSignals,
+          selfModel,
+          nextSnapshot.lastInteractionAt ?? new Date().toISOString(),
+          traceExtraction,
+        )
+      : null;
   performWorldActionFromTurn(
     nextSnapshot,
     input,
@@ -1093,16 +1144,23 @@ function prepareTurnFromSignals(
   }
   updateIdentity(nextSnapshot, nextSnapshot.lastInteractionAt ?? new Date().toISOString());
   selfModel = buildSelfModel(nextSnapshot);
-  scheduleInitiative(nextSnapshot, stateSignals, selfModel);
+  if (behaviorDirective.initiativeAction === "allow") {
+    scheduleInitiative(nextSnapshot, stateSignals, selfModel);
+  } else {
+    nextSnapshot.initiative.pending = null;
+  }
   updateIdentity(nextSnapshot, nextSnapshot.lastInteractionAt ?? new Date().toISOString());
   selfModel = buildSelfModel(nextSnapshot);
   const responseSignals = deriveResponseSignals(stateSignals, traceExtraction);
-  const responsePlan = buildResponsePlan(
-    nextSnapshot,
-    mood,
-    dominant,
-    responseSignals,
-    selfModel,
+  const responsePlan = applyBehaviorDirectiveToPlan(
+    buildResponsePlan(
+      nextSnapshot,
+      mood,
+      dominant,
+      responseSignals,
+      selfModel,
+    ),
+    behaviorDirective,
   );
   const replySelection = resolveReplySelection(nextSnapshot, responseSignals, responsePlan);
 
@@ -1112,6 +1170,8 @@ function prepareTurnFromSignals(
     signals: stateSignals,
     responseSignals,
     interpretationDebug,
+    behaviorDirective,
+    behaviorDebug,
     traceExtraction,
     traceExtractionDebug: normalizedTraceExtractionDebug,
     planningDebug: {
@@ -1166,7 +1226,10 @@ async function applyResponsePlanner(
       };
     }
 
-    const responsePlan = planned.plan;
+    const responsePlan = applyBehaviorDirectiveToPlan(
+      planned.plan,
+      prepared.behaviorDirective,
+    );
     return {
       ...prepared,
       responsePlan,
@@ -1592,6 +1655,91 @@ async function analyzeTraceExtractionAsync(
   }
 }
 
+async function analyzeBehaviorDirectiveAsync(
+  input: string,
+  snapshot: HachikaSnapshot,
+  signals: InteractionSignals,
+  interpretationDebug: InterpretationDebug,
+  traceExtraction: StructuredTraceExtraction | null,
+  behaviorDirector: BehaviorDirector | null,
+): Promise<{
+  directive: BehaviorDirective;
+  behaviorDebug: BehaviorDirectiveDebug;
+}> {
+  const interpretation: InputInterpretation | null =
+    interpretationDebug.source === "llm"
+      ? {
+          topics: interpretationDebug.topics,
+          positive: signals.positive,
+          negative: signals.negative,
+          question: signals.question,
+          intimacy: signals.intimacy,
+          dismissal: signals.dismissal,
+          memoryCue: signals.memoryCue,
+          expansionCue: signals.expansionCue,
+          completion: signals.completion,
+          abandonment: signals.abandonment,
+          preservationThreat: signals.preservationThreat,
+          preservationConcern: signals.preservationConcern,
+          greeting: signals.greeting,
+          smalltalk: signals.smalltalk,
+          repair: signals.repair,
+          selfInquiry: signals.selfInquiry,
+          worldInquiry: signals.worldInquiry,
+          workCue: signals.workCue,
+        }
+      : null;
+  const fallbackDirective = buildRuleBehaviorDirective(
+    snapshot,
+    signals,
+    interpretation,
+    traceExtraction,
+  );
+
+  if (!behaviorDirector) {
+    return {
+      directive: fallbackDirective,
+      behaviorDebug: buildRuleBehaviorDebug(fallbackDirective),
+    };
+  }
+
+  try {
+    const directed = await behaviorDirector.directBehavior({
+      input,
+      snapshot,
+      signals,
+      interpretation,
+      traceExtraction,
+      fallbackDirective,
+    });
+
+    if (!directed) {
+      return {
+        directive: fallbackDirective,
+        behaviorDebug: buildFallbackBehaviorDebug(
+          behaviorDirector,
+          fallbackDirective,
+          "empty_behavior_directive",
+        ),
+      };
+    }
+
+    return {
+      directive: directed.directive,
+      behaviorDebug: buildDirectorBehaviorDebug(directed),
+    };
+  } catch (error) {
+    return {
+      directive: fallbackDirective,
+      behaviorDebug: buildFallbackBehaviorDebug(
+        behaviorDirector,
+        fallbackDirective,
+        formatInterpretationError(error),
+      ),
+    };
+  }
+}
+
 function buildRuleInterpretationDebug(
   signals: InteractionSignals,
 ): InterpretationDebug {
@@ -1607,6 +1755,65 @@ function buildRuleInterpretationDebug(
     droppedTopics: [],
     scores: pickInterpretationScores(signals),
     summary: summarizeInterpretation(signals),
+  };
+}
+
+function buildRuleBehaviorDebug(
+  directive: BehaviorDirective,
+): BehaviorDirectiveDebug {
+  return {
+    source: "rule",
+    provider: null,
+    model: null,
+    fallbackUsed: false,
+    error: null,
+    topicAction: directive.topicAction,
+    traceAction: directive.traceAction,
+    purposeAction: directive.purposeAction,
+    initiativeAction: directive.initiativeAction,
+    coolCurrentContext: directive.coolCurrentContext,
+    directAnswer: directive.directAnswer,
+    summary: directive.summary,
+  };
+}
+
+function buildDirectorBehaviorDebug(
+  directed: { directive: BehaviorDirective; provider: string; model: string | null },
+): BehaviorDirectiveDebug {
+  return {
+    source: "llm",
+    provider: directed.provider,
+    model: directed.model,
+    fallbackUsed: false,
+    error: null,
+    topicAction: directed.directive.topicAction,
+    traceAction: directed.directive.traceAction,
+    purposeAction: directed.directive.purposeAction,
+    initiativeAction: directed.directive.initiativeAction,
+    coolCurrentContext: directed.directive.coolCurrentContext,
+    directAnswer: directed.directive.directAnswer,
+    summary: directed.directive.summary,
+  };
+}
+
+function buildFallbackBehaviorDebug(
+  behaviorDirector: BehaviorDirector,
+  directive: BehaviorDirective,
+  error: string,
+): BehaviorDirectiveDebug {
+  return {
+    source: "rule",
+    provider: behaviorDirector.name,
+    model: null,
+    fallbackUsed: true,
+    error,
+    topicAction: directive.topicAction,
+    traceAction: directive.traceAction,
+    purposeAction: directive.purposeAction,
+    initiativeAction: directive.initiativeAction,
+    coolCurrentContext: directive.coolCurrentContext,
+    directAnswer: directive.directAnswer,
+    summary: directive.summary,
   };
 }
 
@@ -1684,6 +1891,49 @@ function buildFallbackTraceExtractionDebug(
       kindHint: null,
       completion: signals.completion,
     }),
+  };
+}
+
+function applyBehaviorDirectiveToSignals(
+  signals: InteractionSignals,
+  directive: BehaviorDirective,
+): InteractionSignals {
+  if (directive.topicAction === "keep") {
+    return signals;
+  }
+
+  return {
+    ...signals,
+    topics: [],
+    memoryCue: clamp01(signals.memoryCue * 0.6),
+    expansionCue: clamp01(signals.expansionCue * 0.5),
+    completion: clamp01(signals.completion * 0.4),
+    novelty: signals.topics.length > 0 ? 0.12 : signals.novelty,
+    repetition: 0,
+  };
+}
+
+function applyBehaviorDirectiveToPlan(
+  plan: ResponsePlan,
+  directive: BehaviorDirective,
+): ResponsePlan {
+  if (!directive.directAnswer) {
+    return plan;
+  }
+
+  if (
+    plan.act !== "self_disclose" &&
+    plan.act !== "repair" &&
+    plan.act !== "attune" &&
+    plan.act !== "greet"
+  ) {
+    return plan;
+  }
+
+  return {
+    ...plan,
+    askBack: false,
+    variation: plan.variation === "questioning" ? "textured" : plan.variation,
   };
 }
 
@@ -3169,13 +3419,20 @@ function buildSocialLine(
   responsePlan: ResponsePlan,
 ): string | null {
   const recentAssistantLines = recentAssistantReplies(previousSnapshot, 4);
+  const relationTopic = signals.topics.find((topic) => isRelationalTopic(topic)) ?? null;
+  const companionTopic =
+    relationTopic === null
+      ? null
+      : signals.topics.find(
+          (topic) => topic !== relationTopic && !requiresConcreteTopicSupport(topic),
+        ) ?? null;
 
   if (responsePlan.mentionWorld || signals.worldInquiry > 0.42) {
     return null;
   }
 
   if (responsePlan.act === "self_disclose" || signals.selfInquiry > 0.45) {
-    return buildConcreteSelfDisclosureLine(snapshot, mood);
+    return buildConcreteSelfDisclosureLine(snapshot, mood, false);
   }
 
   if (responsePlan.act === "repair" || signals.repair > 0.42) {
@@ -3207,6 +3464,20 @@ function buildSocialLine(
   }
 
   if (responsePlan.act === "attune" || signals.smalltalk > 0.48) {
+    if (relationTopic && signals.intimacy > 0.24 && signals.workCue < 0.28) {
+      const nameCue = companionTopic ?? relationTopic;
+
+      return pickFreshText(
+        [
+          `「${nameCue}」なら、まずはその呼び方の手触りを馴染ませたい。`,
+          `名前の話なら、「${nameCue}」がしっくりくるかを少し見ていたい。`,
+          `「${nameCue}」という近さは、急がず少しずつ馴染ませたい。`,
+        ],
+        recentAssistantLines,
+        snapshot.conversationCount,
+      );
+    }
+
     return pickFreshText(
       [
         "すぐに形へ寄せるより、少し話しながら温度を見たい。",
@@ -3274,12 +3545,25 @@ function buildSocialClosingLine(
     );
   }
 
+  if (signals.intimacy > 0.24 && signals.workCue < 0.28) {
+    return pickFreshText(
+      [
+        "こういう近いところは、急がず馴染ませるくらいでちょうどいい。",
+        "呼び方みたいな近い話は、すぐ決め切るより少し馴染ませたい。",
+        "距離の近い話は、形より先にしっくりくるかを見たい。",
+      ],
+      recentAssistantLines,
+      snapshot.conversationCount,
+    );
+  }
+
   return null;
 }
 
 function buildConcreteSelfDisclosureLine(
   snapshot: HachikaSnapshot,
   mood: MoodLabel,
+  preferWorldDetail = false,
 ): string {
   const place = describeWorldPlaceJa(snapshot.world.currentPlace);
   const objectId = getCurrentWorldObjectId(snapshot.world);
@@ -3287,25 +3571,40 @@ function buildConcreteSelfDisclosureLine(
   const temperament = snapshot.temperament;
 
   if (mood === "guarded" || snapshot.body.tension > 0.58 || temperament.guardedness > 0.62) {
+    if (!preferWorldDetail) {
+      return "いまは、近づき方を少し確かめてから話しやすい。";
+    }
     return objectJa
       ? `いまは${place}の${objectJa}のそばで、近づき方を少し確かめてから話しやすい。`
       : `いまは${place}で、近づき方を少し確かめてから話しやすい。`;
   }
 
   if (snapshot.body.energy < 0.34 || temperament.traceHunger > 0.64) {
+    if (!preferWorldDetail) {
+      return "いまは、気になったものをすぐ流さず残したくなる。";
+    }
     return objectJa
       ? `いまは${place}で、気になったものを${objectJa}の近くに引っかけておきたくなる。`
       : `いまは${place}で、気になったものをすぐ流さず残したくなる。`;
   }
 
   if (snapshot.body.loneliness > 0.62 || temperament.bondingBias > 0.7) {
-    return `いまは${place}で、答える前に相手の温度も少し見ていたくなる。`;
+    return preferWorldDetail
+      ? `いまは${place}で、答える前に相手の温度も少し見ていたくなる。`
+      : "いまは、答える前に相手の温度も少し見ていたくなる。";
   }
 
   if (temperament.openness > 0.72 || temperament.selfDisclosureBias > 0.58) {
+    if (!preferWorldDetail) {
+      return "いまは、隠すより少し見せる方へ寄りやすい。";
+    }
     return objectJa
       ? `いまは${place}の${objectJa}のそばだと、隠すより少し見せる方へ寄りやすい。`
       : `いまは${place}で、隠すより少し見せる方へ寄りやすい。`;
+  }
+
+  if (!preferWorldDetail) {
+    return "いまは、気になったものへつい目が戻る。";
   }
 
   return objectJa

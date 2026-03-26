@@ -1,5 +1,6 @@
 import { clamp01 } from "./state.js";
 import {
+  isRelationalTopic,
   isMeaningfulTopic,
   requiresConcreteTopicSupport,
   topicsLooselyMatch,
@@ -575,6 +576,19 @@ function shouldCreateTrace(
       signals.selfInquiry,
       signals.worldInquiry,
     ) >= 0.38;
+  const actionableStructuredSignal = hasActionableStructuredWorkSignal(extraction);
+  const relationTurn =
+    signals.intimacy >= 0.24 &&
+    signals.workCue < 0.28 &&
+    signals.expansionCue < 0.18 &&
+    signals.completion < 0.18 &&
+    signals.topics.some((candidate) => isRelationalTopic(candidate));
+  const softSocialTurn =
+    socialTurn &&
+    signals.memoryCue < 0.12 &&
+    signals.expansionCue < 0.18 &&
+    signals.completion < 0.18 &&
+    signals.workCue < 0.28;
   const worldOnlyTurn =
     signals.worldInquiry >= 0.42 &&
     signals.workCue < 0.35 &&
@@ -586,6 +600,22 @@ function shouldCreateTrace(
     signals.dismissal < 0.18;
 
   if (worldOnlyTurn) {
+    return false;
+  }
+
+  if (
+    (softSocialTurn || relationTurn) &&
+    isRelationalTopic(topic) &&
+    !actionableStructuredSignal
+  ) {
+    return false;
+  }
+
+  if (
+    softSocialTurn &&
+    !actionableStructuredSignal &&
+    (snapshot.topicCounts[topic] ?? 0) < 2
+  ) {
     return false;
   }
 
@@ -714,6 +744,17 @@ function selectTraceKind(
   extraction: StructuredTraceExtraction | null = null,
 ): TraceKind {
   const effectiveCompletion = Math.max(signals.completion, extraction?.completion ?? 0);
+  const softSocialTurn =
+    signals.negative < 0.18 &&
+    signals.dismissal < 0.18 &&
+    signals.workCue < 0.28 &&
+    signals.expansionCue < 0.18 &&
+    signals.completion < 0.18 &&
+    Math.max(signals.greeting, signals.smalltalk, signals.repair, signals.selfInquiry) >= 0.38;
+
+  if (softSocialTurn) {
+    return signals.memoryCue > 0.1 ? "continuity_marker" : "note";
+  }
 
   if (extraction?.kindHint === "decision" && effectiveCompletion > 0.18) {
     return "decision";
@@ -1626,6 +1667,17 @@ function hasStructuredTraceSignal(
     (extraction?.decisions.length ?? 0) > 0 ||
     (extraction?.memo.length ?? 0) > 0 ||
     (extraction?.completion ?? 0) > 0.12
+  );
+}
+
+function hasActionableStructuredWorkSignal(
+  extraction: StructuredTraceExtraction | null,
+): boolean {
+  return (
+    (extraction?.blockers.length ?? 0) > 0 ||
+    (extraction?.nextSteps.length ?? 0) > 0 ||
+    (extraction?.decisions.length ?? 0) > 0 ||
+    (extraction?.completion ?? 0) > 0.18
   );
 }
 

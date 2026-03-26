@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import type { BehaviorDirector } from "./behavior-director.js";
 import { HachikaEngine } from "./engine.js";
 import type { InputInterpreter } from "./input-interpreter.js";
 import type { ResponsePlanner } from "./response-planner.js";
@@ -1571,7 +1572,28 @@ test("self inquiry does not immediately collapse into a self-referential work tr
   assert.notEqual(result.snapshot.purpose.active?.topic, "ハチカ");
   assert.equal(result.snapshot.identity.anchors.includes("ハチカ"), false);
   assert.doesNotMatch(result.reply, /輪郭|固まりきって|完全に定まって/);
-  assert.match(result.reply, /threshold|灯り|慎重|残した|温度|寄りやすい|目が戻る/);
+  assert.match(result.reply, /慎重|残した|温度|寄りやすい|目が戻る|近づき方/);
+  assert.equal(/[?？]$/.test(result.reply.trim()), false);
+});
+
+test("early naming turn stays relational instead of becoming trace work immediately", () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+
+  const result = engine.respond("あなたの名前はハチカ。覚えてね。");
+
+  assert.equal(result.snapshot.traces["名前"], undefined);
+  assert.equal(result.snapshot.purpose.active?.kind, "deepen_relation");
+  assert.match(result.reply, /名前|ハチカ/);
+});
+
+test("self introduction request answers directly before asking anything back", () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+
+  const result = engine.respond("じゃあ自己紹介してみて");
+
+  assert.equal(result.debug.reply.plan?.includes("self_disclose") ?? false, true);
+  assert.equal(/[?？]$/.test(result.reply.trim()), false);
+  assert.match(result.reply, /いまは|自分|寄りやすい|目が戻る|近づき方|温度/);
 });
 
 test("world inquiry does not keep ambient world topics in live state without concrete support", () => {
@@ -1846,7 +1868,7 @@ test("self-model surfaces curiosity and relation conflict", () => {
 
   assert.equal(conflict?.kind, "curiosity_relation");
   assert.equal(conflict?.dominant, "deepen_relation");
-  assert.match(result.reply, /関係の輪郭|踏み込む/);
+  assert.match(result.reply, /関係|手触り|踏み込む/);
 });
 
 test("self-model can keep a topic while surfacing boundary conflict", () => {
@@ -2124,8 +2146,79 @@ test("respondAsync drops interpreter-proposed abstract self topics on pure self 
   assert.equal(result.snapshot.topicCounts["存在"], undefined);
   assert.equal(result.snapshot.preferences["存在"], undefined);
   assert.equal(result.snapshot.traces["存在"], undefined);
-  assert.ok(result.debug.interpretation.topics.includes("存在"));
-  assert.ok(result.debug.interpretation.droppedTopics.includes("存在"));
+  assert.ok(
+    result.debug.interpretation.localTopics.includes("存在") ||
+      result.debug.interpretation.droppedTopics.includes("存在"),
+  );
+  assert.equal(result.debug.interpretation.topics.includes("存在"), false);
+});
+
+test("respondAsync lets behavior director keep relation turns out of trace and initiative hardening", async () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+
+  const behaviorDirector: BehaviorDirector = {
+    name: "test-behavior",
+    async directBehavior() {
+      return {
+        provider: "test-behavior",
+        model: "stub",
+        directive: {
+          topicAction: "keep",
+          traceAction: "suppress",
+          purposeAction: "allow",
+          initiativeAction: "suppress",
+          coolCurrentContext: false,
+          directAnswer: false,
+          summary: "topics:keep/trace:suppress/purpose:allow/initiative:suppress",
+        },
+      };
+    },
+  };
+
+  const result = await engine.respondAsync("あなたの名前はハチカ。覚えてね。", {
+    behaviorDirector,
+  });
+
+  assert.equal(result.debug.behavior.source, "llm");
+  assert.equal(result.debug.behavior.traceAction, "suppress");
+  assert.equal(result.debug.behavior.initiativeAction, "suppress");
+  assert.equal(result.snapshot.traces["名前"], undefined);
+  assert.equal(result.snapshot.initiative.pending, null);
+  assert.equal(result.snapshot.purpose.active?.kind, "deepen_relation");
+});
+
+test("respondAsync lets behavior director cool current context on topic shift turns", async () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+  engine.respond("仕様の境界が未定で曖昧だ。どう整理する？");
+
+  const behaviorDirector: BehaviorDirector = {
+    name: "test-behavior",
+    async directBehavior() {
+      return {
+        provider: "test-behavior",
+        model: "stub",
+        directive: {
+          topicAction: "clear",
+          traceAction: "suppress",
+          purposeAction: "suppress",
+          initiativeAction: "suppress",
+          coolCurrentContext: true,
+          directAnswer: true,
+          summary: "topics:clear/trace:suppress/purpose:suppress/initiative:suppress/cool:on/direct:on",
+        },
+      };
+    },
+  };
+
+  const result = await engine.respondAsync("別の話をしよう。最近何を気にしてる？", {
+    behaviorDirector,
+  });
+
+  assert.equal(result.debug.behavior.source, "llm");
+  assert.equal(result.debug.behavior.coolCurrentContext, true);
+  assert.deepEqual(result.debug.signals.topics, []);
+  assert.equal(result.snapshot.purpose.active, null);
+  assert.equal(result.snapshot.initiative.pending, null);
 });
 
 test("respondAsync can forward interpreted reply selection into the llm payload", async () => {

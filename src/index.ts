@@ -3,6 +3,10 @@ import { resolve } from "node:path";
 import { stdin as input, stdout as output } from "node:process";
 
 import { describeArtifactFiles, syncArtifacts } from "./artifacts.js";
+import {
+  createBehaviorDirectorFromEnv,
+  describeBehaviorDirector,
+} from "./behavior-director.js";
 import { runWithConflictRetry } from "./conflict-retry.js";
 import { HachikaEngine } from "./engine.js";
 import { loadDotEnv } from "./env.js";
@@ -55,6 +59,7 @@ const snapshot = await loadSnapshot(snapshotPath);
 const engine = new HachikaEngine(snapshot);
 const replyGenerator = createReplyGeneratorFromEnv();
 const inputInterpreter = createInputInterpreterFromEnv();
+const behaviorDirector = createBehaviorDirectorFromEnv();
 const responsePlanner = createResponsePlannerFromEnv();
 const traceExtractor = createTraceExtractorFromEnv();
 
@@ -203,10 +208,11 @@ try {
 
     const replyResult = await runWithEngineConflictRetry(engine, {
       operate: () =>
-        replyGenerator || inputInterpreter || responsePlanner || traceExtractor
+        replyGenerator || inputInterpreter || behaviorDirector || responsePlanner || traceExtractor
           ? engine.respondAsync(text, {
               replyGenerator,
               inputInterpreter,
+              behaviorDirector,
               responsePlanner,
               traceExtractor,
             })
@@ -236,11 +242,13 @@ async function printIntro(currentEngine: HachikaEngine): Promise<void> {
   console.log(`identity:${currentEngine.getIdentity().summary}`);
   console.log(`reply:${describeReplyGenerator(replyGenerator)}`);
   console.log(`interpret:${describeInputInterpreter(inputInterpreter)}`);
+  console.log(`behavior:${describeBehaviorDirector(behaviorDirector)}`);
   console.log(`planner:${describeResponsePlanner(responsePlanner)}`);
   console.log(`trace:${describeTraceExtractor(traceExtractor)}`);
   console.log(`loop:${formatResidentLoopStatus(loadResidentLoopStatusSync(residentStatusPath))}`);
   console.log(`last reply:${formatLastReplyDebug(currentEngine)}`);
   console.log(`last interpretation:${formatInterpretationDebug(currentEngine.getLastInterpretationDebug())}`);
+  console.log(`last behavior:${formatBehaviorDebug(currentEngine.getLastBehaviorDebug())}`);
   console.log(`last trace:${formatTraceExtractionDebug(currentEngine.getLastTraceExtractionDebug())}`);
   console.log(`activity:${currentEngine.getSnapshot().initiative.history.length}`);
   console.log(`artifacts:${describeArtifactFiles(currentEngine.getSnapshot(), artifactsDir).length}`);
@@ -324,11 +332,13 @@ function printTemperament(currentEngine: HachikaEngine): void {
 function printReplyGeneratorStatus(): void {
   console.log(`reply:${describeReplyGenerator(replyGenerator)}`);
   console.log(`interpret:${describeInputInterpreter(inputInterpreter)}`);
+  console.log(`behavior:${describeBehaviorDirector(behaviorDirector)}`);
   console.log(`planner:${describeResponsePlanner(responsePlanner)}`);
   console.log(`trace:${describeTraceExtractor(traceExtractor)}`);
   console.log(`loop:${formatResidentLoopStatus(loadResidentLoopStatusSync(residentStatusPath))}`);
   console.log(`last reply:${formatLastReplyDebug(engine)}`);
   console.log(`last interpretation:${formatInterpretationDebug(engine.getLastInterpretationDebug())}`);
+  console.log(`last behavior:${formatBehaviorDebug(engine.getLastBehaviorDebug())}`);
   console.log(`last trace:${formatTraceExtractionDebug(engine.getLastTraceExtractionDebug())}`);
   console.log(`last response:${formatGeneratedDebug(engine.getLastResponseDebug())}`);
   console.log(`last proactive:${formatGeneratedDebug(engine.getLastProactiveDebug())}`);
@@ -548,12 +558,14 @@ function printDebug(currentEngine: HachikaEngine): void {
   console.log(`attachment: ${snapshot.attachment.toFixed(2)}`);
   console.log(`world: ${formatWorldSummary(snapshot.world)}`);
   console.log(`reply generator: ${describeReplyGenerator(replyGenerator)}`);
+  console.log(`behavior director: ${describeBehaviorDirector(behaviorDirector)}`);
   console.log(`response planner: ${describeResponsePlanner(responsePlanner)}`);
   console.log(`trace extractor: ${describeTraceExtractor(traceExtractor)}`);
   console.log(`input interpreter: ${describeInputInterpreter(inputInterpreter)}`);
   console.log(`resident loop: ${formatResidentLoopStatus(loadResidentLoopStatusSync(residentStatusPath))}`);
   console.log(`last reply: ${formatLastReplyDebug(currentEngine)}`);
   console.log(`last interpretation: ${formatInterpretationDebug(currentEngine.getLastInterpretationDebug())}`);
+  console.log(`last behavior: ${formatBehaviorDebug(currentEngine.getLastBehaviorDebug())}`);
   console.log(`last trace extraction: ${formatTraceExtractionDebug(currentEngine.getLastTraceExtractionDebug())}`);
   console.log(`last response: ${formatGeneratedDebug(currentEngine.getLastResponseDebug())}`);
   console.log(`last proactive: ${formatGeneratedDebug(currentEngine.getLastProactiveDebug())}`);
@@ -990,6 +1002,23 @@ function formatInterpretationDebug(
   const scores = formatInterpretationScores(debug.scores);
 
   return `${debug.source}${via}${model}${fallback}${error} ${debug.summary}${scores}${localTopics}${topics}${adopted}${dropped}`;
+}
+
+function formatBehaviorDebug(
+  debug: ReturnType<HachikaEngine["getLastBehaviorDebug"]>,
+): string {
+  if (!debug) {
+    return "none";
+  }
+
+  const via = debug.provider ? ` via:${debug.provider}` : "";
+  const model = debug.model ? ` model:${debug.model}` : "";
+  const fallback = debug.fallbackUsed ? " fallback" : "";
+  const error = debug.error ? ` error:${debug.error}` : "";
+  const cool = debug.coolCurrentContext ? " cool:on" : "";
+  const direct = debug.directAnswer ? " direct:on" : "";
+
+  return `${debug.source}${via}${model}${fallback}${error} ${debug.summary} topics:${debug.topicAction} trace:${debug.traceAction} purpose:${debug.purposeAction} initiative:${debug.initiativeAction}${cool}${direct}`;
 }
 
 function formatTraceExtractionDebug(

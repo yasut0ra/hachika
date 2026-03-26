@@ -420,9 +420,25 @@ export interface TurnResult {
     signals: InteractionSignals;
     selfModel: SelfModel;
     interpretation: InterpretationDebug;
+    behavior: BehaviorDirectiveDebug;
     traceExtraction: TraceExtractionDebug;
     reply: GeneratedTextDebug;
   };
+}
+
+export interface BehaviorDirectiveDebug {
+  source: "rule" | "llm";
+  provider: string | null;
+  model: string | null;
+  fallbackUsed: boolean;
+  error: string | null;
+  topicAction: "keep" | "clear";
+  traceAction: "allow" | "suppress";
+  purposeAction: "allow" | "suppress";
+  initiativeAction: "allow" | "suppress";
+  coolCurrentContext: boolean;
+  directAnswer: boolean;
+  summary: string;
 }
 
 export interface InterpretationDebug {

@@ -1,4 +1,8 @@
-import { requiresConcreteTopicSupport } from "./memory.js";
+import {
+  isRelationalTopic,
+  isSelfReferentialTopic,
+  requiresConcreteTopicSupport,
+} from "./memory.js";
 import { clamp01 } from "./state.js";
 import type {
   ActivePurpose,
@@ -14,7 +18,7 @@ export function updatePurpose(
   signals: InteractionSignals,
   timestamp = new Date().toISOString(),
 ): void {
-  const candidate = selectPurposeCandidate(selfModel.topMotives);
+  const candidate = selectPurposeCandidate(selfModel.topMotives, signals);
   const boundaryCandidate =
     selfModel.topMotives.find((motive) => motive.kind === "protect_boundary") ?? null;
   const active = snapshot.purpose.active;
@@ -126,8 +130,37 @@ export function updatePurpose(
 
 function selectPurposeCandidate(
   motives: readonly SelfMotive[],
+  signals: InteractionSignals,
 ): SelfMotive | null {
   const viable = motives.filter((motive) => motive.score >= 0.44);
+  const relationOverride =
+    signals.intimacy >= 0.24 &&
+    signals.workCue < 0.2 &&
+    signals.expansionCue < 0.12 &&
+    signals.completion < 0.12 &&
+    signals.topics.length > 0 &&
+    signals.topics.some((topic) => isRelationalTopic(topic)) &&
+    signals.topics.every(
+      (topic) => isRelationalTopic(topic) || isSelfReferentialTopic(topic),
+    );
+
+  if (relationOverride) {
+    const relationCandidate =
+      viable.find(
+        (motive) =>
+          motive.kind === "deepen_relation" &&
+          (motive.topic === null ||
+            isRelationalTopic(motive.topic) ||
+            signals.topics.includes(motive.topic)),
+      ) ?? null;
+
+    if (relationCandidate && relationCandidate.score >= 0.38) {
+      return relationCandidate;
+    }
+
+    return null;
+  }
+
   const filtered = viable.filter(
     (motive) =>
       !motive.topic ||

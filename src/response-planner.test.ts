@@ -58,6 +58,7 @@ test("response planner prefers self disclosure for self inquiry", () => {
   assert.equal(plan.act, "self_disclose");
   assert.equal(plan.mentionIdentity, true);
   assert.equal(plan.mentionTrace, false);
+  assert.equal(plan.askBack, false);
 });
 
 test("response planner can surface the current world without dragging stale work focus in", () => {

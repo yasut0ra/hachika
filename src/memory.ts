@@ -182,12 +182,22 @@ const BROAD_ABSTRACT_TOPICS = new Set([
 const SELF_REFERENTIAL_TOPICS = new Set([
   "自分",
   "自己",
+  "自己紹介",
   "identity",
   "アイデンティティ",
   "今の目的",
   "目的",
   "ハチカ",
   "hachika",
+]);
+
+const RELATIONAL_TOPICS = new Set([
+  "名前",
+  "呼び方",
+  "呼び名",
+  "あだ名",
+  "マスター",
+  "自己紹介",
 ]);
 
 export function extractTopics(text: string): string[] {
@@ -676,6 +686,11 @@ export function isSelfReferentialTopic(topic: string): boolean {
 
 export function requiresConcreteTopicSupport(topic: string): boolean {
   return isBroadAbstractTopic(topic) || isSelfReferentialTopic(topic);
+}
+
+export function isRelationalTopic(topic: string): boolean {
+  const normalized = topic.normalize("NFKC").trim().toLowerCase();
+  return normalized.length > 0 && RELATIONAL_TOPICS.has(normalized);
 }
 
 export function topicsLooselyMatch(left: string, right: string | null | undefined): boolean {

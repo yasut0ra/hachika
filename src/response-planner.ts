@@ -6,6 +6,7 @@ import type {
   PendingInitiative,
   SelfModel,
 } from "./types.js";
+import { isRelationalTopic } from "./memory.js";
 import { readTraceLifecycle, sortedTraces } from "./traces.js";
 import type { TraceMaintenance } from "./traces.js";
 import { summarizeWorldForPrompt } from "./world.js";
@@ -376,6 +377,12 @@ export function buildResponsePlan(
 ): ResponsePlan {
   const topMotive = selfModel.topMotives[0] ?? null;
   const socialTurn = isSocialTurnSignals(signals);
+  const relationTurn =
+    signals.intimacy >= 0.24 &&
+    signals.workCue < 0.28 &&
+    signals.expansionCue < 0.18 &&
+    signals.completion < 0.18 &&
+    signals.topics.some((topic) => isRelationalTopic(topic));
   const temperament = snapshot.temperament;
   const clarifyReady =
     signals.question > 0.24 &&
@@ -403,6 +410,10 @@ export function buildResponsePlan(
   const repairReady =
     signals.repair > 0.42 ||
     (signals.repair > 0.28 && temperament.bondingBias > 0.62 && temperament.guardedness < 0.56);
+  const directSelfAnswerReady =
+    !worldDisclosureReady &&
+    selfDisclosureReady &&
+    signals.selfInquiry > 0.45;
 
   let act: ResponseAct;
   if (signals.negative > 0.2 || signals.dismissal > 0.16) {
@@ -419,6 +430,8 @@ export function buildResponsePlan(
     act = "explore";
   } else if (signals.greeting > 0.45) {
     act = "greet";
+  } else if (relationTurn) {
+    act = "attune";
   } else if (socialTurn) {
     act = "attune";
   } else if (
@@ -446,6 +459,7 @@ export function buildResponsePlan(
         signals.negative < 0.18 &&
         signals.dismissal < 0.18) ||
       act === "greet" ||
+      relationTurn ||
       act === "repair" ||
       act === "self_disclose" ||
       clarifyReady ||
@@ -502,17 +516,14 @@ export function buildResponsePlan(
   const askBack =
     act === "explore" ||
     clarifyReady ||
-    (act === "attune" && signals.smalltalk > 0.48 && signals.question < 0.2) ||
-    (act === "self_disclose" &&
-      temperament.openness > 0.62 &&
-      temperament.selfDisclosureBias > 0.48);
+    (act === "attune" && signals.smalltalk > 0.48 && signals.question < 0.2);
   const variation =
     clarifyReady
       ? "questioning"
       : act === "greet" || act === "repair" || act === "attune"
       ? "brief"
       : act === "explore" ||
-          (act === "self_disclose" && temperament.openness > 0.66)
+          (act === "self_disclose" && temperament.openness > 0.66 && !directSelfAnswerReady)
         ? "questioning"
         : "textured";
 
@@ -579,6 +590,16 @@ export function normalizePlannedResponsePlan(
 }
 
 export function isSocialTurnSignals(signals: InteractionSignals): boolean {
+  if (
+    signals.intimacy >= 0.24 &&
+    signals.workCue < 0.28 &&
+    signals.expansionCue < 0.18 &&
+    signals.completion < 0.18 &&
+    signals.topics.some((topic) => isRelationalTopic(topic))
+  ) {
+    return true;
+  }
+
   if (
     signals.abandonment >= 0.28 &&
     signals.workCue < 0.35 &&
