@@ -1983,6 +1983,46 @@ test("respondAsync can use an external reply generator while keeping local state
   assert.ok(result.snapshot.attachment > before.attachment);
 });
 
+test("respondAsync retries llm wording once when the first reply stays too close to fallback", async () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+  const attempts: ReplyGenerationContext[] = [];
+
+  const replyGenerator: ReplyGenerator = {
+    name: "test-llm",
+    async generateReply(context) {
+      attempts.push(context);
+      if (attempts.length === 1) {
+        return {
+          reply: "境界の流れだけを見ていたい。落ち着いて向き合いたい。",
+          provider: "test-llm",
+          model: "stub",
+        };
+      }
+      return {
+        reply: "仕様の境界は、机の上で残す範囲と切り分ける範囲を先に分けたい。",
+        provider: "test-llm",
+        model: "stub",
+      };
+    },
+  };
+
+  const result = await engine.respondAsync("仕様の境界が未定で曖昧だ。どう整理する？", {
+    replyGenerator,
+  });
+
+  assert.equal(attempts.length, 2);
+  assert.equal(attempts[0]?.retryAttempt, undefined);
+  assert.equal(attempts[1]?.retryAttempt, 2);
+  assert.ok((attempts[1]?.retryFeedback ?? []).length > 0);
+  assert.equal(
+    result.reply,
+    "仕様の境界は、机の上で残す範囲と切り分ける範囲を先に分けたい。",
+  );
+  assert.equal(result.debug.reply.source, "llm");
+  assert.equal(result.debug.reply.retryAttempts, 2);
+  assert.equal(engine.getLastReplyDebug()?.retryAttempts, 2);
+});
+
 test("respondAsync can use an input interpreter to keep greetings non-topical and record dropped local topics", async () => {
   const engine = new HachikaEngine(createInitialSnapshot());
 
@@ -2609,6 +2649,50 @@ test("emitInitiativeAsync can use an external generator for proactive wording", 
   assert.equal(engine.getLastReplyDebug()?.source, "llm");
   assert.equal(engine.getLastReplyDebug()?.provider, "test-llm");
   assert.ok((engine.getLastReplyDebug()?.plan ?? "").length > 0);
+});
+
+test("emitInitiativeAsync retries llm proactive wording once when the first draft hugs the fallback", async () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+  const attempts: ProactiveGenerationContext[] = [];
+
+  engine.respond("設計を記録として残したい。");
+  engine.rewindIdleHours(8);
+
+  const replyGenerator: ReplyGenerator = {
+    name: "test-llm",
+    async generateReply() {
+      return null;
+    },
+    async generateProactive(context) {
+      attempts.push(context);
+      if (attempts.length === 1) {
+        return {
+          reply: `${context.fallbackMessage} そのまま見ていたい。`,
+          provider: "test-llm",
+          model: "stub",
+        };
+      }
+      return {
+        reply: "まだ切れていない。studio の机で「設計」を一つ形にして残したい。",
+        provider: "test-llm",
+        model: "stub",
+      };
+    },
+  };
+
+  const message = await engine.emitInitiativeAsync({ replyGenerator });
+
+  assert.equal(attempts.length, 2);
+  assert.equal(attempts[0]?.retryAttempt, undefined);
+  assert.equal(attempts[1]?.retryAttempt, 2);
+  assert.ok((attempts[1]?.retryFeedback ?? []).length > 0);
+  assert.equal(
+    message,
+    "まだ切れていない。studio の机で「設計」を一つ形にして残したい。",
+  );
+  assert.equal(engine.getLastReplyDebug()?.source, "llm");
+  assert.equal(engine.getLastReplyDebug()?.retryAttempts, 2);
+  assert.equal(engine.getLastProactiveDebug()?.retryAttempts, 2);
 });
 
 test("emitInitiativeAsync falls back to rule wording when proactive generation fails", async () => {

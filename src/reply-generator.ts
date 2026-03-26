@@ -62,6 +62,8 @@ export interface ReplyGenerationContext {
   responsePlan: ResponsePlan;
   replySelection: ReplySelectionDebug;
   fallbackReply: string;
+  retryAttempt?: number;
+  retryFeedback?: string[];
 }
 
 export interface ProactiveGenerationContext {
@@ -74,6 +76,8 @@ export interface ProactiveGenerationContext {
   topics: string[];
   neglectLevel: number;
   fallbackMessage: string;
+  retryAttempt?: number;
+  retryFeedback?: string[];
 }
 
 interface CommonGenerationPayload {
@@ -393,6 +397,9 @@ export function buildOpenAIChatMessages(
       content: [
         "Compose a fresh Hachika reply from the payload below.",
         "The local engine is authoritative.",
+        payload.composition.styleNotes.some((note) => note.includes("前回"))
+          ? "This is a retry after a weak previous wording attempt. Follow the correction notes closely."
+          : "This is the first wording attempt.",
         "Treat fallbackReply as a semantic checksum only. Do not preserve its sentence order or wording skeleton unless absolutely necessary.",
         "Use composition.intentSummary, composition.mustMention, composition.optionalDetails, composition.avoidTopics, and composition.styleNotes as the main brief.",
         "Use responsePlan as the primary guide for stance, distance, and act.",
@@ -426,6 +433,9 @@ export function buildOpenAIProactiveMessages(
       content: [
         "Compose a fresh Hachika proactive utterance from the payload below.",
         "The local engine is authoritative.",
+        payload.composition.styleNotes.some((note) => note.includes("前回"))
+          ? "This is a retry after a weak previous wording attempt. Follow the correction notes closely."
+          : "This is the first wording attempt.",
         "Treat fallbackMessage as a semantic checksum only. Do not preserve its sentence order or wording skeleton unless absolutely necessary.",
         "Use composition.intentSummary, composition.mustMention, composition.optionalDetails, composition.avoidTopics, and composition.styleNotes as the main brief.",
         "Use proactivePlan as the primary guide for stance, distance, act, and emphasis.",
@@ -674,6 +684,7 @@ function summarizeProactiveIntent(
 
 function buildReplyStyleNotes(context: ReplyGenerationContext): string[] {
   return uniqueNonEmpty([
+    ...(context.retryFeedback ?? []),
     "fallback の語順をなぞらず、新しく言い直す",
     "抽象ラベルだけで済ませず、可能なら具体的な手触りを混ぜる",
     context.responsePlan.act === "self_disclose"
@@ -688,6 +699,7 @@ function buildReplyStyleNotes(context: ReplyGenerationContext): string[] {
 
 function buildProactiveStyleNotes(context: ProactiveGenerationContext): string[] {
   return uniqueNonEmpty([
+    ...(context.retryFeedback ?? []),
     "fallback の語順をなぞらず、新しく言い直す",
     "能動発話として、言い訳より動機を先に出す",
     context.pending.place ? "必要なら場所の気配をひとつ混ぜる" : null,

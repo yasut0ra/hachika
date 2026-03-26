@@ -68,6 +68,11 @@ export interface RecentGenerationQualitySummary {
   styleNotes: string[];
 }
 
+export interface GenerationRetryDecision {
+  shouldRetry: boolean;
+  notes: string[];
+}
+
 export function evaluateGeneratedTextQuality(options: {
   text: string;
   fallbackText: string;
@@ -148,6 +153,69 @@ export function summarizeRecentGenerationQuality(
       openerEchoRate,
       focusMentionRate,
     }),
+  };
+}
+
+export function scoreGeneratedTextQuality(
+  quality: GeneratedTextQuality,
+): number {
+  const focusScore =
+    quality.focusMentioned === null ? 0.11 : quality.focusMentioned ? 0.11 : 0;
+  const openerScore = quality.openerEcho ? 0 : 0.11;
+
+  return roundQuality(
+    (1 - quality.fallbackOverlap) * 0.28 +
+      (1 - quality.abstractTermRatio) * 0.22 +
+      quality.concreteDetailScore * 0.28 +
+      focusScore +
+      openerScore,
+  );
+}
+
+export function decideGenerationRetry(options: {
+  quality: GeneratedTextQuality;
+  primaryFocus?: string | null;
+  mode: "reply" | "proactive";
+  socialTurn?: boolean;
+}): GenerationRetryDecision {
+  const notes: string[] = [];
+  const { quality } = options;
+
+  if (quality.fallbackOverlap >= 0.72) {
+    notes.push("前回は fallback の構文に寄りすぎたので、今回は文の骨格を組み直す");
+  }
+
+  if (quality.openerEcho) {
+    notes.push("前回と出だしが近いので、今回は切り出しを変える");
+  }
+
+  if (quality.abstractTermRatio >= 0.18 && quality.concreteDetailScore <= 0.28) {
+    notes.push("前回は抽象的すぎたので、今回は場所・物・作業・次の一歩のどれかを一つ具体的に入れる");
+  }
+
+  if (
+    options.primaryFocus &&
+    quality.focusMentioned === false &&
+    !options.socialTurn
+  ) {
+    notes.push("primary focus は一度だけ自然に明示する");
+  }
+
+  if (
+    options.socialTurn &&
+    quality.abstractTermRatio >= 0.14 &&
+    quality.concreteDetailScore <= 0.24
+  ) {
+    notes.push("社会的な返答では抽象的な自己説明より、近づき方や温度を具体的に言う");
+  }
+
+  if (options.mode === "proactive" && quality.concreteDetailScore <= 0.22) {
+    notes.push("能動発話では動機か場所か対象を一つ具体的に入れる");
+  }
+
+  return {
+    shouldRetry: notes.length > 0,
+    notes,
   };
 }
 

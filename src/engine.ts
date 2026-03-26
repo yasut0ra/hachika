@@ -22,7 +22,11 @@ import {
 import type { ProactiveEmission } from "./initiative.js";
 import { applyBodyFromSignals } from "./body.js";
 import { updateIdentity } from "./identity.js";
-import { evaluateGeneratedTextQuality } from "./generation-quality.js";
+import {
+  decideGenerationRetry,
+  evaluateGeneratedTextQuality,
+  scoreGeneratedTextQuality,
+} from "./generation-quality.js";
 import type {
   InputInterpretation,
   InputInterpretationResult,
@@ -41,6 +45,7 @@ import type {
 } from "./response-planner.js";
 import type {
   ProactiveGenerationContext,
+  ReplyGenerationResult,
   ReplyGenerationContext,
   ReplyGenerator,
 } from "./reply-generator.js";
@@ -630,19 +635,28 @@ export class HachikaEngine {
     }
 
     try {
-      const generated = await replyGenerator.generateProactive(
-        buildProactiveGenerationContext(previousSnapshot, nextSnapshot, emission),
-      );
-      const message = normalizeReplyCandidate(generated?.reply) ?? fallbackMessage;
+      const generated = await generateTextWithQualityGate({
+        generate: (retry) =>
+          replyGenerator.generateProactive!(
+            buildProactiveGenerationContext(previousSnapshot, nextSnapshot, emission, retry),
+          ),
+        fallbackText: fallbackMessage,
+        previousSnapshot,
+        primaryFocus: emission.selection.focusTopic ?? emission.pending.topic ?? null,
+        mode: "proactive",
+        socialTurn: false,
+        providerName: replyGenerator.name,
+      });
+      const message = generated.text;
 
       return this.#finalizeProactiveEmission(previousSnapshot, nextSnapshot, message, emission.topics, {
         mode: "proactive",
         source: message === fallbackMessage ? "rule" : "llm",
-        provider: generated?.provider ?? replyGenerator.name,
-        model: generated?.model ?? null,
-        retryAttempts: 1,
-        fallbackUsed: message === fallbackMessage,
-        error: message === fallbackMessage ? "empty_reply" : null,
+        provider: generated.provider,
+        model: generated.model,
+        retryAttempts: generated.retryAttempts,
+        fallbackUsed: generated.fallbackUsed,
+        error: generated.error,
         plan: emission.plan.summary,
         plannerRulePlan: null,
         plannerDiff: null,
@@ -653,12 +667,7 @@ export class HachikaEngine {
         plannerError: null,
         selection: null,
         proactiveSelection: emission.selection,
-        quality: evaluateGeneratedTextQuality({
-          text: message,
-          fallbackText: fallbackMessage,
-          previousSnapshot,
-          primaryFocus: emission.selection.focusTopic ?? emission.pending.topic ?? null,
-        }),
+        quality: generated.quality,
       });
     } catch (error) {
       return this.#finalizeProactiveEmission(previousSnapshot, nextSnapshot, fallbackMessage, emission.topics, {
@@ -821,19 +830,28 @@ export class HachikaEngine {
     }
 
     try {
-      const generated = await replyGenerator.generateReply(
-        buildReplyGenerationContext(input, prepared, fallbackReply),
-      );
-      const reply = normalizeReplyCandidate(generated?.reply) ?? fallbackReply;
+      const generated = await generateTextWithQualityGate({
+        generate: (retry) =>
+          replyGenerator.generateReply(
+            buildReplyGenerationContext(input, prepared, fallbackReply, retry),
+          ),
+        fallbackText: fallbackReply,
+        previousSnapshot: prepared.previousSnapshot,
+        primaryFocus: prepared.replySelection.debug.currentTopic ?? null,
+        mode: "reply",
+        socialTurn: prepared.replySelection.debug.socialTurn,
+        providerName: replyGenerator.name,
+      });
+      const reply = generated.text;
 
       return this.#finalizeTurn(input, prepared, reply, {
         mode: "reply",
         source: reply === fallbackReply ? "rule" : "llm",
-        provider: generated?.provider ?? replyGenerator.name,
-        model: generated?.model ?? null,
-        retryAttempts: 1,
-        fallbackUsed: reply === fallbackReply,
-        error: reply === fallbackReply ? "empty_reply" : null,
+        provider: generated.provider,
+        model: generated.model,
+        retryAttempts: generated.retryAttempts,
+        fallbackUsed: generated.fallbackUsed,
+        error: generated.error,
         plan: prepared.responsePlan.summary,
         plannerRulePlan: prepared.planningDebug.rulePlan,
         plannerDiff: prepared.planningDebug.diff,
@@ -844,12 +862,7 @@ export class HachikaEngine {
         plannerError: prepared.planningDebug.error,
         selection: prepared.replySelection.debug,
         proactiveSelection: null,
-        quality: evaluateGeneratedTextQuality({
-          text: reply,
-          fallbackText: fallbackReply,
-          previousSnapshot: prepared.previousSnapshot,
-          primaryFocus: prepared.replySelection.debug.currentTopic,
-        }),
+        quality: generated.quality,
       });
     } catch (error) {
       return this.#finalizeTurn(input, prepared, fallbackReply, {
@@ -1192,6 +1205,10 @@ function buildReplyGenerationContext(
   input: string,
   prepared: PreparedTurn,
   fallbackReply: string,
+  retry?: {
+    attempt: number;
+    feedback: string[];
+  },
 ): ReplyGenerationContext {
   return {
     input,
@@ -1204,6 +1221,12 @@ function buildReplyGenerationContext(
     responsePlan: prepared.responsePlan,
     replySelection: prepared.replySelection.debug,
     fallbackReply,
+    ...(retry
+      ? {
+          retryAttempt: retry.attempt,
+          retryFeedback: retry.feedback,
+        }
+      : {}),
   };
 }
 
@@ -1251,6 +1274,10 @@ function buildProactiveGenerationContext(
   previousSnapshot: HachikaSnapshot,
   nextSnapshot: HachikaSnapshot,
   emission: ProactiveEmission,
+  retry?: {
+    attempt: number;
+    feedback: string[];
+  },
 ): ProactiveGenerationContext {
   return {
     previousSnapshot,
@@ -1262,6 +1289,12 @@ function buildProactiveGenerationContext(
     topics: emission.topics,
     neglectLevel: emission.neglectLevel,
     fallbackMessage: emission.message,
+    ...(retry
+      ? {
+          retryAttempt: retry.attempt,
+          retryFeedback: retry.feedback,
+        }
+      : {}),
   };
 }
 
@@ -1280,6 +1313,113 @@ function formatReplyGenerationError(error: unknown): string {
   }
 
   return "reply_generation_failed";
+}
+
+interface GeneratedTextAttempt {
+  text: string;
+  provider: string | null;
+  model: string | null;
+  fallbackUsed: boolean;
+  error: string | null;
+  quality: ReturnType<typeof evaluateGeneratedTextQuality>;
+  retryAttempts: number;
+}
+
+async function generateTextWithQualityGate(options: {
+  generate: (retry?: { attempt: number; feedback: string[] }) => Promise<ReplyGenerationResult | null>;
+  fallbackText: string;
+  previousSnapshot: HachikaSnapshot;
+  primaryFocus: string | null;
+  mode: "reply" | "proactive";
+  socialTurn: boolean;
+  providerName: string;
+}): Promise<GeneratedTextAttempt> {
+  const first = await options.generate();
+  const firstText = normalizeReplyCandidate(first?.reply) ?? options.fallbackText;
+  const firstFallbackUsed = firstText === options.fallbackText;
+  const firstQuality = evaluateGeneratedTextQuality({
+    text: firstText,
+    fallbackText: options.fallbackText,
+    previousSnapshot: options.previousSnapshot,
+    primaryFocus: options.primaryFocus,
+  });
+
+  const baseAttempt: GeneratedTextAttempt = {
+    text: firstText,
+    provider: first?.provider ?? options.providerName,
+    model: first?.model ?? null,
+    fallbackUsed: firstFallbackUsed,
+    error: firstFallbackUsed ? "empty_reply" : null,
+    quality: firstQuality,
+    retryAttempts: 1,
+  };
+
+  if (firstFallbackUsed) {
+    return baseAttempt;
+  }
+
+  const retry = decideGenerationRetry({
+    quality: firstQuality,
+    primaryFocus: options.primaryFocus,
+    mode: options.mode,
+    socialTurn: options.socialTurn,
+  });
+
+  if (!retry.shouldRetry) {
+    return baseAttempt;
+  }
+
+  try {
+    const second = await options.generate({
+      attempt: 2,
+      feedback: retry.notes,
+    });
+    if (!second) {
+      return {
+        ...baseAttempt,
+        retryAttempts: 2,
+      };
+    }
+    const secondText = normalizeReplyCandidate(second?.reply);
+
+    if (!secondText) {
+      return {
+        ...baseAttempt,
+        retryAttempts: 2,
+      };
+    }
+
+    const secondQuality = evaluateGeneratedTextQuality({
+      text: secondText,
+      fallbackText: options.fallbackText,
+      previousSnapshot: options.previousSnapshot,
+      primaryFocus: options.primaryFocus,
+    });
+    const firstScore = scoreGeneratedTextQuality(firstQuality);
+    const secondScore = scoreGeneratedTextQuality(secondQuality);
+
+    if (secondScore > firstScore + 0.03) {
+      return {
+        text: secondText,
+        provider: second.provider ?? options.providerName,
+        model: second.model ?? null,
+        fallbackUsed: false,
+        error: null,
+        quality: secondQuality,
+        retryAttempts: 2,
+      };
+    }
+
+    return {
+      ...baseAttempt,
+      retryAttempts: 2,
+    };
+  } catch {
+    return {
+      ...baseAttempt,
+      retryAttempts: 2,
+    };
+  }
 }
 
 function formatInterpretationError(error: unknown): string {
