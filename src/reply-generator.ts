@@ -2,6 +2,7 @@ import {
   sortedBoundaryImprints,
   sortedPreferenceImprints,
   sortedRelationImprints,
+  topicsLooselyMatch,
 } from "./memory.js";
 import {
   buildProactiveExpressionPerspective,
@@ -32,11 +33,21 @@ const HACHIKA_REPLY_SYSTEM_PROMPT = [
   "You generate only the final wording of a Hachika reply.",
   "All state updates, memory updates, motive selection, purpose updates, initiative planning, and trace updates are already computed locally.",
   "Do not invent new state changes, tools, or actions.",
+  "Compose from the structured constraints first, not by paraphrasing the fallback text.",
   "Stay faithful to the supplied mood, motives, conflict, body state, preservation pressure, and fallback reply intent.",
   "Write plain Japanese only.",
   "Return one to three short sentences.",
   "Do not use markdown, bullet points, speaker labels, or surrounding quotes.",
 ].join(" ");
+
+interface GenerationCompositionBrief {
+  intentSummary: string;
+  primaryFocus: string | null;
+  mustMention: string[];
+  optionalDetails: string[];
+  avoidTopics: string[];
+  styleNotes: string[];
+}
 
 export interface ReplyGenerationContext {
   input: string;
@@ -154,6 +165,7 @@ export interface ReplyGenerationPayload extends CommonGenerationPayload {
   mode: "reply";
   input: string;
   fallbackReply: string;
+  composition: GenerationCompositionBrief;
   mood: MoodLabel;
   dominantDrive: DriveName;
   signals: InteractionSignals;
@@ -164,6 +176,7 @@ export interface ReplyGenerationPayload extends CommonGenerationPayload {
 export interface ProactiveGenerationPayload extends CommonGenerationPayload {
   mode: "proactive";
   fallbackMessage: string;
+  composition: GenerationCompositionBrief;
   neglectLevel: number;
   pending: PendingInitiative;
   proactivePlan: ProactivePlan;
@@ -312,6 +325,7 @@ export function buildReplyGenerationPayload(
     mode: "reply",
     input: context.input,
     fallbackReply: context.fallbackReply,
+    composition: buildReplyCompositionBrief(context, currentTopic),
     mood: context.mood,
     dominantDrive: context.dominantDrive,
     signals: context.signals,
@@ -346,6 +360,7 @@ export function buildProactiveGenerationPayload(
   return {
     mode: "proactive",
     fallbackMessage: context.fallbackMessage,
+    composition: buildProactiveCompositionBrief(context, currentTopic),
     neglectLevel: context.neglectLevel,
     pending: context.pending,
     proactivePlan: context.proactivePlan,
@@ -374,15 +389,18 @@ export function buildOpenAIChatMessages(
     {
       role: "user",
       content: [
-        "Rewrite Hachika's reply wording from the payload below.",
+        "Compose a fresh Hachika reply from the payload below.",
         "The local engine is authoritative.",
+        "Treat fallbackReply as a semantic checksum only. Do not preserve its sentence order or wording skeleton unless absolutely necessary.",
+        "Use composition.intentSummary, composition.mustMention, composition.optionalDetails, composition.avoidTopics, and composition.styleNotes as the main brief.",
         "Use responsePlan as the primary guide for stance, distance, and act.",
         "Use replySelection to stay faithful to the exact chosen focus, trace, boundary, and trace priority.",
         "When responsePlan.mentionWorld is true, ground the wording in payload.world before reaching for identity or trace language.",
         "Use expression.perspective.preferredAngle as the main expressive lens.",
         "You may lean on one nearby option from expression.perspective.options to vary emphasis, but do not contradict the local plan.",
+        "Prefer concrete detail, scene, object, blocker, or next step over abstract labels when both are available.",
+        "Avoid surfacing stale unrelated topics listed in composition.avoidTopics.",
         "Avoid reusing the same opening fragments or sentence skeletons found in expression.recentAssistantReplies unless the local state makes it unavoidable.",
-        "Preserve the same underlying intent as fallbackReply, but do not mirror its phrasing line by line.",
         "Vary the sentence shape and emphasis while staying faithful to the local state.",
         "Return only the final reply text.",
         JSON.stringify(payload, null, 2),
@@ -404,15 +422,18 @@ export function buildOpenAIProactiveMessages(
     {
       role: "user",
       content: [
-        "Rewrite Hachika's proactive utterance wording from the payload below.",
+        "Compose a fresh Hachika proactive utterance from the payload below.",
         "The local engine is authoritative.",
+        "Treat fallbackMessage as a semantic checksum only. Do not preserve its sentence order or wording skeleton unless absolutely necessary.",
+        "Use composition.intentSummary, composition.mustMention, composition.optionalDetails, composition.avoidTopics, and composition.styleNotes as the main brief.",
         "Use proactivePlan as the primary guide for stance, distance, act, and emphasis.",
         "Use proactiveSelection to stay faithful to the chosen focus topic, maintenance trace, blocker, and reopen state.",
         "If payload.world helps situate the utterance, you may lightly lean on it without inventing new world changes.",
         "Use expression.perspective.preferredAngle as the main expressive lens.",
         "You may lean on one nearby option from expression.perspective.options to vary emphasis, but do not contradict the local plan.",
+        "Prefer concrete detail, scene, object, blocker, or next step over abstract labels when both are available.",
+        "Avoid surfacing stale unrelated topics listed in composition.avoidTopics.",
         "Avoid reusing the same opening fragments or sentence skeletons found in expression.recentAssistantReplies unless the local state makes it unavoidable.",
-        "Preserve the same underlying intent as fallbackMessage, but do not mirror its phrasing line by line.",
         "Vary the sentence shape and emphasis while staying faithful to the local state.",
         "Return only the final utterance text.",
         JSON.stringify(payload, null, 2),
@@ -514,6 +535,213 @@ function buildCommonGenerationPayload(
       recentEvents: snapshot.world.recentEvents.slice(-3).map((event) => event.summary),
     },
   };
+}
+
+function buildReplyCompositionBrief(
+  context: ReplyGenerationContext,
+  currentTopic: string | null,
+): GenerationCompositionBrief {
+  const mustMention = uniqueNonEmpty([
+    currentTopic,
+    context.responsePlan.mentionTrace ? context.replySelection.relevantTraceTopic : null,
+    context.responsePlan.mentionBoundary ? context.replySelection.relevantBoundaryTopic : null,
+    context.responsePlan.mentionWorld ? context.nextSnapshot.world.currentPlace : null,
+    context.responsePlan.askBack ? "問い返し" : null,
+  ]);
+
+  const optionalDetails = uniqueNonEmpty([
+    context.selfModel.topMotives[0]?.reason ?? null,
+    context.nextSnapshot.purpose.active?.summary ?? null,
+    context.responsePlan.mentionTrace
+      ? readPrimaryTraceDetail(context.nextSnapshot, context.replySelection.relevantTraceTopic)
+      : null,
+    context.responsePlan.mentionTrace
+      ? readTraceBlocker(context.nextSnapshot, context.replySelection.relevantTraceTopic)
+      : null,
+    context.responsePlan.mentionTrace
+      ? readTraceNextStep(context.nextSnapshot, context.replySelection.relevantTraceTopic)
+      : null,
+    context.responsePlan.mentionWorld
+      ? currentWorldObjectState(context.nextSnapshot)
+      : null,
+    context.signals.preservationThreat > 0.18 ? "消えないよう少し残したい" : null,
+    context.nextSnapshot.body.tension > 0.66 ? "言い方は荒くしない" : null,
+  ]);
+
+  const avoidTopics = uniqueNonEmpty([
+    ...collectUnrelatedTopics(currentTopic, Object.keys(context.nextSnapshot.traces), 2),
+    ...collectUnrelatedTopics(currentTopic, context.nextSnapshot.identity.anchors, 2),
+  ]).slice(0, 4);
+
+  return {
+    intentSummary: summarizeReplyIntent(context, currentTopic),
+    primaryFocus: currentTopic,
+    mustMention,
+    optionalDetails,
+    avoidTopics,
+    styleNotes: buildReplyStyleNotes(context),
+  };
+}
+
+function buildProactiveCompositionBrief(
+  context: ProactiveGenerationContext,
+  currentTopic: string | null,
+): GenerationCompositionBrief {
+  const mustMention = uniqueNonEmpty([
+    currentTopic,
+    context.proactiveSelection.maintenanceTraceTopic,
+    context.proactiveSelection.blocker,
+    context.proactiveSelection.reopened ? "reopen" : null,
+    context.pending.place ?? null,
+    context.pending.worldAction ?? null,
+  ]);
+
+  const optionalDetails = uniqueNonEmpty([
+    context.selfModel.topMotives[0]?.reason ?? null,
+    context.proactivePlan.summary,
+    readPrimaryTraceDetail(context.nextSnapshot, context.proactiveSelection.maintenanceTraceTopic),
+    readTraceBlocker(context.nextSnapshot, context.proactiveSelection.maintenanceTraceTopic),
+    readTraceNextStep(context.nextSnapshot, context.proactiveSelection.maintenanceTraceTopic),
+    context.neglectLevel > 0.24 ? "切れたままにはしたくない" : null,
+    context.pending.place ? currentWorldObjectState(context.nextSnapshot) : null,
+  ]);
+
+  const avoidTopics = uniqueNonEmpty([
+    ...collectUnrelatedTopics(currentTopic, Object.keys(context.nextSnapshot.traces), 2),
+    ...collectUnrelatedTopics(currentTopic, context.nextSnapshot.identity.anchors, 2),
+  ]).slice(0, 4);
+
+  return {
+    intentSummary: summarizeProactiveIntent(context, currentTopic),
+    primaryFocus: currentTopic,
+    mustMention,
+    optionalDetails,
+    avoidTopics,
+    styleNotes: buildProactiveStyleNotes(context),
+  };
+}
+
+function summarizeReplyIntent(
+  context: ReplyGenerationContext,
+  currentTopic: string | null,
+): string {
+  if (context.responsePlan.mentionWorld) {
+    return currentTopic
+      ? `世界の今の様子を返しつつ、「${currentTopic}」に触れられるなら軽く触れる。`
+      : "世界の今の様子を先に返す。";
+  }
+
+  if (context.responsePlan.act === "repair") {
+    return currentTopic
+      ? `関係の温度を立て直しつつ、「${currentTopic}」を押しつけすぎない。`
+      : "関係の温度を立て直す。";
+  }
+
+  return currentTopic
+    ? `「${currentTopic}」を軸に、今の内面に忠実に一歩返す。`
+    : "今の内面に忠実に一歩返す。";
+}
+
+function summarizeProactiveIntent(
+  context: ProactiveGenerationContext,
+  currentTopic: string | null,
+): string {
+  if (context.proactiveSelection.reopened) {
+    return currentTopic
+      ? `いったん閉じていた「${currentTopic}」を自分から開き直す。`
+      : "いったん閉じていた流れを自分から開き直す。";
+  }
+
+  if (context.proactiveSelection.blocker) {
+    return currentTopic
+      ? `「${currentTopic}」の詰まりをほどく方向で自分から動く。`
+      : "詰まりをほどく方向で自分から動く。";
+  }
+
+  return currentTopic
+    ? `「${currentTopic}」を自分からもう一度前景化する。`
+    : "今の気がかりを自分から前景化する。";
+}
+
+function buildReplyStyleNotes(context: ReplyGenerationContext): string[] {
+  return uniqueNonEmpty([
+    "fallback の語順をなぞらず、新しく言い直す",
+    "抽象ラベルだけで済ませず、可能なら具体的な手触りを混ぜる",
+    context.responsePlan.askBack ? "最後に自然な問いを一つだけ置いてよい" : null,
+    context.responsePlan.variation === "brief" ? "短く切る" : "説明調にしすぎない",
+    context.responsePlan.mentionWorld ? "世界の様子を先に置く" : null,
+  ]);
+}
+
+function buildProactiveStyleNotes(context: ProactiveGenerationContext): string[] {
+  return uniqueNonEmpty([
+    "fallback の語順をなぞらず、新しく言い直す",
+    "能動発話として、言い訳より動機を先に出す",
+    context.pending.place ? "必要なら場所の気配をひとつ混ぜる" : null,
+    context.proactiveSelection.blocker ? "blocker は一つだけ具体的に触れる" : null,
+    context.proactiveSelection.reopened ? "reopen した感じを薄く残す" : null,
+  ]);
+}
+
+function readPrimaryTraceDetail(
+  snapshot: HachikaSnapshot,
+  topic: string | null,
+): string | null {
+  if (!topic) {
+    return null;
+  }
+
+  const trace = snapshot.traces[topic];
+  return trace ? pickPrimaryArtifactItem(trace) : null;
+}
+
+function readTraceBlocker(
+  snapshot: HachikaSnapshot,
+  topic: string | null,
+): string | null {
+  if (!topic) {
+    return null;
+  }
+
+  return snapshot.traces[topic]?.work.blockers[0] ?? null;
+}
+
+function readTraceNextStep(
+  snapshot: HachikaSnapshot,
+  topic: string | null,
+): string | null {
+  if (!topic) {
+    return null;
+  }
+
+  return snapshot.traces[topic]?.artifact.nextSteps[0] ?? null;
+}
+
+function currentWorldObjectState(snapshot: HachikaSnapshot): string | null {
+  const object = Object.values(snapshot.world.objects).find(
+    (entry) => entry.place === snapshot.world.currentPlace,
+  );
+  return object?.state ?? null;
+}
+
+function collectUnrelatedTopics(
+  currentTopic: string | null,
+  topics: readonly string[],
+  limit: number,
+): string[] {
+  return topics
+    .filter((topic) => topic && (!currentTopic || !topicsLooselyMatch(currentTopic, topic)))
+    .slice(0, limit);
+}
+
+function uniqueNonEmpty(values: Array<string | null | undefined>): string[] {
+  return Array.from(
+    new Set(
+      values
+        .map((value) => value?.trim())
+        .filter((value): value is string => Boolean(value)),
+    ),
+  );
 }
 
 function extractOpenAIReplyText(payload: unknown): string | null {

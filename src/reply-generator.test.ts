@@ -138,6 +138,11 @@ test("buildReplyGenerationPayload surfaces fallback intent and internal state su
   const payload = buildReplyGenerationPayload(context);
 
   assert.equal(payload.fallbackReply, context.fallbackReply);
+  assert.match(payload.composition.intentSummary, /設計/);
+  assert.equal(payload.composition.primaryFocus, "設計");
+  assert.ok(payload.composition.mustMention.includes("設計"));
+  assert.ok(payload.composition.optionalDetails.some((detail) => detail.includes("責務")));
+  assert.ok(payload.composition.styleNotes.some((note) => note.includes("fallback")));
   assert.equal(payload.currentTopic, "設計");
   assert.deepEqual(payload.expression.recentAssistantReplies, []);
   assert.deepEqual(payload.expression.avoidOpenings, []);
@@ -247,6 +252,10 @@ test("buildProactiveGenerationPayload surfaces pending initiative and fallback p
 
   assert.equal(payload.mode, "proactive");
   assert.equal(payload.fallbackMessage, context.fallbackMessage);
+  assert.match(payload.composition.intentSummary, /仕様/);
+  assert.equal(payload.composition.primaryFocus, "仕様");
+  assert.ok(payload.composition.mustMention.includes("責務が未定"));
+  assert.ok(payload.composition.styleNotes.some((note) => note.includes("blocker")));
   assert.deepEqual(payload.expression.recentAssistantReplies, []);
   assert.deepEqual(payload.expression.avoidOpenings, []);
   assert.equal(payload.expression.perspective.preferredAngle, "trace");
@@ -342,6 +351,8 @@ test("buildReplyGenerationPayload includes recent assistant replies as expressio
 
   const payload = buildReplyGenerationPayload(context);
 
+  assert.equal(payload.composition.primaryFocus, null);
+  assert.ok(payload.composition.styleNotes.some((note) => note.includes("短く")));
   assert.equal(payload.expression.recentAssistantReplies.length, 2);
   assert.equal(payload.expression.avoidOpenings[0], "まずはそのくらいの軽さでいい");
   assert.ok(payload.expression.perspective.options.length > 0);

@@ -285,6 +285,7 @@ Hachika は、単に有用なだけでなく、
 - OpenAI 互換の `reply generator` を env から有効化でき、local engine が決めた state / motive / purpose / traces を保ったまま通常応答と能動発話の wording だけを LLM に委譲できる
   - 通常応答では `responsePlan` を payload に含め、fallback 文面の言い換えだけでなく「どういう向きで返すか」も LLM に渡している
   - 通常応答ではさらに `replySelection` も payload に含め、どの topic / trace / boundary を参照して返しているかを LLM に共有している
+  - wording 直前にはさらに `composition` brief として `intentSummary / mustMention / optionalDetails / avoidTopics / styleNotes` も渡し、fallback 文の単純な言い換えではなく「何を守ってどう喋るか」から最終発話を組み立てやすくしている
   - world inquiry が立っているときは `payload.world` も渡し、LLM wording でも current place / phase / object state を自然に織り込みやすくしている
   - 能動発話でも `proactivePlan` を payload に含め、blocker を前に出すのか、reopen を前に出すのか、保存寄りに切り出すのかを LLM に共有している
   - `expression.recentAssistantReplies / avoidOpenings` も payload に含め、直近の言い回しや入り方をそのままなぞりにくくしている
