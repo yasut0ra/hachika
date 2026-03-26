@@ -10,6 +10,7 @@ import {
   recentAssistantOpenings,
   recentAssistantReplies,
 } from "./expression.js";
+import { summarizeRecentGenerationQuality } from "./generation-quality.js";
 import type { ProactivePlan, ResponsePlan } from "./response-planner.js";
 import { deriveTraceTendingMode, pickPrimaryArtifactItem, readTraceLifecycle, sortedTraces } from "./traces.js";
 import { summarizeWorldForPrompt } from "./world.js";
@@ -670,6 +671,7 @@ function buildReplyStyleNotes(context: ReplyGenerationContext): string[] {
     context.responsePlan.askBack ? "最後に自然な問いを一つだけ置いてよい" : null,
     context.responsePlan.variation === "brief" ? "短く切る" : "説明調にしすぎない",
     context.responsePlan.mentionWorld ? "世界の様子を先に置く" : null,
+    ...summarizeRecentGenerationQuality(context.previousSnapshot).styleNotes,
   ]);
 }
 
@@ -680,6 +682,7 @@ function buildProactiveStyleNotes(context: ProactiveGenerationContext): string[]
     context.pending.place ? "必要なら場所の気配をひとつ混ぜる" : null,
     context.proactiveSelection.blocker ? "blocker は一つだけ具体的に触れる" : null,
     context.proactiveSelection.reopened ? "reopen した感じを薄く残す" : null,
+    ...summarizeRecentGenerationQuality(context.previousSnapshot).styleNotes,
   ]);
 }
 

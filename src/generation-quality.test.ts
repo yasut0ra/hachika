@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { evaluateGeneratedTextQuality } from "./generation-quality.js";
+import {
+  evaluateGeneratedTextQuality,
+  summarizeRecentGenerationQuality,
+} from "./generation-quality.js";
 import { createInitialSnapshot } from "./state.js";
 
 test("evaluateGeneratedTextQuality tracks fallback overlap and opener echo", () => {
@@ -40,4 +43,32 @@ test("evaluateGeneratedTextQuality can see abstract-heavy wording with low concr
   assert.ok(quality.abstractTermRatio > 0.2);
   assert.ok(quality.concreteDetailScore < 0.3);
   assert.equal(quality.focusMentioned, null);
+});
+
+test("summarizeRecentGenerationQuality derives adaptive style notes from recent drift", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.generationHistory = [
+    {
+      timestamp: "2026-03-20T12:00:00.000Z",
+      mode: "reply",
+      source: "llm",
+      provider: "openai",
+      model: "gpt-5.4-mini",
+      fallbackUsed: true,
+      focus: "仕様",
+      fallbackOverlap: 0.72,
+      openerEcho: true,
+      abstractTermRatio: 0.22,
+      concreteDetailScore: 0.12,
+      focusMentioned: false,
+      summary: "overlap:0.72 abstract:0.22 concrete:0.12 echo:yes focus:no",
+    },
+  ];
+
+  const summary = summarizeRecentGenerationQuality(snapshot);
+
+  assert.equal(summary.count, 1);
+  assert.ok(summary.styleNotes.some((note) => note.includes("fallback 依存")));
+  assert.ok(summary.styleNotes.some((note) => note.includes("抽象語")));
+  assert.ok(summary.styleNotes.some((note) => note.includes("出だし")));
 });

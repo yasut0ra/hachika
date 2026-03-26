@@ -69,6 +69,23 @@ test("buildReplyGenerationPayload surfaces fallback intent and internal state su
     topics: ["設計"],
     sentiment: "positive",
   });
+  previousSnapshot.generationHistory = [
+    {
+      timestamp: "2026-03-19T11:50:00.000Z",
+      mode: "reply",
+      source: "llm",
+      provider: "openai",
+      model: "gpt-5.4-mini",
+      fallbackUsed: true,
+      focus: "設計",
+      fallbackOverlap: 0.68,
+      openerEcho: true,
+      abstractTermRatio: 0.19,
+      concreteDetailScore: 0.14,
+      focusMentioned: false,
+      summary: "overlap:0.68 abstract:0.19 concrete:0.14 echo:yes focus:no",
+    },
+  ];
 
   const context: ReplyGenerationContext = {
     input: "どうする？",
@@ -143,6 +160,7 @@ test("buildReplyGenerationPayload surfaces fallback intent and internal state su
   assert.ok(payload.composition.mustMention.includes("設計"));
   assert.ok(payload.composition.optionalDetails.some((detail) => detail.includes("責務")));
   assert.ok(payload.composition.styleNotes.some((note) => note.includes("fallback")));
+  assert.ok(payload.composition.styleNotes.some((note) => note.includes("抽象語")));
   assert.equal(payload.currentTopic, "設計");
   assert.deepEqual(payload.expression.recentAssistantReplies, []);
   assert.deepEqual(payload.expression.avoidOpenings, []);

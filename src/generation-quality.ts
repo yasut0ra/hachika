@@ -1,6 +1,6 @@
 import { openingSignature, recentAssistantOpenings } from "./expression.js";
 import { topicsLooselyMatch } from "./memory.js";
-import type { HachikaSnapshot } from "./types.js";
+import type { GenerationHistoryEntry, HachikaSnapshot } from "./types.js";
 
 const segmenter = new Intl.Segmenter("ja", { granularity: "word" });
 
@@ -57,6 +57,17 @@ export interface GeneratedTextQuality {
   summary: string;
 }
 
+export interface RecentGenerationQualitySummary {
+  count: number;
+  fallbackRate: number;
+  overlap: number;
+  abstractRatio: number;
+  concreteDetail: number;
+  openerEchoRate: number;
+  focusMentionRate: number | null;
+  styleNotes: string[];
+}
+
 export function evaluateGeneratedTextQuality(options: {
   text: string;
   fallbackText: string;
@@ -104,6 +115,42 @@ export function evaluateGeneratedTextQuality(options: {
   };
 }
 
+export function summarizeRecentGenerationQuality(
+  snapshot: HachikaSnapshot,
+  limit = 6,
+): RecentGenerationQualitySummary {
+  const history = snapshot.generationHistory.slice(-Math.max(1, limit));
+  const focusSamples = history.filter((entry) => entry.focusMentioned !== null);
+  const fallbackRate = averageHistoryMetric(history, (entry) => (entry.fallbackUsed ? 1 : 0));
+  const overlap = averageHistoryMetric(history, (entry) => entry.fallbackOverlap);
+  const abstractRatio = averageHistoryMetric(history, (entry) => entry.abstractTermRatio);
+  const concreteDetail = averageHistoryMetric(history, (entry) => entry.concreteDetailScore);
+  const openerEchoRate = averageHistoryMetric(history, (entry) => (entry.openerEcho ? 1 : 0));
+  const focusMentionRate =
+    focusSamples.length === 0
+      ? null
+      : averageHistoryMetric(focusSamples, (entry) => (entry.focusMentioned ? 1 : 0));
+
+  return {
+    count: history.length,
+    fallbackRate,
+    overlap,
+    abstractRatio,
+    concreteDetail,
+    openerEchoRate,
+    focusMentionRate,
+    styleNotes: deriveHistoryStyleNotes({
+      count: history.length,
+      fallbackRate,
+      overlap,
+      abstractRatio,
+      concreteDetail,
+      openerEchoRate,
+      focusMentionRate,
+    }),
+  };
+}
+
 function tokenize(text: string): string[] {
   return [...segmenter.segment(text)]
     .filter((segment) => segment.isWordLike)
@@ -127,4 +174,47 @@ function normalizeToken(token: string): string | null {
 
 function roundQuality(value: number): number {
   return Math.round(value * 1000) / 1000;
+}
+
+function averageHistoryMetric(
+  entries: GenerationHistoryEntry[],
+  read: (entry: GenerationHistoryEntry) => number,
+): number {
+  if (entries.length === 0) {
+    return 0;
+  }
+
+  return roundQuality(entries.reduce((sum, entry) => sum + read(entry), 0) / entries.length);
+}
+
+function deriveHistoryStyleNotes(
+  summary: Omit<RecentGenerationQualitySummary, "styleNotes">,
+): string[] {
+  if (summary.count === 0) {
+    return [];
+  }
+
+  const notes: string[] = [];
+
+  if (summary.overlap >= 0.58 || summary.fallbackRate >= 0.45) {
+    notes.push("最近は fallback 依存が強いので、今回は構文を借りすぎない");
+  }
+
+  if (summary.abstractRatio >= 0.16) {
+    notes.push("最近は抽象語が多いので、場所・物・作業・次の一歩のどれかを具体的に入れる");
+  }
+
+  if (summary.concreteDetail <= 0.26) {
+    notes.push("今回は固有の対象か具体的な断片を一つ以上入れる");
+  }
+
+  if (summary.openerEchoRate >= 0.34) {
+    notes.push("出だしは最近の言い回しから少し外す");
+  }
+
+  if (summary.focusMentionRate !== null && summary.focusMentionRate < 0.6) {
+    notes.push("primary focus は一度だけでも明示する");
+  }
+
+  return notes;
 }
