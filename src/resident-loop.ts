@@ -1,6 +1,6 @@
 import { HachikaEngine } from "./engine.js";
 import type { ReplyGenerator } from "./reply-generator.js";
-import type { HachikaSnapshot, InitiativeActivity } from "./types.js";
+import type { AutonomousFeedEntry, HachikaSnapshot, InitiativeActivity } from "./types.js";
 
 export interface ResidentLoopTickOptions {
   idleHours: number;
@@ -38,11 +38,15 @@ export async function runResidentLoopTick(
       })
     : engine.emitInitiative(options.now ? { now: options.now } : {});
   const nextSnapshot = engine.getSnapshot();
+  const activities = diffInitiativeHistory(beforeHistory, nextSnapshot.initiative.history ?? []);
+  if (proactiveMessage) {
+    appendResidentAutonomousMessage(nextSnapshot, proactiveMessage, activities);
+  }
 
   return {
     snapshot: nextSnapshot,
     proactiveMessage,
-    activities: diffInitiativeHistory(beforeHistory, nextSnapshot.initiative.history ?? []),
+    activities,
   };
 }
 
@@ -98,6 +102,42 @@ function initiativeActivityKey(activity: InitiativeActivity): string {
     activity.hours ?? "",
     activity.summary,
   ].join("|");
+}
+
+function appendResidentAutonomousMessage(
+  snapshot: HachikaSnapshot,
+  message: string,
+  activities: InitiativeActivity[],
+): void {
+  const proactiveActivity =
+    [...activities].reverse().find((activity) => activity.kind === "proactive_emission") ?? null;
+  const timestamp = proactiveActivity?.timestamp ?? new Date().toISOString();
+  const entry: AutonomousFeedEntry = {
+    id: buildAutonomousFeedId(timestamp, message),
+    timestamp,
+    mode: "proactive",
+    source: "resident_loop",
+    text: message,
+    motive: proactiveActivity?.motive ?? null,
+    topic: proactiveActivity?.topic ?? null,
+    traceTopic: proactiveActivity?.traceTopic ?? null,
+    place: proactiveActivity?.place ?? null,
+    worldAction: proactiveActivity?.worldAction ?? null,
+  };
+
+  const nextFeed = [...(snapshot.autonomousFeed ?? []), entry].slice(-24);
+  const seen = new Set<string>();
+  snapshot.autonomousFeed = nextFeed.filter((item) => {
+    if (seen.has(item.id)) {
+      return false;
+    }
+    seen.add(item.id);
+    return true;
+  });
+}
+
+function buildAutonomousFeedId(timestamp: string, message: string): string {
+  return `${timestamp}:${message.slice(0, 24)}`;
 }
 
 function parsePositiveNumber(

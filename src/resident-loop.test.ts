@@ -141,6 +141,10 @@ test("resident loop can emit proactive wording and record the emission", async (
   assert.ok(
     result.activities.some((activity) => activity.kind === "proactive_emission"),
   );
+  assert.equal(result.snapshot.autonomousFeed.length, 1);
+  assert.equal(result.snapshot.autonomousFeed[0]?.mode, "proactive");
+  assert.equal(result.snapshot.autonomousFeed[0]?.source, "resident_loop");
+  assert.equal(result.snapshot.autonomousFeed[0]?.text, result.proactiveMessage);
 });
 
 test("resident loop config reads env overrides", () => {

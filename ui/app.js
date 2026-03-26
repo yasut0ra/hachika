@@ -14,8 +14,10 @@ const proactiveButton = document.getElementById("proactive-button");
 const idleButton = document.getElementById("idle-button");
 const idleHoursInput = document.getElementById("idle-hours");
 const resetButton = document.getElementById("reset-button");
+const UI_POLL_INTERVAL_MS = 4000;
 
 let currentUi = null;
+let knownAutonomousIds = new Set();
 
 async function request(path, options = {}) {
   const response = await fetch(path, {
@@ -36,9 +38,11 @@ function setFlash(text, kind = "info") {
   flashNode.dataset.kind = kind;
 }
 
-function render(ui) {
+function render(ui, options = {}) {
+  const announceAutonomy = options.announceAutonomy === true;
+  const newAutonomous = syncAutonomousFeed(ui.autonomousFeed, announceAutonomy);
   currentUi = ui;
-  connectionNode.textContent = "Local UI online";
+  connectionNode.textContent = `Local UI online · auto ${Math.round(UI_POLL_INTERVAL_MS / 1000)}s`;
   renderMessages(ui.memories);
   renderState(ui.summary);
   renderWorld(ui.summary.world);
@@ -47,6 +51,10 @@ function render(ui) {
   renderGrowth(ui.growth);
   renderTraces(ui.traces);
   renderArtifacts(ui.artifacts);
+
+  if (newAutonomous.length > 0) {
+    setFlash(`hachika* ${newAutonomous.at(-1).text}`);
+  }
 }
 
 function renderMessages(memories) {
@@ -289,6 +297,19 @@ function renderArtifacts(artifacts) {
   }
 }
 
+function syncAutonomousFeed(feed, announce) {
+  const nextIds = new Set(feed.map((entry) => entry.id));
+
+  if (!announce) {
+    knownAutonomousIds = nextIds;
+    return [];
+  }
+
+  const newEntries = feed.filter((entry) => !knownAutonomousIds.has(entry.id));
+  knownAutonomousIds = nextIds;
+  return newEntries;
+}
+
 function stackCard(label, value) {
   const card = document.createElement("section");
   card.className = "stack-card";
@@ -493,8 +514,23 @@ resetButton.addEventListener("click", async () => {
 });
 
 request("/api/state")
-  .then(render)
+  .then((ui) => {
+    render(ui);
+    startPolling();
+  })
   .catch((error) => {
     connectionNode.textContent = "Offline";
     setFlash(error instanceof Error ? error.message : "initial_load_failed", "error");
   });
+
+function startPolling() {
+  window.setInterval(async () => {
+    try {
+      const ui = await request("/api/state");
+      render(ui, { announceAutonomy: true });
+    } catch (error) {
+      connectionNode.textContent = "Offline";
+      setFlash(error instanceof Error ? error.message : "poll_failed", "error");
+    }
+  }, UI_POLL_INTERVAL_MS);
+}

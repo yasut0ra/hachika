@@ -273,6 +273,19 @@ export interface InitiativeState {
   history: InitiativeActivity[];
 }
 
+export interface AutonomousFeedEntry {
+  id: string;
+  timestamp: string;
+  mode: "proactive";
+  source: "resident_loop";
+  text: string;
+  motive: MotiveKind | null;
+  topic: string | null;
+  traceTopic: string | null;
+  place: WorldPlaceId | null;
+  worldAction: WorldActionKind | null;
+}
+
 export interface GenerationHistoryEntry {
   timestamp: string;
   mode: "reply" | "proactive";
@@ -334,6 +347,7 @@ export interface HachikaSnapshot {
   traces: Record<string, TraceEntry>;
   purpose: PurposeState;
   initiative: InitiativeState;
+  autonomousFeed: AutonomousFeedEntry[];
   generationHistory: GenerationHistoryEntry[];
   lastInteractionAt: string | null;
   conversationCount: number;

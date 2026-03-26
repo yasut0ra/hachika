@@ -10,7 +10,22 @@ import { createInitialSnapshot } from "./state.js";
 import { buildUiState } from "./ui-state.js";
 
 test("buildUiState exposes recent memories, traces, and diagnostics for the web ui", () => {
-  const engine = new HachikaEngine(createInitialSnapshot());
+  const snapshot = createInitialSnapshot();
+  snapshot.autonomousFeed = [
+    {
+      id: "2026-03-27T00:00:00.000Z:0",
+      timestamp: "2026-03-27T00:00:00.000Z",
+      mode: "proactive",
+      source: "resident_loop",
+      text: "机の上の断片へ、ふいに戻りたくなった。",
+      motive: "continue_shared_work",
+      topic: "仕様",
+      traceTopic: "仕様",
+      place: "studio",
+      worldAction: "touch",
+    },
+  ];
+  const engine = new HachikaEngine(snapshot);
   engine.respond("仕様を記録として残したい。");
 
   const artifactsDir = mkdtempSync(join(tmpdir(), "hachika-ui-"));
@@ -24,6 +39,8 @@ test("buildUiState exposes recent memories, traces, and diagnostics for the web 
   assert.equal(ui.growth.recentGeneratedCount, 1);
   assert.ok(ui.growth.generationConcreteDetail > 0);
   assert.ok(ui.memories.length >= 2);
+  assert.equal(ui.autonomousFeed.length, 1);
+  assert.equal(ui.autonomousFeed[0]?.text, "机の上の断片へ、ふいに戻りたくなった。");
   assert.equal(ui.memories.at(-1)?.role, "hachika");
   assert.ok(ui.traces.some((trace) => trace.topic === "仕様"));
   assert.equal(ui.traces.find((trace) => trace.topic === "仕様")?.place, "studio");

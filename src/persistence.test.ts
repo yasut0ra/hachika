@@ -124,6 +124,20 @@ test("sanitizeSnapshot removes low-information topics and repairs polluted trace
       summary: "  noisy quality  ",
     },
   ];
+  snapshot.autonomousFeed = [
+    {
+      id: "2026-03-21T01:20:00.000Z:0",
+      timestamp: "2026-03-21T01:20:00.000Z",
+      mode: "proactive",
+      source: "resident_loop",
+      text: "「かな」へ、自分から戻ろうとした。",
+      motive: "seek_continuity",
+      topic: "かな",
+      traceTopic: "自分",
+      place: "archive",
+      worldAction: "observe",
+    },
+  ];
 
   sanitizeSnapshot(snapshot);
 
@@ -148,6 +162,8 @@ test("sanitizeSnapshot removes low-information topics and repairs polluted trace
   assert.equal(snapshot.initiative.history[1]?.topic, "自分");
   assert.equal(snapshot.initiative.history[1]?.traceTopic, null);
   assert.equal(snapshot.initiative.history[1]?.blocker, null);
+  assert.equal(snapshot.autonomousFeed[0]?.topic, null);
+  assert.equal(snapshot.autonomousFeed[0]?.traceTopic, "自分");
   assert.equal(snapshot.generationHistory[0]?.focus, null);
   assert.equal(snapshot.generationHistory[0]?.fallbackOverlap, 1);
   assert.equal(snapshot.generationHistory[0]?.summary, "noisy quality");

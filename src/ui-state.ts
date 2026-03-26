@@ -10,6 +10,7 @@ import {
 import type { ResidentLoopHealth, ResidentLoopStatus } from "./resident-monitor.js";
 import { sortedTraces } from "./traces.js";
 import type {
+  AutonomousFeedEntry,
   GeneratedTextDebug,
   InterpretationDebug,
   MemoryEntry,
@@ -36,6 +37,7 @@ export interface UiStatePayload {
   selfModel: ReturnType<HachikaEngine["getSelfModel"]>;
   growth: LiveGrowthMetrics;
   memories: MemoryEntry[];
+  autonomousFeed: AutonomousFeedEntry[];
   traces: Array<{
     topic: TraceEntry["topic"];
     kind: TraceEntry["kind"];
@@ -93,6 +95,7 @@ export function buildUiState(
     selfModel: engine.getSelfModel(),
     growth: summarizeLiveGrowthMetrics(snapshot),
     memories: snapshot.memories.slice(-18),
+    autonomousFeed: snapshot.autonomousFeed.slice(-12),
     traces: sortedTraces(snapshot, 10).map((trace) => ({
       topic: trace.topic,
       kind: trace.kind,

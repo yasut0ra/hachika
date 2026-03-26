@@ -12,6 +12,7 @@ import { isInformativeTraceClause } from "./traces.js";
 import { syncWorldObjectTraceLinks, WORLD_PLACE_IDS } from "./world.js";
 import type {
   ActivePurpose,
+  AutonomousFeedEntry,
   BoundaryImprint,
   BodyState,
   GenerationHistoryEntry,
@@ -113,7 +114,7 @@ function hydrateSnapshot(raw: unknown): HachikaSnapshot {
   }
 
   return {
-    version: 20,
+    version: 21,
     revision:
       typeof raw.revision === "number" && Number.isFinite(raw.revision)
         ? Math.max(0, Math.round(raw.revision))
@@ -138,6 +139,7 @@ function hydrateSnapshot(raw: unknown): HachikaSnapshot {
     traces: hydrateTraces(raw.traces),
     purpose: hydratePurpose(raw.purpose),
     initiative: hydrateInitiative(raw.initiative),
+    autonomousFeed: hydrateAutonomousFeed(raw.autonomousFeed),
     generationHistory: hydrateGenerationHistory(raw.generationHistory),
     lastInteractionAt: typeof raw.lastInteractionAt === "string" ? raw.lastInteractionAt : null,
     conversationCount:
@@ -184,6 +186,7 @@ export function sanitizeSnapshot(snapshot: HachikaSnapshot): HachikaSnapshot {
   syncWorldObjectTraceLinks(snapshot);
   snapshot.purpose = sanitizePurpose(snapshot.purpose, supportedTopics);
   snapshot.initiative = sanitizeInitiative(snapshot.initiative, supportedTopics);
+  snapshot.autonomousFeed = sanitizeAutonomousFeed(snapshot.autonomousFeed, supportedTopics);
   snapshot.generationHistory = sanitizeGenerationHistory(
     snapshot.generationHistory,
     supportedTopics,
@@ -1459,6 +1462,52 @@ function sanitizeInitiative(
   };
 }
 
+function hydrateAutonomousFeed(raw: unknown): AutonomousFeedEntry[] {
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+
+  return raw
+    .filter(isRecord)
+    .map((entry, index) => {
+      const timestamp =
+        typeof entry.timestamp === "string" && entry.timestamp.trim().length > 0
+          ? entry.timestamp
+          : new Date().toISOString();
+      const text =
+        typeof entry.text === "string" && entry.text.trim().length > 0
+          ? entry.text.trim()
+          : null;
+
+      if (!text) {
+        return null;
+      }
+
+      return {
+        id:
+          typeof entry.id === "string" && entry.id.trim().length > 0
+            ? entry.id.trim()
+            : buildAutonomousFeedId(timestamp, text, index),
+        timestamp,
+        mode: "proactive" as const,
+        source: "resident_loop" as const,
+        text,
+        motive: isMotiveKind(entry.motive) ? entry.motive : null,
+        topic:
+          typeof entry.topic === "string" && entry.topic.trim().length > 0
+            ? entry.topic.trim()
+            : null,
+        traceTopic:
+          typeof entry.traceTopic === "string" && entry.traceTopic.trim().length > 0
+            ? entry.traceTopic.trim()
+            : null,
+        place: isWorldPlaceId(entry.place) ? entry.place : null,
+        worldAction: isWorldActionKind(entry.worldAction) ? entry.worldAction : null,
+      };
+    })
+    .filter((entry): entry is AutonomousFeedEntry => entry !== null);
+}
+
 function hydrateGenerationHistory(raw: unknown): GenerationHistoryEntry[] {
   if (!Array.isArray(raw)) {
     return [];
@@ -1520,6 +1569,69 @@ function sanitizeGenerationHistory(
           : "generated quality",
     }))
     .slice(-24);
+}
+
+function sanitizeAutonomousFeed(
+  feed: AutonomousFeedEntry[],
+  supportedTopics: Set<string>,
+): AutonomousFeedEntry[] {
+  const sanitized = feed
+    .map((entry, index) => {
+      const text =
+        typeof entry.text === "string" && entry.text.trim().length > 0
+          ? entry.text.trim()
+          : null;
+
+      if (!text) {
+        return null;
+      }
+
+      const timestamp =
+        typeof entry.timestamp === "string" && entry.timestamp.trim().length > 0
+          ? entry.timestamp
+          : new Date().toISOString();
+
+      return {
+        id:
+          typeof entry.id === "string" && entry.id.trim().length > 0
+            ? entry.id.trim()
+            : buildAutonomousFeedId(timestamp, text, index),
+        timestamp,
+        mode: "proactive" as const,
+        source: "resident_loop" as const,
+        text,
+        motive: isMotiveKind(entry.motive) ? entry.motive : null,
+        topic:
+          entry.topic &&
+          isMeaningfulTopic(entry.topic) &&
+          shouldKeepSupportedTopic(entry.topic, supportedTopics)
+            ? entry.topic
+            : null,
+        traceTopic:
+          entry.traceTopic &&
+          isMeaningfulTopic(entry.traceTopic) &&
+          shouldKeepSupportedTopic(entry.traceTopic, supportedTopics)
+            ? entry.traceTopic
+            : null,
+        place: isWorldPlaceId(entry.place) ? entry.place : null,
+        worldAction: isWorldActionKind(entry.worldAction) ? entry.worldAction : null,
+      };
+    })
+    .filter((entry): entry is AutonomousFeedEntry => entry !== null)
+    .slice(-24);
+
+  const deduped: AutonomousFeedEntry[] = [];
+  const seen = new Set<string>();
+
+  for (const entry of sanitized) {
+    if (seen.has(entry.id)) {
+      continue;
+    }
+    seen.add(entry.id);
+    deduped.push(entry);
+  }
+
+  return deduped;
 }
 
 function sanitizeActivePurpose(
@@ -1808,6 +1920,10 @@ function inferWorldPhase(clockHour: number): WorldPhase {
 
 function unique(values: string[]): string[] {
   return values.filter((value, index) => values.indexOf(value) === index);
+}
+
+function buildAutonomousFeedId(timestamp: string, text: string, index: number): string {
+  return `${timestamp}:${index}:${text.slice(0, 24)}`;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
