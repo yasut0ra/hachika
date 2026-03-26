@@ -1563,6 +1563,8 @@ test("self inquiry does not immediately collapse into a self-referential work tr
 
   const result = engine.respond("ハチカってどんな存在？");
 
+  assert.deepEqual(result.debug.signals.topics, []);
+  assert.equal(result.debug.reply.selection?.currentTopic, null);
   assert.equal(result.snapshot.traces.ハチカ, undefined);
   assert.notEqual(result.snapshot.purpose.active?.topic, "ハチカ");
   assert.equal(result.snapshot.identity.anchors.includes("ハチカ"), false);
@@ -1577,6 +1579,18 @@ test("ambiguous question asks for a concrete direction instead of inventing a to
   assert.equal(result.debug.reply.selection?.currentTopic, null);
   assert.equal(result.debug.reply.selection?.relevantTraceTopic, null);
   assert.match(result.reply, /雑談|作業|ひとつ話題|軽く話す|深く掘る/);
+});
+
+test("follow-up clarify prompt does not become a new topic or trace", () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+
+  engine.respond("仕様の境界が未定で曖昧だ。どう整理する？");
+  const result = engine.respond("例えば？");
+
+  assert.deepEqual(result.debug.signals.topics, []);
+  assert.equal(result.snapshot.topicCounts["例えば"], undefined);
+  assert.equal(result.snapshot.preferences["例えば"], undefined);
+  assert.equal(result.snapshot.traces["例えば"], undefined);
 });
 
 test("world inquiry replies can surface the current place without dragging stale work along", () => {
@@ -1596,6 +1610,62 @@ test("world inquiry replies can surface the current place without dragging stale
   assert.equal(result.debug.reply.selection?.relevantTraceTopic, null);
   assert.match(result.reply, /threshold|studio|archive|棚|静けさ|夜/);
   assert.equal(/設計/.test(result.reply), false);
+});
+
+test("topic shift question does not keep an abstract stale topic in focus", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.identity.coherence = 0.82;
+  snapshot.identity.anchors = ["存在"];
+  snapshot.identity.summary = "今は「存在」を消えるままにしないことが、自分の流れになっている。";
+  snapshot.traces["存在"] = {
+    topic: "存在",
+    kind: "spec_fragment",
+    status: "active",
+    lastAction: "expanded",
+    summary: "「存在」は前進用の断片として残す。",
+    sourceMotive: "continue_shared_work",
+    artifact: {
+      memo: ["存在の断片"],
+      fragments: ["存在をもう少し具体化する"],
+      decisions: [],
+      nextSteps: ["存在をもう少し具体にする"],
+    },
+    work: {
+      focus: "存在をもう少し具体にする",
+      confidence: 0.74,
+      blockers: [],
+      staleAt: null,
+    },
+    lifecycle: {
+      phase: "live",
+      archivedAt: null,
+      reopenedAt: null,
+      reopenCount: 0,
+    },
+    salience: 0.72,
+    mentions: 3,
+    createdAt: "2026-03-21T00:00:00.000Z",
+    lastUpdatedAt: "2026-03-21T01:00:00.000Z",
+  };
+  snapshot.purpose.active = {
+    kind: "leave_trace",
+    topic: "存在",
+    summary: "「存在」を残る形にしたい",
+    confidence: 0.81,
+    progress: 0.31,
+    createdAt: "2026-03-21T00:00:00.000Z",
+    lastUpdatedAt: "2026-03-21T01:00:00.000Z",
+    turnsActive: 2,
+  };
+
+  const engine = new HachikaEngine(snapshot);
+  const result = engine.respond("別の話をしよう。最近何を気にしてる？");
+
+  assert.deepEqual(result.debug.signals.topics, []);
+  assert.equal(result.debug.reply.selection?.currentTopic ?? null, null);
+  assert.equal(result.debug.reply.selection?.relevantTraceTopic ?? null, null);
+  assert.equal(result.debug.reply.selection?.relevantBoundaryTopic ?? null, null);
+  assert.equal(/存在/.test(result.reply), false);
 });
 
 test("explicit new work topics do not surface unrelated stale trace or boundary context", () => {

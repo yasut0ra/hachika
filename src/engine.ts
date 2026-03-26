@@ -8,6 +8,7 @@ import {
   findRelevantPreferenceImprint,
   findRelevantRelationImprint,
   isMeaningfulTopic,
+  requiresConcreteTopicSupport,
   remember,
   topPreferredTopics,
   topicsLooselyMatch,
@@ -211,7 +212,10 @@ const SELF_INQUIRY_MARKERS = [
   "君はどう",
   "あなたはどう",
   "どういう人",
+  "どういう存在",
+  "どんな存在",
   "何したい",
+  "何を気にしてる",
   "どう見えて",
   "どう感じ",
   "何者",
@@ -1939,13 +1943,30 @@ function mergeInterpretedSignals(
     Math.max(localSignals.workCue, workCue) < 0.35 &&
     Math.max(localSignals.negative, negative) < 0.18 &&
     Math.max(localSignals.dismissal, dismissal) < 0.18;
+  const abstractSocialTopicReset =
+    shouldSuppressBroadSocialTopics(
+      interpretation.topics.length > 0 ? interpretation.topics : localSignals.topics,
+      {
+        greeting: Math.max(localSignals.greeting, greeting),
+        smalltalk: Math.max(localSignals.smalltalk, smalltalk),
+        repair: Math.max(localSignals.repair, repair),
+        selfInquiry: Math.max(localSignals.selfInquiry, selfInquiry),
+        worldInquiry: Math.max(localSignals.worldInquiry, worldInquiry),
+        abandonment: Math.max(localSignals.abandonment, abandonment),
+        workCue: Math.max(localSignals.workCue, workCue),
+      },
+    );
   const topics = socialOverride
     ? []
-    : topicShiftOverride || repairCarryoverReset || worldTopicReset
+    : topicShiftOverride || repairCarryoverReset || worldTopicReset || abstractSocialTopicReset
       ? []
     : interpretation.topics.length > 0
       ? interpretation.topics
       : localSignals.topics;
+  const softenedDismissal =
+    topicShiftOverride && question >= 0.2 && Math.max(localSignals.negative, negative) < 0.18
+      ? Math.min(Math.max(localSignals.dismissal, dismissal), 0.08)
+      : Math.max(localSignals.dismissal, dismissal);
 
   return finalizeInteractionSignals(snapshot, {
     positive: clamp01(Math.max(localSignals.positive, positive)),
@@ -1962,7 +1983,7 @@ function mergeInterpretedSignals(
         selfInquiry * 0.4,
       ),
     ),
-    dismissal: clamp01(Math.max(localSignals.dismissal, dismissal)),
+    dismissal: clamp01(softenedDismissal),
     memoryCue: clamp01(Math.max(localSignals.memoryCue, memoryCue)),
     expansionCue: clamp01(
       Math.max(localSignals.expansionCue, expansionCue, workCue * 0.22),
@@ -2007,7 +2028,12 @@ function finalizeInteractionSignals(
     signals.negative < 0.18 &&
     signals.dismissal < 0.18 &&
     shouldClearRepairTopics(signals.topics);
-  const topics = topicShift || repairTopicReset ? [] : signals.topics;
+  const abstractSocialTopicReset = shouldSuppressBroadSocialTopics(signals.topics, signals);
+  const dismissal =
+    topicShift && signals.question >= 0.2 && signals.negative < 0.18
+      ? Math.min(signals.dismissal, 0.08)
+      : signals.dismissal;
+  const topics = topicShift || repairTopicReset || abstractSocialTopicReset ? [] : signals.topics;
   const completion =
     socialWeight >= 0.42 && signals.workCue < 0.3
       ? clamp01(signals.completion * 0.3)
@@ -2024,6 +2050,7 @@ function finalizeInteractionSignals(
   return {
     ...signals,
     topics,
+    dismissal,
     completion,
     expansionCue,
     novelty: clamp01(noveltyBase + (newTopics > 0 && newTopics === topics.length ? 0.12 : 0)),
@@ -2033,6 +2060,28 @@ function finalizeInteractionSignals(
 
 function shouldClearRepairTopics(topics: readonly string[]): boolean {
   return topics.length > 0 && topics.every((topic) => REPAIR_META_TOPICS.has(topic));
+}
+
+function shouldSuppressBroadSocialTopics(
+  topics: readonly string[],
+  signals: Pick<
+    InteractionSignals,
+    "greeting" | "smalltalk" | "repair" | "selfInquiry" | "worldInquiry" | "abandonment" | "workCue"
+  >,
+): boolean {
+  return (
+    topics.length > 0 &&
+    signals.workCue < 0.35 &&
+    Math.max(
+      signals.greeting,
+      signals.smalltalk,
+      signals.repair,
+      signals.selfInquiry,
+      signals.worldInquiry,
+      signals.abandonment,
+    ) >= 0.38 &&
+    topics.every((topic) => requiresConcreteTopicSupport(topic) || isAmbientWorldTopic(topic))
+  );
 }
 
 function isAmbientWorldTopic(topic: string): boolean {
@@ -2470,7 +2519,10 @@ function composeReply(
     parts.push(attachmentLine);
   }
 
-  const purposeResolutionLine = worldTurn ? null : buildPurposeResolutionLine(nextSnapshot);
+  const purposeResolutionLine =
+    worldTurn || (socialTurn && currentTopic == null)
+      ? null
+      : buildPurposeResolutionLine(nextSnapshot);
   if (purposeResolutionLine) {
     parts.push(purposeResolutionLine);
   }
@@ -2494,7 +2546,7 @@ function composeReply(
     ? buildWorldClosingLine(nextSnapshot)
     : socialTurn
       ? buildSocialClosingLine(previousSnapshot, nextSnapshot, mood, signals) ??
-        buildIdentityLine(nextSnapshot, currentTopic) ??
+        (currentTopic != null ? buildIdentityLine(nextSnapshot, currentTopic) : null) ??
         buildDriveLine(dominant, mood, currentTopic, signals, nextSnapshot.attachment)
       : buildIdentityLine(nextSnapshot, currentTopic) ??
         buildSelfModelLine(selfModel, currentTopic) ??
@@ -2925,6 +2977,17 @@ function buildSocialClosingLine(
   const recentAssistantLines = recentAssistantReplies(previousSnapshot, 4);
 
   if (signals.selfInquiry > 0.45) {
+    if (signals.abandonment >= 0.28) {
+      return pickFreshText(
+        [
+          "まだ固まりきってはいないけれど、今の癖や向きは少しずつ見えてくる。",
+          "はっきり決まり切ってはいない。ただ、いま何に寄りやすいかは少しずつ出てくる。",
+        ],
+        recentAssistantLines,
+        snapshot.conversationCount,
+      );
+    }
+
     return snapshot.identity.coherence > 0.54
       ? snapshot.identity.currentArc
       : "まだ途中だけれど、話すほど少しずつ輪郭は出る。";

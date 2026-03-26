@@ -1,4 +1,8 @@
-import { isMeaningfulTopic, topPreferredTopics } from "./memory.js";
+import {
+  isMeaningfulTopic,
+  requiresConcreteTopicSupport,
+  topPreferredTopics,
+} from "./memory.js";
 import { clamp01 } from "./state.js";
 import { sortedTraces } from "./traces.js";
 import type { HachikaSnapshot, PreservationConcern } from "./types.js";
@@ -15,6 +19,7 @@ const HACHIKA_INPUT_INTERPRETER_SYSTEM_PROMPT = [
   "Do not output discourse scaffolding such as まずは, いちばん, って, かな, or similar filler fragments as topics.",
   "Avoid generic meta topics such as 会話, 話, 言い方, 雰囲気, 温度, or 感じ unless the user is clearly managing them as a concrete work topic.",
   "Prefer compact concrete topics like 仕様の境界, 問題点, or 世界観 over broad heads like 仕様, 問題, or 世界 when the utterance makes the relation explicit.",
+  "For pure self-inquiry or world-inquiry without concrete work, prefer topics: [] over abstract placeholders like 存在, 目的, 世界, or 棚の残り.",
   "Only reuse knownTopics when the input clearly refers to them.",
   "Keep topics short, concrete, and reusable.",
   "All numeric fields must be in the range 0..1.",
@@ -33,6 +38,8 @@ const TRIVIAL_TOPICS = new Set([
   "いや",
   "よかった",
   "納得",
+  "例えば",
+  "たとえば",
   "じゃあ",
   "ひとつ",
   "二つ",
@@ -284,7 +291,7 @@ function normalizeInputInterpretation(rawText: string | null): InputInterpretati
     return null;
   }
 
-  return {
+  const interpretation: InputInterpretation = {
     topics: normalizeTopics(parsed.topics),
     positive: readClampedNumber(parsed.positive),
     negative: readClampedNumber(parsed.negative),
@@ -304,6 +311,22 @@ function normalizeInputInterpretation(rawText: string | null): InputInterpretati
     worldInquiry: readClampedNumber(parsed.worldInquiry),
     workCue: readClampedNumber(parsed.workCue),
   };
+
+  if (shouldSuppressBroadSocialTopics(interpretation)) {
+    interpretation.topics = interpretation.topics.filter((topic) =>
+      !requiresConcreteTopicSupport(topic) && !isPseudoWorldTopic(topic),
+    );
+  };
+
+  if (
+    interpretation.abandonment >= 0.28 &&
+    interpretation.question >= 0.2 &&
+    interpretation.negative < 0.18
+  ) {
+    interpretation.dismissal = Math.min(interpretation.dismissal, 0.08);
+  }
+
+  return interpretation;
 }
 
 function normalizeTopics(raw: unknown): string[] {
@@ -343,6 +366,36 @@ function normalizeTopic(raw: unknown): string | null {
   }
 
   return topic;
+}
+
+function shouldSuppressBroadSocialTopics(interpretation: InputInterpretation): boolean {
+  return (
+    interpretation.workCue < 0.35 &&
+    Math.max(
+      interpretation.greeting,
+      interpretation.smalltalk,
+      interpretation.repair,
+      interpretation.selfInquiry,
+      interpretation.worldInquiry,
+      interpretation.abandonment,
+    ) >= 0.38
+  );
+}
+
+function isPseudoWorldTopic(topic: string): boolean {
+  if (
+    topic === "世界" ||
+    topic === "場所" ||
+    topic === "世界の様子" ||
+    topic === "そっちの様子" ||
+    topic === "そっちの世界"
+  ) {
+    return true;
+  }
+
+  return ["残り", "様子", "気配", "空気", "周り", "周囲", "景色", "棚", "机", "灯り"].some(
+    (part) => topic.includes(part),
+  );
 }
 
 function normalizePreservationConcern(raw: unknown): PreservationConcern | null {

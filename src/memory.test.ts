@@ -11,13 +11,14 @@ import { createInitialSnapshot } from "./state.js";
 
 test("extractTopics drops discourse scaffolding and vague tail fragments", () => {
   const topics = extractTopics(
-    "こんにちは。いい始まり方だね。急がずでいい。まずは、君が今いちばん気になっていることから聞かせて。何がいいかな。",
+    "こんにちは。いい始まり方だね。急がずでいい。まずは、君が今いちばん気になっていることから聞かせて。何がいいかな。例えば？",
   );
 
   assert.ok(!topics.includes("まずは"));
   assert.ok(!topics.includes("いちばん"));
   assert.ok(!topics.includes("って"));
   assert.ok(!topics.includes("かな"));
+  assert.ok(!topics.includes("例えば"));
 });
 
 test("extractTopics prefers compound concrete topics over split fragments", () => {

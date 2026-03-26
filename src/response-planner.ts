@@ -441,6 +441,10 @@ export function buildResponsePlan(
     signals.topics.length === 0 &&
     (
       socialTurn ||
+      (signals.abandonment >= 0.28 &&
+        signals.question >= 0.2 &&
+        signals.negative < 0.18 &&
+        signals.dismissal < 0.18) ||
       act === "greet" ||
       act === "repair" ||
       act === "self_disclose" ||

@@ -513,6 +513,26 @@ function selectTraceTopic(
   selfModel: SelfModel,
   extraction: StructuredTraceExtraction | null = null,
 ): string | null {
+  if (
+    !hasStructuredTraceSignal(extraction) &&
+    signals.topics.length === 0 &&
+    signals.workCue < 0.35 &&
+    signals.memoryCue < 0.1 &&
+    signals.expansionCue < 0.12 &&
+    signals.completion < 0.12 &&
+    signals.preservationThreat < 0.18 &&
+    Math.max(
+      signals.greeting,
+      signals.smalltalk,
+      signals.repair,
+      signals.selfInquiry,
+      signals.worldInquiry,
+      signals.abandonment,
+    ) >= 0.38
+  ) {
+    return null;
+  }
+
   const candidates = unique([
     ...(extraction?.topics ?? []),
     ...signals.topics,
@@ -596,6 +616,18 @@ function shouldCreateTrace(
     requiresSupport &&
     signals.selfInquiry >= 0.38 &&
     signals.workCue < 0.54 &&
+    signals.expansionCue < 0.28 &&
+    signals.completion < 0.24 &&
+    !extractedSignal
+  ) {
+    return false;
+  }
+
+  if (
+    requiresSupport &&
+    (signals.repair >= 0.42 || signals.abandonment >= 0.28) &&
+    signals.workCue < 0.45 &&
+    signals.memoryCue < 0.12 &&
     signals.expansionCue < 0.28 &&
     signals.completion < 0.24 &&
     !extractedSignal
