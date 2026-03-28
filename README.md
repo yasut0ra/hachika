@@ -284,6 +284,7 @@ Hachika は、単に有用なだけでなく、
 - `initiative.history` により、idle consolidation / idle reactivation / proactive emission の自律行動が snapshot に残る
 - resident loop が自発発話した文は `autonomousFeed` にも残る
   - Web UI は数秒おきに `/api/state` を自動更新し、この feed を見てバックグラウンドの `proactive` を拾うので、`/proactive` を押さなくても loop が動いていれば会話欄へ自然に流れ込む
+  - CLI も数秒おきに feed を監視し、入力待ち中でも新しい `hachika*` 行を自動表示する
 - `docs/growth-metrics.md` に growth comparison 用の lightweight metrics と canonical scenario を整理している
   - 現在は saturation / motive diversity / identity drift / archive reopen / stress recovery に加えて、autonomous activity visibility / idle consolidation coverage / proactive maintenance rate も比較できる
 - 直近の generated text quality は snapshot に rolling history として保持される
@@ -333,6 +334,7 @@ npm run loop
 `HACHIKA_LOOP_INTERVAL_MS` で tick 間隔、`HACHIKA_LOOP_IDLE_HOURS_PER_TICK` で 1 tick あたりに進める疑似 idle 時間を変えられます。  
 loop は snapshot を定期的に読み込み、idle consolidation と proactive emission を進めて `initiative.history` と artifacts に反映します。
 Web UI を開いていれば、loop が出した autonomous proactive は polling で自動表示されます。
+CLI も resident loop と併用していれば、入力待ちのまま autonomous proactive が流れます。
 CLI と UI server は各操作の直前に snapshot を再読込するので、loop と併用しても state の見え方がずれにくくなっています。
 起動中は `data/resident-lock.json` と `data/resident-status.json` を使って多重起動防止と heartbeat/status 表示を行います。
 snapshot / resident status / artifact index の保存は atomic write を使うので、loop と併用しても途中書き込みが残りにくくなっています。

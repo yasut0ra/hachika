@@ -1,4 +1,9 @@
-import { createInterface } from "node:readline/promises";
+import {
+  clearLine,
+  createInterface,
+  cursorTo,
+  type Interface,
+} from "node:readline";
 import { resolve } from "node:path";
 import { stdin as input, stdout as output } from "node:process";
 
@@ -54,6 +59,7 @@ import {
 const snapshotPath = resolve(process.cwd(), "data/hachika-state.json");
 const artifactsDir = resolve(process.cwd(), "data/artifacts");
 const residentStatusPath = resolve(process.cwd(), "data/resident-status.json");
+const CLI_AUTONOMOUS_POLL_INTERVAL_MS = 4000;
 loadDotEnv();
 const snapshot = await loadSnapshot(snapshotPath);
 const engine = new HachikaEngine(snapshot);
@@ -64,169 +70,187 @@ const responsePlanner = createResponsePlannerFromEnv();
 const traceExtractor = createTraceExtractorFromEnv();
 
 const rl = createInterface({ input, output });
+const seenAutonomousFeedIds = new Set(engine.getSnapshot().autonomousFeed.map((entry) => entry.id));
+let handlingInput = false;
+const autonomousPollTimer = setInterval(() => {
+  void flushAutonomousFeed(engine, rl, seenAutonomousFeedIds, () => handlingInput);
+}, CLI_AUTONOMOUS_POLL_INTERVAL_MS);
 
 await persistState(engine);
 await printIntro(engine);
 await emitStartupInitiative(engine);
+rl.setPrompt("> ");
+rl.prompt();
 
 try {
-  while (true) {
-    const raw = await readInput(rl);
+  for await (const raw of rl) {
+    handlingInput = true;
+    let shouldPrompt = true;
 
-    if (raw === null) {
-      break;
-    }
+    try {
+      const text = raw.trim();
 
-    const text = raw.trim();
+      await refreshEngine(engine);
+      printAutonomousFeed(engine, rl, seenAutonomousFeedIds);
 
-    if (!text) {
-      continue;
-    }
+      if (!text) {
+        continue;
+      }
 
-    if (text === "/exit" || text === "/quit") {
-      break;
-    }
+      if (text === "/exit" || text === "/quit") {
+        shouldPrompt = false;
+        break;
+      }
 
-    await refreshEngine(engine);
+      if (text === "/help") {
+        printHelp();
+        continue;
+      }
 
-    if (text === "/help") {
-      printHelp();
-      continue;
-    }
+      if (text === "/proactive") {
+        await emitProactive(engine, true);
+        continue;
+      }
 
-    if (text === "/proactive") {
-      await emitProactive(engine, true);
-      continue;
-    }
+      if (text === "/llm") {
+        printReplyGeneratorStatus();
+        continue;
+      }
 
-    if (text === "/llm") {
-      printReplyGeneratorStatus();
-      continue;
-    }
+      if (text === "/loop") {
+        printResidentLoop();
+        continue;
+      }
 
-    if (text === "/loop") {
-      printResidentLoop();
-      continue;
-    }
+      if (text === "/metrics") {
+        printGrowthMetrics(engine);
+        continue;
+      }
 
-    if (text === "/metrics") {
-      printGrowthMetrics(engine);
-      continue;
-    }
+      if (text.startsWith("/idle")) {
+        await handleIdleCommand(engine, text);
+        continue;
+      }
 
-    if (text.startsWith("/idle")) {
-      await handleIdleCommand(engine, text);
-      continue;
-    }
+      if (text === "/state") {
+        console.log(formatDriveState(engine.getSnapshot().state));
+        continue;
+      }
 
-    if (text === "/state") {
-      console.log(formatDriveState(engine.getSnapshot().state));
-      continue;
-    }
+      if (text === "/purpose") {
+        printPurpose(engine);
+        continue;
+      }
 
-    if (text === "/purpose") {
-      printPurpose(engine);
-      continue;
-    }
+      if (text === "/body") {
+        printBody(engine);
+        continue;
+      }
 
-    if (text === "/body") {
-      printBody(engine);
-      continue;
-    }
+      if (text === "/world") {
+        printWorld(engine);
+        continue;
+      }
 
-    if (text === "/world") {
-      printWorld(engine);
-      continue;
-    }
+      if (text === "/reactivity") {
+        printReactivity(engine);
+        continue;
+      }
 
-    if (text === "/reactivity") {
-      printReactivity(engine);
-      continue;
-    }
+      if (text === "/temperament") {
+        printTemperament(engine);
+        continue;
+      }
 
-    if (text === "/temperament") {
-      printTemperament(engine);
-      continue;
-    }
+      if (text === "/self") {
+        printSelfModel(engine);
+        continue;
+      }
 
-    if (text === "/self") {
-      printSelfModel(engine);
-      continue;
-    }
+      if (text === "/identity") {
+        printIdentity(engine);
+        continue;
+      }
 
-    if (text === "/identity") {
-      printIdentity(engine);
-      continue;
-    }
+      if (text === "/traces") {
+        printTraces(engine);
+        continue;
+      }
 
-    if (text === "/traces") {
-      printTraces(engine);
-      continue;
-    }
+      if (text === "/activity") {
+        printActivity(engine);
+        continue;
+      }
 
-    if (text === "/activity") {
-      printActivity(engine);
-      continue;
-    }
+      if (text === "/artifacts") {
+        printArtifacts(engine);
+        continue;
+      }
 
-    if (text === "/artifacts") {
-      printArtifacts(engine);
-      continue;
-    }
+      if (text === "/memory") {
+        printMemories(engine);
+        continue;
+      }
 
-    if (text === "/memory") {
-      printMemories(engine);
-      continue;
-    }
+      if (text === "/imprints") {
+        printImprints(engine);
+        continue;
+      }
 
-    if (text === "/imprints") {
-      printImprints(engine);
-      continue;
-    }
+      if (text === "/debug") {
+        printDebug(engine);
+        continue;
+      }
 
-    if (text === "/debug") {
-      printDebug(engine);
-      continue;
-    }
+      if (text === "/reset") {
+        const resetResult = await runWithEngineConflictRetry<boolean>(engine, {
+          operate: () => {
+            engine.reset(createInitialSnapshot());
+            return true;
+          },
+        });
 
-    if (text === "/reset") {
-      const resetResult = await runWithEngineConflictRetry<boolean>(engine, {
-        operate: () => {
-          engine.reset(createInitialSnapshot());
-          return true;
-        },
+        if (!resetResult.ok) {
+          console.log("state conflict: latest snapshot reloaded");
+          continue;
+        }
+
+        seenAutonomousFeedIds.clear();
+        for (const entry of engine.getSnapshot().autonomousFeed) {
+          seenAutonomousFeedIds.add(entry.id);
+        }
+        console.log("state reset");
+        continue;
+      }
+
+      const replyResult = await runWithEngineConflictRetry(engine, {
+        operate: () =>
+          replyGenerator || inputInterpreter || behaviorDirector || responsePlanner || traceExtractor
+            ? engine.respondAsync(text, {
+                replyGenerator,
+                inputInterpreter,
+                behaviorDirector,
+                responsePlanner,
+                traceExtractor,
+              })
+            : Promise.resolve(engine.respond(text)),
       });
 
-      if (!resetResult.ok) {
+      if (!replyResult.ok || !replyResult.result) {
         console.log("state conflict: latest snapshot reloaded");
         continue;
       }
 
-      console.log("state reset");
-      continue;
+      console.log(`hachika> ${replyResult.result.reply}`);
+    } finally {
+      handlingInput = false;
+      if (shouldPrompt) {
+        rl.prompt();
+      }
     }
-
-    const replyResult = await runWithEngineConflictRetry(engine, {
-      operate: () =>
-        replyGenerator || inputInterpreter || behaviorDirector || responsePlanner || traceExtractor
-          ? engine.respondAsync(text, {
-              replyGenerator,
-              inputInterpreter,
-              behaviorDirector,
-              responsePlanner,
-              traceExtractor,
-            })
-          : Promise.resolve(engine.respond(text)),
-    });
-
-    if (!replyResult.ok || !replyResult.result) {
-      console.log("state conflict: latest snapshot reloaded");
-      continue;
-    }
-
-    console.log(`hachika> ${replyResult.result.reply}`);
   }
 } finally {
+  clearInterval(autonomousPollTimer);
   rl.close();
 }
 
@@ -246,6 +270,7 @@ async function printIntro(currentEngine: HachikaEngine): Promise<void> {
   console.log(`planner:${describeResponsePlanner(responsePlanner)}`);
   console.log(`trace:${describeTraceExtractor(traceExtractor)}`);
   console.log(`loop:${formatResidentLoopStatus(loadResidentLoopStatusSync(residentStatusPath))}`);
+  console.log(`autonomy:poll ${Math.round(CLI_AUTONOMOUS_POLL_INTERVAL_MS / 1000)}s`);
   console.log(`last reply:${formatLastReplyDebug(currentEngine)}`);
   console.log(`last interpretation:${formatInterpretationDebug(currentEngine.getLastInterpretationDebug())}`);
   console.log(`last behavior:${formatBehaviorDebug(currentEngine.getLastBehaviorDebug())}`);
@@ -774,25 +799,6 @@ function printIdentity(currentEngine: HachikaEngine): void {
   );
 }
 
-async function readInput(
-  rl: ReturnType<typeof createInterface>,
-): Promise<string | null> {
-  try {
-    return await rl.question("> ");
-  } catch (error) {
-    if (
-      typeof error === "object" &&
-      error !== null &&
-      "code" in error &&
-      error.code === "ERR_USE_AFTER_CLOSE"
-    ) {
-      return null;
-    }
-
-    throw error;
-  }
-}
-
 async function emitStartupInitiative(currentEngine: HachikaEngine): Promise<void> {
   const emissionResult = await runWithEngineConflictRetry<string | null>(currentEngine, {
     operate: () =>
@@ -891,6 +897,48 @@ async function persistState(currentEngine: HachikaEngine): Promise<boolean> {
 
 async function refreshEngine(currentEngine: HachikaEngine): Promise<void> {
   currentEngine.syncSnapshot(await loadSnapshot(snapshotPath));
+}
+
+async function flushAutonomousFeed(
+  currentEngine: HachikaEngine,
+  rl: Interface,
+  seenIds: Set<string>,
+  isBusy: () => boolean,
+): Promise<void> {
+  if (isBusy()) {
+    return;
+  }
+
+  await refreshEngine(currentEngine);
+  printAutonomousFeed(currentEngine, rl, seenIds);
+}
+
+function printAutonomousFeed(
+  currentEngine: HachikaEngine,
+  rl: Interface,
+  seenIds: Set<string>,
+): void {
+  const feed = currentEngine.getSnapshot().autonomousFeed ?? [];
+  const unseen = feed.filter((entry) => !seenIds.has(entry.id));
+
+  if (unseen.length === 0) {
+    return;
+  }
+
+  for (const entry of unseen) {
+    seenIds.add(entry.id);
+  }
+
+  if (output.isTTY) {
+    clearLine(output, 0);
+    cursorTo(output, 0);
+  }
+
+  for (const entry of unseen) {
+    console.log(`hachika* ${entry.text}`);
+  }
+
+  rl.prompt(true);
 }
 
 async function runWithEngineConflictRetry<T>(

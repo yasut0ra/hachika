@@ -1,0 +1,18 @@
+{
+  "active": false,
+  "pid": 79691,
+  "startedAt": "2026-03-26T21:50:22.994Z",
+  "heartbeatAt": "2026-03-26T21:54:21.155Z",
+  "lastTickAt": "2026-03-26T21:54:08.024Z",
+  "lastActivityAt": null,
+  "lastProactiveAt": null,
+  "lastTickAttempts": 1,
+  "lastError": "stopped:SIGINT",
+  "lastActivities": [],
+  "reply": "openai",
+  "config": {
+    "intervalMs": 15000,
+    "idleHoursPerTick": 0.5
+  },
+  "stoppedAt": "2026-03-26T21:54:21.155Z"
+}
