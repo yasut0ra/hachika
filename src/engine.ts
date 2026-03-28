@@ -1023,7 +1023,7 @@ function prepareTurn(
   input: string,
 ): PreparedTurn {
   const signals = analyzeInteraction(input, snapshot);
-  const behaviorDirective = buildRuleBehaviorDirective(snapshot, signals, null, null);
+  const behaviorDirective = buildRuleBehaviorDirective(snapshot, input, signals, null, null);
   return prepareTurnFromSignals(
     snapshot,
     signals,
@@ -1691,6 +1691,7 @@ async function analyzeBehaviorDirectiveAsync(
       : null;
   const fallbackDirective = buildRuleBehaviorDirective(
     snapshot,
+    input,
     signals,
     interpretation,
     traceExtraction,
@@ -1918,15 +1919,6 @@ function applyBehaviorDirectiveToPlan(
   directive: BehaviorDirective,
 ): ResponsePlan {
   if (!directive.directAnswer) {
-    return plan;
-  }
-
-  if (
-    plan.act !== "self_disclose" &&
-    plan.act !== "repair" &&
-    plan.act !== "attune" &&
-    plan.act !== "greet"
-  ) {
     return plan;
   }
 
@@ -2729,6 +2721,10 @@ function applySignals(
     signals.repetition * 0.06;
 
   for (const topic of signals.topics) {
+    if (shouldSkipSoftRelationTopicHardening(topic, signals)) {
+      continue;
+    }
+
     nextSnapshot.preferences[topic] = clampSigned(
       (nextSnapshot.preferences[topic] ?? 0) + preferenceDelta,
     );
@@ -2975,7 +2971,7 @@ function composeReply(
     parts.push(pickFreshText(BOUNDARY_LINES, recentAssistantLines, turnIndex));
   }
 
-  if (!worldTurn && socialTurn && socialLine) {
+  if (!worldTurn && (socialTurn || responsePlan.act === "attune") && socialLine) {
     parts.push(socialLine);
   }
 
@@ -3035,7 +3031,7 @@ function composeReply(
   }
 
   const purposeResolutionLine =
-    worldTurn || (socialTurn && currentTopic == null)
+    worldTurn || ((socialTurn || responsePlan.act === "attune") && currentTopic == null)
       ? null
       : buildPurposeResolutionLine(nextSnapshot);
   if (purposeResolutionLine) {
@@ -3059,7 +3055,7 @@ function composeReply(
 
   const closingLine = worldTurn
     ? buildWorldClosingLine(nextSnapshot)
-    : socialTurn
+    : socialTurn || responsePlan.act === "attune"
       ? buildSocialClosingLine(previousSnapshot, nextSnapshot, mood, signals) ??
         (currentTopic != null ? buildIdentityLine(nextSnapshot, currentTopic) : null) ??
         buildDriveLine(dominant, mood, currentTopic, signals, nextSnapshot.attachment)
@@ -3419,7 +3415,11 @@ function buildSocialLine(
   responsePlan: ResponsePlan,
 ): string | null {
   const recentAssistantLines = recentAssistantReplies(previousSnapshot, 4);
-  const relationTopic = signals.topics.find((topic) => isRelationalTopic(topic)) ?? null;
+  const relationTopic =
+    signals.topics.find((topic) => isRelationalTopic(topic)) ??
+    (snapshot.purpose.active?.kind === "deepen_relation"
+      ? snapshot.purpose.active.topic
+      : null);
   const companionTopic =
     relationTopic === null
       ? null
@@ -3464,6 +3464,20 @@ function buildSocialLine(
   }
 
   if (responsePlan.act === "attune" || signals.smalltalk > 0.48) {
+    if (relationTopic && signals.question > 0.24 && signals.workCue < 0.28) {
+      const nameCue = companionTopic ?? relationTopic;
+
+      return pickFreshText(
+        [
+          `いま気になっていたのは、「${nameCue}」をどう受け取ると自然か、そこがまだ少し曖昧だった。`,
+          `「${nameCue}」なら、呼び方としてちゃんと馴染むかを確かめたかった。`,
+          `さっき引っかかっていたのは、「${nameCue}」をこちらでどう馴染ませるか、その一点だ。`,
+        ],
+        recentAssistantLines,
+        snapshot.conversationCount,
+      );
+    }
+
     if (relationTopic && signals.intimacy > 0.24 && signals.workCue < 0.28) {
       const nameCue = companionTopic ?? relationTopic;
 
@@ -3683,6 +3697,20 @@ function buildAskBackLine(
   }
 
   return null;
+}
+
+function shouldSkipSoftRelationTopicHardening(
+  topic: string,
+  signals: InteractionSignals,
+): boolean {
+  return (
+    isRelationalTopic(topic) &&
+    signals.workCue < 0.28 &&
+    signals.expansionCue < 0.18 &&
+    signals.completion < 0.18 &&
+    signals.negative < 0.18 &&
+    signals.dismissal < 0.18
+  );
 }
 
 function buildTraceLine(

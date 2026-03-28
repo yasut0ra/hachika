@@ -21,6 +21,13 @@ test("extractTopics drops discourse scaffolding and vague tail fragments", () =>
   assert.ok(!topics.includes("例えば"));
 });
 
+test("extractTopics drops echo prompts like なんでも聞いて", () => {
+  const topics = extractTopics("いいよ なんでも聞いて");
+
+  assert.ok(!topics.includes("なんでも"));
+  assert.ok(!topics.includes("なんでも聞"));
+});
+
 test("extractTopics prefers compound concrete topics over split fragments", () => {
   const problemTopics = extractTopics("じゃあ会話の問題点を三つに分けたい。");
   const boundaryTopics = extractTopics("仕様の境界が未定で曖昧だ。");

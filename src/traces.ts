@@ -1,5 +1,6 @@
 import { clamp01 } from "./state.js";
 import {
+  extractTopics,
   isRelationalTopic,
   isMeaningfulTopic,
   requiresConcreteTopicSupport,
@@ -589,6 +590,13 @@ function shouldCreateTrace(
     signals.expansionCue < 0.18 &&
     signals.completion < 0.18 &&
     signals.workCue < 0.28;
+  const relationHardeningCue =
+    actionableStructuredSignal &&
+    (signals.workCue > 0.3 ||
+      signals.memoryCue > 0.14 ||
+      signals.expansionCue > 0.16 ||
+      signals.completion > 0.18) &&
+    hasConcreteStructuredSupportBeyondTopic(extraction, topic);
   const worldOnlyTurn =
     signals.worldInquiry >= 0.42 &&
     signals.workCue < 0.35 &&
@@ -606,7 +614,7 @@ function shouldCreateTrace(
   if (
     (softSocialTurn || relationTurn) &&
     isRelationalTopic(topic) &&
-    !actionableStructuredSignal
+    !relationHardeningCue
   ) {
     return false;
   }
@@ -1678,6 +1686,34 @@ function hasActionableStructuredWorkSignal(
     (extraction?.nextSteps.length ?? 0) > 0 ||
     (extraction?.decisions.length ?? 0) > 0 ||
     (extraction?.completion ?? 0) > 0.18
+  );
+}
+
+function hasConcreteStructuredSupportBeyondTopic(
+  extraction: StructuredTraceExtraction | null,
+  topic: string,
+): boolean {
+  if (!extraction) {
+    return false;
+  }
+
+  const artifactItems = [
+    ...extraction.memo,
+    ...extraction.fragments,
+    ...extraction.decisions,
+    ...extraction.nextSteps,
+    ...extraction.blockers,
+  ];
+
+  return artifactItems.some((item) =>
+    extractTopics(item).some(
+      (candidate: string) =>
+        candidate !== topic &&
+        candidate.length >= 2 &&
+        !isRelationalTopic(candidate) &&
+        !requiresConcreteTopicSupport(candidate) &&
+        !topicsLooselyMatch(candidate, topic),
+    ),
   );
 }
 

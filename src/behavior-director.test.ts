@@ -16,7 +16,13 @@ test("rule behavior directive keeps naming turns relational without hardening tr
     topics: ["名前", "ハチカ"],
   });
 
-  const directive = buildRuleBehaviorDirective(snapshot, signals, null, null);
+  const directive = buildRuleBehaviorDirective(
+    snapshot,
+    "あなたの名前はハチカ。覚えてね。",
+    signals,
+    null,
+    null,
+  );
 
   assert.equal(directive.topicAction, "keep");
   assert.equal(directive.traceAction, "suppress");
@@ -32,7 +38,13 @@ test("rule behavior directive cools explicit topic shifts", () => {
     question: 0.34,
   });
 
-  const directive = buildRuleBehaviorDirective(snapshot, signals, null, null);
+  const directive = buildRuleBehaviorDirective(
+    snapshot,
+    "別の話をしよう。最近何を気にしてる？",
+    signals,
+    null,
+    null,
+  );
 
   assert.equal(directive.topicAction, "clear");
   assert.equal(directive.traceAction, "suppress");
@@ -65,6 +77,38 @@ test("normalizeBehaviorDirective keeps fallback fields when llm output is partia
   assert.equal(normalized?.initiativeAction, "allow");
   assert.equal(normalized?.coolCurrentContext, false);
   assert.equal(normalized?.directAnswer, true);
+});
+
+test("rule behavior directive answers clarification before asking back without hardening relation state", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.purpose.active = {
+    kind: "deepen_relation",
+    topic: "名前",
+    summary: "呼び方を少しずつ馴染ませたい。",
+    confidence: 0.62,
+    progress: 0.24,
+    createdAt: "2026-03-20T00:00:00.000Z",
+    lastUpdatedAt: "2026-03-20T00:00:00.000Z",
+    turnsActive: 1,
+  };
+  const signals = createSignals({
+    question: 0.72,
+    topics: [],
+  });
+
+  const directive = buildRuleBehaviorDirective(
+    snapshot,
+    "何が気になっているのか僕にはわからないよ。具体的に言ってもらわないと。",
+    signals,
+    null,
+    null,
+  );
+
+  assert.equal(directive.topicAction, "clear");
+  assert.equal(directive.traceAction, "suppress");
+  assert.equal(directive.purposeAction, "allow");
+  assert.equal(directive.initiativeAction, "suppress");
+  assert.equal(directive.directAnswer, true);
 });
 
 function createSignals(

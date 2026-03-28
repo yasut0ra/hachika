@@ -114,6 +114,32 @@ test("response planner keeps repair turns loosely focused when no concrete topic
   assert.equal(plan.mentionTrace, false);
 });
 
+test("response planner answers relation clarification directly instead of reopening exploration", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.purpose.active = {
+    kind: "deepen_relation",
+    topic: "名前",
+    summary: "呼び方を少しずつ馴染ませたい。",
+    confidence: 0.62,
+    progress: 0.24,
+    createdAt: "2026-03-20T00:00:00.000Z",
+    lastUpdatedAt: "2026-03-20T00:00:00.000Z",
+    turnsActive: 1,
+  };
+  const signals = createSignals({
+    question: 0.82,
+    topics: [],
+  });
+  const selfModel = createSelfModel("deepen_relation", "名前");
+
+  const plan = buildResponsePlan(snapshot, "warm", "relation", signals, selfModel);
+
+  assert.equal(plan.act, "attune");
+  assert.equal(plan.focusTopic, null);
+  assert.equal(plan.askBack, false);
+  assert.equal(plan.mentionTrace, false);
+});
+
 test("response planner turns topicless open questions into clarify-first exploration", () => {
   const snapshot = createInitialSnapshot();
   const signals = createSignals({

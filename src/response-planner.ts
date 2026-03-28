@@ -377,6 +377,9 @@ export function buildResponsePlan(
 ): ResponsePlan {
   const topMotive = selfModel.topMotives[0] ?? null;
   const socialTurn = isSocialTurnSignals(signals);
+  const activeRelationContext =
+    snapshot.purpose.active?.kind === "deepen_relation" ||
+    topMotive?.kind === "deepen_relation";
   const relationTurn =
     signals.intimacy >= 0.24 &&
     signals.workCue < 0.28 &&
@@ -395,6 +398,16 @@ export function buildResponsePlan(
     signals.greeting < 0.45 &&
     signals.repair < 0.42 &&
     signals.preservationThreat < 0.18 &&
+    signals.negative < 0.18 &&
+    signals.dismissal < 0.18;
+  const relationClarifyReady =
+    signals.question > 0.24 &&
+    signals.topics.length === 0 &&
+    activeRelationContext &&
+    signals.workCue < 0.35 &&
+    signals.memoryCue < 0.16 &&
+    signals.expansionCue < 0.18 &&
+    signals.completion < 0.18 &&
     signals.negative < 0.18 &&
     signals.dismissal < 0.18;
   const selfDisclosureReady =
@@ -426,6 +439,8 @@ export function buildResponsePlan(
     act = "self_disclose";
   } else if (repairReady) {
     act = "repair";
+  } else if (relationClarifyReady) {
+    act = "attune";
   } else if (clarifyReady) {
     act = "explore";
   } else if (signals.greeting > 0.45) {
@@ -460,6 +475,7 @@ export function buildResponsePlan(
         signals.dismissal < 0.18) ||
       act === "greet" ||
       relationTurn ||
+      relationClarifyReady ||
       act === "repair" ||
       act === "self_disclose" ||
       clarifyReady ||
@@ -501,6 +517,7 @@ export function buildResponsePlan(
     act !== "self_disclose" &&
     act !== "greet" &&
     act !== "repair" &&
+    !relationClarifyReady &&
     !worldDisclosureReady &&
     !clarifyReady;
   const mentionIdentity =
@@ -514,11 +531,16 @@ export function buildResponsePlan(
       signals.negative > 0.08);
   const mentionWorld = worldDisclosureReady;
   const askBack =
-    act === "explore" ||
+    (act === "explore" && !relationClarifyReady) ||
     clarifyReady ||
-    (act === "attune" && signals.smalltalk > 0.48 && signals.question < 0.2);
+    (act === "attune" &&
+      !relationClarifyReady &&
+      signals.smalltalk > 0.48 &&
+      signals.question < 0.2);
   const variation =
-    clarifyReady
+    relationClarifyReady
+      ? "brief"
+      : clarifyReady
       ? "questioning"
       : act === "greet" || act === "repair" || act === "attune"
       ? "brief"

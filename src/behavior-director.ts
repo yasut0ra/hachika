@@ -294,6 +294,7 @@ export function buildOpenAIBehaviorDirectorMessages(
 
 export function buildRuleBehaviorDirective(
   snapshot: HachikaSnapshot,
+  input: string,
   signals: InteractionSignals,
   interpretation: InputInterpretation | null,
   traceExtraction: StructuredTraceExtraction | null,
@@ -331,10 +332,15 @@ export function buildRuleBehaviorDirective(
     signals.workCue < 0.35 &&
     signals.negative < 0.18 &&
     signals.dismissal < 0.18;
+  const clarificationTurn = isClarificationTurnLike(input, signals);
+  const activeRelationContext =
+    snapshot.purpose.active?.kind === "deepen_relation" ||
+    localTopics.some((topic) => isRelationalTopic(topic));
   const directAnswer =
     signals.selfInquiry > 0.45 ||
     signals.worldInquiry > 0.45 ||
-    signals.repair > 0.42;
+    signals.repair > 0.42 ||
+    clarificationTurn;
 
   if (explicitShift) {
     return {
@@ -357,6 +363,30 @@ export function buildRuleBehaviorDirective(
       coolCurrentContext: false,
       directAnswer: false,
       summary: "relation_turn_keep_close_without_hardening",
+    };
+  }
+
+  if (clarificationTurn && activeRelationContext) {
+    return {
+      topicAction: "clear",
+      traceAction: "suppress",
+      purposeAction: "allow",
+      initiativeAction: "suppress",
+      coolCurrentContext: false,
+      directAnswer: true,
+      summary: "relation_clarify_answer_without_hardening",
+    };
+  }
+
+  if (clarificationTurn) {
+    return {
+      topicAction: "clear",
+      traceAction: "allow",
+      purposeAction: "allow",
+      initiativeAction: "suppress",
+      coolCurrentContext: false,
+      directAnswer: true,
+      summary: "clarify_answer_before_followup",
     };
   }
 
@@ -405,6 +435,30 @@ export function buildRuleBehaviorDirective(
     directAnswer,
     summary: "concrete_turn_allows_local_commitment",
   };
+}
+
+function isClarificationTurnLike(input: string, signals: InteractionSignals): boolean {
+  if (
+    signals.dismissal >= 0.18 ||
+    signals.negative >= 0.34 ||
+    signals.workCue >= 0.42
+  ) {
+    return false;
+  }
+
+  const normalized = input.normalize("NFKC").toLowerCase();
+  return (
+    normalized.includes("具体的") ||
+    normalized.includes("具体例") ||
+    normalized.includes("詳しく") ||
+    normalized.includes("説明して") ||
+    normalized.includes("どういう意味") ||
+    normalized.includes("どういうこと") ||
+    normalized.includes("何が気にな") ||
+    normalized.includes("わからない") ||
+    normalized.includes("言ってもらわないと") ||
+    normalized.includes("例えば")
+  );
 }
 
 export function normalizeBehaviorDirective(

@@ -135,9 +135,9 @@ function selectPurposeCandidate(
   const viable = motives.filter((motive) => motive.score >= 0.44);
   const relationOverride =
     signals.intimacy >= 0.24 &&
-    signals.workCue < 0.2 &&
-    signals.expansionCue < 0.12 &&
-    signals.completion < 0.12 &&
+    signals.workCue < 0.32 &&
+    signals.expansionCue < 0.18 &&
+    signals.completion < 0.18 &&
     signals.topics.length > 0 &&
     signals.topics.some((topic) => isRelationalTopic(topic)) &&
     signals.topics.every(

@@ -63,6 +63,9 @@ const TRIVIAL_TOPICS = new Set([
   "頑張って",
   "頑張ってね",
   "頑張れ",
+  "なんでも",
+  "なんでも聞",
+  "なんでも聞いて",
   "お疲れ",
   "おつかれ",
 ]);
@@ -358,6 +361,10 @@ function normalizeTopic(raw: unknown): string | null {
   }
 
   if (TRIVIAL_TOPICS.has(topic.toLowerCase())) {
+    return null;
+  }
+
+  if (topic.includes("なんでも")) {
     return null;
   }
 

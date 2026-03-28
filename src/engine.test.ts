@@ -1584,6 +1584,23 @@ test("early naming turn stays relational instead of becoming trace work immediat
   assert.equal(result.snapshot.traces["名前"], undefined);
   assert.equal(result.snapshot.purpose.active?.kind, "deepen_relation");
   assert.match(result.reply, /名前|ハチカ/);
+  assert.equal(result.snapshot.topicCounts["名前"], undefined);
+  assert.equal(result.snapshot.preferences["名前"], undefined);
+});
+
+test("relation clarification answers directly without turning the naming exchange into work", () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+
+  engine.respond("あなたの名前はハチカ。覚えてね。");
+  const result = engine.respond(
+    "何が気になっているのか僕にはわからないよ。具体的に言ってもらわないと。",
+  );
+
+  assert.equal(result.snapshot.traces["名前"], undefined);
+  assert.notEqual(result.snapshot.purpose.active?.kind, "continue_shared_work");
+  assert.equal(result.snapshot.boundaryImprints["hostility:名前"], undefined);
+  assert.equal(/[?？]$/.test(result.reply.trim()), false);
+  assert.match(result.reply, /名前|呼び方|馴染|自然|気になって|ハチカ/);
 });
 
 test("self introduction request answers directly before asking anything back", () => {
@@ -1629,6 +1646,17 @@ test("follow-up clarify prompt does not become a new topic or trace", () => {
   assert.equal(result.snapshot.topicCounts["例えば"], undefined);
   assert.equal(result.snapshot.preferences["例えば"], undefined);
   assert.equal(result.snapshot.traces["例えば"], undefined);
+});
+
+test("echo prompts like なんでも聞いて do not become live topics", () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+
+  const result = engine.respond("いいよ なんでも聞いて");
+
+  assert.equal(result.snapshot.topicCounts["なんでも"], undefined);
+  assert.equal(result.snapshot.topicCounts["なんでも聞"], undefined);
+  assert.equal(result.snapshot.preferences["なんでも"], undefined);
+  assert.equal(result.snapshot.preferences["なんでも聞"], undefined);
 });
 
 test("world inquiry replies can surface the current place without dragging stale work along", () => {

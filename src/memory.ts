@@ -50,6 +50,9 @@ const STOPWORDS = new Set([
   "納得",
   "例えば",
   "たとえば",
+  "なんでも",
+  "なんでも聞",
+  "なんでも聞いて",
   "ありがとう",
   "こんにちは",
   "こんばんは",
@@ -399,6 +402,10 @@ export function consolidatePreferenceImprints(
       continue;
     }
 
+    if (isSoftRelationTopicTurn(topic, signals)) {
+      continue;
+    }
+
     const topicCount = snapshot.topicCounts[topic] ?? 0;
     const preference = snapshot.preferences[topic] ?? 0;
     const qualifies =
@@ -440,17 +447,24 @@ export function consolidateBoundaryImprints(
   signals: InteractionSignals,
   timestamp = new Date().toISOString(),
 ): void {
+  const clarificationTurn = isClarificationTurn(signals);
   const candidates = [
     {
       kind: "hostility" as const,
-      active: signals.negative > 0.15,
-      intensity: clamp01(signals.negative * 0.9 + signals.intimacy * 0.05),
+      active: clarificationTurn ? signals.negative > 0.32 : signals.negative > 0.15,
+      intensity: clamp01(
+        (clarificationTurn ? signals.negative * 0.56 : signals.negative * 0.9) +
+          signals.intimacy * 0.05,
+      ),
       topic: signals.topics[0] ?? null,
     },
     {
       kind: "dismissal" as const,
-      active: signals.dismissal > 0.1,
-      intensity: clamp01(signals.dismissal * 0.95 + signals.neglect * 0.08),
+      active: clarificationTurn ? signals.dismissal > 0.2 : signals.dismissal > 0.1,
+      intensity: clamp01(
+        (clarificationTurn ? signals.dismissal * 0.62 : signals.dismissal * 0.95) +
+          signals.neglect * 0.08,
+      ),
       topic: signals.topics[0] ?? null,
     },
     {
@@ -691,6 +705,27 @@ export function requiresConcreteTopicSupport(topic: string): boolean {
 export function isRelationalTopic(topic: string): boolean {
   const normalized = topic.normalize("NFKC").trim().toLowerCase();
   return normalized.length > 0 && RELATIONAL_TOPICS.has(normalized);
+}
+
+function isSoftRelationTopicTurn(topic: string, signals: InteractionSignals): boolean {
+  return (
+    isRelationalTopic(topic) &&
+    signals.workCue < 0.28 &&
+    signals.expansionCue < 0.18 &&
+    signals.completion < 0.18 &&
+    signals.negative < 0.18 &&
+    signals.dismissal < 0.18
+  );
+}
+
+function isClarificationTurn(signals: InteractionSignals): boolean {
+  return (
+    signals.question >= 0.24 &&
+    signals.workCue < 0.35 &&
+    signals.dismissal < 0.18 &&
+    signals.negative < 0.34 &&
+    signals.abandonment < 0.28
+  );
 }
 
 export function topicsLooselyMatch(left: string, right: string | null | undefined): boolean {
