@@ -1036,7 +1036,7 @@ interface PlanningDebug {
   model: string | null;
   fallbackUsed: boolean;
   error: string | null;
-  rulePlan: string;
+  rulePlan: string | null;
   diff: string | null;
 }
 
@@ -1101,12 +1101,16 @@ async function prepareTurnAsync(
       directed.directive.traceExtraction,
       buildTurnTraceExtractionDebug(localSignals, directedSignals, directed),
     );
+    const turnDirectedPlan =
+      directed.turnDebug.source === "llm" && directed.directive.responsePlan
+        ? applyTurnDirectedPlan(prepared, directed)
+        : prepared;
 
-    if (!responsePlanner) {
-      return prepared;
+    if (!responsePlanner || (directed.turnDebug.source === "llm" && directed.directive.responsePlan)) {
+      return turnDirectedPlan;
     }
 
-    return applyResponsePlanner(prepared, input, responsePlanner);
+    return applyResponsePlanner(turnDirectedPlan, input, responsePlanner);
   }
 
   const analyzed = await analyzeInteractionAsync(input, snapshot, inputInterpreter);
@@ -1141,6 +1145,38 @@ async function prepareTurnAsync(
   }
 
   return applyResponsePlanner(prepared, input, responsePlanner);
+}
+
+function applyTurnDirectedPlan(
+  prepared: PreparedTurn,
+  directed: {
+    directive: TurnDirective;
+    turnDebug: TurnDirectiveDebug;
+  },
+): PreparedTurn {
+  const directedPlan = applyBehaviorDirectiveToPlan(
+    directed.directive.responsePlan!,
+    prepared.behaviorDirective,
+  );
+
+  return {
+    ...prepared,
+    responsePlan: directedPlan,
+    planningDebug: {
+      source: directed.turnDebug.source === "llm" ? "llm" : "rule",
+      provider: directed.turnDebug.provider,
+      model: directed.turnDebug.model,
+      fallbackUsed: directed.turnDebug.fallbackUsed,
+      error: directed.turnDebug.error,
+      rulePlan: null,
+      diff: null,
+    },
+    replySelection: resolveReplySelection(
+      prepared.nextSnapshot,
+      prepared.responseSignals,
+      directedPlan,
+    ),
+  };
 }
 
 function prepareTurnFromSignals(
@@ -2257,6 +2293,7 @@ function buildDirectedTurnDebug(
     answerMode: directed.directive.answerMode,
     relationMove: directed.directive.relationMove,
     worldMention: directed.directive.worldMention,
+    plan: directed.directive.responsePlan?.summary ?? null,
     summary: directed.directive.summary,
   };
 }
@@ -2277,6 +2314,7 @@ function buildFallbackTurnDebug(
     answerMode: directive.answerMode,
     relationMove: directive.relationMove,
     worldMention: directive.worldMention,
+    plan: directive.responsePlan?.summary ?? null,
     summary: directive.summary,
   };
 }

@@ -72,6 +72,18 @@ test("normalizeTurnDirective keeps fallback shape and parses turn semantics", ()
         traceAction: "suppress",
         directAnswer: true,
       },
+      plan: {
+        act: "self_disclose",
+        stance: "open",
+        distance: "close",
+        focusTopic: null,
+        mentionTrace: false,
+        mentionIdentity: true,
+        mentionBoundary: false,
+        mentionWorld: false,
+        askBack: false,
+        variation: "textured",
+      },
       trace: {
         topics: ["仕様の境界"],
         kindHint: "spec_fragment",
@@ -89,6 +101,9 @@ test("normalizeTurnDirective keeps fallback shape and parses turn semantics", ()
   assert.equal(normalized?.worldMention, "light");
   assert.equal(normalized?.behavior.traceAction, "suppress");
   assert.equal(normalized?.behavior.directAnswer, true);
+  assert.equal(normalized?.responsePlan?.act, "self_disclose");
+  assert.equal(normalized?.responsePlan?.mentionIdentity, true);
+  assert.equal(normalized?.responsePlan?.summary, "self_disclose/open/close");
   assert.deepEqual(normalized?.topics, []);
   assert.equal(normalized?.traceExtraction, null);
 });

@@ -3,6 +3,13 @@ import {
   type BehaviorDirective,
 } from "./behavior-director.js";
 import { isRelationalTopic, topPreferredTopics } from "./memory.js";
+import type {
+  ResponseAct,
+  ResponseDistance,
+  ResponsePlan,
+  ResponseStance,
+  ResponseVariation,
+} from "./response-planner.js";
 import { clamp01 } from "./state.js";
 import { sortedTraces } from "./traces.js";
 import { hasExplicitWorldObjectReference, summarizeWorldForPrompt } from "./world.js";
@@ -70,6 +77,7 @@ export interface TurnDirective {
   worldMention: TurnWorldMention;
   topics: string[];
   behavior: BehaviorDirective;
+  responsePlan?: ResponsePlan | null;
   traceExtraction: StructuredTraceExtraction | null;
   summary: string;
 }
@@ -124,6 +132,7 @@ export interface TurnDirectorPayload {
     worldMention: TurnWorldMention;
     topics: string[];
     behavior: Omit<BehaviorDirective, "summary">;
+    responsePlan: Omit<ResponsePlan, "summary">;
   };
 }
 
@@ -304,6 +313,18 @@ export function buildTurnDirectorPayload(
         coolCurrentContext: context.fallbackDirective.behavior.coolCurrentContext,
         directAnswer: context.fallbackDirective.behavior.directAnswer,
       },
+      responsePlan: {
+        act: (context.fallbackDirective.responsePlan ?? buildRuleTurnResponsePlan(context.fallbackDirective)).act,
+        stance: (context.fallbackDirective.responsePlan ?? buildRuleTurnResponsePlan(context.fallbackDirective)).stance,
+        distance: (context.fallbackDirective.responsePlan ?? buildRuleTurnResponsePlan(context.fallbackDirective)).distance,
+        focusTopic: (context.fallbackDirective.responsePlan ?? buildRuleTurnResponsePlan(context.fallbackDirective)).focusTopic,
+        mentionTrace: (context.fallbackDirective.responsePlan ?? buildRuleTurnResponsePlan(context.fallbackDirective)).mentionTrace,
+        mentionIdentity: (context.fallbackDirective.responsePlan ?? buildRuleTurnResponsePlan(context.fallbackDirective)).mentionIdentity,
+        mentionBoundary: (context.fallbackDirective.responsePlan ?? buildRuleTurnResponsePlan(context.fallbackDirective)).mentionBoundary,
+        mentionWorld: (context.fallbackDirective.responsePlan ?? buildRuleTurnResponsePlan(context.fallbackDirective)).mentionWorld,
+        askBack: (context.fallbackDirective.responsePlan ?? buildRuleTurnResponsePlan(context.fallbackDirective)).askBack,
+        variation: (context.fallbackDirective.responsePlan ?? buildRuleTurnResponsePlan(context.fallbackDirective)).variation,
+      },
     },
   };
 }
@@ -323,15 +344,22 @@ export function buildOpenAITurnDirectorMessages(
       content: [
         "Decide the semantic role of this turn for Hachika's local engine.",
         "Return a single JSON object with this exact shape:",
-        '{"subject":"none","target":"none","answerMode":"reflective","relationMove":"none","worldMention":"none","topics":[],"behavior":{"topicAction":"keep","traceAction":"allow","purposeAction":"allow","initiativeAction":"allow","boundaryAction":"allow","worldAction":"allow","coolCurrentContext":false,"directAnswer":false},"trace":{"topics":[],"kindHint":null,"completion":0,"blockers":[],"memo":[],"fragments":[],"decisions":[],"nextSteps":[]}}',
+        '{"subject":"none","target":"none","answerMode":"reflective","relationMove":"none","worldMention":"none","topics":[],"behavior":{"topicAction":"keep","traceAction":"allow","purposeAction":"allow","initiativeAction":"allow","boundaryAction":"allow","worldAction":"allow","coolCurrentContext":false,"directAnswer":false},"plan":{"act":"attune","stance":"measured","distance":"measured","focusTopic":null,"mentionTrace":false,"mentionIdentity":false,"mentionBoundary":false,"mentionWorld":false,"askBack":false,"variation":"brief"},"trace":{"topics":[],"kindHint":null,"completion":0,"blockers":[],"memo":[],"fragments":[],"decisions":[],"nextSteps":[]}}',
         "subject must be one of user, hachika, shared, world, none.",
         "target must be one of user_name, hachika_name, user_profile, hachika_profile, relation, world_state, work_topic, none.",
         "answerMode must be one of direct, clarify, reflective.",
         "relationMove must be one of naming, repair, attune, boundary, none.",
         "worldMention must be one of none, light, full.",
         "behavior must preserve the exact field names shown above.",
+        "plan must preserve the exact field names shown above.",
+        "plan.act must be one of greet, repair, self_disclose, boundary, attune, continue_work, preserve, explore.",
+        "plan.stance must be one of open, measured, guarded.",
+        "plan.distance must be one of close, measured, far.",
+        "plan.variation must be one of brief, textured, questioning.",
+        "plan.focusTopic must be null or one of rule.responsePlan.focusTopic, localTopics, or knownTopics.",
         "trace.kindHint must be one of note, continuity_marker, spec_fragment, decision, or null.",
         "If the turn is social, naming, repair, self-question, or pure world-question, prefer trace.topics: [] and empty trace arrays unless concrete reusable work is explicit.",
+        "For direct naming, self/profile questions, and light daily chat, prefer a concrete direct plan rather than stale work exploration.",
         "Return JSON only.",
         JSON.stringify(payload, null, 2),
       ].join("\n\n"),
@@ -424,6 +452,15 @@ export function buildRuleTurnDirective(
     target === "work_topic" && topics.length > 0
       ? buildRuleTraceExtraction(topics, signals)
       : null;
+  const responsePlan = buildRuleTurnResponsePlan({
+    subject,
+    target,
+    answerMode,
+    relationMove,
+    worldMention,
+    topics,
+    behavior,
+  });
 
   return {
     subject,
@@ -433,6 +470,7 @@ export function buildRuleTurnDirective(
     worldMention,
     topics,
     behavior,
+    responsePlan,
     traceExtraction,
     summary: summarizeTurnDirective({
       subject,
@@ -442,6 +480,7 @@ export function buildRuleTurnDirective(
       worldMention,
       topics,
       behavior,
+      responsePlan,
       traceExtraction,
       summary: "",
     }),
@@ -467,6 +506,12 @@ export function normalizeTurnDirective(
     readEnum(parsed.worldMention, WORLD_MENTION_VALUES) ?? fallback.worldMention;
   const behavior = normalizeBehaviorDirective(parsed.behavior, fallback.behavior);
   const topics = normalizeStringArray(parsed.topics, 4);
+  const candidateTopics = unique([...topics, ...fallback.topics]);
+  const responsePlan = normalizeEmbeddedResponsePlan(
+    parsed.plan,
+    fallback.responsePlan ?? buildRuleTurnResponsePlan(fallback),
+    candidateTopics,
+  );
   const traceExtraction = normalizeTraceExtractionRecord(parsed.trace, fallback.traceExtraction);
 
   const directive: TurnDirective = {
@@ -485,6 +530,7 @@ export function normalizeTurnDirective(
         ? []
         : topics,
     behavior,
+    responsePlan,
     traceExtraction: target === "work_topic" ? traceExtraction : null,
     summary: "",
   };
@@ -511,7 +557,93 @@ export function summarizeTurnDirective(directive: TurnDirective): string {
     parts.push(`topics:${directive.topics.join(",")}`);
   }
 
+  if (directive.responsePlan?.summary) {
+    parts.push(`plan:${directive.responsePlan.summary}`);
+  }
+
   return parts.join("/");
+}
+
+function buildRuleTurnResponsePlan(
+  directive: Pick<
+    TurnDirective,
+    "subject" | "target" | "answerMode" | "relationMove" | "worldMention" | "topics" | "behavior"
+  >,
+): ResponsePlan {
+  const focusTopic =
+    directive.target === "work_topic" ? directive.topics[0] ?? null : null;
+
+  let act: ResponseAct = "attune";
+  let stance: ResponseStance = "measured";
+  let distance: ResponseDistance = "measured";
+  let mentionTrace = false;
+  let mentionIdentity = false;
+  let mentionBoundary = false;
+  let mentionWorld = directive.worldMention !== "none";
+  let askBack = false;
+  let variation: ResponseVariation = "brief";
+
+  if (directive.target === "world_state") {
+    act = "self_disclose";
+    stance = "open";
+    distance = "measured";
+    mentionWorld = true;
+    variation = "textured";
+  } else if (directive.target === "hachika_name" || directive.target === "hachika_profile") {
+    act = "self_disclose";
+    stance = "open";
+    distance = "close";
+    mentionIdentity = directive.target === "hachika_profile";
+    variation = directive.target === "hachika_profile" ? "textured" : "brief";
+  } else if (directive.target === "user_name" || directive.target === "user_profile") {
+    act = "attune";
+    stance = "open";
+    distance = "close";
+    variation = "brief";
+  } else if (directive.target === "relation") {
+    act = directive.relationMove === "repair" ? "repair" : "attune";
+    stance = "open";
+    distance = "close";
+    mentionBoundary = directive.relationMove === "boundary";
+    variation = "brief";
+  } else if (directive.target === "work_topic") {
+    act = "continue_work";
+    stance = "measured";
+    distance = "measured";
+    mentionTrace = directive.behavior.traceAction === "allow";
+    variation = directive.answerMode === "clarify" ? "questioning" : "textured";
+    askBack = directive.answerMode === "clarify";
+  } else {
+    act = directive.answerMode === "clarify" ? "explore" : "attune";
+    stance = "measured";
+    distance = "measured";
+    variation = directive.answerMode === "clarify" ? "questioning" : "brief";
+    askBack = directive.answerMode === "clarify";
+  }
+
+  if (directive.behavior.worldAction === "suppress") {
+    mentionWorld = false;
+  }
+  if (directive.behavior.boundaryAction === "suppress") {
+    mentionBoundary = false;
+  }
+  if (directive.behavior.directAnswer) {
+    askBack = false;
+  }
+
+  return {
+    act,
+    stance,
+    distance,
+    focusTopic,
+    mentionTrace,
+    mentionIdentity,
+    mentionBoundary,
+    mentionWorld,
+    askBack,
+    variation,
+    summary: summarizeResponsePlan(act, stance, distance, focusTopic),
+  };
 }
 
 function applyReferentToBehavior(
@@ -656,6 +788,41 @@ function normalizeBehaviorDirective(
   };
 }
 
+function normalizeEmbeddedResponsePlan(
+  raw: unknown,
+  fallback: ResponsePlan,
+  candidateTopics: string[],
+): ResponsePlan | null {
+  if (!isRecord(raw)) {
+    return null;
+  }
+
+  const act = readEnum(raw.act, RESPONSE_ACT_VALUES) ?? fallback.act;
+  const stance = readEnum(raw.stance, RESPONSE_STANCE_VALUES) ?? fallback.stance;
+  const distance = readEnum(raw.distance, RESPONSE_DISTANCE_VALUES) ?? fallback.distance;
+  const variation = readEnum(raw.variation, RESPONSE_VARIATION_VALUES) ?? fallback.variation;
+  const focusTopic = readPlanFocusTopic(raw.focusTopic, candidateTopics, fallback.focusTopic);
+  const mentionTrace = readBoolean(raw.mentionTrace, fallback.mentionTrace);
+  const mentionIdentity = readBoolean(raw.mentionIdentity, fallback.mentionIdentity);
+  const mentionBoundary = readBoolean(raw.mentionBoundary, fallback.mentionBoundary);
+  const mentionWorld = readBoolean(raw.mentionWorld, fallback.mentionWorld);
+  const askBack = readBoolean(raw.askBack, fallback.askBack);
+
+  return {
+    act,
+    stance,
+    distance,
+    focusTopic,
+    mentionTrace,
+    mentionIdentity,
+    mentionBoundary,
+    mentionWorld,
+    askBack,
+    variation,
+    summary: summarizeResponsePlan(act, stance, distance, focusTopic),
+  };
+}
+
 function normalizeTraceExtractionRecord(
   raw: unknown,
   fallback: StructuredTraceExtraction | null,
@@ -720,8 +887,36 @@ function readBoolean(value: unknown, fallback: boolean): boolean {
   return typeof value === "boolean" ? value : fallback;
 }
 
+function readPlanFocusTopic(
+  value: unknown,
+  candidateTopics: string[],
+  fallback: string | null,
+): string | null {
+  if (value === null) {
+    return null;
+  }
+  if (typeof value !== "string") {
+    return fallback;
+  }
+  const normalized = value.normalize("NFKC").trim();
+  if (!normalized) {
+    return fallback;
+  }
+  return candidateTopics.includes(normalized) ? normalized : fallback;
+}
+
 function unique(items: string[]): string[] {
   return Array.from(new Set(items));
+}
+
+function summarizeResponsePlan(
+  act: ResponseAct,
+  stance: ResponseStance,
+  distance: ResponseDistance,
+  focusTopic: string | null,
+): string {
+  const topic = focusTopic ? ` on ${focusTopic}` : "";
+  return `${act}/${stance}/${distance}${topic}`;
 }
 
 function trimTrailingSlash(value: string): string {
@@ -767,6 +962,35 @@ function extractOpenAIReplyText(payload: unknown): string | null {
 
   return message.content.trim();
 }
+
+const RESPONSE_ACT_VALUES = new Set<ResponseAct>([
+  "greet",
+  "repair",
+  "self_disclose",
+  "boundary",
+  "attune",
+  "continue_work",
+  "preserve",
+  "explore",
+]);
+
+const RESPONSE_STANCE_VALUES = new Set<ResponseStance>([
+  "open",
+  "measured",
+  "guarded",
+]);
+
+const RESPONSE_DISTANCE_VALUES = new Set<ResponseDistance>([
+  "close",
+  "measured",
+  "far",
+]);
+
+const RESPONSE_VARIATION_VALUES = new Set<ResponseVariation>([
+  "brief",
+  "textured",
+  "questioning",
+]);
 
 async function buildOpenAIHttpError(response: Response): Promise<string> {
   const message = await readResponseErrorMessage(response);

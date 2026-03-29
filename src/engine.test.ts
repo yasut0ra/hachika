@@ -2073,6 +2073,19 @@ test("respondAsync can use a turn director to resolve Hachika name questions dir
             directAnswer: true,
             summary: "turn/direct_referent_without_trace_hardening",
           },
+          responsePlan: {
+            act: "self_disclose",
+            stance: "open",
+            distance: "close",
+            focusTopic: null,
+            mentionTrace: false,
+            mentionIdentity: true,
+            mentionBoundary: false,
+            mentionWorld: false,
+            askBack: false,
+            variation: "brief",
+            summary: "self_disclose/open/close",
+          },
           traceExtraction: null,
           summary: "subject:hachika/target:hachika_name/mode:direct/relation:naming",
         },
@@ -2084,6 +2097,7 @@ test("respondAsync can use a turn director to resolve Hachika name questions dir
 
   assert.equal(result.debug.turn?.source, "llm");
   assert.equal(result.debug.turn?.target, "hachika_name");
+  assert.equal(result.debug.turn?.plan, "self_disclose/open/close");
   assert.equal(result.debug.behavior.traceAction, "suppress");
   assert.ok(result.debug.signals.selfInquiry >= 0.7);
   assert.equal(result.snapshot.traces["名前"], undefined);
@@ -2117,6 +2131,19 @@ test("respondAsync can use a turn director to keep user-name turns out of durabl
             directAnswer: true,
             summary: "turn/direct_referent_without_trace_hardening",
           },
+          responsePlan: {
+            act: "attune",
+            stance: "open",
+            distance: "close",
+            focusTopic: null,
+            mentionTrace: false,
+            mentionIdentity: false,
+            mentionBoundary: false,
+            mentionWorld: false,
+            askBack: false,
+            variation: "brief",
+            summary: "attune/open/close",
+          },
           traceExtraction: null,
           summary: "subject:user/target:user_name/mode:direct/relation:naming",
         },
@@ -2131,6 +2158,98 @@ test("respondAsync can use a turn director to keep user-name turns out of durabl
   assert.equal(result.snapshot.initiative.pending, null);
   assert.equal(result.snapshot.traces["名前"], undefined);
   assert.match(result.reply, /聞かせて|掴み切れていない|取り違え/);
+});
+
+test("respondAsync can use a turn director reply plan and skip a separate response planner", async () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+  let capturedContext: ReplyGenerationContext | null = null;
+  let plannerCalls = 0;
+
+  const turnDirector: TurnDirector = {
+    name: "test-turn",
+    async directTurn() {
+      return {
+        provider: "test-turn",
+        model: "stub",
+        directive: {
+          subject: "hachika",
+          target: "hachika_profile",
+          answerMode: "direct",
+          relationMove: "none",
+          worldMention: "none",
+          topics: [],
+          behavior: {
+            topicAction: "clear",
+            traceAction: "suppress",
+            purposeAction: "suppress",
+            initiativeAction: "suppress",
+            boundaryAction: "suppress",
+            worldAction: "suppress",
+            coolCurrentContext: false,
+            directAnswer: true,
+            summary: "turn/direct_referent_without_trace_hardening",
+          },
+          responsePlan: {
+            act: "self_disclose",
+            stance: "open",
+            distance: "close",
+            focusTopic: null,
+            mentionTrace: false,
+            mentionIdentity: true,
+            mentionBoundary: false,
+            mentionWorld: false,
+            askBack: false,
+            variation: "textured",
+            summary: "self_disclose/open/close",
+          },
+          traceExtraction: null,
+          summary: "subject:hachika/target:hachika_profile/mode:direct",
+        },
+      };
+    },
+  };
+
+  const responsePlanner: ResponsePlanner = {
+    name: "unused-planner",
+    async planResponse() {
+      plannerCalls += 1;
+      throw new Error("should not be called");
+    },
+  };
+
+  const replyGenerator: ReplyGenerator = {
+    name: "test-llm",
+    async generateReply(context) {
+      capturedContext = context;
+      return {
+        reply: "ハチカだよ。近い距離で、まず私の側からはっきり返す。",
+        provider: "test-llm",
+        model: "stub",
+      };
+    },
+  };
+
+  const result = await engine.respondAsync("君はどんな存在？", {
+    turnDirector,
+    responsePlanner,
+    replyGenerator,
+  });
+
+  assert.equal(plannerCalls, 0);
+  assert.equal(result.debug.reply.plannerSource, "llm");
+  assert.equal(result.debug.reply.plannerProvider, "test-turn");
+  assert.equal(result.debug.reply.plannerModel, "stub");
+  assert.equal(result.debug.reply.plan, "self_disclose/open/close");
+  assert.equal(result.debug.reply.plannerRulePlan, null);
+
+  if (capturedContext === null) {
+    throw new Error("reply generator did not receive turn-directed plan");
+  }
+
+  const receivedContext = capturedContext as ReplyGenerationContext;
+  assert.equal(receivedContext.responsePlan.act, "self_disclose");
+  assert.equal(receivedContext.responsePlan.mentionIdentity, true);
+  assert.equal(receivedContext.responsePlan.askBack, false);
 });
 
 test("respondAsync retries llm wording once when the first reply stays too close to fallback", async () => {
