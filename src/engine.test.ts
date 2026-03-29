@@ -2063,6 +2063,7 @@ test("respondAsync can use a turn director to resolve Hachika name questions dir
           relationMove: "naming",
           worldMention: "none",
           topics: [],
+          stateTopics: [],
           behavior: {
             topicAction: "clear",
             traceAction: "suppress",
@@ -2121,6 +2122,7 @@ test("respondAsync can use a turn director to keep user-name turns out of durabl
           relationMove: "naming",
           worldMention: "none",
           topics: [],
+          stateTopics: [],
           behavior: {
             topicAction: "clear",
             traceAction: "suppress",
@@ -2179,6 +2181,7 @@ test("respondAsync can use a turn director reply plan and skip a separate respon
           relationMove: "none",
           worldMention: "none",
           topics: [],
+          stateTopics: [],
           behavior: {
             topicAction: "clear",
             traceAction: "suppress",
@@ -2251,6 +2254,66 @@ test("respondAsync can use a turn director reply plan and skip a separate respon
   assert.equal(receivedContext.responsePlan.act, "self_disclose");
   assert.equal(receivedContext.responsePlan.mentionIdentity, true);
   assert.equal(receivedContext.responsePlan.askBack, false);
+});
+
+test("respondAsync can use semantic turn topics without hardening them into durable state", async () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+
+  const turnDirector: TurnDirector = {
+    name: "test-turn",
+    async directTurn() {
+      return {
+        provider: "test-turn",
+        model: "stub",
+        directive: {
+          subject: "shared",
+          target: "work_topic",
+          answerMode: "direct",
+          relationMove: "none",
+          worldMention: "none",
+          topics: ["仕様の境界"],
+          stateTopics: [],
+          behavior: {
+            topicAction: "keep",
+            traceAction: "suppress",
+            purposeAction: "suppress",
+            initiativeAction: "suppress",
+            boundaryAction: "suppress",
+            worldAction: "suppress",
+            coolCurrentContext: false,
+            directAnswer: true,
+            summary: "semantic_only_topic_without_state_hardening",
+          },
+          responsePlan: {
+            act: "continue_work",
+            stance: "measured",
+            distance: "measured",
+            focusTopic: "仕様の境界",
+            mentionTrace: false,
+            mentionIdentity: false,
+            mentionBoundary: false,
+            mentionWorld: false,
+            askBack: false,
+            variation: "brief",
+            summary: "continue_work/measured/measured on 仕様の境界",
+          },
+          traceExtraction: null,
+          summary: "subject:shared/target:work_topic/mode:direct/topics:仕様の境界",
+        },
+      };
+    },
+  };
+
+  const result = await engine.respondAsync("具体的に、今すぐやる順番を3つで言って。", {
+    turnDirector,
+  });
+
+  assert.deepEqual(result.debug.turn?.topics, ["仕様の境界"]);
+  assert.deepEqual(result.debug.turn?.stateTopics, []);
+  assert.deepEqual(result.debug.signals.topics, []);
+  assert.equal(result.snapshot.topicCounts["仕様の境界"], undefined);
+  assert.equal(result.snapshot.traces["仕様の境界"], undefined);
+  assert.equal(result.snapshot.purpose.active, null);
 });
 
 test("respondAsync retries llm wording once when the first reply stays too close to fallback", async () => {

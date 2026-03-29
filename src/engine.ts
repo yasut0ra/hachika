@@ -1872,11 +1872,17 @@ function mergeTurnDirectedSignals(
   localSignals: InteractionSignals,
   directive: TurnDirective,
 ): InteractionSignals {
-  return mergeInterpretedSignals(
+  const mergedSignals = mergeInterpretedSignals(
     snapshot,
     localSignals,
     buildTurnDirectedInterpretation(localSignals, directive),
   );
+
+  const { novelty: _novelty, repetition: _repetition, ...baseSignals } = mergedSignals;
+  return finalizeInteractionSignals(snapshot, {
+    ...baseSignals,
+    topics: [...directive.stateTopics],
+  });
 }
 
 function buildTurnDirectedInterpretation(
@@ -1893,7 +1899,7 @@ function buildTurnDirectedInterpretation(
   const workTurn = directive.target === "work_topic";
 
   return {
-    topics: directive.topics,
+    topics: directive.stateTopics,
     positive: localSignals.positive,
     negative: localSignals.negative,
     question:
@@ -2390,6 +2396,8 @@ function buildDirectedTurnDebug(
     answerMode: directed.directive.answerMode,
     relationMove: directed.directive.relationMove,
     worldMention: directed.directive.worldMention,
+    topics: [...directed.directive.topics],
+    stateTopics: [...directed.directive.stateTopics],
     plan: directed.directive.responsePlan?.summary ?? null,
     summary: directed.directive.summary,
   };
@@ -2411,6 +2419,8 @@ function buildFallbackTurnDebug(
     answerMode: directive.answerMode,
     relationMove: directive.relationMove,
     worldMention: directive.worldMention,
+    topics: [...directive.topics],
+    stateTopics: [...directive.stateTopics],
     plan: directive.responsePlan?.summary ?? null,
     summary: directive.summary,
   };

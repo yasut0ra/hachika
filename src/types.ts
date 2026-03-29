@@ -481,6 +481,8 @@ export interface TurnDirectiveDebug {
   answerMode: TurnAnswerMode;
   relationMove: TurnRelationMove;
   worldMention: TurnWorldMention;
+  topics: string[];
+  stateTopics: string[];
   plan: string | null;
   summary: string;
 }

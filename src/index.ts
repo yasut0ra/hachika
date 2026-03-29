@@ -1081,9 +1081,11 @@ function formatTurnDebug(
   const error = debug.error ? ` error:${debug.error}` : "";
   const relation = debug.relationMove !== "none" ? ` relation:${debug.relationMove}` : "";
   const world = debug.worldMention !== "none" ? ` world:${debug.worldMention}` : "";
+  const topics = debug.topics.length > 0 ? ` topics:${debug.topics.join(",")}` : "";
+  const stateTopics = debug.stateTopics.length > 0 ? ` state:${debug.stateTopics.join(",")}` : "";
   const plan = debug.plan ? ` plan:${debug.plan}` : "";
 
-  return `${debug.source}${via}${model}${fallback}${error} subject:${debug.subject} target:${debug.target} mode:${debug.answerMode}${relation}${world}${plan} ${debug.summary}`;
+  return `${debug.source}${via}${model}${fallback}${error} subject:${debug.subject} target:${debug.target} mode:${debug.answerMode}${relation}${world}${topics}${stateTopics}${plan} ${debug.summary}`;
 }
 
 function formatBehaviorDebug(

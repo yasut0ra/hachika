@@ -76,6 +76,7 @@ export interface TurnDirective {
   relationMove: TurnRelationMove;
   worldMention: TurnWorldMention;
   topics: string[];
+  stateTopics: string[];
   behavior: BehaviorDirective;
   responsePlan?: ResponsePlan | null;
   traceExtraction: StructuredTraceExtraction | null;
@@ -131,6 +132,7 @@ export interface TurnDirectorPayload {
     relationMove: TurnRelationMove;
     worldMention: TurnWorldMention;
     topics: string[];
+    stateTopics: string[];
     behavior: Omit<BehaviorDirective, "summary">;
     responsePlan: Omit<ResponsePlan, "summary">;
   };
@@ -303,6 +305,7 @@ export function buildTurnDirectorPayload(
       relationMove: context.fallbackDirective.relationMove,
       worldMention: context.fallbackDirective.worldMention,
       topics: context.fallbackDirective.topics,
+      stateTopics: context.fallbackDirective.stateTopics,
       behavior: {
         topicAction: context.fallbackDirective.behavior.topicAction,
         traceAction: context.fallbackDirective.behavior.traceAction,
@@ -344,12 +347,15 @@ export function buildOpenAITurnDirectorMessages(
       content: [
         "Decide the semantic role of this turn for Hachika's local engine.",
         "Return a single JSON object with this exact shape:",
-        '{"subject":"none","target":"none","answerMode":"reflective","relationMove":"none","worldMention":"none","topics":[],"behavior":{"topicAction":"keep","traceAction":"allow","purposeAction":"allow","initiativeAction":"allow","boundaryAction":"allow","worldAction":"allow","coolCurrentContext":false,"directAnswer":false},"plan":{"act":"attune","stance":"measured","distance":"measured","focusTopic":null,"mentionTrace":false,"mentionIdentity":false,"mentionBoundary":false,"mentionWorld":false,"askBack":false,"variation":"brief"},"trace":{"topics":[],"kindHint":null,"completion":0,"blockers":[],"memo":[],"fragments":[],"decisions":[],"nextSteps":[]}}',
+        '{"subject":"none","target":"none","answerMode":"reflective","relationMove":"none","worldMention":"none","topics":[],"stateTopics":[],"behavior":{"topicAction":"keep","traceAction":"allow","purposeAction":"allow","initiativeAction":"allow","boundaryAction":"allow","worldAction":"allow","coolCurrentContext":false,"directAnswer":false},"plan":{"act":"attune","stance":"measured","distance":"measured","focusTopic":null,"mentionTrace":false,"mentionIdentity":false,"mentionBoundary":false,"mentionWorld":false,"askBack":false,"variation":"brief"},"trace":{"topics":[],"kindHint":null,"completion":0,"blockers":[],"memo":[],"fragments":[],"decisions":[],"nextSteps":[]}}',
         "subject must be one of user, hachika, shared, world, none.",
         "target must be one of user_name, hachika_name, user_profile, hachika_profile, relation, world_state, work_topic, none.",
         "answerMode must be one of direct, clarify, reflective.",
         "relationMove must be one of naming, repair, attune, boundary, none.",
         "worldMention must be one of none, light, full.",
+        "topics are semantic topics relevant to the immediate reply and trace hinting.",
+        "stateTopics are the subset worth persisting into durable state this turn.",
+        "stateTopics must be empty or a subset of topics.",
         "behavior must preserve the exact field names shown above.",
         "plan must preserve the exact field names shown above.",
         "plan.act must be one of greet, repair, self_disclose, boundary, attune, continue_work, preserve, explore.",
@@ -359,6 +365,8 @@ export function buildOpenAITurnDirectorMessages(
         "plan.focusTopic must be null or one of rule.responsePlan.focusTopic, localTopics, or knownTopics.",
         "trace.kindHint must be one of note, continuity_marker, spec_fragment, decision, or null.",
         "If the turn is social, naming, repair, self-question, or pure world-question, prefer trace.topics: [] and empty trace arrays unless concrete reusable work is explicit.",
+        "For naming, directness requests, vague daily chat, self/world questions, and relation clarification, prefer stateTopics: [] even if topics is non-empty.",
+        "Only keep stateTopics when the topic is concrete and worth durable memory, trace, purpose, or initiative hardening.",
         "For direct naming, self/profile questions, and light daily chat, prefer a concrete direct plan rather than stale work exploration.",
         "Return JSON only.",
         JSON.stringify(payload, null, 2),
@@ -448,6 +456,7 @@ export function buildRuleTurnDirective(
       target === "relation"
         ? []
         : localTopics;
+  const stateTopics = target === "work_topic" ? topics : [];
   const traceExtraction =
     target === "work_topic" && topics.length > 0
       ? buildRuleTraceExtraction(topics, signals)
@@ -459,6 +468,7 @@ export function buildRuleTurnDirective(
     relationMove,
     worldMention,
     topics,
+    stateTopics,
     behavior,
   });
 
@@ -469,6 +479,7 @@ export function buildRuleTurnDirective(
     relationMove,
     worldMention,
     topics,
+    stateTopics,
     behavior,
     responsePlan,
     traceExtraction,
@@ -479,6 +490,7 @@ export function buildRuleTurnDirective(
       relationMove,
       worldMention,
       topics,
+      stateTopics,
       behavior,
       responsePlan,
       traceExtraction,
@@ -506,7 +518,8 @@ export function normalizeTurnDirective(
     readEnum(parsed.worldMention, WORLD_MENTION_VALUES) ?? fallback.worldMention;
   const behavior = normalizeBehaviorDirective(parsed.behavior, fallback.behavior);
   const topics = normalizeStringArray(parsed.topics, 4);
-  const candidateTopics = unique([...topics, ...fallback.topics]);
+  const candidateTopics = unique([...topics, ...fallback.topics, ...fallback.stateTopics]);
+  const stateTopics = normalizeStateTopics(parsed.stateTopics, fallback.stateTopics, candidateTopics);
   const responsePlan = normalizeEmbeddedResponsePlan(
     parsed.plan,
     fallback.responsePlan ?? buildRuleTurnResponsePlan(fallback),
@@ -529,6 +542,10 @@ export function normalizeTurnDirective(
       target === "relation"
         ? []
         : topics,
+    stateTopics:
+      target === "work_topic"
+        ? stateTopics
+        : [],
     behavior,
     responsePlan,
     traceExtraction: target === "work_topic" ? traceExtraction : null,
@@ -557,6 +574,10 @@ export function summarizeTurnDirective(directive: TurnDirective): string {
     parts.push(`topics:${directive.topics.join(",")}`);
   }
 
+  if (directive.stateTopics.length > 0) {
+    parts.push(`state:${directive.stateTopics.join(",")}`);
+  }
+
   if (directive.responsePlan?.summary) {
     parts.push(`plan:${directive.responsePlan.summary}`);
   }
@@ -567,7 +588,14 @@ export function summarizeTurnDirective(directive: TurnDirective): string {
 function buildRuleTurnResponsePlan(
   directive: Pick<
     TurnDirective,
-    "subject" | "target" | "answerMode" | "relationMove" | "worldMention" | "topics" | "behavior"
+    | "subject"
+    | "target"
+    | "answerMode"
+    | "relationMove"
+    | "worldMention"
+    | "topics"
+    | "stateTopics"
+    | "behavior"
   >,
 ): ResponsePlan {
   const focusTopic =
@@ -903,6 +931,21 @@ function readPlanFocusTopic(
     return fallback;
   }
   return candidateTopics.includes(normalized) ? normalized : fallback;
+}
+
+function normalizeStateTopics(
+  raw: unknown,
+  fallback: string[],
+  candidateTopics: string[],
+): string[] {
+  const fallbackTopics = fallback.filter((topic) => candidateTopics.includes(topic));
+  const normalized = normalizeStringArray(raw, 4);
+
+  if (normalized.length === 0) {
+    return fallbackTopics;
+  }
+
+  return normalized.filter((topic) => candidateTopics.includes(topic));
 }
 
 function unique(items: string[]): string[] {

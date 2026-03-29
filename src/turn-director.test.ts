@@ -27,6 +27,7 @@ test("rule turn directive resolves Hachika name questions as direct self referen
   assert.equal(directive.behavior.traceAction, "suppress");
   assert.equal(directive.behavior.worldAction, "suppress");
   assert.deepEqual(directive.topics, []);
+  assert.deepEqual(directive.stateTopics, []);
 });
 
 test("rule turn directive resolves user naming questions without hardening work state", () => {
@@ -105,6 +106,7 @@ test("normalizeTurnDirective keeps fallback shape and parses turn semantics", ()
   assert.equal(normalized?.responsePlan?.mentionIdentity, true);
   assert.equal(normalized?.responsePlan?.summary, "self_disclose/open/close");
   assert.deepEqual(normalized?.topics, []);
+  assert.deepEqual(normalized?.stateTopics, []);
   assert.equal(normalized?.traceExtraction, null);
 });
 
