@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import type { ProactiveDirector } from "./proactive-director.js";
 import { createInitialSnapshot } from "./state.js";
 import {
   describeResidentLoopConfig,
@@ -145,6 +146,57 @@ test("resident loop can emit proactive wording and record the emission", async (
   assert.equal(result.snapshot.autonomousFeed[0]?.mode, "proactive");
   assert.equal(result.snapshot.autonomousFeed[0]?.source, "resident_loop");
   assert.equal(result.snapshot.autonomousFeed[0]?.text, result.proactiveMessage);
+});
+
+test("resident loop can suppress proactive emission through a proactive director", async () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.lastInteractionAt = "2026-03-20T10:00:00.000Z";
+  snapshot.initiative.pending = {
+    kind: "resume_topic",
+    reason: "expansion",
+    motive: "continue_shared_work",
+    topic: "仕様",
+    blocker: null,
+    concern: null,
+    createdAt: "2026-03-20T10:00:00.000Z",
+    readyAfterHours: 0,
+  };
+
+  const proactiveDirector: ProactiveDirector = {
+    name: "test-director",
+    async directProactive() {
+      return {
+        directive: {
+          emit: false,
+          plan: null,
+          summary: "suppress/quiet",
+        },
+        provider: "test-director",
+        model: "stub",
+      };
+    },
+  };
+
+  const result = await runResidentLoopTick(snapshot, {
+    idleHours: 1,
+    proactiveDirector,
+    replyGenerator: {
+      name: "test-llm",
+      async generateReply() {
+        return null;
+      },
+      async generateProactive() {
+        throw new Error("should not generate when suppressed");
+      },
+    },
+  });
+
+  assert.equal(result.proactiveMessage, null);
+  assert.equal(
+    result.activities.some((activity) => activity.kind === "proactive_emission"),
+    false,
+  );
+  assert.equal(result.snapshot.autonomousFeed.length, 0);
 });
 
 test("resident loop config reads env overrides", () => {

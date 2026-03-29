@@ -9,6 +9,7 @@ import { HachikaEngine } from "./engine.js";
 import { loadDotEnv } from "./env.js";
 import { createInputInterpreterFromEnv } from "./input-interpreter.js";
 import { commitSnapshot, loadSnapshot } from "./persistence.js";
+import { createProactiveDirectorFromEnv } from "./proactive-director.js";
 import { createReplyGeneratorFromEnv } from "./reply-generator.js";
 import { createResponsePlannerFromEnv } from "./response-planner.js";
 import { createTraceExtractorFromEnv } from "./trace-extractor.js";
@@ -26,6 +27,7 @@ const port = Number(process.env.HACHIKA_UI_PORT?.trim() || "3042");
 const snapshot = await loadSnapshot(snapshotPath);
 const engine = new HachikaEngine(snapshot);
 const replyGenerator = createReplyGeneratorFromEnv();
+const proactiveDirector = createProactiveDirectorFromEnv();
 const turnDirector = createTurnDirectorFromEnv();
 const inputInterpreter = createInputInterpreterFromEnv();
 const behaviorDirector = createBehaviorDirectorFromEnv();
@@ -89,7 +91,7 @@ const server = createServer(async (request, response) => {
       const proactiveResult = await runWithEngineConflictRetry<string | null>(engine, {
         operate: () =>
           replyGenerator
-            ? engine.emitInitiativeAsync({ force, replyGenerator })
+            ? engine.emitInitiativeAsync({ force, replyGenerator, proactiveDirector })
             : Promise.resolve(engine.emitInitiative({ force })),
         shouldPersist: (message) => message !== null,
       });
@@ -119,7 +121,7 @@ const server = createServer(async (request, response) => {
         operate: () => {
           engine.rewindIdleHours(hours);
           return replyGenerator
-            ? engine.emitInitiativeAsync({ replyGenerator })
+            ? engine.emitInitiativeAsync({ replyGenerator, proactiveDirector })
             : Promise.resolve(engine.emitInitiative());
         },
       });

@@ -4,6 +4,7 @@ import test from "node:test";
 import type { BehaviorDirector } from "./behavior-director.js";
 import { HachikaEngine } from "./engine.js";
 import type { InputInterpreter } from "./input-interpreter.js";
+import type { ProactiveDirector } from "./proactive-director.js";
 import type { ResponsePlanner } from "./response-planner.js";
 import { createInitialSnapshot } from "./state.js";
 import type { TraceExtractor } from "./trace-extractor.js";
@@ -3238,6 +3239,115 @@ test("emitInitiativeAsync falls back to rule wording when proactive generation f
   assert.equal(engine.getLastReplyDebug()?.fallbackUsed, true);
   assert.ok(engine.getLastReplyDebug()?.proactiveSelection !== null);
   assert.match(engine.getLastReplyDebug()?.error ?? "", /proactive adapter offline/);
+});
+
+test("emitInitiativeAsync can use a proactive director plan override", async () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+  let capturedContext: ProactiveGenerationContext | null = null;
+
+  engine.respond("仕様の流れを残したい。");
+  engine.rewindIdleHours(8);
+
+  const proactiveDirector: ProactiveDirector = {
+    name: "test-director",
+    async directProactive() {
+      return {
+        directive: {
+          emit: true,
+          plan: {
+            act: "continue_work",
+            stance: "open",
+            distance: "close",
+            focusTopic: "仕様",
+            emphasis: "blocker",
+            mentionBlocker: true,
+            mentionReopen: false,
+            mentionMaintenance: false,
+            mentionIntent: true,
+            variation: "questioning",
+            summary: "continue_work/open/close/blocker on 仕様",
+          },
+          summary: "emit/continue_work",
+        },
+        provider: "test-director",
+        model: "stub",
+      };
+    },
+  };
+
+  const replyGenerator: ReplyGenerator = {
+    name: "test-llm",
+    async generateReply() {
+      return null;
+    },
+    async generateProactive(context) {
+      capturedContext = context;
+      return {
+        reply: "仕様の流れはまだ切りたくない。まず詰まっている所を一つだけ見たい。",
+        provider: "test-llm",
+        model: "stub",
+      };
+    },
+  };
+
+  const message = await engine.emitInitiativeAsync({
+    replyGenerator,
+    proactiveDirector,
+  });
+
+  assert.ok(message !== null);
+  if (capturedContext === null) {
+    throw new Error("proactive generator did not receive context");
+  }
+  const proactiveContext = capturedContext as ProactiveGenerationContext;
+  assert.equal(proactiveContext.proactivePlan.act, "continue_work");
+  assert.equal(proactiveContext.proactivePlan.focusTopic, "仕様");
+  assert.equal(engine.getLastReplyDebug()?.plannerSource, "llm");
+  assert.equal(engine.getLastReplyDebug()?.plannerProvider, "test-director");
+  assert.equal(engine.getLastReplyDebug()?.plannerModel, "stub");
+  assert.ok(engine.getLastReplyDebug()?.plannerRulePlan !== null);
+  assert.ok((engine.getLastReplyDebug()?.plannerDiff ?? "").length > 0);
+  assert.match(engine.getLastReplyDebug()?.plannerDiff ?? "", /focus:|emphasis:|act:/);
+});
+
+test("emitInitiativeAsync can suppress a proactive emission via proactive director", async () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+
+  engine.respond("仕様の流れを残したい。");
+  engine.rewindIdleHours(8);
+  const beforeSnapshot = structuredClone(engine.getSnapshot());
+
+  const proactiveDirector: ProactiveDirector = {
+    name: "test-director",
+    async directProactive() {
+      return {
+        directive: {
+          emit: false,
+          plan: null,
+          summary: "suppress/quiet",
+        },
+        provider: "test-director",
+        model: "stub",
+      };
+    },
+  };
+
+  const message = await engine.emitInitiativeAsync({
+    proactiveDirector,
+    replyGenerator: {
+      name: "test-llm",
+      async generateReply() {
+        return null;
+      },
+      async generateProactive() {
+        throw new Error("should not generate when suppressed");
+      },
+    },
+  });
+
+  assert.equal(message, null);
+  assert.equal(engine.getSnapshot().initiative.lastProactiveAt, beforeSnapshot.initiative.lastProactiveAt);
+  assert.deepEqual(engine.getSnapshot().initiative.history, beforeSnapshot.initiative.history);
 });
 
 function createArchivedTrace(

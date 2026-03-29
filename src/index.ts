@@ -23,6 +23,10 @@ import {
   sortedRelationImprints,
 } from "./memory.js";
 import { commitSnapshot, loadSnapshot } from "./persistence.js";
+import {
+  createProactiveDirectorFromEnv,
+  describeProactiveDirector,
+} from "./proactive-director.js";
 import { createReplyGeneratorFromEnv, describeReplyGenerator } from "./reply-generator.js";
 import {
   deriveResidentLoopHealth,
@@ -65,6 +69,7 @@ loadDotEnv();
 const snapshot = await loadSnapshot(snapshotPath);
 const engine = new HachikaEngine(snapshot);
 const replyGenerator = createReplyGeneratorFromEnv();
+const proactiveDirector = createProactiveDirectorFromEnv();
 const turnDirector = createTurnDirectorFromEnv();
 const inputInterpreter = createInputInterpreterFromEnv();
 const behaviorDirector = createBehaviorDirectorFromEnv();
@@ -268,6 +273,7 @@ async function printIntro(currentEngine: HachikaEngine): Promise<void> {
   console.log(`world:${formatWorldSummary(currentEngine.getSnapshot().world)}`);
   console.log(`identity:${currentEngine.getIdentity().summary}`);
   console.log(`reply:${describeReplyGenerator(replyGenerator)}`);
+  console.log(`proactive:${describeProactiveDirector(proactiveDirector)}`);
   console.log(`turn:${describeTurnDirector(turnDirector)}`);
   console.log(`interpret:${describeInputInterpreter(inputInterpreter)}`);
   console.log(`behavior:${describeBehaviorDirector(behaviorDirector)}`);
@@ -361,6 +367,7 @@ function printTemperament(currentEngine: HachikaEngine): void {
 
 function printReplyGeneratorStatus(): void {
   console.log(`reply:${describeReplyGenerator(replyGenerator)}`);
+  console.log(`proactive:${describeProactiveDirector(proactiveDirector)}`);
   console.log(`turn:${describeTurnDirector(turnDirector)}`);
   console.log(`interpret:${describeInputInterpreter(inputInterpreter)}`);
   console.log(`behavior:${describeBehaviorDirector(behaviorDirector)}`);
@@ -812,7 +819,7 @@ async function emitStartupInitiative(currentEngine: HachikaEngine): Promise<void
   const emissionResult = await runWithEngineConflictRetry<string | null>(currentEngine, {
     operate: () =>
       replyGenerator
-        ? currentEngine.emitInitiativeAsync({ replyGenerator })
+        ? currentEngine.emitInitiativeAsync({ replyGenerator, proactiveDirector })
         : Promise.resolve(currentEngine.emitInitiative()),
     shouldPersist: (message) => message !== null,
   });
@@ -836,7 +843,7 @@ async function emitProactive(
   const emissionResult = await runWithEngineConflictRetry<string | null>(currentEngine, {
     operate: () =>
       replyGenerator
-        ? currentEngine.emitInitiativeAsync({ force, replyGenerator })
+        ? currentEngine.emitInitiativeAsync({ force, replyGenerator, proactiveDirector })
         : Promise.resolve(currentEngine.emitInitiative({ force })),
     shouldPersist: (message) => message !== null,
   });
@@ -870,7 +877,7 @@ async function handleIdleCommand(
     operate: () => {
       currentEngine.rewindIdleHours(hours);
       return replyGenerator
-        ? currentEngine.emitInitiativeAsync({ replyGenerator })
+        ? currentEngine.emitInitiativeAsync({ replyGenerator, proactiveDirector })
         : Promise.resolve(currentEngine.emitInitiative());
     },
   });

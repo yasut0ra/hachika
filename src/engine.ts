@@ -28,6 +28,7 @@ import {
   scheduleInitiative,
 } from "./initiative.js";
 import type { ProactiveEmission } from "./initiative.js";
+import type { ProactiveDirector } from "./proactive-director.js";
 import { applyBodyFromSignals } from "./body.js";
 import {
   deriveVisibleStateFromDynamics,
@@ -628,7 +629,12 @@ export class HachikaEngine {
   }
 
   async emitInitiativeAsync(
-    options: { force?: boolean; now?: Date; replyGenerator?: ReplyGenerator | null } = {},
+    options: {
+      force?: boolean;
+      now?: Date;
+      replyGenerator?: ReplyGenerator | null;
+      proactiveDirector?: ProactiveDirector | null;
+    } = {},
   ): Promise<string | null> {
     const previousSnapshot = structuredClone(this.#snapshot);
     const nextSnapshot = structuredClone(this.#snapshot);
@@ -639,7 +645,53 @@ export class HachikaEngine {
     }
 
     const replyGenerator = options.replyGenerator ?? null;
+    const proactiveDirector = options.proactiveDirector ?? null;
     const fallbackMessage = emission.message;
+    let finalPlan = emission.plan;
+    let plannerSource: "rule" | "llm" = "rule";
+    let plannerProvider: string | null = null;
+    let plannerModel: string | null = null;
+    let plannerFallbackUsed = false;
+    let plannerError: string | null = null;
+    let plannerRulePlan: string | null = null;
+    let plannerDiff: string | null = null;
+
+    if (proactiveDirector) {
+      try {
+        const directed = await proactiveDirector.directProactive({
+          previousSnapshot,
+          nextSnapshot,
+          pending: emission.pending,
+          neglectLevel: emission.neglectLevel,
+          rulePlan: emission.plan,
+          selection: emission.selection,
+        });
+
+        if (directed?.directive) {
+          if (!directed.directive.emit) {
+            return null;
+          }
+
+          plannerSource = "llm";
+          plannerProvider = directed.provider;
+          plannerModel = directed.model;
+          plannerRulePlan = emission.plan.summary;
+          finalPlan = directed.directive.plan ?? emission.plan;
+          plannerDiff = summarizeProactivePlanDiff(emission.plan, finalPlan);
+        }
+      } catch (error) {
+        plannerFallbackUsed = true;
+        plannerError = formatReplyGenerationError(error);
+      }
+    }
+
+    const generationEmission =
+      finalPlan === emission.plan
+        ? emission
+        : {
+            ...emission,
+            plan: finalPlan,
+          };
 
     if (!replyGenerator?.generateProactive) {
       return this.#finalizeProactiveEmission(
@@ -655,14 +707,14 @@ export class HachikaEngine {
           retryAttempts: 1,
           fallbackUsed: false,
           error: null,
-          plan: emission.plan.summary,
-          plannerRulePlan: null,
-          plannerDiff: null,
-          plannerSource: "rule",
-          plannerProvider: null,
-          plannerModel: null,
-          plannerFallbackUsed: false,
-          plannerError: null,
+          plan: finalPlan.summary,
+          plannerRulePlan,
+          plannerDiff,
+          plannerSource,
+          plannerProvider,
+          plannerModel,
+          plannerFallbackUsed,
+          plannerError,
           selection: null,
           proactiveSelection: emission.selection,
           quality: evaluateGeneratedTextQuality({
@@ -679,7 +731,12 @@ export class HachikaEngine {
       const generated = await generateTextWithQualityGate({
         generate: (retry) =>
           replyGenerator.generateProactive!(
-            buildProactiveGenerationContext(previousSnapshot, nextSnapshot, emission, retry),
+            buildProactiveGenerationContext(
+              previousSnapshot,
+              nextSnapshot,
+              generationEmission,
+              retry,
+            ),
           ),
         fallbackText: fallbackMessage,
         previousSnapshot,
@@ -698,14 +755,14 @@ export class HachikaEngine {
         retryAttempts: generated.retryAttempts,
         fallbackUsed: generated.fallbackUsed,
         error: generated.error,
-        plan: emission.plan.summary,
-        plannerRulePlan: null,
-        plannerDiff: null,
-        plannerSource: "rule",
-        plannerProvider: null,
-        plannerModel: null,
-        plannerFallbackUsed: false,
-        plannerError: null,
+        plan: finalPlan.summary,
+        plannerRulePlan,
+        plannerDiff,
+        plannerSource,
+        plannerProvider,
+        plannerModel,
+        plannerFallbackUsed,
+        plannerError,
         selection: null,
         proactiveSelection: emission.selection,
         quality: generated.quality,
@@ -719,14 +776,14 @@ export class HachikaEngine {
         retryAttempts: 1,
         fallbackUsed: true,
         error: formatReplyGenerationError(error),
-        plan: emission.plan.summary,
-        plannerRulePlan: null,
-        plannerDiff: null,
-        plannerSource: "rule",
-        plannerProvider: null,
-        plannerModel: null,
-        plannerFallbackUsed: false,
-        plannerError: null,
+        plan: finalPlan.summary,
+        plannerRulePlan,
+        plannerDiff,
+        plannerSource,
+        plannerProvider,
+        plannerModel,
+        plannerFallbackUsed,
+        plannerError,
         selection: null,
         proactiveSelection: emission.selection,
         quality: evaluateGeneratedTextQuality({
@@ -1444,6 +1501,46 @@ function summarizeResponsePlanDiff(
   }
   if (rulePlan.askBack !== finalPlan.askBack) {
     changes.push(`ask:${rulePlan.askBack ? "on" : "off"}->${finalPlan.askBack ? "on" : "off"}`);
+  }
+  if (rulePlan.variation !== finalPlan.variation) {
+    changes.push(`variation:${rulePlan.variation}->${finalPlan.variation}`);
+  }
+
+  return changes.length > 0 ? changes.join("/") : null;
+}
+
+function summarizeProactivePlanDiff(
+  rulePlan: ProactiveEmission["plan"],
+  finalPlan: ProactiveEmission["plan"],
+): string | null {
+  const changes: string[] = [];
+
+  if (rulePlan.act !== finalPlan.act) {
+    changes.push(`act:${rulePlan.act}->${finalPlan.act}`);
+  }
+  if (rulePlan.stance !== finalPlan.stance) {
+    changes.push(`stance:${rulePlan.stance}->${finalPlan.stance}`);
+  }
+  if (rulePlan.distance !== finalPlan.distance) {
+    changes.push(`distance:${rulePlan.distance}->${finalPlan.distance}`);
+  }
+  if (rulePlan.focusTopic !== finalPlan.focusTopic) {
+    changes.push(`focus:${rulePlan.focusTopic ?? "none"}->${finalPlan.focusTopic ?? "none"}`);
+  }
+  if (rulePlan.emphasis !== finalPlan.emphasis) {
+    changes.push(`emphasis:${rulePlan.emphasis}->${finalPlan.emphasis}`);
+  }
+  if (rulePlan.mentionBlocker !== finalPlan.mentionBlocker) {
+    changes.push(`blocker:${rulePlan.mentionBlocker ? "on" : "off"}->${finalPlan.mentionBlocker ? "on" : "off"}`);
+  }
+  if (rulePlan.mentionReopen !== finalPlan.mentionReopen) {
+    changes.push(`reopen:${rulePlan.mentionReopen ? "on" : "off"}->${finalPlan.mentionReopen ? "on" : "off"}`);
+  }
+  if (rulePlan.mentionMaintenance !== finalPlan.mentionMaintenance) {
+    changes.push(`maintenance:${rulePlan.mentionMaintenance ? "on" : "off"}->${finalPlan.mentionMaintenance ? "on" : "off"}`);
+  }
+  if (rulePlan.mentionIntent !== finalPlan.mentionIntent) {
+    changes.push(`intent:${rulePlan.mentionIntent ? "on" : "off"}->${finalPlan.mentionIntent ? "on" : "off"}`);
   }
   if (rulePlan.variation !== finalPlan.variation) {
     changes.push(`variation:${rulePlan.variation}->${finalPlan.variation}`);
