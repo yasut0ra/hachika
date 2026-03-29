@@ -7,6 +7,7 @@ import type { InputInterpreter } from "./input-interpreter.js";
 import type { ResponsePlanner } from "./response-planner.js";
 import { createInitialSnapshot } from "./state.js";
 import type { TraceExtractor } from "./trace-extractor.js";
+import type { TurnDirector } from "./turn-director.js";
 import type {
   ProactiveGenerationContext,
   ReplyGenerationContext,
@@ -2045,6 +2046,93 @@ test("respondAsync can use an external reply generator while keeping local state
   assert.ok(result.snapshot.attachment > before.attachment);
 });
 
+test("respondAsync can use a turn director to resolve Hachika name questions directly", async () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+
+  const turnDirector: TurnDirector = {
+    name: "test-turn",
+    async directTurn() {
+      return {
+        provider: "test-turn",
+        model: "stub",
+        directive: {
+          subject: "hachika",
+          target: "hachika_name",
+          answerMode: "direct",
+          relationMove: "naming",
+          worldMention: "none",
+          topics: [],
+          behavior: {
+            topicAction: "clear",
+            traceAction: "suppress",
+            purposeAction: "suppress",
+            initiativeAction: "suppress",
+            boundaryAction: "suppress",
+            worldAction: "suppress",
+            coolCurrentContext: false,
+            directAnswer: true,
+            summary: "turn/direct_referent_without_trace_hardening",
+          },
+          traceExtraction: null,
+          summary: "subject:hachika/target:hachika_name/mode:direct/relation:naming",
+        },
+      };
+    },
+  };
+
+  const result = await engine.respondAsync("あなたの名前は？", { turnDirector });
+
+  assert.equal(result.debug.turn?.source, "llm");
+  assert.equal(result.debug.turn?.target, "hachika_name");
+  assert.equal(result.debug.behavior.traceAction, "suppress");
+  assert.ok(result.debug.signals.selfInquiry >= 0.7);
+  assert.equal(result.snapshot.traces["名前"], undefined);
+  assert.match(result.reply, /ハチカ/);
+});
+
+test("respondAsync can use a turn director to keep user-name turns out of durable work state", async () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+
+  const turnDirector: TurnDirector = {
+    name: "test-turn",
+    async directTurn() {
+      return {
+        provider: "test-turn",
+        model: "stub",
+        directive: {
+          subject: "user",
+          target: "user_name",
+          answerMode: "direct",
+          relationMove: "naming",
+          worldMention: "none",
+          topics: [],
+          behavior: {
+            topicAction: "clear",
+            traceAction: "suppress",
+            purposeAction: "suppress",
+            initiativeAction: "suppress",
+            boundaryAction: "suppress",
+            worldAction: "suppress",
+            coolCurrentContext: false,
+            directAnswer: true,
+            summary: "turn/direct_referent_without_trace_hardening",
+          },
+          traceExtraction: null,
+          summary: "subject:user/target:user_name/mode:direct/relation:naming",
+        },
+      };
+    },
+  };
+
+  const result = await engine.respondAsync("私の名前覚えてる？", { turnDirector });
+
+  assert.equal(result.debug.turn?.target, "user_name");
+  assert.equal(result.snapshot.purpose.active, null);
+  assert.equal(result.snapshot.initiative.pending, null);
+  assert.equal(result.snapshot.traces["名前"], undefined);
+  assert.match(result.reply, /聞かせて|掴み切れていない|取り違え/);
+});
+
 test("respondAsync retries llm wording once when the first reply stays too close to fallback", async () => {
   const engine = new HachikaEngine(createInitialSnapshot());
   const attempts: ReplyGenerationContext[] = [];
@@ -2825,6 +2913,7 @@ test("reset clears the last reply diagnostics", async () => {
   assert.equal(engine.getLastReplyDebug(), null);
   assert.equal(engine.getLastResponseDebug(), null);
   assert.equal(engine.getLastProactiveDebug(), null);
+  assert.equal(engine.getLastTurnDebug(), null);
   assert.equal(engine.getLastInterpretationDebug(), null);
   assert.equal(engine.getLastTraceExtractionDebug(), null);
 });

@@ -12,6 +12,7 @@ import { commitSnapshot, loadSnapshot } from "./persistence.js";
 import { createReplyGeneratorFromEnv } from "./reply-generator.js";
 import { createResponsePlannerFromEnv } from "./response-planner.js";
 import { createTraceExtractorFromEnv } from "./trace-extractor.js";
+import { createTurnDirectorFromEnv } from "./turn-director.js";
 import { createInitialSnapshot } from "./state.js";
 import { buildUiState } from "./ui-state.js";
 
@@ -25,6 +26,7 @@ const port = Number(process.env.HACHIKA_UI_PORT?.trim() || "3042");
 const snapshot = await loadSnapshot(snapshotPath);
 const engine = new HachikaEngine(snapshot);
 const replyGenerator = createReplyGeneratorFromEnv();
+const turnDirector = createTurnDirectorFromEnv();
 const inputInterpreter = createInputInterpreterFromEnv();
 const behaviorDirector = createBehaviorDirectorFromEnv();
 const responsePlanner = createResponsePlannerFromEnv();
@@ -58,6 +60,7 @@ const server = createServer(async (request, response) => {
           replyGenerator || inputInterpreter || behaviorDirector || responsePlanner || traceExtractor
             ? engine.respondAsync(text, {
                 replyGenerator,
+                turnDirector,
                 inputInterpreter,
                 behaviorDirector,
                 responsePlanner,

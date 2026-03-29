@@ -44,7 +44,7 @@ import type {
   TraceExtractionResult,
   TraceExtractor,
 } from "./trace-extractor.js";
-import { updatePurpose } from "./purpose.js";
+import { abandonActivePurpose, updatePurpose } from "./purpose.js";
 import { buildResponsePlan, isSocialTurnSignals } from "./response-planner.js";
 import type {
   ResponsePlan,
@@ -59,6 +59,14 @@ import type {
 } from "./reply-generator.js";
 import { buildSelfModel } from "./self-model.js";
 import { updateTemperament } from "./temperament.js";
+import {
+  buildRuleTurnDirective,
+} from "./turn-director.js";
+import type {
+  TurnDirective,
+  TurnDirector,
+  TurnDirectorResult,
+} from "./turn-director.js";
 import {
   applyBoundedPressure,
   clamp01,
@@ -94,6 +102,7 @@ import type {
   ReplySelectionDebug,
   SelfModel,
   StructuredTraceExtraction,
+  TurnDirectiveDebug,
   TraceExtractionDebug,
   TraceEntry,
   TurnResult,
@@ -482,6 +491,7 @@ export class HachikaEngine {
   #lastInterpretationDebug: InterpretationDebug | null = null;
   #lastBehaviorDebug: BehaviorDirectiveDebug | null = null;
   #lastTraceExtractionDebug: TraceExtractionDebug | null = null;
+  #lastTurnDebug: TurnDirectiveDebug | null = null;
 
   constructor(snapshot: HachikaSnapshot = createInitialSnapshot()) {
     this.#snapshot = structuredClone(snapshot);
@@ -508,6 +518,7 @@ export class HachikaEngine {
     this.#lastInterpretationDebug = null;
     this.#lastBehaviorDebug = null;
     this.#lastTraceExtractionDebug = null;
+    this.#lastTurnDebug = null;
   }
 
   getSelfModel(): SelfModel {
@@ -548,6 +559,10 @@ export class HachikaEngine {
 
   getLastTraceExtractionDebug(): TraceExtractionDebug | null {
     return this.#lastTraceExtractionDebug ? { ...this.#lastTraceExtractionDebug } : null;
+  }
+
+  getLastTurnDebug(): TurnDirectiveDebug | null {
+    return this.#lastTurnDebug ? { ...this.#lastTurnDebug } : null;
   }
 
   annotateLastRetryAttempts(attempts: number): void {
@@ -760,6 +775,7 @@ export class HachikaEngine {
       prepared.selfModel,
       prepared.responsePlan,
       prepared.replySelection,
+      prepared.turnDebug,
     );
 
     return this.#finalizeTurn(input, prepared, reply, {
@@ -792,6 +808,7 @@ export class HachikaEngine {
   async respondAsync(
     input: string,
     options: {
+      turnDirector?: TurnDirector | null;
       replyGenerator?: ReplyGenerator | null;
       inputInterpreter?: InputInterpreter | null;
       behaviorDirector?: BehaviorDirector | null;
@@ -802,6 +819,7 @@ export class HachikaEngine {
     const prepared = await prepareTurnAsync(
       this.#snapshot,
       input,
+      options.turnDirector ?? null,
       options.inputInterpreter ?? null,
       options.behaviorDirector ?? null,
       options.responsePlanner ?? null,
@@ -817,6 +835,7 @@ export class HachikaEngine {
       prepared.selfModel,
       prepared.responsePlan,
       prepared.replySelection,
+      prepared.turnDebug,
     );
     const replyGenerator = options.replyGenerator ?? null;
 
@@ -935,6 +954,7 @@ export class HachikaEngine {
     this.#lastInterpretationDebug = { ...prepared.interpretationDebug };
     this.#lastBehaviorDebug = { ...prepared.behaviorDebug };
     this.#lastTraceExtractionDebug = { ...prepared.traceExtractionDebug };
+    this.#lastTurnDebug = prepared.turnDebug ? { ...prepared.turnDebug } : null;
 
     return {
       reply,
@@ -944,6 +964,7 @@ export class HachikaEngine {
         mood: prepared.mood,
         signals: prepared.signals,
         selfModel: prepared.selfModel,
+        turn: prepared.turnDebug,
         interpretation: prepared.interpretationDebug,
         behavior: prepared.behaviorDebug,
         traceExtraction: prepared.traceExtractionDebug,
@@ -985,6 +1006,7 @@ interface PreparedTurn {
   nextSnapshot: HachikaSnapshot;
   signals: InteractionSignals;
   responseSignals: InteractionSignals;
+  turnDebug: TurnDirectiveDebug | null;
   interpretationDebug: InterpretationDebug;
   behaviorDirective: BehaviorDirective;
   behaviorDebug: BehaviorDirectiveDebug;
@@ -1028,6 +1050,7 @@ function prepareTurn(
     snapshot,
     signals,
     input,
+    null,
     buildRuleInterpretationDebug(signals),
     behaviorDirective,
     buildRuleBehaviorDebug(behaviorDirective),
@@ -1039,11 +1062,44 @@ function prepareTurn(
 async function prepareTurnAsync(
   snapshot: HachikaSnapshot,
   input: string,
+  turnDirector: TurnDirector | null,
   inputInterpreter: InputInterpreter | null,
   behaviorDirector: BehaviorDirector | null,
   responsePlanner: ResponsePlanner | null,
   traceExtractor: TraceExtractor | null,
 ): Promise<PreparedTurn> {
+  if (turnDirector) {
+    const localSignals = analyzeInteraction(input, snapshot);
+    const directed = await analyzeTurnDirectiveAsync(
+      input,
+      snapshot,
+      localSignals,
+      turnDirector,
+    );
+    const directedSignals = mergeTurnDirectedSignals(
+      snapshot,
+      localSignals,
+      directed.directive,
+    );
+    const prepared = prepareTurnFromSignals(
+      snapshot,
+      directedSignals,
+      input,
+      directed.turnDebug,
+      buildTurnInterpretationDebug(localSignals, directedSignals, directed),
+      directed.directive.behavior,
+      buildTurnBehaviorDebug(directed),
+      directed.directive.traceExtraction,
+      buildTurnTraceExtractionDebug(localSignals, directedSignals, directed),
+    );
+
+    if (!responsePlanner) {
+      return prepared;
+    }
+
+    return applyResponsePlanner(prepared, input, responsePlanner);
+  }
+
   const analyzed = await analyzeInteractionAsync(input, snapshot, inputInterpreter);
   const traced = await analyzeTraceExtractionAsync(
     input,
@@ -1063,6 +1119,7 @@ async function prepareTurnAsync(
     snapshot,
     analyzed.signals,
     input,
+    null,
     analyzed.interpretationDebug,
     behaved.directive,
     behaved.behaviorDebug,
@@ -1081,6 +1138,7 @@ function prepareTurnFromSignals(
   snapshot: HachikaSnapshot,
   signals: InteractionSignals,
   input: string,
+  turnDebug: TurnDirectiveDebug | null,
   interpretationDebug: InterpretationDebug,
   behaviorDirective: BehaviorDirective,
   behaviorDebug: BehaviorDirectiveDebug,
@@ -1100,7 +1158,11 @@ function prepareTurnFromSignals(
   const sentimentScore = scoreSentiment(stateSignals);
   const nextSnapshot = applySignals(snapshot, stateSignals, sentimentScore);
   if (behaviorDirective.coolCurrentContext) {
-    nextSnapshot.purpose.active = null;
+    abandonActivePurpose(
+      nextSnapshot,
+      stateSignals,
+      nextSnapshot.lastInteractionAt ?? new Date().toISOString(),
+    );
     nextSnapshot.initiative.pending = null;
   }
   advanceWorldFromInteraction(
@@ -1169,6 +1231,7 @@ function prepareTurnFromSignals(
     nextSnapshot,
     signals: stateSignals,
     responseSignals,
+    turnDebug,
     interpretationDebug,
     behaviorDirective,
     behaviorDebug,
@@ -1288,6 +1351,7 @@ function buildReplyGenerationContext(
     selfModel: prepared.selfModel,
     responsePlan: prepared.responsePlan,
     replySelection: prepared.replySelection.debug,
+    turnDirective: prepared.turnDebug,
     behaviorDirective: {
       directAnswer: prepared.behaviorDirective.directAnswer,
       boundaryAction: prepared.behaviorDirective.boundaryAction,
@@ -1613,6 +1677,127 @@ async function analyzeInteractionAsync(
       ),
     };
   }
+}
+
+async function analyzeTurnDirectiveAsync(
+  input: string,
+  snapshot: HachikaSnapshot,
+  localSignals: InteractionSignals,
+  turnDirector: TurnDirector,
+): Promise<{
+  directive: TurnDirective;
+  turnDebug: TurnDirectiveDebug;
+}> {
+  const fallbackDirective = buildRuleTurnDirective(snapshot, input, localSignals);
+
+  try {
+    const directed = await turnDirector.directTurn({
+      input,
+      snapshot,
+      localSignals,
+      fallbackDirective,
+    });
+
+    if (!directed) {
+      return {
+        directive: fallbackDirective,
+        turnDebug: buildFallbackTurnDebug(
+          turnDirector,
+          fallbackDirective,
+          "empty_turn_directive",
+        ),
+      };
+    }
+
+    return {
+      directive: directed.directive,
+      turnDebug: buildDirectedTurnDebug(directed),
+    };
+  } catch (error) {
+    return {
+      directive: fallbackDirective,
+      turnDebug: buildFallbackTurnDebug(
+        turnDirector,
+        fallbackDirective,
+        formatInterpretationError(error),
+      ),
+    };
+  }
+}
+
+function mergeTurnDirectedSignals(
+  snapshot: HachikaSnapshot,
+  localSignals: InteractionSignals,
+  directive: TurnDirective,
+): InteractionSignals {
+  return mergeInterpretedSignals(
+    snapshot,
+    localSignals,
+    buildTurnDirectedInterpretation(localSignals, directive),
+  );
+}
+
+function buildTurnDirectedInterpretation(
+  localSignals: InteractionSignals,
+  directive: TurnDirective,
+): InputInterpretation {
+  const directReferentTarget =
+    directive.target === "hachika_name" ||
+    directive.target === "hachika_profile" ||
+    directive.target === "user_name" ||
+    directive.target === "user_profile";
+  const relationTurn = directive.target === "relation";
+  const worldTurn = directive.target === "world_state";
+  const workTurn = directive.target === "work_topic";
+
+  return {
+    topics: directive.topics,
+    positive: localSignals.positive,
+    negative: localSignals.negative,
+    question:
+      directive.answerMode === "clarify"
+        ? Math.max(localSignals.question, 0.44)
+        : localSignals.question,
+    intimacy: clamp01(
+      Math.max(
+        localSignals.intimacy,
+        directReferentTarget || relationTurn ? 0.34 : 0,
+      ),
+    ),
+    dismissal:
+      directive.relationMove === "repair"
+        ? clamp01(localSignals.dismissal * 0.5)
+        : localSignals.dismissal,
+    memoryCue: clamp01(
+      Math.max(localSignals.memoryCue, directive.target === "user_name" ? 0.42 : 0),
+    ),
+    expansionCue: workTurn
+      ? Math.max(localSignals.expansionCue, 0.18)
+      : Math.min(localSignals.expansionCue, 0.18),
+    completion: localSignals.completion,
+    abandonment: localSignals.abandonment,
+    preservationThreat: localSignals.preservationThreat,
+    preservationConcern: localSignals.preservationConcern,
+    greeting: localSignals.greeting,
+    smalltalk: relationTurn && directive.relationMove === "attune"
+      ? Math.max(localSignals.smalltalk, 0.48)
+      : localSignals.smalltalk,
+    repair:
+      directive.relationMove === "repair"
+        ? Math.max(localSignals.repair, 0.72)
+        : localSignals.repair,
+    selfInquiry:
+      directive.target === "hachika_name" || directive.target === "hachika_profile"
+        ? Math.max(localSignals.selfInquiry, 0.72)
+        : localSignals.selfInquiry,
+    worldInquiry:
+      worldTurn ? Math.max(localSignals.worldInquiry, 0.82) : localSignals.worldInquiry,
+    workCue: workTurn
+      ? Math.max(localSignals.workCue, 0.55)
+      : directReferentTarget || relationTurn || worldTurn
+        ? Math.min(localSignals.workCue, 0.22)
+        : localSignals.workCue,
+  };
 }
 
 async function analyzeTraceExtractionAsync(
@@ -1986,6 +2171,11 @@ function buildInterpreterInterpretationDebug(
   mergedSignals: InteractionSignals,
   interpreted: InputInterpretationResult,
 ): InterpretationDebug {
+  const proposedTopics = uniqueTopics([
+    ...localSignals.topics,
+    ...interpreted.interpretation.topics,
+  ]);
+
   return {
     source: "llm",
     provider: interpreted.provider,
@@ -1995,7 +2185,7 @@ function buildInterpreterInterpretationDebug(
     localTopics: [...localSignals.topics],
     topics: [...mergedSignals.topics],
     adoptedTopics: diffTopics(mergedSignals.topics, localSignals.topics),
-    droppedTopics: diffTopics(localSignals.topics, mergedSignals.topics),
+    droppedTopics: diffTopics(proposedTopics, mergedSignals.topics),
     scores: pickInterpretationScores(mergedSignals),
     summary: summarizeInterpretation(mergedSignals),
   };
@@ -2018,6 +2208,124 @@ function buildFallbackInterpretationDebug(
     droppedTopics: [],
     scores: pickInterpretationScores(signals),
     summary: summarizeInterpretation(signals),
+  };
+}
+
+function buildTurnInterpretationDebug(
+  localSignals: InteractionSignals,
+  mergedSignals: InteractionSignals,
+  directed: {
+    directive: TurnDirective;
+    turnDebug: TurnDirectiveDebug;
+  },
+): InterpretationDebug {
+  return {
+    source: directed.turnDebug.source,
+    provider: directed.turnDebug.provider,
+    model: directed.turnDebug.model,
+    fallbackUsed: directed.turnDebug.fallbackUsed,
+    error: directed.turnDebug.error,
+    localTopics: [...localSignals.topics],
+    topics: [...mergedSignals.topics],
+    adoptedTopics: diffTopics(mergedSignals.topics, localSignals.topics),
+    droppedTopics: diffTopics(localSignals.topics, mergedSignals.topics),
+    scores: pickInterpretationScores(mergedSignals),
+    summary: `${summarizeInterpretation(mergedSignals)} ${directed.turnDebug.summary}`.trim(),
+  };
+}
+
+function buildDirectedTurnDebug(
+  directed: TurnDirectorResult,
+): TurnDirectiveDebug {
+  return {
+    source: "llm",
+    provider: directed.provider,
+    model: directed.model,
+    fallbackUsed: false,
+    error: null,
+    subject: directed.directive.subject,
+    target: directed.directive.target,
+    answerMode: directed.directive.answerMode,
+    relationMove: directed.directive.relationMove,
+    worldMention: directed.directive.worldMention,
+    summary: directed.directive.summary,
+  };
+}
+
+function buildFallbackTurnDebug(
+  turnDirector: TurnDirector,
+  directive: TurnDirective,
+  error: string,
+): TurnDirectiveDebug {
+  return {
+    source: "rule",
+    provider: turnDirector.name,
+    model: null,
+    fallbackUsed: true,
+    error,
+    subject: directive.subject,
+    target: directive.target,
+    answerMode: directive.answerMode,
+    relationMove: directive.relationMove,
+    worldMention: directive.worldMention,
+    summary: directive.summary,
+  };
+}
+
+function buildTurnBehaviorDebug(
+  directed: {
+    directive: TurnDirective;
+    turnDebug: TurnDirectiveDebug;
+  },
+): BehaviorDirectiveDebug {
+  return {
+    source: directed.turnDebug.source,
+    provider: directed.turnDebug.provider,
+    model: directed.turnDebug.model,
+    fallbackUsed: directed.turnDebug.fallbackUsed,
+    error: directed.turnDebug.error,
+    topicAction: directed.directive.behavior.topicAction,
+    traceAction: directed.directive.behavior.traceAction,
+    purposeAction: directed.directive.behavior.purposeAction,
+    initiativeAction: directed.directive.behavior.initiativeAction,
+    boundaryAction: directed.directive.behavior.boundaryAction,
+    worldAction: directed.directive.behavior.worldAction,
+    coolCurrentContext: directed.directive.behavior.coolCurrentContext,
+    directAnswer: directed.directive.behavior.directAnswer,
+    summary: directed.directive.behavior.summary,
+  };
+}
+
+function buildTurnTraceExtractionDebug(
+  localSignals: InteractionSignals,
+  stateSignals: InteractionSignals,
+  directed: {
+    directive: TurnDirective;
+    turnDebug: TurnDirectiveDebug;
+  },
+): TraceExtractionDebug {
+  const extraction = directed.directive.traceExtraction;
+
+  return {
+    source: directed.turnDebug.source,
+    provider: directed.turnDebug.provider,
+    model: directed.turnDebug.model,
+    fallbackUsed: directed.turnDebug.fallbackUsed,
+    error: directed.turnDebug.error,
+    topics: extraction?.topics ?? [],
+    stateTopics: [...stateSignals.topics],
+    adoptedTopics: stateSignals.topics.filter(
+      (topic) => (extraction?.topics ?? []).includes(topic) && !localSignals.topics.includes(topic),
+    ),
+    droppedTopics: localSignals.topics.filter((topic) => !stateSignals.topics.includes(topic)),
+    blockers: extraction?.blockers ?? [],
+    nextSteps: extraction?.nextSteps ?? [],
+    kindHint: extraction?.kindHint ?? null,
+    completion: extraction?.completion ?? 0,
+    summary:
+      extraction && extraction.topics.length > 0
+        ? `turn:${directed.turnDebug.summary}/trace:${extraction.topics.join(",")}`
+        : `turn:${directed.turnDebug.summary}/trace:none`,
   };
 }
 
@@ -2960,6 +3268,7 @@ function composeReply(
   selfModel: SelfModel,
   responsePlan: ResponsePlan,
   replySelection: ResolvedReplySelection,
+  turnDebug: TurnDirectiveDebug | null,
 ): string {
   const turnIndex = nextSnapshot.conversationCount;
   const socialTurn = replySelection.socialTurn;
@@ -2986,6 +3295,12 @@ function composeReply(
   const parts: string[] = [
     buildPlannedOpener(previousSnapshot, responsePlan, mood, turnIndex),
   ];
+  const directReferentLine = buildDirectReferentAnswerLine(
+    previousSnapshot,
+    nextSnapshot,
+    mood,
+    turnDebug,
+  );
   const socialLine = buildSocialLine(
     previousSnapshot,
     nextSnapshot,
@@ -3000,6 +3315,10 @@ function composeReply(
 
   if (mood === "guarded" && signals.negative > 0.1) {
     parts.push(pickFreshText(BOUNDARY_LINES, recentAssistantLines, turnIndex));
+  }
+
+  if (!worldTurn && directReferentLine) {
+    parts.push(directReferentLine);
   }
 
   if (!worldTurn && (socialTurn || responsePlan.act === "attune") && socialLine) {
@@ -3535,6 +3854,46 @@ function buildSocialLine(
   }
 
   return null;
+}
+
+function buildDirectReferentAnswerLine(
+  previousSnapshot: HachikaSnapshot,
+  snapshot: HachikaSnapshot,
+  mood: MoodLabel,
+  turnDebug: TurnDirectiveDebug | null,
+): string | null {
+  if (!turnDebug || turnDebug.answerMode !== "direct") {
+    return null;
+  }
+
+  const recentAssistantLines = recentAssistantReplies(previousSnapshot, 4);
+
+  switch (turnDebug.target) {
+    case "hachika_name":
+      return pickFreshText(
+        [
+          "名前なら、ハチカでいい。",
+          "呼ぶなら、ハチカで受け取れる。",
+          "こちらの名前は、ハチカでいい。",
+        ],
+        recentAssistantLines,
+        snapshot.conversationCount,
+      );
+    case "user_name":
+      return pickFreshText(
+        [
+          "あなたの名前は、まだこちらで取り違えたくない。もう一度聞かせて。",
+          "呼び名はまだ掴み切れていない。改めて聞かせてほしい。",
+          "あなたの名前は、ここで曖昧なまま返したくない。もう一度だけ聞かせて。",
+        ],
+        recentAssistantLines,
+        snapshot.conversationCount,
+      );
+    case "hachika_profile":
+      return buildConcreteSelfDisclosureLine(snapshot, mood, false);
+    default:
+      return null;
+  }
 }
 
 function buildSocialClosingLine(

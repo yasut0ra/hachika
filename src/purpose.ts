@@ -128,6 +128,26 @@ export function updatePurpose(
   snapshot.purpose.active = refreshedActive;
 }
 
+export function abandonActivePurpose(
+  snapshot: HachikaSnapshot,
+  signals: InteractionSignals,
+  timestamp = new Date().toISOString(),
+): void {
+  const active = snapshot.purpose.active;
+
+  if (!active) {
+    return;
+  }
+
+  resolvePurpose(
+    snapshot,
+    active,
+    "abandoned",
+    buildAbandonedResolution(active, signals),
+    timestamp,
+  );
+}
+
 function selectPurposeCandidate(
   motives: readonly SelfMotive[],
   signals: InteractionSignals,

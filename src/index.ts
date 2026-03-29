@@ -35,6 +35,7 @@ import {
   describeResponsePlanner,
 } from "./response-planner.js";
 import { createTraceExtractorFromEnv, describeTraceExtractor } from "./trace-extractor.js";
+import { createTurnDirectorFromEnv, describeTurnDirector } from "./turn-director.js";
 import {
   createInitialSnapshot,
   formatBodyState,
@@ -64,6 +65,7 @@ loadDotEnv();
 const snapshot = await loadSnapshot(snapshotPath);
 const engine = new HachikaEngine(snapshot);
 const replyGenerator = createReplyGeneratorFromEnv();
+const turnDirector = createTurnDirectorFromEnv();
 const inputInterpreter = createInputInterpreterFromEnv();
 const behaviorDirector = createBehaviorDirectorFromEnv();
 const responsePlanner = createResponsePlannerFromEnv();
@@ -228,6 +230,7 @@ try {
           replyGenerator || inputInterpreter || behaviorDirector || responsePlanner || traceExtractor
             ? engine.respondAsync(text, {
                 replyGenerator,
+                turnDirector,
                 inputInterpreter,
                 behaviorDirector,
                 responsePlanner,
@@ -265,6 +268,7 @@ async function printIntro(currentEngine: HachikaEngine): Promise<void> {
   console.log(`world:${formatWorldSummary(currentEngine.getSnapshot().world)}`);
   console.log(`identity:${currentEngine.getIdentity().summary}`);
   console.log(`reply:${describeReplyGenerator(replyGenerator)}`);
+  console.log(`turn:${describeTurnDirector(turnDirector)}`);
   console.log(`interpret:${describeInputInterpreter(inputInterpreter)}`);
   console.log(`behavior:${describeBehaviorDirector(behaviorDirector)}`);
   console.log(`planner:${describeResponsePlanner(responsePlanner)}`);
@@ -272,6 +276,7 @@ async function printIntro(currentEngine: HachikaEngine): Promise<void> {
   console.log(`loop:${formatResidentLoopStatus(loadResidentLoopStatusSync(residentStatusPath))}`);
   console.log(`autonomy:poll ${Math.round(CLI_AUTONOMOUS_POLL_INTERVAL_MS / 1000)}s`);
   console.log(`last reply:${formatLastReplyDebug(currentEngine)}`);
+  console.log(`last turn:${formatTurnDebug(currentEngine.getLastTurnDebug())}`);
   console.log(`last interpretation:${formatInterpretationDebug(currentEngine.getLastInterpretationDebug())}`);
   console.log(`last behavior:${formatBehaviorDebug(currentEngine.getLastBehaviorDebug())}`);
   console.log(`last trace:${formatTraceExtractionDebug(currentEngine.getLastTraceExtractionDebug())}`);
@@ -356,12 +361,14 @@ function printTemperament(currentEngine: HachikaEngine): void {
 
 function printReplyGeneratorStatus(): void {
   console.log(`reply:${describeReplyGenerator(replyGenerator)}`);
+  console.log(`turn:${describeTurnDirector(turnDirector)}`);
   console.log(`interpret:${describeInputInterpreter(inputInterpreter)}`);
   console.log(`behavior:${describeBehaviorDirector(behaviorDirector)}`);
   console.log(`planner:${describeResponsePlanner(responsePlanner)}`);
   console.log(`trace:${describeTraceExtractor(traceExtractor)}`);
   console.log(`loop:${formatResidentLoopStatus(loadResidentLoopStatusSync(residentStatusPath))}`);
   console.log(`last reply:${formatLastReplyDebug(engine)}`);
+  console.log(`last turn:${formatTurnDebug(engine.getLastTurnDebug())}`);
   console.log(`last interpretation:${formatInterpretationDebug(engine.getLastInterpretationDebug())}`);
   console.log(`last behavior:${formatBehaviorDebug(engine.getLastBehaviorDebug())}`);
   console.log(`last trace:${formatTraceExtractionDebug(engine.getLastTraceExtractionDebug())}`);
@@ -583,12 +590,14 @@ function printDebug(currentEngine: HachikaEngine): void {
   console.log(`attachment: ${snapshot.attachment.toFixed(2)}`);
   console.log(`world: ${formatWorldSummary(snapshot.world)}`);
   console.log(`reply generator: ${describeReplyGenerator(replyGenerator)}`);
+  console.log(`turn director: ${describeTurnDirector(turnDirector)}`);
   console.log(`behavior director: ${describeBehaviorDirector(behaviorDirector)}`);
   console.log(`response planner: ${describeResponsePlanner(responsePlanner)}`);
   console.log(`trace extractor: ${describeTraceExtractor(traceExtractor)}`);
   console.log(`input interpreter: ${describeInputInterpreter(inputInterpreter)}`);
   console.log(`resident loop: ${formatResidentLoopStatus(loadResidentLoopStatusSync(residentStatusPath))}`);
   console.log(`last reply: ${formatLastReplyDebug(currentEngine)}`);
+  console.log(`last turn: ${formatTurnDebug(currentEngine.getLastTurnDebug())}`);
   console.log(`last interpretation: ${formatInterpretationDebug(currentEngine.getLastInterpretationDebug())}`);
   console.log(`last behavior: ${formatBehaviorDebug(currentEngine.getLastBehaviorDebug())}`);
   console.log(`last trace extraction: ${formatTraceExtractionDebug(currentEngine.getLastTraceExtractionDebug())}`);
@@ -1050,6 +1059,23 @@ function formatInterpretationDebug(
   const scores = formatInterpretationScores(debug.scores);
 
   return `${debug.source}${via}${model}${fallback}${error} ${debug.summary}${scores}${localTopics}${topics}${adopted}${dropped}`;
+}
+
+function formatTurnDebug(
+  debug: ReturnType<HachikaEngine["getLastTurnDebug"]>,
+): string {
+  if (!debug) {
+    return "none";
+  }
+
+  const via = debug.provider ? ` via:${debug.provider}` : "";
+  const model = debug.model ? ` model:${debug.model}` : "";
+  const fallback = debug.fallbackUsed ? " fallback" : "";
+  const error = debug.error ? ` error:${debug.error}` : "";
+  const relation = debug.relationMove !== "none" ? ` relation:${debug.relationMove}` : "";
+  const world = debug.worldMention !== "none" ? ` world:${debug.worldMention}` : "";
+
+  return `${debug.source}${via}${model}${fallback}${error} subject:${debug.subject} target:${debug.target} mode:${debug.answerMode}${relation}${world} ${debug.summary}`;
 }
 
 function formatBehaviorDebug(

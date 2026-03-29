@@ -115,6 +115,24 @@ export type WorldPlaceId = "threshold" | "studio" | "archive";
 
 export type WorldActionKind = "observe" | "touch" | "leave";
 
+export type TurnSubject = "user" | "hachika" | "shared" | "world" | "none";
+
+export type TurnTarget =
+  | "user_name"
+  | "hachika_name"
+  | "user_profile"
+  | "hachika_profile"
+  | "relation"
+  | "world_state"
+  | "work_topic"
+  | "none";
+
+export type TurnAnswerMode = "direct" | "clarify" | "reflective";
+
+export type TurnRelationMove = "naming" | "repair" | "attune" | "boundary" | "none";
+
+export type TurnWorldMention = "none" | "light" | "full";
+
 export interface WorldPlaceState {
   warmth: number;
   quiet: number;
@@ -433,11 +451,26 @@ export interface TurnResult {
     mood: MoodLabel;
     signals: InteractionSignals;
     selfModel: SelfModel;
+    turn: TurnDirectiveDebug | null;
     interpretation: InterpretationDebug;
     behavior: BehaviorDirectiveDebug;
     traceExtraction: TraceExtractionDebug;
     reply: GeneratedTextDebug;
   };
+}
+
+export interface TurnDirectiveDebug {
+  source: "rule" | "llm";
+  provider: string | null;
+  model: string | null;
+  fallbackUsed: boolean;
+  error: string | null;
+  subject: TurnSubject;
+  target: TurnTarget;
+  answerMode: TurnAnswerMode;
+  relationMove: TurnRelationMove;
+  worldMention: TurnWorldMention;
+  summary: string;
 }
 
 export interface BehaviorDirectiveDebug {

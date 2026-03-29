@@ -25,6 +25,7 @@ import type {
   ReplySelectionDebug,
   SelfConflict,
   SelfModel,
+  TurnDirectiveDebug,
 } from "./types.js";
 
 const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1";
@@ -61,6 +62,7 @@ export interface ReplyGenerationContext {
   selfModel: SelfModel;
   responsePlan: ResponsePlan;
   replySelection: ReplySelectionDebug;
+  turnDirective?: TurnDirectiveDebug | null;
   behaviorDirective: {
     directAnswer: boolean;
     boundaryAction: "allow" | "suppress";
@@ -177,6 +179,7 @@ export interface ReplyGenerationPayload extends CommonGenerationPayload {
   input: string;
   fallbackReply: string;
   composition: GenerationCompositionBrief;
+  turnDirective: TurnDirectiveDebug | null;
   behaviorDirective: ReplyGenerationContext["behaviorDirective"];
   mood: MoodLabel;
   dominantDrive: DriveName;
@@ -338,6 +341,7 @@ export function buildReplyGenerationPayload(
     input: context.input,
     fallbackReply: context.fallbackReply,
     composition: buildReplyCompositionBrief(context, currentTopic),
+    turnDirective: context.turnDirective ?? null,
     behaviorDirective: context.behaviorDirective,
     mood: context.mood,
     dominantDrive: context.dominantDrive,
@@ -410,8 +414,11 @@ export function buildOpenAIChatMessages(
         "Treat fallbackReply as a semantic checksum only. Do not preserve its sentence order or wording skeleton unless absolutely necessary.",
         "Use composition.intentSummary, composition.mustMention, composition.optionalDetails, composition.avoidTopics, and composition.styleNotes as the main brief.",
         "Use responsePlan as the primary guide for stance, distance, and act.",
+        "Use turnDirective to resolve who this turn is about and what direct obligation must be satisfied.",
         "Use behaviorDirective to decide whether this turn must answer directly first, soften boundary posture, or avoid world garnish.",
         "Use replySelection to stay faithful to the exact chosen focus, trace, boundary, and trace priority.",
+        "If turnDirective.target is hachika_name or user_name, make the referent of 名前 explicit instead of drifting into generic relation talk.",
+        "If turnDirective.target is hachika_profile or user_profile, keep the wording anchored to that person rather than generic shared work.",
         "When responsePlan.mentionWorld is true, ground the wording in payload.world before reaching for identity or trace language.",
         "When behaviorDirective.directAnswer is true, fulfill the explicit answer obligation in the first sentence before any scene-setting or reflective detour.",
         "When behaviorDirective.worldAction is suppress, avoid threshold/studio/archive/object imagery unless it is indispensable to the answer.",
