@@ -267,6 +267,7 @@ export interface PendingInitiative {
   reason: InitiativeReason;
   motive: MotiveKind;
   topic: string | null;
+  stateTopic?: string | null;
   blocker: string | null;
   place?: WorldPlaceId | null;
   worldAction?: WorldActionKind | null;
@@ -544,6 +545,7 @@ export interface ReplySelectionDebug {
 
 export interface ProactiveSelectionDebug {
   focusTopic: string | null;
+  stateTopic: string | null;
   maintenanceTraceTopic: string | null;
   blocker: string | null;
   place?: WorldPlaceId | null;

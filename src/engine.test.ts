@@ -1001,6 +1001,34 @@ test("proactive emission can recall a topic from the current world object", () =
   assert.match(lastActivity?.summary ?? "", /棚/);
 });
 
+test("proactive emission can stay semantic without hardening a durable topic", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.initiative.pending = {
+    kind: "resume_topic",
+    reason: "relation",
+    motive: "deepen_relation",
+    topic: "名前",
+    stateTopic: null,
+    blocker: null,
+    concern: null,
+    createdAt: "2026-03-22T09:35:00.000Z",
+    readyAfterHours: 0,
+  };
+
+  const engine = new HachikaEngine(snapshot);
+  const message = engine.emitInitiative({ force: true });
+  const after = engine.getSnapshot();
+  const proactiveDebug = engine.getLastProactiveDebug();
+
+  assert.ok(message !== null);
+  assert.match(message ?? "", /名前|距離|流れ/);
+  assert.equal(after.traces["名前"], undefined);
+  assert.deepEqual(after.memories.at(-1)?.topics ?? [], []);
+  assert.equal(proactiveDebug?.proactiveSelection?.focusTopic, "名前");
+  assert.equal(proactiveDebug?.proactiveSelection?.stateTopic, null);
+  assert.equal(proactiveDebug?.proactiveSelection?.maintenanceTraceTopic, null);
+});
+
 test("proactive reply avoids repeating the most recent proactive opener", () => {
   const snapshot = createInitialSnapshot();
   snapshot.memories.push({

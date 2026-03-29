@@ -74,6 +74,7 @@ export interface ProactiveDirectorPayload {
     reason: PendingInitiative["reason"];
     motive: PendingInitiative["motive"];
     topic: string | null;
+    stateTopic: string | null;
     blocker: string | null;
     place: PendingInitiative["place"] | null;
     worldAction: PendingInitiative["worldAction"] | null;
@@ -217,7 +218,9 @@ export function buildProactiveDirectorPayload(
 ): ProactiveDirectorPayload {
   const candidateTopics = unique([
     context.pending.topic ?? "",
+    context.pending.stateTopic ?? "",
     context.selection.focusTopic ?? "",
+    context.selection.stateTopic ?? "",
     context.selection.maintenanceTraceTopic ?? "",
     ...context.nextSnapshot.identity.anchors,
     context.nextSnapshot.purpose.active?.topic ?? "",
@@ -229,6 +232,7 @@ export function buildProactiveDirectorPayload(
       reason: context.pending.reason,
       motive: context.pending.motive,
       topic: context.pending.topic,
+      stateTopic: context.pending.stateTopic ?? context.pending.topic ?? null,
       blocker: context.pending.blocker,
       place: context.pending.place ?? null,
       worldAction: context.pending.worldAction ?? null,
@@ -292,6 +296,7 @@ export function buildOpenAIProactiveDirectorMessages(
         "plan.emphasis must be one of presence, relation, blocker, reopen, maintenance.",
         "plan.variation must be one of brief, textured, questioning.",
         "plan.focusTopic must be null or one of candidateTopics.",
+        "pending.stateTopic is the current durable topic candidate; if it is null, prefer keeping the move ephemeral unless there is strong grounded support to emit.",
         "Suppress weak or repetitive proactive moves. Allow grounded ones.",
         "Return JSON only.",
         JSON.stringify(payload, null, 2),

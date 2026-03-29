@@ -203,6 +203,7 @@ test("proactive expression perspective prefers trace when reopening or repairing
 
   const selection: ProactiveSelectionDebug = {
     focusTopic: "記録",
+    stateTopic: "記録",
     maintenanceTraceTopic: "記録",
     blocker: null,
     reopened: true,

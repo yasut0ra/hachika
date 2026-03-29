@@ -371,16 +371,16 @@ export function deriveEffectiveTraceStaleAt(
 
 export function tendTraceFromInitiative(
   snapshot: HachikaSnapshot,
-  pending: Pick<PendingInitiative, "kind" | "motive" | "topic" | "blocker" | "concern">,
+  pending: Pick<
+    PendingInitiative,
+    "kind" | "motive" | "topic" | "stateTopic" | "blocker" | "concern"
+  >,
   timestamp = snapshot.lastInteractionAt ?? new Date().toISOString(),
 ): TraceMaintenance | null {
   const topic =
-    pending.topic ??
-    snapshot.purpose.active?.topic ??
-    snapshot.purpose.lastResolved?.topic ??
-    snapshot.identity.anchors[0] ??
-    sortedTraces(snapshot, 1)[0]?.topic ??
-    null;
+    "stateTopic" in pending
+      ? (pending.stateTopic ?? null)
+      : (pending.topic ?? null);
 
   if (!topic) {
     return null;

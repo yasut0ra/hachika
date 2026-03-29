@@ -228,6 +228,7 @@ Hachika は、単に有用なだけでなく、
   - planner が空応答や不正 JSON を返した場合は rule plan に fallback し、`/llm` と `/debug` から planner の source / fallback に加えて `rule -> final` の plan 差分も追える
   - 能動発話でも `proactive plan` が `act / stance / distance / emphasis` を決め、rule-based proactive と LLM wording が同じ切り出し方を共有する
   - さらに optional な `proactive director` を使うと、local engine が合成した proactive 候補を `emit するか / suppress するか / plan を軽く組み替えるか` まで LLM が裁ける
+  - proactive 側でも `pending.topic` と `pending.stateTopic` を分けていて、「今だけ思い出して話す topic」と「trace / memory に硬化させる topic」を別に扱える。`stateTopic` が `null` なら proactive は起きても durable な trace は作らない
   - wording 直前にはさらに `expression perspective` が `identity / motive / drive / body / relation / trace / preservation` のどこを前景化するかを選び、同じ state でも毎回同じ角度だけから喋り続けにくくしている
   - rule-based fallback でも直近の Hachika 発話を参照し、通常応答と能動発話の両方で同じ opener や social line を連続で繰り返しにくくしている
 - トピックごとの好み、短期記憶、長期記憶の痕跡を保持する

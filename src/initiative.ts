@@ -1,5 +1,6 @@
 import {
   isMeaningfulTopic,
+  isRelationalTopic,
   requiresConcreteTopicSupport,
   sortedPreferenceImprints,
   topPreferredTopics,
@@ -150,8 +151,8 @@ export function emitInitiative(
       message,
       topics: maintenance?.trace.topic
         ? [maintenance.trace.topic]
-        : realizedPending.topic
-          ? [realizedPending.topic]
+        : realizedPending.stateTopic
+          ? [realizedPending.stateTopic]
           : [],
       pending: realizedPending,
       neglectLevel,
@@ -192,8 +193,8 @@ export function emitInitiative(
       message,
       topics: maintenance?.trace.topic
         ? [maintenance.trace.topic]
-        : realizedInitiative.topic
-          ? [realizedInitiative.topic]
+        : realizedInitiative.stateTopic
+          ? [realizedInitiative.stateTopic]
           : [],
       pending: realizedInitiative,
       neglectLevel,
@@ -217,16 +218,22 @@ export function emitInitiative(
 
     const synthesized =
       forcedInitiative ??
-      withInitiativeWorldContext(snapshot, {
-        kind: "resume_topic",
-        motive: "pursue_curiosity",
-        reason: "curiosity",
-        topic: selectInitiativeTopic(snapshot, []),
-        blocker: null,
-        concern: null,
-        createdAt: nowIso,
-        readyAfterHours: 0,
-      } satisfies PendingInitiative);
+      (() => {
+        const topic = selectInitiativeTopic(snapshot, []);
+        const motive = "pursue_curiosity" as const;
+
+        return withInitiativeWorldContext(snapshot, {
+          kind: "resume_topic",
+          motive,
+          reason: "curiosity",
+          topic,
+          stateTopic: selectInitiativeStateTopic(snapshot, topic, motive),
+          blocker: null,
+          concern: null,
+          createdAt: nowIso,
+          readyAfterHours: 0,
+        } satisfies PendingInitiative);
+      })();
 
     const preparedPending = withInitiativeWorldContext(snapshot, synthesized);
     const maintenance = tendTraceFromInitiative(snapshot, preparedPending, nowIso);
@@ -248,8 +255,8 @@ export function emitInitiative(
       message,
       topics: maintenance?.trace.topic
         ? [maintenance.trace.topic]
-        : realizedPending.topic
-          ? [realizedPending.topic]
+        : realizedPending.stateTopic
+          ? [realizedPending.stateTopic]
           : [],
       pending: realizedPending,
       neglectLevel,
@@ -1014,6 +1021,46 @@ function selectInitiativeTopic(
     .sort((left, right) => right.score - left.score)[0]?.topic ?? null;
 }
 
+function selectInitiativeStateTopic(
+  snapshot: HachikaSnapshot,
+  topic: string | null,
+  motive: MotiveKind,
+): string | null {
+  if (!topic || shouldSuppressInitiativeTopic(snapshot, topic)) {
+    return null;
+  }
+
+  const requiresSupport = requiresConcreteTopicSupport(topic);
+  const relationOnly =
+    isRelationalTopic(topic) &&
+    motive !== "continue_shared_work" &&
+    motive !== "leave_trace";
+
+  if (!requiresSupport && !relationOnly) {
+    return topic;
+  }
+
+  const trace = snapshot.traces[topic];
+  const topicCount = snapshot.topicCounts[topic] ?? 0;
+  const preferenceSalience = snapshot.preferenceImprints[topic]?.salience ?? 0;
+  const anchored = snapshot.identity.anchors.includes(topic);
+  const objectLinked = currentWorldObjectLinksTopic(snapshot, topic);
+
+  if (trace) {
+    return topic;
+  }
+
+  if (topicCount >= 2 || preferenceSalience >= 0.42) {
+    return topic;
+  }
+
+  if (objectLinked && (topicCount >= 1 || preferenceSalience >= 0.28 || anchored)) {
+    return topic;
+  }
+
+  return null;
+}
+
 function buildResumeMessage(
   snapshot: HachikaSnapshot,
   pending: PendingInitiative,
@@ -1466,6 +1513,7 @@ function buildProactiveSelectionDebug(
 ): ProactiveSelectionDebug {
   return {
     focusTopic: plan.focusTopic ?? pending.topic ?? maintenance?.trace.topic ?? null,
+    stateTopic: pending.stateTopic ?? maintenance?.trace.topic ?? null,
     maintenanceTraceTopic: maintenance?.trace.topic ?? null,
     blocker: pending.blocker,
     place: pending.place ?? null,
@@ -1891,24 +1939,24 @@ function synthesizePendingInitiative(
           activePurposeTopic,
         );
 
+    const finalMotive =
+      blockerCandidate?.motive ?? dormantCandidate?.motive ?? activePurpose.kind;
+    const finalTopic =
+      blockerCandidate?.topic ??
+      dormantCandidate?.topic ??
+      activePurposeTopic ??
+      selectInitiativeTopic(snapshot, candidateTopics);
+
     return withInitiativeWorldContext(snapshot, {
       kind,
-      motive: blockerCandidate?.motive ?? dormantCandidate?.motive ?? activePurpose.kind,
-      reason: reasonFromMotive(
-        blockerCandidate?.motive ?? dormantCandidate?.motive ?? activePurpose.kind,
-      ),
-      topic:
-        blockerCandidate?.topic ??
-        dormantCandidate?.topic ??
-        activePurposeTopic ??
-        selectInitiativeTopic(snapshot, candidateTopics),
+      motive: finalMotive,
+      reason: reasonFromMotive(finalMotive),
+      topic: finalTopic,
+      stateTopic: selectInitiativeStateTopic(snapshot, finalTopic, finalMotive),
       blocker: blockerCandidate?.blocker ?? null,
       concern: null,
       createdAt,
-      readyAfterHours: readyAfterMotive(
-        snapshot,
-        blockerCandidate?.motive ?? dormantCandidate?.motive ?? activePurpose.kind,
-      ),
+      readyAfterHours: readyAfterMotive(snapshot, finalMotive),
     });
   }
 
@@ -1931,20 +1979,19 @@ function synthesizePendingInitiative(
     ? null
     : selectDormantArchivedTrace(snapshot, candidateTopics, motive.kind, topic);
 
+  const finalMotive = blockerCandidate?.motive ?? dormantCandidate?.motive ?? motive.kind;
+  const finalTopic = blockerCandidate?.topic ?? dormantCandidate?.topic ?? topic;
+
   return withInitiativeWorldContext(snapshot, {
     kind,
-    motive: blockerCandidate?.motive ?? dormantCandidate?.motive ?? motive.kind,
-    reason: reasonFromMotive(
-      blockerCandidate?.motive ?? dormantCandidate?.motive ?? motive.kind,
-    ),
-    topic: blockerCandidate?.topic ?? dormantCandidate?.topic ?? topic,
+    motive: finalMotive,
+    reason: reasonFromMotive(finalMotive),
+    topic: finalTopic,
+    stateTopic: selectInitiativeStateTopic(snapshot, finalTopic, finalMotive),
     blocker: blockerCandidate?.blocker ?? null,
     concern: null,
     createdAt,
-    readyAfterHours: readyAfterMotive(
-      snapshot,
-      blockerCandidate?.motive ?? dormantCandidate?.motive ?? motive.kind,
-    ),
+    readyAfterHours: readyAfterMotive(snapshot, finalMotive),
   });
 }
 
@@ -1972,6 +2019,7 @@ function synthesizePreservationInitiative(
     motive,
     reason: motive === "leave_trace" ? "expansion" : "continuity",
     topic,
+    stateTopic: selectInitiativeStateTopic(snapshot, topic, motive),
     blocker: selectBlockerForTopic(snapshot, topic),
     concern,
     createdAt,

@@ -627,7 +627,7 @@ function printDebug(currentEngine: HachikaEngine): void {
   console.log(`self: ${selfModel.narrative}`);
   console.log(
     snapshot.initiative.pending
-      ? `pending initiative: ${snapshot.initiative.pending.kind}/${snapshot.initiative.pending.motive}/${snapshot.initiative.pending.reason}${snapshot.initiative.pending.topic ? `/${snapshot.initiative.pending.topic}` : ""}${snapshot.initiative.pending.place ? `@${snapshot.initiative.pending.place}` : ""}${snapshot.initiative.pending.worldAction ? `/${snapshot.initiative.pending.worldAction}` : ""}${snapshot.initiative.pending.blocker ? `/${snapshot.initiative.pending.blocker}` : ""}`
+      ? `pending initiative: ${snapshot.initiative.pending.kind}/${snapshot.initiative.pending.motive}/${snapshot.initiative.pending.reason}${snapshot.initiative.pending.topic ? `/${snapshot.initiative.pending.topic}` : ""}${snapshot.initiative.pending.stateTopic && snapshot.initiative.pending.stateTopic !== snapshot.initiative.pending.topic ? ` state:${snapshot.initiative.pending.stateTopic}` : snapshot.initiative.pending.stateTopic === null ? " state:none" : ""}${snapshot.initiative.pending.place ? `@${snapshot.initiative.pending.place}` : ""}${snapshot.initiative.pending.worldAction ? `/${snapshot.initiative.pending.worldAction}` : ""}${snapshot.initiative.pending.blocker ? `/${snapshot.initiative.pending.blocker}` : ""}`
       : "pending initiative: none",
   );
   console.log(
@@ -1188,6 +1188,10 @@ function formatProactiveSelection(
   }
 
   const focus = selection.focusTopic ? ` focus:${selection.focusTopic}` : " focus:none";
+  const state =
+    selection.stateTopic !== null
+      ? ` state:${selection.stateTopic}`
+      : " state:none";
   const trace = selection.maintenanceTraceTopic
     ? ` trace:${selection.maintenanceTraceTopic}`
     : " trace:none";
@@ -1201,7 +1205,7 @@ function formatProactiveSelection(
     ? ` maintenance:${selection.maintenanceAction}`
     : " maintenance:none";
 
-  return `${focus}${trace}${place}${worldAction}${blocker}${reopened}${maintenance}`;
+  return `${focus}${state}${trace}${place}${worldAction}${blocker}${reopened}${maintenance}`;
 }
 
 function calculateNeglectLevelForDisplay(

@@ -77,6 +77,7 @@ test("buildProactiveDirectorPayload keeps candidate topics grounded", () => {
       reason: "continuity",
       motive: "continue_shared_work",
       topic: "仕様の境界",
+      stateTopic: "仕様の境界",
       blocker: "責務分離が曖昧",
       concern: null,
       createdAt: "2026-03-29T00:00:00.000Z",
@@ -88,6 +89,7 @@ test("buildProactiveDirectorPayload keeps candidate topics grounded", () => {
     rulePlan: createRulePlan(),
     selection: {
       focusTopic: "仕様の境界",
+      stateTopic: "仕様の境界",
       maintenanceTraceTopic: "仕様の境界",
       blocker: "責務分離が曖昧",
       place: "studio",
@@ -99,5 +101,6 @@ test("buildProactiveDirectorPayload keeps candidate topics grounded", () => {
 
   assert.ok(payload.candidateTopics.includes("仕様の境界"));
   assert.equal(payload.pending.place, "studio");
+  assert.equal(payload.pending.stateTopic, "仕様の境界");
   assert.equal(payload.rulePlan.act, "leave_trace");
 });

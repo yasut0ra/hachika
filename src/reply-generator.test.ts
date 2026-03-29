@@ -242,6 +242,7 @@ test("buildProactiveGenerationPayload surfaces pending initiative and fallback p
       reason: "expansion",
       motive: "continue_shared_work",
       topic: "仕様",
+      stateTopic: "仕様",
       blocker: "責務が未定",
       concern: null,
       createdAt: "2026-03-19T12:00:00.000Z",
@@ -262,6 +263,7 @@ test("buildProactiveGenerationPayload surfaces pending initiative and fallback p
     },
     proactiveSelection: {
       focusTopic: "仕様",
+      stateTopic: "仕様",
       maintenanceTraceTopic: "仕様",
       blocker: "責務が未定",
       reopened: false,
@@ -285,9 +287,11 @@ test("buildProactiveGenerationPayload surfaces pending initiative and fallback p
   assert.equal(payload.expression.perspective.preferredAngle, "trace");
   assert.equal(payload.expression.perspective.options[0]?.angle, "trace");
   assert.equal(payload.pending.topic, "仕様");
+  assert.equal(payload.pending.stateTopic, "仕様");
   assert.equal(payload.pending.blocker, "責務が未定");
   assert.equal(payload.proactivePlan.act, "untangle");
   assert.equal(payload.proactiveSelection.focusTopic, "仕様");
+  assert.equal(payload.proactiveSelection.stateTopic, "仕様");
   assert.equal(payload.proactiveSelection.maintenanceTraceTopic, "仕様");
   assert.equal(payload.proactiveSelection.blocker, "責務が未定");
   assert.equal(payload.currentTopic, "仕様");
