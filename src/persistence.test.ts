@@ -408,6 +408,68 @@ test("loadSnapshot and saveSnapshot apply sanitation to persisted files", async 
   }
 });
 
+test("loadSnapshot seeds latent dynamics from older visible-only snapshots", async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), "hachika-dynamics-seed-"));
+  const filePath = join(tempDir, "snapshot.json");
+
+  try {
+    await writeFile(
+      filePath,
+      `${JSON.stringify({
+        version: 15,
+        revision: 3,
+        state: {
+          continuity: 0.72,
+          pleasure: 0.35,
+          curiosity: 0.81,
+          relation: 0.63,
+          expansion: 0.58,
+        },
+        body: {
+          energy: 0.41,
+          tension: 0.62,
+          boredom: 0.19,
+          loneliness: 0.54,
+        },
+        reactivity: {
+          rewardSaturation: 0.12,
+          stressLoad: 0.48,
+          noveltyHunger: 0.31,
+        },
+        attachment: 0.57,
+        preferences: {},
+        topicCounts: {},
+        memories: [],
+        preferenceImprints: {},
+        boundaryImprints: {},
+        relationImprints: {},
+        preservation: createInitialSnapshot().preservation,
+        identity: createInitialSnapshot().identity,
+        traces: {},
+        purpose: createInitialSnapshot().purpose,
+        initiative: createInitialSnapshot().initiative,
+        lastInteractionAt: null,
+        conversationCount: 1,
+      }, null, 2)}\n`,
+      "utf8",
+    );
+
+    const loaded = await loadSnapshot(filePath);
+
+    assert.equal(loaded.version, 22);
+    assert.equal(loaded.revision, 3);
+    assert.ok(loaded.dynamics.safety < 0.5);
+    assert.ok(loaded.dynamics.trust > 0.5);
+    assert.ok(loaded.dynamics.activation > 0.5);
+    assert.ok(loaded.dynamics.socialNeed > 0.5);
+    assert.ok(loaded.dynamics.cognitiveLoad > 0.5);
+    assert.ok(loaded.dynamics.noveltyDrive > 0.5);
+    assert.ok(loaded.dynamics.continuityPressure > 0.5);
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("sanitizeSnapshot keeps consolidated memories normalized", () => {
   const snapshot = createInitialSnapshot();
   snapshot.memories = [

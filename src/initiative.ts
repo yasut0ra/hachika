@@ -5,6 +5,11 @@ import {
   topPreferredTopics,
 } from "./memory.js";
 import { rewindBodyHours, settleBodyAfterInitiative } from "./body.js";
+import {
+  deriveVisibleStateFromDynamics,
+  rewindDynamicsHours,
+  settleDynamicsAfterInitiative,
+} from "./dynamics.js";
 import { pickFreshText, recentAssistantReplies } from "./expression.js";
 import { buildSelfModel } from "./self-model.js";
 import { clamp01, clampSigned, INITIAL_REACTIVITY, settleTowardsBaseline } from "./state.js";
@@ -265,6 +270,8 @@ export function rewindSnapshotHours(
     return;
   }
 
+  const legacyVisible = structuredClone(snapshot);
+
   snapshot.lastInteractionAt = shiftTimestamp(snapshot.lastInteractionAt, hours);
   snapshot.initiative.lastProactiveAt = shiftTimestamp(
     snapshot.initiative.lastProactiveAt,
@@ -280,30 +287,10 @@ export function rewindSnapshotHours(
     };
   }
 
-  snapshot.reactivity = {
-    rewardSaturation: settleTowardsBaseline(
-      clamp01(snapshot.reactivity.rewardSaturation - Math.min(0.24, hours / 36)),
-      INITIAL_REACTIVITY.rewardSaturation,
-      0.12,
-    ),
-    stressLoad: settleTowardsBaseline(
-      clamp01(
-        snapshot.reactivity.stressLoad -
-          Math.min(0.14, hours / 72) +
-          (hours >= 20 ? Math.min(0.06, (hours - 20) / 120) : 0),
-      ),
-      INITIAL_REACTIVITY.stressLoad,
-      0.05,
-    ),
-    noveltyHunger: settleTowardsBaseline(
-      clamp01(snapshot.reactivity.noveltyHunger + Math.min(0.22, hours / 30)),
-      INITIAL_REACTIVITY.noveltyHunger,
-      0.04,
-    ),
-  };
-
-  rewindBodyHours(snapshot, hours);
+  rewindDynamicsHours(snapshot, hours);
   rewindTemperamentHours(snapshot, hours);
+  deriveVisibleStateFromDynamics(snapshot);
+  applyLegacyIdleVisibleShift(snapshot, legacyVisible, hours);
   consolidateIdleSnapshot(snapshot, hours);
 
   if (snapshot.initiative.pending) {
@@ -312,6 +299,63 @@ export function rewindSnapshotHours(
       createdAt: shiftTimestamp(snapshot.initiative.pending.createdAt, hours) ?? snapshot.initiative.pending.createdAt,
     };
   }
+}
+
+function applyLegacyIdleVisibleShift(
+  snapshot: HachikaSnapshot,
+  legacyVisible: HachikaSnapshot,
+  hours: number,
+): void {
+  legacyVisible.reactivity = {
+    rewardSaturation: settleTowardsBaseline(
+      clamp01(legacyVisible.reactivity.rewardSaturation - Math.min(0.24, hours / 36)),
+      INITIAL_REACTIVITY.rewardSaturation,
+      0.12,
+    ),
+    stressLoad: settleTowardsBaseline(
+      clamp01(
+        legacyVisible.reactivity.stressLoad -
+          Math.min(0.14, hours / 72) +
+          (hours >= 20 ? Math.min(0.06, (hours - 20) / 120) : 0),
+      ),
+      INITIAL_REACTIVITY.stressLoad,
+      0.05,
+    ),
+    noveltyHunger: settleTowardsBaseline(
+      clamp01(legacyVisible.reactivity.noveltyHunger + Math.min(0.22, hours / 30)),
+      INITIAL_REACTIVITY.noveltyHunger,
+      0.04,
+    ),
+  };
+  rewindBodyHours(legacyVisible, hours);
+
+  snapshot.body = {
+    energy: blendVisibleValue(snapshot.body.energy, legacyVisible.body.energy, 0.8),
+    tension: blendVisibleValue(snapshot.body.tension, legacyVisible.body.tension, 0.8),
+    boredom: blendVisibleValue(snapshot.body.boredom, legacyVisible.body.boredom, 0.84),
+    loneliness: blendVisibleValue(snapshot.body.loneliness, legacyVisible.body.loneliness, 0.84),
+  };
+  snapshot.reactivity = {
+    rewardSaturation: blendVisibleValue(
+      snapshot.reactivity.rewardSaturation,
+      legacyVisible.reactivity.rewardSaturation,
+      0.82,
+    ),
+    stressLoad: blendVisibleValue(
+      snapshot.reactivity.stressLoad,
+      legacyVisible.reactivity.stressLoad,
+      0.84,
+    ),
+    noveltyHunger: blendVisibleValue(
+      snapshot.reactivity.noveltyHunger,
+      legacyVisible.reactivity.noveltyHunger,
+      0.88,
+    ),
+  };
+}
+
+function blendVisibleValue(current: number, legacy: number, legacyWeight: number): number {
+  return clamp01(current * (1 - legacyWeight) + legacy * legacyWeight);
 }
 
 function consolidateIdleSnapshot(
@@ -1360,6 +1404,7 @@ function finalizeEmission(
     snapshot.preservation.lastThreatAt = emittedAt;
   }
 
+  settleDynamicsAfterInitiative(snapshot, pending);
   settleBodyAfterInitiative(snapshot, pending);
 
   if (pending.motive === "continue_shared_work" || pending.motive === "leave_trace") {

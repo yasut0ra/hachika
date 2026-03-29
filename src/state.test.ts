@@ -1,0 +1,11 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import { createInitialSnapshot } from "./state.js";
+
+test("createInitialSnapshot starts on the current snapshot version", () => {
+  const snapshot = createInitialSnapshot();
+
+  assert.equal(snapshot.version, 22);
+  assert.ok(snapshot.dynamics);
+});

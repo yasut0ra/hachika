@@ -2,6 +2,12 @@ import { readFile } from "node:fs/promises";
 
 import { writeTextFileAtomic } from "./atomic-file.js";
 import {
+  createDefaultDynamicsState,
+  deriveVisibleStateFromDynamics,
+  sanitizeDynamics,
+  seedDynamicsFromVisibleState,
+} from "./dynamics.js";
+import {
   extractTopics,
   isMeaningfulTopic,
   requiresConcreteTopicSupport,
@@ -14,9 +20,10 @@ import type {
   ActivePurpose,
   AutonomousFeedEntry,
   BoundaryImprint,
-  BodyState,
-  GenerationHistoryEntry,
-  DriveState,
+    BodyState,
+    DynamicsState,
+    GenerationHistoryEntry,
+    DriveState,
   HachikaSnapshot,
   IdentityState,
   InitiativeActivity,
@@ -114,13 +121,14 @@ function hydrateSnapshot(raw: unknown): HachikaSnapshot {
   }
 
   return {
-    version: 21,
+    version: 22,
     revision:
       typeof raw.revision === "number" && Number.isFinite(raw.revision)
         ? Math.max(0, Math.round(raw.revision))
         : initial.revision,
     state: hydrateState(raw.state),
     body: hydrateBody(raw.body),
+    dynamics: hydrateDynamics(raw.dynamics, raw),
     reactivity: hydrateReactivity(raw.reactivity),
     temperament: hydrateTemperament(raw.temperament),
     attachment:
@@ -154,8 +162,10 @@ export function sanitizeSnapshot(snapshot: HachikaSnapshot): HachikaSnapshot {
   snapshot.topicCounts = sanitizeNumberRecord(snapshot.topicCounts, (value) =>
     Math.max(0, Math.round(value)),
   );
-  snapshot.reactivity = sanitizeReactivity(snapshot.reactivity);
+  snapshot.dynamics = sanitizeDynamics(snapshot.dynamics);
   snapshot.temperament = sanitizeTemperament(snapshot.temperament);
+  deriveVisibleStateFromDynamics(snapshot);
+  snapshot.reactivity = sanitizeReactivity(snapshot.reactivity);
   snapshot.world = sanitizeWorld(snapshot.world);
   snapshot.memories = snapshot.memories
     .map((memory) => ({
@@ -246,6 +256,47 @@ function hydrateReactivity(raw: unknown): ReactivityState {
         ? clamp01(raw.noveltyHunger)
         : initial.noveltyHunger,
   };
+}
+
+function hydrateDynamics(raw: unknown, source: unknown): DynamicsState {
+  if (isRecord(raw)) {
+    return sanitizeDynamics({
+      safety:
+        typeof raw.safety === "number" ? raw.safety : createDefaultDynamicsState().safety,
+      trust:
+        typeof raw.trust === "number" ? raw.trust : createDefaultDynamicsState().trust,
+      activation:
+        typeof raw.activation === "number"
+          ? raw.activation
+          : createDefaultDynamicsState().activation,
+      socialNeed:
+        typeof raw.socialNeed === "number"
+          ? raw.socialNeed
+          : createDefaultDynamicsState().socialNeed,
+      cognitiveLoad:
+        typeof raw.cognitiveLoad === "number"
+          ? raw.cognitiveLoad
+          : createDefaultDynamicsState().cognitiveLoad,
+      noveltyDrive:
+        typeof raw.noveltyDrive === "number"
+          ? raw.noveltyDrive
+          : createDefaultDynamicsState().noveltyDrive,
+      continuityPressure:
+        typeof raw.continuityPressure === "number"
+          ? raw.continuityPressure
+          : createDefaultDynamicsState().continuityPressure,
+    });
+  }
+
+  const seeded = createInitialSnapshot();
+  if (isRecord(source)) {
+    seeded.state = hydrateState(source.state);
+    seeded.body = hydrateBody(source.body);
+    seeded.reactivity = hydrateReactivity(source.reactivity);
+    seeded.attachment =
+      typeof source.attachment === "number" ? clamp01(source.attachment) : seeded.attachment;
+  }
+  return seedDynamicsFromVisibleState(seeded);
 }
 
 function hydrateTemperament(raw: unknown): LearnedTemperament {

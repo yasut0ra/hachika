@@ -37,6 +37,16 @@ export interface LearnedTemperament {
   selfDisclosureBias: number;
 }
 
+export interface DynamicsState {
+  safety: number;
+  trust: number;
+  activation: number;
+  socialNeed: number;
+  cognitiveLoad: number;
+  noveltyDrive: number;
+  continuityPressure: number;
+}
+
 export interface MemoryEntry {
   role: "user" | "hachika";
   text: string;
@@ -350,6 +360,7 @@ export interface HachikaSnapshot {
   revision: number;
   state: DriveState;
   body: BodyState;
+  dynamics: DynamicsState;
   reactivity: ReactivityState;
   temperament: LearnedTemperament;
   attachment: number;

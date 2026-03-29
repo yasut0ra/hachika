@@ -550,7 +550,7 @@ function buildConflictSummary(
         : `${wrapped}は前に進めたい。ただ、境界を崩す進め方には乗りたくない。`;
     case "continuity_curiosity":
       return dominant === "seek_continuity"
-        ? `${wrapped}の流れは保ちたい。ただ、同じ軌道をなぞるだけでも鈍る。`
+        ? `${wrapped}の流れは保ちたい。ただ、同じ軌道をなぞるだけでも鈍る。別の切り口が欲しい。`
         : `${wrapped}には別の切り口が欲しい。ただ、流れそのものを切りたいわけではない。`;
   }
 }

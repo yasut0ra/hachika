@@ -1,5 +1,6 @@
 import type {
   BodyState,
+  DynamicsState,
   DriveName,
   DriveState,
   HachikaSnapshot,
@@ -29,6 +30,16 @@ export const INITIAL_BODY: BodyState = {
   tension: 0.22,
   boredom: 0.18,
   loneliness: 0.2,
+};
+
+export const INITIAL_DYNAMICS: DynamicsState = {
+  safety: 0.62,
+  trust: 0.48,
+  activation: 0.32,
+  socialNeed: 0.28,
+  cognitiveLoad: 0.34,
+  noveltyDrive: 0.72,
+  continuityPressure: 0.54,
 };
 
 export const INITIAL_REACTIVITY: ReactivityState = {
@@ -83,10 +94,11 @@ export function applyBoundedPressure(
 
 export function createInitialSnapshot(): HachikaSnapshot {
   return {
-    version: 21,
+    version: 22,
     revision: 0,
     state: { ...INITIAL_STATE },
     body: { ...INITIAL_BODY },
+    dynamics: { ...INITIAL_DYNAMICS },
     reactivity: { ...INITIAL_REACTIVITY },
     temperament: { ...INITIAL_TEMPERAMENT },
     attachment: INITIAL_ATTACHMENT,
@@ -150,6 +162,18 @@ export function formatBodyState(body: BodyState): string {
     `tension:${body.tension.toFixed(2)}`,
     `boredom:${body.boredom.toFixed(2)}`,
     `loneliness:${body.loneliness.toFixed(2)}`,
+  ].join(" | ");
+}
+
+export function formatDynamicsState(dynamics: DynamicsState): string {
+  return [
+    `safety:${dynamics.safety.toFixed(2)}`,
+    `trust:${dynamics.trust.toFixed(2)}`,
+    `activation:${dynamics.activation.toFixed(2)}`,
+    `socialNeed:${dynamics.socialNeed.toFixed(2)}`,
+    `cognitiveLoad:${dynamics.cognitiveLoad.toFixed(2)}`,
+    `noveltyDrive:${dynamics.noveltyDrive.toFixed(2)}`,
+    `continuityPressure:${dynamics.continuityPressure.toFixed(2)}`,
   ].join(" | ");
 }
 
