@@ -28,6 +28,8 @@ test("rule behavior directive keeps naming turns relational without hardening tr
   assert.equal(directive.traceAction, "suppress");
   assert.equal(directive.purposeAction, "allow");
   assert.equal(directive.initiativeAction, "suppress");
+  assert.equal(directive.boundaryAction, "suppress");
+  assert.equal(directive.worldAction, "suppress");
   assert.equal(directive.coolCurrentContext, false);
 });
 
@@ -50,6 +52,8 @@ test("rule behavior directive cools explicit topic shifts", () => {
   assert.equal(directive.traceAction, "suppress");
   assert.equal(directive.purposeAction, "suppress");
   assert.equal(directive.initiativeAction, "suppress");
+  assert.equal(directive.boundaryAction, "suppress");
+  assert.equal(directive.worldAction, "suppress");
   assert.equal(directive.coolCurrentContext, true);
   assert.equal(directive.directAnswer, true);
 });
@@ -65,6 +69,8 @@ test("normalizeBehaviorDirective keeps fallback fields when llm output is partia
       traceAction: "allow",
       purposeAction: "allow",
       initiativeAction: "allow",
+      boundaryAction: "allow",
+      worldAction: "allow",
       coolCurrentContext: false,
       directAnswer: false,
       summary: "fallback",
@@ -75,6 +81,8 @@ test("normalizeBehaviorDirective keeps fallback fields when llm output is partia
   assert.equal(normalized?.traceAction, "suppress");
   assert.equal(normalized?.purposeAction, "allow");
   assert.equal(normalized?.initiativeAction, "allow");
+  assert.equal(normalized?.boundaryAction, "allow");
+  assert.equal(normalized?.worldAction, "allow");
   assert.equal(normalized?.coolCurrentContext, false);
   assert.equal(normalized?.directAnswer, true);
 });
@@ -108,6 +116,8 @@ test("rule behavior directive answers clarification before asking back without h
   assert.equal(directive.traceAction, "suppress");
   assert.equal(directive.purposeAction, "allow");
   assert.equal(directive.initiativeAction, "suppress");
+  assert.equal(directive.boundaryAction, "suppress");
+  assert.equal(directive.worldAction, "suppress");
   assert.equal(directive.directAnswer, true);
 });
 

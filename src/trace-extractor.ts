@@ -17,6 +17,7 @@ const HACHIKA_TRACE_EXTRACTOR_SYSTEM_PROMPT = [
   "Do not write prose, markdown, or explanations.",
   "Only extract concrete reusable topics, blockers, next steps, fragments, or decisions when they are actually present.",
   "Do not emit greetings, fillers, vague acknowledgements, or soft social repair lines as trace content.",
+  "Do not turn naming, calling forms, requests for directness, or relationship clarification into trace content unless concrete reusable work is explicit.",
   "Prefer compact concrete topics like 仕様の境界 or 問題点 over broad meta topics.",
   "If the utterance is mostly social or vague, return empty arrays and kindHint null.",
   "completion must be a number in 0..1.",

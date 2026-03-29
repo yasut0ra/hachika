@@ -450,6 +450,8 @@ export interface BehaviorDirectiveDebug {
   traceAction: "allow" | "suppress";
   purposeAction: "allow" | "suppress";
   initiativeAction: "allow" | "suppress";
+  boundaryAction: "allow" | "suppress";
+  worldAction: "allow" | "suppress";
   coolCurrentContext: boolean;
   directAnswer: boolean;
   summary: string;

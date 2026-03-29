@@ -23,6 +23,9 @@ const HACHIKA_RESPONSE_PLANNER_SYSTEM_PROMPT = [
   "For greetings, light small talk, repair attempts, and self-inquiry, avoid forcing stale work focus unless a concrete work topic is explicitly named.",
   "For explicit questions about where Hachika is, what surrounds it, or what the current place feels like, prefer mentionWorld true and keep focusTopic null unless a concrete work topic is also named.",
   "For vague open questions without a concrete topic, prefer focusTopic null and askBack true.",
+  "When behaviorDirective.directAnswer is true, prefer answering directly before asking back.",
+  "When behaviorDirective.boundaryAction is suppress, do not over-read disappointment or clarification as a boundary-forward turn.",
+  "When behaviorDirective.worldAction is suppress, avoid mentionWorld unless the user is explicitly asking about the current place or surroundings.",
   "focusTopic must be null or one of candidateTopics.",
   "All booleans must be true or false.",
 ].join(" ");
@@ -78,6 +81,11 @@ export interface ResponsePlannerContext {
   signals: InteractionSignals;
   selfModel: SelfModel;
   rulePlan: ResponsePlan;
+  behaviorDirective: {
+    directAnswer: boolean;
+    boundaryAction: "allow" | "suppress";
+    worldAction: "allow" | "suppress";
+  };
 }
 
 export interface ResponsePlannerPayload {
@@ -99,6 +107,11 @@ export interface ResponsePlannerPayload {
     | "abandonment"
     | "topics"
   >;
+  behaviorDirective: {
+    directAnswer: boolean;
+    boundaryAction: "allow" | "suppress";
+    worldAction: "allow" | "suppress";
+  };
   rulePlan: Omit<ResponsePlan, "summary">;
   candidateTopics: string[];
   body: HachikaSnapshot["body"];
@@ -285,6 +298,11 @@ export function buildResponsePlannerPayload(
       abandonment: context.signals.abandonment,
       topics: context.signals.topics,
     },
+    behaviorDirective: {
+      directAnswer: context.behaviorDirective.directAnswer,
+      boundaryAction: context.behaviorDirective.boundaryAction,
+      worldAction: context.behaviorDirective.worldAction,
+    },
     rulePlan: {
       act: context.rulePlan.act,
       stance: context.rulePlan.stance,
@@ -359,6 +377,9 @@ export function buildOpenAIResponsePlannerMessages(
         "Allowed distance: close, measured, far.",
         "Allowed variation: brief, textured, questioning.",
         "Set mentionWorld true only when the utterance is explicitly about current place, surroundings, or world atmosphere.",
+        "If behaviorDirective.directAnswer is true, prefer askBack false and let the reply answer the user's obligation first.",
+        "If behaviorDirective.boundaryAction is suppress, do not turn clarification or disappointment into a boundary-forward reply shape unless the negative cue is clearly hostile.",
+        "If behaviorDirective.worldAction is suppress, keep mentionWorld false unless the turn is explicitly about the current place or surroundings.",
         "Keep focusTopic null unless the user clearly names or reuses a concrete topic.",
         "Use candidateTopics only.",
         "Return JSON only.",

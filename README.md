@@ -218,7 +218,7 @@ Hachika は、単に有用なだけでなく、
   - pure な self / world inquiry で一時的に出た `存在 / 世界` のような抽象 topic は、live の memory / topicCounts にも乗りにくくして、次の保存までのあいだに増幅しにくくしている
   - `別の話` のような明示的な topic shift は abandonment として扱い、old purpose / trace をそのまま前景化しにくくしている
 - 応答直前には `response planner` が `act / stance / distance / focus` を決め、rule-based reply と LLM wording の両方が同じ返答意図を共有する
-  - その手前には optional な `behavior director` も置けるため、trace / purpose / initiative をこの turn で本当に harden してよいか、topic shift や repair でいったん冷やすべきか、自己開示や world inquiry では先に直接答えるべきかを LLM が structured に裁ける
+  - その手前には optional な `behavior director` も置けるため、trace / purpose / initiative をこの turn で本当に harden してよいか、topic shift や repair でいったん冷やすべきか、自己開示や world inquiry では先に直接答えるべきか、clarification を hostility に寄せるべきでないか、world 演出を抑えるべきかを LLM が structured に裁ける
   - greeting / repair / self-disclosure のような social turn では stale trace を引っ込め、関係の温度や自己開示を優先しやすくしている
   - `今どこにいるの` や `周りはどんな感じ` のような world inquiry では `mentionWorld` を立て、stale work より current place / phase / object state を返答に出しやすくしている
   - `askBack / variation` も rule-based reply に反映され、雑談や explore では問い返しや文面の揺れ方が planner に従う
@@ -292,6 +292,7 @@ Hachika は、単に有用なだけでなく、
 - async reply では optional な `input interpreter` を通せるため、挨拶・雑談・関係修復・自己質問が stale trace や弱い topic に吸われにくい
 - OpenAI 互換の `reply generator` を env から有効化でき、local engine が決めた state / motive / purpose / traces を保ったまま通常応答と能動発話の wording だけを LLM に委譲できる
   - 通常応答では `responsePlan` を payload に含め、fallback 文面の言い換えだけでなく「どういう向きで返すか」も LLM に渡している
+  - さらに `behaviorDirective` も payload に含め、`先に直接答える / boundary を硬くしすぎない / world 描写を抑える` といった turn-level の裁定を wording にも通している
   - 通常応答ではさらに `replySelection` も payload に含め、どの topic / trace / boundary を参照して返しているかを LLM に共有している
   - wording 直前にはさらに `composition` brief として `intentSummary / mustMention / optionalDetails / avoidTopics / styleNotes` も渡し、fallback 文の単純な言い換えではなく「何を守ってどう喋るか」から最終発話を組み立てやすくしている
   - `styleNotes` には recent generation quality から導いた補正も入り、abstract 比率や opener echo が続いているときは prompt を少し具体寄り・非反復寄りに締める

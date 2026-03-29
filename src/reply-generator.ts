@@ -61,6 +61,11 @@ export interface ReplyGenerationContext {
   selfModel: SelfModel;
   responsePlan: ResponsePlan;
   replySelection: ReplySelectionDebug;
+  behaviorDirective: {
+    directAnswer: boolean;
+    boundaryAction: "allow" | "suppress";
+    worldAction: "allow" | "suppress";
+  };
   fallbackReply: string;
   retryAttempt?: number;
   retryFeedback?: string[];
@@ -172,6 +177,7 @@ export interface ReplyGenerationPayload extends CommonGenerationPayload {
   input: string;
   fallbackReply: string;
   composition: GenerationCompositionBrief;
+  behaviorDirective: ReplyGenerationContext["behaviorDirective"];
   mood: MoodLabel;
   dominantDrive: DriveName;
   signals: InteractionSignals;
@@ -332,6 +338,7 @@ export function buildReplyGenerationPayload(
     input: context.input,
     fallbackReply: context.fallbackReply,
     composition: buildReplyCompositionBrief(context, currentTopic),
+    behaviorDirective: context.behaviorDirective,
     mood: context.mood,
     dominantDrive: context.dominantDrive,
     signals: context.signals,
@@ -403,8 +410,12 @@ export function buildOpenAIChatMessages(
         "Treat fallbackReply as a semantic checksum only. Do not preserve its sentence order or wording skeleton unless absolutely necessary.",
         "Use composition.intentSummary, composition.mustMention, composition.optionalDetails, composition.avoidTopics, and composition.styleNotes as the main brief.",
         "Use responsePlan as the primary guide for stance, distance, and act.",
+        "Use behaviorDirective to decide whether this turn must answer directly first, soften boundary posture, or avoid world garnish.",
         "Use replySelection to stay faithful to the exact chosen focus, trace, boundary, and trace priority.",
         "When responsePlan.mentionWorld is true, ground the wording in payload.world before reaching for identity or trace language.",
+        "When behaviorDirective.directAnswer is true, fulfill the explicit answer obligation in the first sentence before any scene-setting or reflective detour.",
+        "When behaviorDirective.worldAction is suppress, avoid threshold/studio/archive/object imagery unless it is indispensable to the answer.",
+        "When behaviorDirective.boundaryAction is suppress, do not frame the user as hostile unless the payload clearly demands it.",
         "Use expression.perspective.preferredAngle as the main expressive lens.",
         "You may lean on one nearby option from expression.perspective.options to vary emphasis, but do not contradict the local plan.",
         "Prefer concrete detail, scene, object, blocker, or next step over abstract labels when both are available.",
@@ -687,6 +698,15 @@ function buildReplyStyleNotes(context: ReplyGenerationContext): string[] {
     ...(context.retryFeedback ?? []),
     "fallback の語順をなぞらず、新しく言い直す",
     "抽象ラベルだけで済ませず、可能なら具体的な手触りを混ぜる",
+    context.behaviorDirective.directAnswer
+      ? "聞かれていることには一文目で先に答え、回りくどい導入を避ける"
+      : null,
+    context.behaviorDirective.worldAction === "suppress"
+      ? "threshold や机などの場の描写は必要なときだけに絞る"
+      : null,
+    context.behaviorDirective.boundaryAction === "suppress"
+      ? "失望や確認要求を敵意として言い換えない"
+      : null,
     context.responsePlan.act === "self_disclose"
       ? "自己説明では輪郭や存在といった抽象語だけで閉じず、場所・近づき方・残し方の癖をひとつ具体的に言う"
       : null,

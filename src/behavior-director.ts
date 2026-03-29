@@ -22,6 +22,8 @@ const HACHIKA_BEHAVIOR_DIRECTOR_SYSTEM_PROMPT = [
   "Use suppress when a turn should not harden into durable work state.",
   "Self-inquiry, world-inquiry, repair, greetings, naming, and soft topic shifts should usually suppress trace and initiative unless explicit concrete work is named.",
   "Keep purpose allow only when the turn clearly sustains a concrete concern or a relation-building move such as names or calling forms.",
+  "Use boundaryAction suppress when the user sounds disappointed, clarifying, or asking for directness rather than attacking.",
+  "Use worldAction suppress when place or object imagery would distract from a direct human answer.",
   "Set coolCurrentContext true when the user clearly wants to move away from the current concern or soften the interaction.",
   "Set directAnswer true when Hachika should answer before asking back.",
   "All fields are required. All booleans must be true or false.",
@@ -34,6 +36,8 @@ export interface BehaviorDirective {
   traceAction: BehaviorAction;
   purposeAction: BehaviorAction;
   initiativeAction: BehaviorAction;
+  boundaryAction: BehaviorAction;
+  worldAction: BehaviorAction;
   coolCurrentContext: boolean;
   directAnswer: boolean;
   summary: string;
@@ -259,6 +263,8 @@ export function buildBehaviorDirectorPayload(
       traceAction: context.fallbackDirective.traceAction,
       purposeAction: context.fallbackDirective.purposeAction,
       initiativeAction: context.fallbackDirective.initiativeAction,
+      boundaryAction: context.fallbackDirective.boundaryAction,
+      worldAction: context.fallbackDirective.worldAction,
       coolCurrentContext: context.fallbackDirective.coolCurrentContext,
       directAnswer: context.fallbackDirective.directAnswer,
     },
@@ -280,11 +286,13 @@ export function buildOpenAIBehaviorDirectorMessages(
       content: [
         "Decide only the local behavioral boundary for this turn.",
         "Return a single JSON object with this exact shape:",
-        '{"topicAction":"keep","traceAction":"allow","purposeAction":"allow","initiativeAction":"allow","coolCurrentContext":false,"directAnswer":false}',
+        '{"topicAction":"keep","traceAction":"allow","purposeAction":"allow","initiativeAction":"allow","boundaryAction":"allow","worldAction":"allow","coolCurrentContext":false,"directAnswer":false}',
         "topicAction must be keep or clear.",
-        "traceAction, purposeAction, initiativeAction must be allow or suppress.",
+        "traceAction, purposeAction, initiativeAction, boundaryAction, worldAction must be allow or suppress.",
         "Prefer suppress for social, naming, self-inquiry, world-inquiry, repair, and soft topic-shift turns unless concrete work is explicit.",
         "Keep purpose allow for relation-building moves like names or calling forms.",
+        "Use boundaryAction suppress for disappointed clarification or directness requests that should not become hostility.",
+        "Use worldAction suppress when scene-setting would get in the way of a direct human answer.",
         "Return JSON only.",
         JSON.stringify(payload, null, 2),
       ].join("\n\n"),
@@ -348,6 +356,8 @@ export function buildRuleBehaviorDirective(
       traceAction: "suppress",
       purposeAction: "suppress",
       initiativeAction: "suppress",
+      boundaryAction: "suppress",
+      worldAction: "suppress",
       coolCurrentContext: true,
       directAnswer: true,
       summary: "topic_shift_cooling",
@@ -360,6 +370,8 @@ export function buildRuleBehaviorDirective(
       traceAction: "suppress",
       purposeAction: "allow",
       initiativeAction: "suppress",
+      boundaryAction: "suppress",
+      worldAction: "suppress",
       coolCurrentContext: false,
       directAnswer: false,
       summary: "relation_turn_keep_close_without_hardening",
@@ -372,6 +384,8 @@ export function buildRuleBehaviorDirective(
       traceAction: "suppress",
       purposeAction: "allow",
       initiativeAction: "suppress",
+      boundaryAction: "suppress",
+      worldAction: "suppress",
       coolCurrentContext: false,
       directAnswer: true,
       summary: "relation_clarify_answer_without_hardening",
@@ -384,6 +398,8 @@ export function buildRuleBehaviorDirective(
       traceAction: "allow",
       purposeAction: "allow",
       initiativeAction: "suppress",
+      boundaryAction: "suppress",
+      worldAction: "suppress",
       coolCurrentContext: false,
       directAnswer: true,
       summary: "clarify_answer_before_followup",
@@ -396,6 +412,8 @@ export function buildRuleBehaviorDirective(
       traceAction: "suppress",
       purposeAction: "suppress",
       initiativeAction: "suppress",
+      boundaryAction: "suppress",
+      worldAction: signals.worldInquiry > 0.45 ? "allow" : "suppress",
       coolCurrentContext: false,
       directAnswer: true,
       summary: "direct_inquiry_without_durable_work_state",
@@ -408,6 +426,8 @@ export function buildRuleBehaviorDirective(
       traceAction: "suppress",
       purposeAction: "suppress",
       initiativeAction: "suppress",
+      boundaryAction: "suppress",
+      worldAction: "suppress",
       coolCurrentContext: true,
       directAnswer: true,
       summary: "repair_turn_softens_context",
@@ -420,6 +440,8 @@ export function buildRuleBehaviorDirective(
       traceAction: "suppress",
       purposeAction: "suppress",
       initiativeAction: "suppress",
+      boundaryAction: "suppress",
+      worldAction: signals.worldInquiry > 0.45 ? "allow" : "suppress",
       coolCurrentContext: false,
       directAnswer,
       summary: "social_turn_avoids_work_hardening",
@@ -431,6 +453,8 @@ export function buildRuleBehaviorDirective(
     traceAction: "allow",
     purposeAction: "allow",
     initiativeAction: "allow",
+    boundaryAction: "allow",
+    worldAction: "allow",
     coolCurrentContext: false,
     directAnswer,
     summary: "concrete_turn_allows_local_commitment",
@@ -478,12 +502,18 @@ export function normalizeBehaviorDirective(
     readEnum(parsed.purposeAction, BEHAVIOR_ACTION_VALUES) ?? fallback.purposeAction;
   const initiativeAction =
     readEnum(parsed.initiativeAction, BEHAVIOR_ACTION_VALUES) ?? fallback.initiativeAction;
+  const boundaryAction =
+    readEnum(parsed.boundaryAction, BEHAVIOR_ACTION_VALUES) ?? fallback.boundaryAction;
+  const worldAction =
+    readEnum(parsed.worldAction, BEHAVIOR_ACTION_VALUES) ?? fallback.worldAction;
 
   return {
     topicAction,
     traceAction,
     purposeAction,
     initiativeAction,
+    boundaryAction,
+    worldAction,
     coolCurrentContext: readBoolean(parsed.coolCurrentContext, fallback.coolCurrentContext),
     directAnswer: readBoolean(parsed.directAnswer, fallback.directAnswer),
     summary: summarizeBehaviorDirective({
@@ -491,6 +521,8 @@ export function normalizeBehaviorDirective(
       traceAction,
       purposeAction,
       initiativeAction,
+      boundaryAction,
+      worldAction,
       coolCurrentContext: readBoolean(parsed.coolCurrentContext, fallback.coolCurrentContext),
       directAnswer: readBoolean(parsed.directAnswer, fallback.directAnswer),
       summary: fallback.summary,
@@ -504,6 +536,8 @@ export function summarizeBehaviorDirective(directive: BehaviorDirective): string
     `trace:${directive.traceAction}`,
     `purpose:${directive.purposeAction}`,
     `initiative:${directive.initiativeAction}`,
+    `boundary:${directive.boundaryAction}`,
+    `world:${directive.worldAction}`,
   ];
 
   if (directive.coolCurrentContext) {

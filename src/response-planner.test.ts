@@ -193,9 +193,15 @@ test("llm response planner payload surfaces rule plan and candidate topics", () 
     signals,
     selfModel: createSelfModel("continue_shared_work", "設計"),
     rulePlan,
+    behaviorDirective: {
+      directAnswer: false,
+      boundaryAction: "allow",
+      worldAction: "allow",
+    },
   });
 
   assert.equal(payload.rulePlan.act, rulePlan.act);
+  assert.equal(payload.behaviorDirective.directAnswer, false);
   assert.equal(payload.rulePlan.focusTopic, "設計");
   assert.equal(payload.rulePlan.mentionWorld, false);
   assert.ok(payload.candidateTopics.includes("設計"));

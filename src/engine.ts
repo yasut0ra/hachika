@@ -1206,6 +1206,11 @@ async function applyResponsePlanner(
     signals: prepared.responseSignals,
     selfModel: prepared.selfModel,
     rulePlan: prepared.responsePlan,
+    behaviorDirective: {
+      directAnswer: prepared.behaviorDirective.directAnswer,
+      boundaryAction: prepared.behaviorDirective.boundaryAction,
+      worldAction: prepared.behaviorDirective.worldAction,
+    },
   };
 
   try {
@@ -1283,6 +1288,11 @@ function buildReplyGenerationContext(
     selfModel: prepared.selfModel,
     responsePlan: prepared.responsePlan,
     replySelection: prepared.replySelection.debug,
+    behaviorDirective: {
+      directAnswer: prepared.behaviorDirective.directAnswer,
+      boundaryAction: prepared.behaviorDirective.boundaryAction,
+      worldAction: prepared.behaviorDirective.worldAction,
+    },
     fallbackReply,
     ...(retry
       ? {
@@ -1772,6 +1782,8 @@ function buildRuleBehaviorDebug(
     traceAction: directive.traceAction,
     purposeAction: directive.purposeAction,
     initiativeAction: directive.initiativeAction,
+    boundaryAction: directive.boundaryAction,
+    worldAction: directive.worldAction,
     coolCurrentContext: directive.coolCurrentContext,
     directAnswer: directive.directAnswer,
     summary: directive.summary,
@@ -1791,6 +1803,8 @@ function buildDirectorBehaviorDebug(
     traceAction: directed.directive.traceAction,
     purposeAction: directed.directive.purposeAction,
     initiativeAction: directed.directive.initiativeAction,
+    boundaryAction: directed.directive.boundaryAction,
+    worldAction: directed.directive.worldAction,
     coolCurrentContext: directed.directive.coolCurrentContext,
     directAnswer: directed.directive.directAnswer,
     summary: directed.directive.summary,
@@ -1812,6 +1826,8 @@ function buildFallbackBehaviorDebug(
     traceAction: directive.traceAction,
     purposeAction: directive.purposeAction,
     initiativeAction: directive.initiativeAction,
+    boundaryAction: directive.boundaryAction,
+    worldAction: directive.worldAction,
     coolCurrentContext: directive.coolCurrentContext,
     directAnswer: directive.directAnswer,
     summary: directive.summary,
@@ -1899,33 +1915,48 @@ function applyBehaviorDirectiveToSignals(
   signals: InteractionSignals,
   directive: BehaviorDirective,
 ): InteractionSignals {
-  if (directive.topicAction === "keep") {
-    return signals;
+  const nextSignals =
+    directive.topicAction === "keep"
+      ? { ...signals }
+      : {
+          ...signals,
+          topics: [],
+          memoryCue: clamp01(signals.memoryCue * 0.6),
+          expansionCue: clamp01(signals.expansionCue * 0.5),
+          completion: clamp01(signals.completion * 0.4),
+          novelty: signals.topics.length > 0 ? 0.12 : signals.novelty,
+          repetition: 0,
+        };
+
+  if (directive.boundaryAction === "suppress") {
+    nextSignals.negative = clamp01(nextSignals.negative * 0.55);
+    nextSignals.dismissal = clamp01(nextSignals.dismissal * 0.62);
   }
 
-  return {
-    ...signals,
-    topics: [],
-    memoryCue: clamp01(signals.memoryCue * 0.6),
-    expansionCue: clamp01(signals.expansionCue * 0.5),
-    completion: clamp01(signals.completion * 0.4),
-    novelty: signals.topics.length > 0 ? 0.12 : signals.novelty,
-    repetition: 0,
-  };
+  return nextSignals;
 }
 
 function applyBehaviorDirectiveToPlan(
   plan: ResponsePlan,
   directive: BehaviorDirective,
 ): ResponsePlan {
+  const nextPlan: ResponsePlan = {
+    ...plan,
+    mentionBoundary:
+      directive.boundaryAction === "suppress" ? false : plan.mentionBoundary,
+    mentionWorld:
+      directive.worldAction === "suppress" ? false : plan.mentionWorld,
+  };
+
   if (!directive.directAnswer) {
-    return plan;
+    return nextPlan;
   }
 
   return {
-    ...plan,
+    ...nextPlan,
     askBack: false,
-    variation: plan.variation === "questioning" ? "textured" : plan.variation,
+    variation:
+      nextPlan.variation === "questioning" ? "textured" : nextPlan.variation,
   };
 }
 

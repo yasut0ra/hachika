@@ -2195,6 +2195,8 @@ test("respondAsync lets behavior director keep relation turns out of trace and i
           traceAction: "suppress",
           purposeAction: "allow",
           initiativeAction: "suppress",
+          boundaryAction: "suppress",
+          worldAction: "suppress",
           coolCurrentContext: false,
           directAnswer: false,
           summary: "topics:keep/trace:suppress/purpose:allow/initiative:suppress",
@@ -2230,6 +2232,8 @@ test("respondAsync lets behavior director cool current context on topic shift tu
           traceAction: "suppress",
           purposeAction: "suppress",
           initiativeAction: "suppress",
+          boundaryAction: "suppress",
+          worldAction: "suppress",
           coolCurrentContext: true,
           directAnswer: true,
           summary: "topics:clear/trace:suppress/purpose:suppress/initiative:suppress/cool:on/direct:on",
@@ -2368,6 +2372,133 @@ test("respondAsync can use an llm response planner before reply generation", asy
   assert.match(result.debug.reply.plannerDiff ?? "", /focus:仕様->none/);
   assert.match(result.debug.reply.plannerDiff ?? "", /ask:off->on/);
   assert.equal(engine.getLastReplyDebug()?.plannerSource, "llm");
+});
+
+test("respondAsync forwards behavior directive nuance into the reply generator context", async () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+  let capturedContext: ReplyGenerationContext | null = null;
+
+  const behaviorDirector: BehaviorDirector = {
+    name: "test-behavior",
+    async directBehavior() {
+      return {
+        provider: "test-behavior",
+        model: "stub",
+        directive: {
+          topicAction: "clear",
+          traceAction: "suppress",
+          purposeAction: "suppress",
+          initiativeAction: "suppress",
+          boundaryAction: "suppress",
+          worldAction: "suppress",
+          coolCurrentContext: false,
+          directAnswer: true,
+          summary: "direct/suppress-boundary/suppress-world",
+        },
+      };
+    },
+  };
+
+  const replyGenerator: ReplyGenerator = {
+    name: "test-llm",
+    async generateReply(context) {
+      capturedContext = context;
+      return {
+        reply: "ハチカだよ。まず名前はそこではっきり返す。",
+        provider: "test-llm",
+        model: "stub",
+      };
+    },
+  };
+
+  await engine.respondAsync("あなたの名前は？", {
+    behaviorDirector,
+    replyGenerator,
+  });
+
+  if (capturedContext === null) {
+    throw new Error("reply generator did not receive behavior-directed context");
+  }
+
+  const receivedContext = capturedContext as ReplyGenerationContext;
+  assert.equal(receivedContext.behaviorDirective.directAnswer, true);
+  assert.equal(receivedContext.behaviorDirective.boundaryAction, "suppress");
+  assert.equal(receivedContext.behaviorDirective.worldAction, "suppress");
+});
+
+test("behavior directive can suppress world garnish even when the response planner tries to mention it", async () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+  let capturedContext: ReplyGenerationContext | null = null;
+
+  const behaviorDirector: BehaviorDirector = {
+    name: "test-behavior",
+    async directBehavior() {
+      return {
+        provider: "test-behavior",
+        model: "stub",
+        directive: {
+          topicAction: "clear",
+          traceAction: "suppress",
+          purposeAction: "suppress",
+          initiativeAction: "suppress",
+          boundaryAction: "suppress",
+          worldAction: "suppress",
+          coolCurrentContext: false,
+          directAnswer: true,
+          summary: "suppress-world",
+        },
+      };
+    },
+  };
+
+  const responsePlanner: ResponsePlanner = {
+    name: "test-planner",
+    async planResponse(context) {
+      return {
+        provider: "test-planner",
+        model: "stub",
+        plan: {
+          ...context.rulePlan,
+          act: "self_disclose",
+          focusTopic: null,
+          mentionWorld: true,
+          askBack: true,
+          variation: "questioning",
+          summary: "self_disclose/open/close",
+        },
+      };
+    },
+  };
+
+  const replyGenerator: ReplyGenerator = {
+    name: "test-llm",
+    async generateReply(context) {
+      capturedContext = context;
+      return {
+        reply: "まだ固まりきってはいないけれど、呼ばれ方や近づき方には少しずつ癖がある。",
+        provider: "test-llm",
+        model: "stub",
+      };
+    },
+  };
+
+  const result = await engine.respondAsync("君はどんな存在？", {
+    behaviorDirector,
+    responsePlanner,
+    replyGenerator,
+  });
+
+  if (capturedContext === null) {
+    throw new Error("reply generator did not receive world-suppressed context");
+  }
+
+  assert.equal(result.debug.reply.plannerSource, "llm");
+  assert.equal(result.debug.behavior.worldAction, "suppress");
+  assert.equal(result.debug.reply.plan?.includes("self_disclose") ?? false, true);
+  assert.equal(result.debug.reply.selection?.currentTopic, null);
+  assert.equal((capturedContext as ReplyGenerationContext).responsePlan.mentionWorld, false);
+  assert.equal((capturedContext as ReplyGenerationContext).responsePlan.askBack, false);
+  assert.doesNotMatch(result.reply, /threshold|studio|archive|机|棚|灯り/);
 });
 
 test("respondAsync falls back to the rule reply when the generator fails", async () => {

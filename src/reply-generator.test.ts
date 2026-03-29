@@ -149,12 +149,18 @@ test("buildReplyGenerationPayload surfaces fallback intent and internal state su
       relevantBoundaryTopic: null,
       prioritizeTraceLine: true,
     },
+    behaviorDirective: {
+      directAnswer: false,
+      boundaryAction: "allow",
+      worldAction: "allow",
+    },
     fallbackReply: "「設計」はまだ前に進められる。止めたままにするより、もう少し動かしたい。",
   };
 
   const payload = buildReplyGenerationPayload(context);
 
   assert.equal(payload.fallbackReply, context.fallbackReply);
+  assert.equal(payload.behaviorDirective.directAnswer, false);
   assert.match(payload.composition.intentSummary, /設計/);
   assert.equal(payload.composition.primaryFocus, "設計");
   assert.ok(payload.composition.mustMention.includes("設計"));
@@ -364,6 +370,11 @@ test("buildReplyGenerationPayload includes recent assistant replies as expressio
       relevantBoundaryTopic: null,
       prioritizeTraceLine: false,
     },
+    behaviorDirective: {
+      directAnswer: false,
+      boundaryAction: "suppress",
+      worldAction: "suppress",
+    },
     fallbackReply: "軽い挨拶ならそれで十分だ。",
   };
 
@@ -371,6 +382,7 @@ test("buildReplyGenerationPayload includes recent assistant replies as expressio
 
   assert.equal(payload.composition.primaryFocus, null);
   assert.ok(payload.composition.styleNotes.some((note) => note.includes("短く")));
+  assert.ok(payload.composition.styleNotes.some((note) => note.includes("場の描写")));
   assert.equal(payload.expression.recentAssistantReplies.length, 2);
   assert.equal(payload.expression.avoidOpenings[0], "まずはそのくらいの軽さでいい");
   assert.ok(payload.expression.perspective.options.length > 0);
@@ -445,12 +457,18 @@ test("buildReplyGenerationPayload gives self-disclosure turns a concrete composi
       relevantBoundaryTopic: null,
       prioritizeTraceLine: false,
     },
+    behaviorDirective: {
+      directAnswer: true,
+      boundaryAction: "suppress",
+      worldAction: "suppress",
+    },
     fallbackReply: "まだ途中だけれど、その問いには触れたい。",
   };
 
   const payload = buildReplyGenerationPayload(context);
 
   assert.match(payload.composition.intentSummary, /自己説明/);
+  assert.equal(payload.behaviorDirective.directAnswer, true);
   assert.ok(
     payload.composition.optionalDetails.some((detail) =>
       detail.includes("机に小さな断片が残っている") || detail.includes("残したい"),
@@ -458,5 +476,8 @@ test("buildReplyGenerationPayload gives self-disclosure turns a concrete composi
   );
   assert.ok(
     payload.composition.styleNotes.some((note) => note.includes("抽象語だけで閉じず")),
+  );
+  assert.ok(
+    payload.composition.styleNotes.some((note) => note.includes("一文目で先に答え")),
   );
 });
