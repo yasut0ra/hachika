@@ -3441,6 +3441,71 @@ test("emitInitiativeAsync can suppress a proactive emission via proactive direct
   assert.deepEqual(engine.getSnapshot().initiative.history, beforeSnapshot.initiative.history);
 });
 
+test("emitInitiativeAsync lets proactive director keep semantic proactive topics out of durable maintenance", async () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.initiative.pending = {
+    kind: "resume_topic",
+    reason: "relation",
+    motive: "deepen_relation",
+    topic: "名前",
+    stateTopic: "名前",
+    blocker: null,
+    concern: null,
+    createdAt: "2026-03-31T00:00:00.000Z",
+    readyAfterHours: 0,
+  };
+  const engine = new HachikaEngine(snapshot);
+  let capturedContext: ProactiveGenerationContext | null = null;
+
+  const proactiveDirector: ProactiveDirector = {
+    name: "test-director",
+    async directProactive() {
+      return {
+        directive: {
+          emit: true,
+          plan: null,
+          topics: ["名前"],
+          stateTopics: [],
+          summary: "proactive emit topics:名前 state:none",
+        },
+        provider: "test-director",
+        model: "stub",
+      };
+    },
+  };
+
+  const replyGenerator: ReplyGenerator = {
+    name: "test-llm",
+    async generateReply() {
+      return null;
+    },
+    async generateProactive(context) {
+      capturedContext = context;
+      return {
+        reply: "名前のことはここで受け取っている。",
+        provider: "test-llm",
+        model: "stub",
+      };
+    },
+  };
+
+  const message = await engine.emitInitiativeAsync({
+    proactiveDirector,
+    replyGenerator,
+  });
+
+  assert.ok(message !== null);
+  if (!capturedContext) {
+    throw new Error("proactive generator did not receive context");
+  }
+  const proactiveContext = capturedContext as ProactiveGenerationContext;
+  assert.deepEqual(proactiveContext.topics, ["名前"]);
+  assert.equal(proactiveContext.pending.stateTopic ?? null, null);
+  assert.equal(engine.getLastReplyDebug()?.proactiveSelection?.stateTopic ?? null, null);
+  assert.equal(engine.getSnapshot().traces["名前"], undefined);
+  assert.equal(engine.getSnapshot().initiative.history.at(-1)?.traceTopic ?? null, null);
+});
+
 function createArchivedTrace(
   topic: string,
   kind: "decision" | "continuity_marker" | "spec_fragment",

@@ -222,6 +222,7 @@ Hachika は、単に有用なだけでなく、
   - `turn-director` は `topics` と `stateTopics` を分けて返せるので、「このターンでは答えるために参照するが、durable な memory / trace / purpose にはまだ固めない」という扱いができる
   - 次段の統合方針は [docs/semantic-director-v2.md](/Users/yasut0ra/dev/hachika/docs/semantic-director-v2.md) に整理してあり、`semantic topic / durable topic / reply plan / proactive plan` を一段の contract に寄せていく
   - 現在の `turn-director` と `proactive-director` は、内部的には [src/semantic-director-schema.ts](/Users/yasut0ra/dev/hachika/src/semantic-director-schema.ts) の v2 contract を持ち始めていて、semantic topic と durable topic を分けて扱う下地が入っている
+  - proactive 側は runtime でもその分離を使い始めていて、`proactive-director` が `stateTopics: []` を返した時は「今だけ話すが durable な trace は作らない」という扱いができる
   - その手前には optional な `behavior director` も置けるため、trace / purpose / initiative をこの turn で本当に harden してよいか、topic shift や repair でいったん冷やすべきか、自己開示や world inquiry では先に直接答えるべきか、clarification を hostility に寄せるべきでないか、world 演出を抑えるべきかを LLM が structured に裁ける
   - greeting / repair / self-disclosure のような social turn では stale trace を引っ込め、関係の温度や自己開示を優先しやすくしている
   - `今どこにいるの` や `周りはどんな感じ` のような world inquiry では `mentionWorld` を立て、stale work より current place / phase / object state を返答に出しやすくしている

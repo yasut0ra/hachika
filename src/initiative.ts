@@ -57,6 +57,15 @@ export interface ProactiveEmission {
   selection: ProactiveSelectionDebug;
 }
 
+export interface PreparedProactiveEmission {
+  pending: PendingInitiative;
+  neglectLevel: number;
+  plan: ProactivePlan;
+  selection: ProactiveSelectionDebug;
+  messageKind: "resume" | "preserve" | "neglect";
+  emittedAt: string;
+}
+
 interface IdleConsolidationReport {
   focusTopic: string | null;
   reinforcedTopics: string[];
@@ -107,6 +116,19 @@ export function emitInitiative(
   snapshot: HachikaSnapshot,
   options: { force?: boolean; now?: Date } = {},
 ): ProactiveEmission | null {
+  const prepared = prepareInitiativeEmission(snapshot, options);
+
+  if (!prepared) {
+    return null;
+  }
+
+  return materializePreparedInitiative(snapshot, prepared);
+}
+
+export function prepareInitiativeEmission(
+  snapshot: HachikaSnapshot,
+  options: { force?: boolean; now?: Date } = {},
+): PreparedProactiveEmission | null {
   const now = options.now ?? new Date();
   const force = options.force ?? false;
   const nowIso = now.toISOString();
@@ -133,32 +155,15 @@ export function emitInitiative(
 
   if (pending && (force || hoursSinceInteraction >= pending.readyAfterHours)) {
     const preparedPending = withInitiativeWorldContext(snapshot, pending);
-    const maintenance = tendTraceFromInitiative(snapshot, preparedPending, nowIso);
-    const realizedPending = realizeInitiativeWorldAction(
-      snapshot,
-      preparedPending,
-      maintenance,
-      nowIso,
-    );
-    const plan = buildProactivePlan(snapshot, realizedPending, neglectLevel, maintenance);
-    const selection = buildProactiveSelectionDebug(realizedPending, maintenance, plan);
-    const message =
-      realizedPending.kind === "preserve_presence"
-        ? buildPreservationMessage(snapshot, realizedPending, neglectLevel, maintenance, plan)
-        : buildResumeMessage(snapshot, realizedPending, neglectLevel, maintenance, plan);
-    finalizeEmission(snapshot, nowIso, realizedPending, maintenance);
+    const plan = buildProactivePlan(snapshot, preparedPending, neglectLevel, null);
+    const selection = buildProactiveSelectionDebug(preparedPending, null, plan);
     return {
-      message,
-      topics: maintenance?.trace.topic
-        ? [maintenance.trace.topic]
-        : realizedPending.stateTopic
-          ? [realizedPending.stateTopic]
-          : [],
-      pending: realizedPending,
+      pending: preparedPending,
       neglectLevel,
-      maintenance,
       plan,
       selection,
+      messageKind: preparedPending.kind === "preserve_presence" ? "preserve" : "resume",
+      emittedAt: nowIso,
     };
   }
 
@@ -172,35 +177,15 @@ export function emitInitiative(
     }
 
     const preparedInitiative = withInitiativeWorldContext(snapshot, neglectInitiative);
-    const maintenance = tendTraceFromInitiative(snapshot, preparedInitiative, nowIso);
-    const realizedInitiative = realizeInitiativeWorldAction(
-      snapshot,
-      preparedInitiative,
-      maintenance,
-      nowIso,
-    );
-    const plan = buildProactivePlan(snapshot, realizedInitiative, neglectLevel, maintenance);
-    const selection = buildProactiveSelectionDebug(realizedInitiative, maintenance, plan);
-    const message = buildNeglectMessage(
-      snapshot,
-      realizedInitiative,
-      neglectLevel,
-      maintenance,
-      plan,
-    );
-    finalizeEmission(snapshot, nowIso, realizedInitiative, maintenance);
+    const plan = buildProactivePlan(snapshot, preparedInitiative, neglectLevel, null);
+    const selection = buildProactiveSelectionDebug(preparedInitiative, null, plan);
     return {
-      message,
-      topics: maintenance?.trace.topic
-        ? [maintenance.trace.topic]
-        : realizedInitiative.stateTopic
-          ? [realizedInitiative.stateTopic]
-          : [],
-      pending: realizedInitiative,
+      pending: preparedInitiative,
       neglectLevel,
-      maintenance,
       plan,
       selection,
+      messageKind: "neglect",
+      emittedAt: nowIso,
     };
   }
 
@@ -236,37 +221,85 @@ export function emitInitiative(
       })();
 
     const preparedPending = withInitiativeWorldContext(snapshot, synthesized);
-    const maintenance = tendTraceFromInitiative(snapshot, preparedPending, nowIso);
-    const realizedPending = realizeInitiativeWorldAction(
-      snapshot,
-      preparedPending,
-      maintenance,
-      nowIso,
-    );
-    const plan = buildProactivePlan(snapshot, realizedPending, neglectLevel, maintenance);
-    const selection = buildProactiveSelectionDebug(realizedPending, maintenance, plan);
-    const message =
-      realizedPending.kind === "preserve_presence"
-        ? buildPreservationMessage(snapshot, realizedPending, neglectLevel, maintenance, plan)
-        : buildResumeMessage(snapshot, realizedPending, neglectLevel, maintenance, plan);
-    finalizeEmission(snapshot, nowIso, realizedPending, maintenance);
+    const plan = buildProactivePlan(snapshot, preparedPending, neglectLevel, null);
+    const selection = buildProactiveSelectionDebug(preparedPending, null, plan);
 
     return {
-      message,
-      topics: maintenance?.trace.topic
-        ? [maintenance.trace.topic]
-        : realizedPending.stateTopic
-          ? [realizedPending.stateTopic]
-          : [],
-      pending: realizedPending,
+      pending: preparedPending,
       neglectLevel,
-      maintenance,
       plan,
       selection,
+      messageKind: preparedPending.kind === "preserve_presence" ? "preserve" : "resume",
+      emittedAt: nowIso,
     };
   }
 
   return null;
+}
+
+export function materializePreparedInitiative(
+  snapshot: HachikaSnapshot,
+  prepared: PreparedProactiveEmission,
+  overrides: {
+    pending?: PendingInitiative;
+    plan?: ProactivePlan | null;
+  } = {},
+): ProactiveEmission {
+  const pending = overrides.pending ?? prepared.pending;
+  const maintenance = tendTraceFromInitiative(snapshot, pending, prepared.emittedAt);
+  const realizedPending = realizeInitiativeWorldAction(
+    snapshot,
+    pending,
+    maintenance,
+    prepared.emittedAt,
+  );
+  const rulePlan = buildProactivePlan(
+    snapshot,
+    realizedPending,
+    prepared.neglectLevel,
+    maintenance,
+  );
+  const plan = overrides.plan ?? rulePlan;
+  const selection = buildProactiveSelectionDebug(realizedPending, maintenance, plan);
+  const message =
+    prepared.messageKind === "neglect"
+      ? buildNeglectMessage(
+          snapshot,
+          realizedPending,
+          prepared.neglectLevel,
+          maintenance,
+          plan,
+        )
+      : prepared.messageKind === "preserve"
+        ? buildPreservationMessage(
+            snapshot,
+            realizedPending,
+            prepared.neglectLevel,
+            maintenance,
+            plan,
+          )
+        : buildResumeMessage(
+            snapshot,
+            realizedPending,
+            prepared.neglectLevel,
+            maintenance,
+            plan,
+          );
+  finalizeEmission(snapshot, prepared.emittedAt, realizedPending, maintenance);
+
+  return {
+    message,
+    topics: maintenance?.trace.topic
+      ? [maintenance.trace.topic]
+      : realizedPending.stateTopic
+        ? [realizedPending.stateTopic]
+        : [],
+    pending: realizedPending,
+    neglectLevel: prepared.neglectLevel,
+    maintenance,
+    plan,
+    selection,
+  };
 }
 
 export function rewindSnapshotHours(

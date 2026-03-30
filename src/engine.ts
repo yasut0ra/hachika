@@ -23,7 +23,8 @@ import type {
   BehaviorDirector,
 } from "./behavior-director.js";
 import {
-  emitInitiative,
+  materializePreparedInitiative,
+  prepareInitiativeEmission,
   rewindSnapshotHours,
   scheduleInitiative,
 } from "./initiative.js";
@@ -595,11 +596,13 @@ export class HachikaEngine {
   emitInitiative(options: { force?: boolean; now?: Date } = {}): string | null {
     const previousSnapshot = structuredClone(this.#snapshot);
     const nextSnapshot = structuredClone(this.#snapshot);
-    const emission = emitInitiative(nextSnapshot, options);
+    const prepared = prepareInitiativeEmission(nextSnapshot, options);
 
-    if (!emission) {
+    if (!prepared) {
       return null;
     }
+
+    const emission = materializePreparedInitiative(nextSnapshot, prepared);
 
     return this.#finalizeProactiveEmission(previousSnapshot, nextSnapshot, emission.message, emission.topics, {
       mode: "proactive",
@@ -638,16 +641,16 @@ export class HachikaEngine {
   ): Promise<string | null> {
     const previousSnapshot = structuredClone(this.#snapshot);
     const nextSnapshot = structuredClone(this.#snapshot);
-    const emission = emitInitiative(nextSnapshot, options);
+    const prepared = prepareInitiativeEmission(nextSnapshot, options);
 
-    if (!emission) {
+    if (!prepared) {
       return null;
     }
 
     const replyGenerator = options.replyGenerator ?? null;
     const proactiveDirector = options.proactiveDirector ?? null;
-    const fallbackMessage = emission.message;
-    let finalPlan = emission.plan;
+    let emitted: ProactiveEmission | null = null;
+    let finalPlan = prepared.plan;
     let plannerSource: "rule" | "llm" = "rule";
     let plannerProvider: string | null = null;
     let plannerModel: string | null = null;
@@ -655,19 +658,19 @@ export class HachikaEngine {
     let plannerError: string | null = null;
     let plannerRulePlan: string | null = null;
     let plannerDiff: string | null = null;
-    let generationTopics = [...emission.topics];
-    let finalTopics = [...emission.topics];
-    let finalStateTopic = emission.pending.stateTopic ?? emission.pending.topic ?? null;
+    let generationTopics =
+      prepared.pending.topic !== null ? [prepared.pending.topic] : [];
+    let finalStateTopic = prepared.pending.stateTopic ?? prepared.pending.topic ?? null;
 
     if (proactiveDirector) {
       try {
         const directed = await proactiveDirector.directProactive({
           previousSnapshot,
           nextSnapshot,
-          pending: emission.pending,
-          neglectLevel: emission.neglectLevel,
-          rulePlan: emission.plan,
-          selection: emission.selection,
+          pending: prepared.pending,
+          neglectLevel: prepared.neglectLevel,
+          rulePlan: prepared.plan,
+          selection: prepared.selection,
         });
 
         if (directed?.directive) {
@@ -678,18 +681,15 @@ export class HachikaEngine {
           plannerSource = "llm";
           plannerProvider = directed.provider;
           plannerModel = directed.model;
-          plannerRulePlan = emission.plan.summary;
-          finalPlan = directed.directive.plan ?? emission.plan;
-          plannerDiff = summarizeProactivePlanDiff(emission.plan, finalPlan);
+          plannerRulePlan = prepared.plan.summary;
+          finalPlan = directed.directive.plan ?? prepared.plan;
           generationTopics =
             directed.directive.topics && directed.directive.topics.length > 0
               ? [...directed.directive.topics]
-              : [...emission.topics];
-          finalTopics =
-            directed.directive.stateTopics && directed.directive.stateTopics.length > 0
-              ? [...directed.directive.stateTopics]
-              : [];
-          finalStateTopic = finalTopics[0] ?? null;
+              : generationTopics;
+          if (directed.directive.stateTopics) {
+            finalStateTopic = directed.directive.stateTopics[0] ?? null;
+          }
         }
       } catch (error) {
         plannerFallbackUsed = true;
@@ -697,24 +697,30 @@ export class HachikaEngine {
       }
     }
 
+    emitted = materializePreparedInitiative(nextSnapshot, prepared, {
+      pending: {
+        ...prepared.pending,
+        stateTopic: finalStateTopic,
+      },
+      plan: proactiveDirector ? finalPlan : null,
+    });
+    if (proactiveDirector && plannerRulePlan) {
+      plannerDiff = summarizeProactivePlanDiff(prepared.plan, emitted.plan);
+    }
     const generationEmission =
-      finalPlan === emission.plan &&
-      generationTopics === emission.topics &&
-      finalStateTopic === (emission.pending.stateTopic ?? emission.pending.topic ?? null)
-        ? emission
+      generationTopics.length === 0 &&
+      emitted.pending.topic === null &&
+      emitted.topics.length === 0
+        ? emitted
         : {
-            ...emission,
+            ...emitted,
             topics: generationTopics,
-            pending: {
-              ...emission.pending,
-              stateTopic: finalStateTopic,
-            },
-            selection: {
-              ...emission.selection,
-              stateTopic: finalStateTopic,
-            },
-            plan: finalPlan,
           };
+    const fallbackMessage = emitted.message;
+    const finalTopics = emitted.topics;
+    const finalPlanSummary = emitted.plan.summary;
+    const primaryProactiveFocus =
+      generationEmission.selection.focusTopic ?? generationEmission.pending.topic ?? null;
 
     if (!replyGenerator?.generateProactive) {
       return this.#finalizeProactiveEmission(
@@ -730,7 +736,7 @@ export class HachikaEngine {
           retryAttempts: 1,
           fallbackUsed: false,
           error: null,
-          plan: finalPlan.summary,
+          plan: finalPlanSummary,
           plannerRulePlan,
           plannerDiff,
           plannerSource,
@@ -739,12 +745,12 @@ export class HachikaEngine {
           plannerFallbackUsed,
           plannerError,
           selection: null,
-          proactiveSelection: emission.selection,
+          proactiveSelection: emitted.selection,
           quality: evaluateGeneratedTextQuality({
             text: fallbackMessage,
             fallbackText: fallbackMessage,
             previousSnapshot,
-            primaryFocus: emission.selection.focusTopic ?? emission.pending.topic ?? null,
+            primaryFocus: primaryProactiveFocus,
           }),
         },
       );
@@ -763,7 +769,7 @@ export class HachikaEngine {
           ),
         fallbackText: fallbackMessage,
         previousSnapshot,
-        primaryFocus: emission.selection.focusTopic ?? emission.pending.topic ?? null,
+        primaryFocus: primaryProactiveFocus,
         mode: "proactive",
         socialTurn: false,
         providerName: replyGenerator.name,
@@ -778,7 +784,7 @@ export class HachikaEngine {
         retryAttempts: generated.retryAttempts,
         fallbackUsed: generated.fallbackUsed,
         error: generated.error,
-        plan: finalPlan.summary,
+        plan: finalPlanSummary,
         plannerRulePlan,
         plannerDiff,
         plannerSource,
@@ -787,7 +793,7 @@ export class HachikaEngine {
         plannerFallbackUsed,
         plannerError,
         selection: null,
-        proactiveSelection: emission.selection,
+        proactiveSelection: emitted.selection,
         quality: generated.quality,
       });
     } catch (error) {
@@ -799,7 +805,7 @@ export class HachikaEngine {
         retryAttempts: 1,
         fallbackUsed: true,
         error: formatReplyGenerationError(error),
-        plan: finalPlan.summary,
+        plan: finalPlanSummary,
         plannerRulePlan,
         plannerDiff,
         plannerSource,
@@ -808,12 +814,12 @@ export class HachikaEngine {
         plannerFallbackUsed,
         plannerError,
         selection: null,
-        proactiveSelection: emission.selection,
+        proactiveSelection: emitted.selection,
         quality: evaluateGeneratedTextQuality({
           text: fallbackMessage,
           fallbackText: fallbackMessage,
           previousSnapshot,
-          primaryFocus: emission.selection.focusTopic ?? emission.pending.topic ?? null,
+          primaryFocus: primaryProactiveFocus,
         }),
       });
     }
