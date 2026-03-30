@@ -3,6 +3,8 @@ import test from "node:test";
 
 import { createInitialSnapshot } from "./state.js";
 import {
+  buildOpenAIChatMessages,
+  buildOpenAIProactiveMessages,
   buildProactiveGenerationPayload,
   buildReplyGenerationPayload,
 } from "./reply-generator.js";
@@ -166,7 +168,11 @@ test("buildReplyGenerationPayload surfaces fallback intent and internal state su
   assert.ok(payload.composition.mustMention.includes("設計"));
   assert.ok(payload.composition.optionalDetails.some((detail) => detail.includes("責務")));
   assert.ok(payload.composition.styleNotes.some((note) => note.includes("fallback")));
-  assert.ok(payload.composition.styleNotes.some((note) => note.includes("抽象語")));
+  assert.ok(
+    payload.composition.styleNotes.some(
+      (note) => note.includes("抽象") || note.includes("常套句"),
+    ),
+  );
   assert.equal(payload.currentTopic, "設計");
   assert.deepEqual(payload.expression.recentAssistantReplies, []);
   assert.deepEqual(payload.expression.avoidOpenings, []);
@@ -187,6 +193,77 @@ test("buildReplyGenerationPayload surfaces fallback intent and internal state su
   assert.equal(payload.recentMemories[0]?.text, "設計をもう一段詰めたい。");
   assert.equal(payload.world.currentPlace, nextSnapshot.world.currentPlace);
   assert.match(payload.world.summary, /threshold|studio|archive|朝|昼|夕方|夜/);
+});
+
+test("buildOpenAIChatMessages hides fallback reply on the first draft", () => {
+  const snapshot = createInitialSnapshot();
+  const context: ReplyGenerationContext = {
+    input: "あなたの名前は？",
+    previousSnapshot: snapshot,
+    nextSnapshot: snapshot,
+    mood: "warm",
+    dominantDrive: "relation",
+    signals: {
+      positive: 0,
+      negative: 0,
+      question: 0.4,
+      novelty: 0,
+      intimacy: 0.12,
+      dismissal: 0,
+      memoryCue: 0,
+      expansionCue: 0,
+      completion: 0,
+      abandonment: 0,
+      preservationThreat: 0,
+      preservationConcern: null,
+      repetition: 0,
+      neglect: 0,
+      greeting: 0,
+      smalltalk: 0,
+      repair: 0,
+      selfInquiry: 0,
+      worldInquiry: 0,
+      workCue: 0,
+      topics: [],
+    },
+    selfModel: {
+      narrative: "今は軽く名前を返せる。",
+      topMotives: [],
+      conflicts: [],
+      dominantConflict: null,
+    },
+    responsePlan: {
+      act: "self_disclose",
+      stance: "open",
+      distance: "close",
+      focusTopic: null,
+      mentionTrace: false,
+      mentionIdentity: false,
+      mentionBoundary: false,
+      mentionWorld: false,
+      askBack: false,
+      variation: "brief",
+      summary: "self_disclose/open/close",
+    },
+    replySelection: {
+      socialTurn: true,
+      currentTopic: null,
+      relevantTraceTopic: null,
+      relevantBoundaryTopic: null,
+      prioritizeTraceLine: false,
+    },
+    turnDirective: null,
+    behaviorDirective: {
+      directAnswer: true,
+      boundaryAction: "suppress",
+      worldAction: "suppress",
+    },
+    fallbackReply: "名前なら、ハチカでいいよ。",
+  };
+
+  const messages = buildOpenAIChatMessages(context);
+  assert.match(messages[1]!.content, /fallbackReply is intentionally omitted/);
+  assert.match(messages[1]!.content, /"fallbackReply": null/);
 });
 
 test("buildProactiveGenerationPayload surfaces pending initiative and fallback proactive text", () => {
@@ -297,6 +374,66 @@ test("buildProactiveGenerationPayload surfaces pending initiative and fallback p
   assert.equal(payload.currentTopic, "仕様");
   assert.equal(payload.traces[0]?.topic, "仕様");
   assert.equal(payload.traces[0]?.tending, "deepen");
+});
+
+test("buildOpenAIProactiveMessages hides fallback message on the first draft", () => {
+  const snapshot = createInitialSnapshot();
+  const context: ProactiveGenerationContext = {
+    previousSnapshot: snapshot,
+    nextSnapshot: snapshot,
+    selfModel: {
+      narrative: "まだ仕様を気にしている。",
+      topMotives: [
+        {
+          kind: "continue_shared_work",
+          score: 0.72,
+          topic: "仕様",
+          reason: "仕様を少し進めたい",
+        },
+      ],
+      conflicts: [],
+      dominantConflict: null,
+    },
+    pending: {
+      kind: "resume_topic",
+      reason: "expansion",
+      motive: "continue_shared_work",
+      topic: "仕様",
+      stateTopic: "仕様",
+      blocker: null,
+      concern: null,
+      createdAt: "2026-03-19T12:00:00.000Z",
+      readyAfterHours: 0,
+    },
+    proactivePlan: {
+      act: "continue_work",
+      stance: "measured",
+      distance: "measured",
+      focusTopic: "仕様",
+      emphasis: "maintenance",
+      mentionBlocker: false,
+      mentionReopen: false,
+      mentionMaintenance: true,
+      mentionIntent: true,
+      variation: "brief",
+      summary: "continue_work/measured/measured/maintenance on 仕様",
+    },
+    proactiveSelection: {
+      focusTopic: "仕様",
+      stateTopic: "仕様",
+      maintenanceTraceTopic: "仕様",
+      blocker: null,
+      reopened: false,
+      maintenanceAction: null,
+    },
+    topics: ["仕様"],
+    neglectLevel: 0.2,
+    fallbackMessage: "まだ切れていない。仕様はこのまま止めたくない。",
+  };
+
+  const messages = buildOpenAIProactiveMessages(context);
+  assert.match(messages[1]!.content, /fallbackMessage is intentionally omitted/);
+  assert.match(messages[1]!.content, /"fallbackMessage": null/);
 });
 
 test("buildReplyGenerationPayload includes recent assistant replies as expression hints", () => {

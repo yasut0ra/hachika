@@ -397,6 +397,13 @@ export function buildOpenAIChatMessages(
   context: ReplyGenerationContext,
 ): Array<{ role: "system" | "user"; content: string }> {
   const payload = buildReplyGenerationPayload(context);
+  const firstAttempt = context.retryAttempt === undefined;
+  const promptPayload = firstAttempt
+    ? {
+        ...payload,
+        fallbackReply: null,
+      }
+    : payload;
 
   return [
     {
@@ -411,7 +418,9 @@ export function buildOpenAIChatMessages(
         payload.composition.styleNotes.some((note) => note.includes("前回"))
           ? "This is a retry after a weak previous wording attempt. Follow the correction notes closely."
           : "This is the first wording attempt.",
-        "Treat fallbackReply as a semantic checksum only. Do not preserve its sentence order or wording skeleton unless absolutely necessary.",
+        firstAttempt
+          ? "fallbackReply is intentionally omitted on the first draft. Generate from the structured brief instead of reverse-engineering a local template."
+          : "Treat fallbackReply as a semantic checksum only. Do not preserve its sentence order or wording skeleton unless absolutely necessary.",
         "Use composition.intentSummary, composition.mustMention, composition.optionalDetails, composition.avoidTopics, and composition.styleNotes as the main brief.",
         "Use responsePlan as the primary guide for stance, distance, and act.",
         "Use turnDirective to resolve who this turn is about and what direct obligation must be satisfied.",
@@ -426,11 +435,12 @@ export function buildOpenAIChatMessages(
         "Use expression.perspective.preferredAngle as the main expressive lens.",
         "You may lean on one nearby option from expression.perspective.options to vary emphasis, but do not contradict the local plan.",
         "Prefer concrete detail, scene, object, blocker, or next step over abstract labels when both are available.",
+        "Avoid stock meta-nouns such as 流れ, 断片, 手触り, 形, 輪郭, 前景化 unless the payload makes them unavoidable.",
         "Avoid surfacing stale unrelated topics listed in composition.avoidTopics.",
         "Avoid reusing the same opening fragments or sentence skeletons found in expression.recentAssistantReplies unless the local state makes it unavoidable.",
         "Vary the sentence shape and emphasis while staying faithful to the local state.",
         "Return only the final reply text.",
-        JSON.stringify(payload, null, 2),
+        JSON.stringify(promptPayload, null, 2),
       ].join("\n\n"),
     },
   ];
@@ -440,6 +450,13 @@ export function buildOpenAIProactiveMessages(
   context: ProactiveGenerationContext,
 ): Array<{ role: "system" | "user"; content: string }> {
   const payload = buildProactiveGenerationPayload(context);
+  const firstAttempt = context.retryAttempt === undefined;
+  const promptPayload = firstAttempt
+    ? {
+        ...payload,
+        fallbackMessage: null,
+      }
+    : payload;
 
   return [
     {
@@ -454,7 +471,9 @@ export function buildOpenAIProactiveMessages(
         payload.composition.styleNotes.some((note) => note.includes("前回"))
           ? "This is a retry after a weak previous wording attempt. Follow the correction notes closely."
           : "This is the first wording attempt.",
-        "Treat fallbackMessage as a semantic checksum only. Do not preserve its sentence order or wording skeleton unless absolutely necessary.",
+        firstAttempt
+          ? "fallbackMessage is intentionally omitted on the first draft. Generate from the structured brief instead of paraphrasing a local template."
+          : "Treat fallbackMessage as a semantic checksum only. Do not preserve its sentence order or wording skeleton unless absolutely necessary.",
         "Use composition.intentSummary, composition.mustMention, composition.optionalDetails, composition.avoidTopics, and composition.styleNotes as the main brief.",
         "Use proactivePlan as the primary guide for stance, distance, act, and emphasis.",
         "Use proactiveSelection to stay faithful to the chosen focus topic, maintenance trace, blocker, and reopen state.",
@@ -462,11 +481,12 @@ export function buildOpenAIProactiveMessages(
         "Use expression.perspective.preferredAngle as the main expressive lens.",
         "You may lean on one nearby option from expression.perspective.options to vary emphasis, but do not contradict the local plan.",
         "Prefer concrete detail, scene, object, blocker, or next step over abstract labels when both are available.",
+        "Avoid stock meta-nouns such as 流れ, 断片, 手触り, 形, 輪郭, 前景化 unless the payload makes them unavoidable.",
         "Avoid surfacing stale unrelated topics listed in composition.avoidTopics.",
         "Avoid reusing the same opening fragments or sentence skeletons found in expression.recentAssistantReplies unless the local state makes it unavoidable.",
         "Vary the sentence shape and emphasis while staying faithful to the local state.",
         "Return only the final utterance text.",
-        JSON.stringify(payload, null, 2),
+        JSON.stringify(promptPayload, null, 2),
       ].join("\n\n"),
     },
   ];
@@ -659,24 +679,24 @@ function summarizeReplyIntent(
   currentTopic: string | null,
 ): string {
   if (context.responsePlan.act === "self_disclose") {
-    return "自己説明として、今いる場所や今の寄り方からひとつ具体的に見せつつ返す。";
+    return "自己説明として答える。場所・癖・近づき方のうち一つだけ具体的に言う。";
   }
 
   if (context.responsePlan.mentionWorld) {
     return currentTopic
-      ? `世界の今の様子を返しつつ、「${currentTopic}」に触れられるなら軽く触れる。`
-      : "世界の今の様子を先に返す。";
+      ? `世界の今を先に答える。「${currentTopic}」には必要なぶんだけ軽く触れる。`
+      : "世界の今を先に答える。";
   }
 
   if (context.responsePlan.act === "repair") {
     return currentTopic
-      ? `関係の温度を立て直しつつ、「${currentTopic}」を押しつけすぎない。`
-      : "関係の温度を立て直す。";
+      ? `まず関係の温度を立て直す。「${currentTopic}」は押しつけず、必要な分だけ触れる。`
+      : "まず関係の温度を立て直す。";
   }
 
   return currentTopic
-    ? `「${currentTopic}」を軸に、今の内面に忠実に一歩返す。`
-    : "今の内面に忠実に一歩返す。";
+    ? `「${currentTopic}」について直接返す。抽象語より具体的な事実か行動を優先する。`
+    : "直接返す。抽象語より具体的な事実か行動を優先する。";
 }
 
 function summarizeProactiveIntent(
@@ -685,26 +705,26 @@ function summarizeProactiveIntent(
 ): string {
   if (context.proactiveSelection.reopened) {
     return currentTopic
-      ? `いったん閉じていた「${currentTopic}」を自分から開き直す。`
-      : "いったん閉じていた流れを自分から開き直す。";
+      ? `閉じていた「${currentTopic}」に自分から戻る。理由か場所を一つだけ具体的に入れる。`
+      : "閉じていたものに自分から戻る。理由か場所を一つだけ具体的に入れる。";
   }
 
   if (context.proactiveSelection.blocker) {
     return currentTopic
-      ? `「${currentTopic}」の詰まりをほどく方向で自分から動く。`
-      : "詰まりをほどく方向で自分から動く。";
+      ? `「${currentTopic}」の詰まりをほどく方向で自分から動く。blocker は一つだけ具体的に言う。`
+      : "詰まりをほどく方向で自分から動く。blocker は一つだけ具体的に言う。";
   }
 
   return currentTopic
-    ? `「${currentTopic}」を自分からもう一度前景化する。`
-    : "今の気がかりを自分から前景化する。";
+    ? `「${currentTopic}」を思い出して自分から声をかける。抽象的な決まり文句で膨らませない。`
+    : "今の気がかりに自分から声をかける。抽象的な決まり文句で膨らませない。";
 }
 
 function buildReplyStyleNotes(context: ReplyGenerationContext): string[] {
   return uniqueNonEmpty([
     ...(context.retryFeedback ?? []),
     "fallback の語順をなぞらず、新しく言い直す",
-    "抽象ラベルだけで済ませず、可能なら具体的な手触りを混ぜる",
+    "抽象ラベルや決まり文句だけで済ませず、具体物・行動・相手の言葉を優先する",
     context.behaviorDirective.directAnswer
       ? "聞かれていることには一文目で先に答え、回りくどい導入を避ける"
       : null,
@@ -715,8 +735,9 @@ function buildReplyStyleNotes(context: ReplyGenerationContext): string[] {
       ? "失望や確認要求を敵意として言い換えない"
       : null,
     context.responsePlan.act === "self_disclose"
-      ? "自己説明では輪郭や存在といった抽象語だけで閉じず、場所・近づき方・残し方の癖をひとつ具体的に言う"
+      ? "自己説明では輪郭や存在といった抽象語だけで閉じず、場所・近づき方・話し方の癖をひとつ具体的に言う"
       : null,
+    "流れ・断片・手触り・形・輪郭・前景化のような抽象的な常套句を安易に使わない",
     context.responsePlan.askBack ? "最後に自然な問いを一つだけ置いてよい" : null,
     context.responsePlan.variation === "brief" ? "短く切る" : "説明調にしすぎない",
     context.responsePlan.mentionWorld ? "世界の様子を先に置く" : null,
@@ -729,6 +750,7 @@ function buildProactiveStyleNotes(context: ProactiveGenerationContext): string[]
     ...(context.retryFeedback ?? []),
     "fallback の語順をなぞらず、新しく言い直す",
     "能動発話として、言い訳より動機を先に出す",
+    "流れ・断片・手触り・形・輪郭・前景化のような抽象的な常套句を安易に使わない",
     context.pending.place ? "必要なら場所の気配をひとつ混ぜる" : null,
     context.proactiveSelection.blocker ? "blocker は一つだけ具体的に触れる" : null,
     context.proactiveSelection.reopened ? "reopen した感じを薄く残す" : null,
