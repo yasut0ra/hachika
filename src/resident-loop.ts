@@ -33,12 +33,14 @@ export async function runResidentLoopTick(
   const beforeHistory = snapshot.initiative.history ?? [];
   const idleHours = Number.isFinite(options.idleHours) ? Math.max(0, options.idleHours) : 0;
   let internalActivities: InitiativeActivity[] = [];
+  let allowOutward = true;
 
   if (idleHours > 0) {
     if (options.autonomyDirector) {
-      await engine.rewindIdleHoursAsync(idleHours, {
+      const autonomy = await engine.rewindIdleHoursAsync(idleHours, {
         autonomyDirector: options.autonomyDirector,
       });
+      allowOutward = autonomy.allowOutward;
     } else {
       engine.rewindIdleHours(idleHours);
     }
@@ -50,13 +52,15 @@ export async function runResidentLoopTick(
   }
 
   const historyBeforeOutward = engine.getSnapshot().initiative.history ?? [];
-  const proactiveMessage = options.replyGenerator
-    ? await engine.emitInitiativeAsync({
-        ...(options.now ? { now: options.now } : {}),
-        replyGenerator: options.replyGenerator,
-        proactiveDirector: options.proactiveDirector ?? null,
-      })
-    : engine.emitInitiative(options.now ? { now: options.now } : {});
+  const proactiveMessage = allowOutward
+    ? options.replyGenerator
+      ? await engine.emitInitiativeAsync({
+          ...(options.now ? { now: options.now } : {}),
+          replyGenerator: options.replyGenerator,
+          proactiveDirector: options.proactiveDirector ?? null,
+        })
+      : engine.emitInitiative(options.now ? { now: options.now } : {})
+    : null;
   const nextSnapshot = engine.getSnapshot();
   const outwardActivities = diffInitiativeHistory(
     historyBeforeOutward,

@@ -868,10 +868,11 @@ export class HachikaEngine {
   async rewindIdleHoursAsync(
     hours: number,
     options: { autonomyDirector?: AutonomyDirector | null } = {},
-  ): Promise<void> {
+  ): Promise<{ allowOutward: boolean }> {
     const nextSnapshot = structuredClone(this.#snapshot);
     rewindSnapshotBaseHours(nextSnapshot, hours);
     let prepared = prepareIdleAutonomyAction(nextSnapshot, hours);
+    let allowOutward = true;
 
     if (prepared && options.autonomyDirector) {
       try {
@@ -883,6 +884,7 @@ export class HachikaEngine {
         });
 
         if (result?.directive) {
+          allowOutward = result.directive.allowOutward;
           prepared = result.directive.keep
             ? {
                 ...prepared,
@@ -902,6 +904,7 @@ export class HachikaEngine {
     advanceWorldByIdle(nextSnapshot, hours);
     updateIdentity(nextSnapshot, new Date().toISOString());
     this.#snapshot = nextSnapshot;
+    return { allowOutward };
   }
 
   respond(input: string): TurnResult {

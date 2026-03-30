@@ -316,23 +316,10 @@ test("resident loop can reshape internal autonomy action through an autonomy dir
         directive: {
           keep: true,
           action: "observe",
+          allowOutward: false,
           summary: "cool/observe",
         },
         provider: "test-autonomy",
-        model: "stub",
-      };
-    },
-  };
-  const proactiveDirector: ProactiveDirector = {
-    name: "quiet-director",
-    async directProactive() {
-      return {
-        directive: {
-          emit: false,
-          plan: null,
-          summary: "suppress/observe-only",
-        },
-        provider: "test-director",
         model: "stub",
       };
     },
@@ -341,14 +328,13 @@ test("resident loop can reshape internal autonomy action through an autonomy dir
   const result = await runResidentLoopTick(snapshot, {
     idleHours: 18,
     autonomyDirector,
-    proactiveDirector,
     replyGenerator: {
       name: "test-llm",
       async generateReply() {
         return null;
       },
       async generateProactive() {
-        throw new Error("should not generate when suppressed");
+        throw new Error("should not generate when outward is disabled");
       },
     },
   });
@@ -360,6 +346,8 @@ test("resident loop can reshape internal autonomy action through an autonomy dir
     result.internalActivities.some((activity) => activity.autonomyAction === "recall"),
     false,
   );
+  assert.equal(result.proactiveMessage, null);
+  assert.equal(result.outwardActivities.length, 0);
 });
 
 test("resident loop config reads env overrides", () => {

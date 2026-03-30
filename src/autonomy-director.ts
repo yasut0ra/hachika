@@ -14,9 +14,12 @@ const HACHIKA_AUTONOMY_DIRECTOR_SYSTEM_PROMPT = [
   "Do not write prose, markdown, or explanations.",
   "The local engine already prepared an internal action candidate: observe, hold, drift, or recall.",
   "You may keep it, suppress it, or lightly reshape the action.",
+  "You may also decide whether outward proactive should be evaluated after this internal action.",
   "Prefer recall only when there is clear grounded continuity in a concrete trace, object-linked topic, or unfinished work.",
   "Prefer hold or drift for quiet internal organization.",
   "Prefer observe for low-pressure silent ticks where it is more natural to simply stay with the world.",
+  "Prefer allowOutward:false for quiet, settled ticks that should remain silent after the internal action.",
+  "Prefer allowOutward:true only when there is clear grounded continuity, neglect pressure, or a concrete follow-through worth evaluating.",
   "Do not introduce speak here.",
   "Keep the action close to the local suggestion unless there is a strong semantic reason to cool it.",
   "Return a single JSON object.",
@@ -32,6 +35,7 @@ const INTERNAL_ACTION_VALUES = new Set<Exclude<InitiativeAutonomyAction, "speak"
 export interface AutonomyDirective {
   keep: boolean;
   action: Exclude<InitiativeAutonomyAction, "speak" | null>;
+  allowOutward: boolean;
   summary: string;
 }
 
@@ -254,6 +258,7 @@ function normalizeAutonomyDirective(
   try {
     const raw = JSON.parse(text) as Record<string, unknown>;
     const keep = raw.keep !== false;
+    const allowOutward = raw.allowOutward !== false;
     const action = INTERNAL_ACTION_VALUES.has(raw.action as never)
       ? (raw.action as Exclude<InitiativeAutonomyAction, "speak" | null>)
       : fallbackAction;
@@ -265,6 +270,7 @@ function normalizeAutonomyDirective(
     return {
       keep,
       action,
+      allowOutward,
       summary,
     };
   } catch {
