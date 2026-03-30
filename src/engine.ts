@@ -26,9 +26,11 @@ import type { InitiativeDirector } from "./initiative-director.js";
 import {
   materializePreparedInitiative,
   prepareInitiativeEmission,
+  prepareScheduledInitiative,
   rewindSnapshotHours,
   scheduleInitiative,
 } from "./initiative.js";
+import type { ScheduledInitiativeDecision } from "./initiative.js";
 import type { ProactiveEmission } from "./initiative.js";
 import type { ProactiveDirector } from "./proactive-director.js";
 import { applyBodyFromSignals } from "./body.js";
@@ -1102,6 +1104,7 @@ function recordGeneratedQuality(
 interface PreparedTurn {
   previousSnapshot: HachikaSnapshot;
   nextSnapshot: HachikaSnapshot;
+  initiativeDecision: ScheduledInitiativeDecision | null;
   signals: InteractionSignals;
   responseSignals: InteractionSignals;
   turnDebug: TurnDirectiveDebug | null;
@@ -1134,7 +1137,7 @@ async function applyInitiativeDirector(
   input: string,
   initiativeDirector: InitiativeDirector,
 ): Promise<PreparedTurn> {
-  const pending = prepared.nextSnapshot.initiative.pending;
+  const pending = prepared.initiativeDecision?.candidate ?? prepared.nextSnapshot.initiative.pending;
 
   try {
     const directed = await initiativeDirector.directInitiative({
@@ -1146,7 +1149,7 @@ async function applyInitiativeDirector(
     });
 
     if (!directed) {
-      return prepared;
+      return materializeInitiativeFallback(prepared);
     }
 
     const nextSnapshot = structuredClone(prepared.nextSnapshot);
@@ -1175,11 +1178,46 @@ async function applyInitiativeDirector(
     return {
       ...prepared,
       nextSnapshot,
+      initiativeDecision: null,
       selfModel: buildSelfModel(nextSnapshot),
     };
   } catch {
+    return materializeInitiativeFallback(prepared);
+  }
+}
+
+function materializeInitiativeFallback(prepared: PreparedTurn): PreparedTurn {
+  const decision = prepared.initiativeDecision;
+
+  if (!decision) {
     return prepared;
   }
+
+  if (!decision.shouldClear && !decision.candidate) {
+    return prepared;
+  }
+
+  const nextSnapshot = structuredClone(prepared.nextSnapshot);
+
+  if (decision.shouldClear) {
+    nextSnapshot.initiative.pending = null;
+  }
+
+  if (decision.candidate) {
+    nextSnapshot.initiative.pending = decision.candidate;
+  }
+
+  updateIdentity(
+    nextSnapshot,
+    nextSnapshot.lastInteractionAt ?? new Date().toISOString(),
+  );
+
+  return {
+    ...prepared,
+    nextSnapshot,
+    initiativeDecision: null,
+    selfModel: buildSelfModel(nextSnapshot),
+  };
 }
 
 interface ResolvedReplySelection {
@@ -1207,6 +1245,7 @@ function prepareTurn(
     buildRuleBehaviorDebug(behaviorDirective),
     null,
     buildRuleTraceExtractionDebug(signals),
+    false,
   );
 }
 
@@ -1243,6 +1282,7 @@ async function prepareTurnAsync(
       buildTurnBehaviorDebug(directed),
       directed.directive.traceExtraction,
       buildTurnTraceExtractionDebug(localSignals, directedSignals, directed),
+      initiativeDirector !== null,
     );
     const initiativeDirected = initiativeDirector
       ? await applyInitiativeDirector(prepared, input, initiativeDirector)
@@ -1274,17 +1314,18 @@ async function prepareTurnAsync(
     traced.extraction,
     behaviorDirector,
   );
-  const prepared = prepareTurnFromSignals(
-    snapshot,
-    analyzed.signals,
+    const prepared = prepareTurnFromSignals(
+      snapshot,
+      analyzed.signals,
     input,
     null,
     analyzed.interpretationDebug,
     behaved.directive,
-    behaved.behaviorDebug,
-    traced.extraction,
-    traced.traceExtractionDebug,
-  );
+      behaved.behaviorDebug,
+      traced.extraction,
+      traced.traceExtractionDebug,
+      initiativeDirector !== null,
+    );
   const initiativeDirected = initiativeDirector
     ? await applyInitiativeDirector(prepared, input, initiativeDirector)
     : prepared;
@@ -1338,6 +1379,7 @@ function prepareTurnFromSignals(
   behaviorDebug: BehaviorDirectiveDebug,
   traceExtraction: StructuredTraceExtraction | null,
   traceExtractionDebug: TraceExtractionDebug,
+  deferInitiativeScheduling: boolean,
 ): PreparedTurn {
   const previousSnapshot = structuredClone(snapshot);
   const stateSignals = applyBehaviorDirectiveToSignals(
@@ -1400,8 +1442,21 @@ function prepareTurnFromSignals(
   }
   updateIdentity(nextSnapshot, nextSnapshot.lastInteractionAt ?? new Date().toISOString());
   selfModel = buildSelfModel(nextSnapshot);
+  let initiativeDecision: ScheduledInitiativeDecision | null = null;
   if (behaviorDirective.initiativeAction === "allow") {
-    scheduleInitiative(nextSnapshot, stateSignals, selfModel);
+    if (deferInitiativeScheduling) {
+      initiativeDecision = prepareScheduledInitiative(
+        nextSnapshot,
+        stateSignals,
+        selfModel,
+        nextSnapshot.lastInteractionAt ?? new Date().toISOString(),
+      );
+      if (initiativeDecision.shouldClear || initiativeDecision.candidate) {
+        nextSnapshot.initiative.pending = null;
+      }
+    } else {
+      scheduleInitiative(nextSnapshot, stateSignals, selfModel);
+    }
   } else {
     nextSnapshot.initiative.pending = null;
   }
@@ -1423,6 +1478,7 @@ function prepareTurnFromSignals(
   return {
     previousSnapshot,
     nextSnapshot,
+    initiativeDecision,
     signals: stateSignals,
     responseSignals,
     turnDebug,

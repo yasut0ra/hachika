@@ -2677,6 +2677,25 @@ test("respondAsync can use an initiative director to synthesize a pending initia
   assert.equal(result.snapshot.initiative.pending?.readyAfterHours ?? null, 0.5);
 });
 
+test("respondAsync falls back to the local initiative candidate when initiative director fails", async () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+
+  const initiativeDirector: InitiativeDirector = {
+    name: "test-director",
+    async directInitiative() {
+      throw new Error("initiative director failed");
+    },
+  };
+
+  const result = await engine.respondAsync("君と設計の続きを進めたい。", {
+    initiativeDirector,
+  });
+
+  assert.ok(result.snapshot.initiative.pending !== null);
+  assert.equal(result.snapshot.initiative.pending?.kind, "resume_topic");
+  assert.ok(result.snapshot.initiative.pending?.motive !== undefined);
+});
+
 test("respondAsync can forward interpreted reply selection into the llm payload", async () => {
   const engine = new HachikaEngine(createInitialSnapshot());
   let capturedContext: ReplyGenerationContext | null = null;

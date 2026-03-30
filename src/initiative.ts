@@ -72,44 +72,63 @@ interface IdleConsolidationReport {
   compressed: boolean;
 }
 
+export interface ScheduledInitiativeDecision {
+  shouldClear: boolean;
+  candidate: PendingInitiative | null;
+}
+
 export function scheduleInitiative(
   snapshot: HachikaSnapshot,
   signals: InteractionSignals,
   selfModel: SelfModel,
 ): void {
-  if (shouldCoolInitiativeInertia(signals)) {
+  const decision = prepareScheduledInitiative(snapshot, signals, selfModel);
+
+  if (decision.shouldClear) {
     snapshot.initiative.pending = null;
-    return;
+  }
+
+  if (decision.candidate) {
+    snapshot.initiative.pending = decision.candidate;
+  }
+}
+
+export function prepareScheduledInitiative(
+  snapshot: HachikaSnapshot,
+  signals: InteractionSignals,
+  selfModel: SelfModel,
+  nowIso: string = new Date().toISOString(),
+): ScheduledInitiativeDecision {
+  if (shouldCoolInitiativeInertia(signals)) {
+    return { shouldClear: true, candidate: null };
   }
 
   const preservationPending = synthesizePreservationInitiative(
     snapshot,
     signals,
-    new Date().toISOString(),
+    nowIso,
   );
 
   if (preservationPending) {
-    snapshot.initiative.pending = preservationPending;
-    return;
+    return { shouldClear: true, candidate: preservationPending };
   }
 
   if (signals.negative > 0.15 || signals.dismissal > 0.15) {
-    snapshot.initiative.pending = null;
-    return;
+    return { shouldClear: true, candidate: null };
   }
 
   const pending = synthesizePendingInitiative(
     snapshot,
     selfModel,
     signals.topics,
-    new Date().toISOString(),
+    nowIso,
   );
 
   if (!pending) {
-    return;
+    return { shouldClear: false, candidate: null };
   }
 
-  snapshot.initiative.pending = pending;
+  return { shouldClear: true, candidate: pending };
 }
 
 export function emitInitiative(
