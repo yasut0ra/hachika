@@ -22,6 +22,7 @@ import type {
   BehaviorDirective,
   BehaviorDirector,
 } from "./behavior-director.js";
+import type { InitiativeDirector } from "./initiative-director.js";
 import {
   materializePreparedInitiative,
   prepareInitiativeEmission,
@@ -907,6 +908,7 @@ export class HachikaEngine {
       replyGenerator?: ReplyGenerator | null;
       inputInterpreter?: InputInterpreter | null;
       behaviorDirector?: BehaviorDirector | null;
+      initiativeDirector?: InitiativeDirector | null;
       responsePlanner?: ResponsePlanner | null;
       traceExtractor?: TraceExtractor | null;
     } = {},
@@ -917,6 +919,7 @@ export class HachikaEngine {
       options.turnDirector ?? null,
       options.inputInterpreter ?? null,
       options.behaviorDirector ?? null,
+      options.initiativeDirector ?? null,
       options.responsePlanner ?? null,
       options.traceExtractor ?? null,
     );
@@ -1126,6 +1129,55 @@ interface PlanningDebug {
   diff: string | null;
 }
 
+async function applyInitiativeDirector(
+  prepared: PreparedTurn,
+  input: string,
+  initiativeDirector: InitiativeDirector,
+): Promise<PreparedTurn> {
+  const pending = prepared.nextSnapshot.initiative.pending;
+
+  if (!pending) {
+    return prepared;
+  }
+
+  try {
+    const directed = await initiativeDirector.directInitiative({
+      input,
+      snapshot: prepared.nextSnapshot,
+      signals: prepared.signals,
+      selfModel: prepared.selfModel,
+      pending,
+    });
+
+    if (!directed) {
+      return prepared;
+    }
+
+    const nextSnapshot = structuredClone(prepared.nextSnapshot);
+    nextSnapshot.initiative.pending = directed.directive.keep
+      ? {
+          ...pending,
+          topic: directed.directive.topic ?? pending.topic ?? null,
+          stateTopic: directed.directive.stateTopic,
+          place: directed.directive.place,
+          worldAction: directed.directive.worldAction,
+        }
+      : null;
+    updateIdentity(
+      nextSnapshot,
+      nextSnapshot.lastInteractionAt ?? new Date().toISOString(),
+    );
+
+    return {
+      ...prepared,
+      nextSnapshot,
+      selfModel: buildSelfModel(nextSnapshot),
+    };
+  } catch {
+    return prepared;
+  }
+}
+
 interface ResolvedReplySelection {
   socialTurn: boolean;
   currentTopic: string | undefined;
@@ -1160,6 +1212,7 @@ async function prepareTurnAsync(
   turnDirector: TurnDirector | null,
   inputInterpreter: InputInterpreter | null,
   behaviorDirector: BehaviorDirector | null,
+  initiativeDirector: InitiativeDirector | null,
   responsePlanner: ResponsePlanner | null,
   traceExtractor: TraceExtractor | null,
 ): Promise<PreparedTurn> {
@@ -1187,10 +1240,13 @@ async function prepareTurnAsync(
       directed.directive.traceExtraction,
       buildTurnTraceExtractionDebug(localSignals, directedSignals, directed),
     );
+    const initiativeDirected = initiativeDirector
+      ? await applyInitiativeDirector(prepared, input, initiativeDirector)
+      : prepared;
     const turnDirectedPlan =
       directed.turnDebug.source === "llm" && directed.directive.responsePlan
-        ? applyTurnDirectedPlan(prepared, directed)
-        : prepared;
+        ? applyTurnDirectedPlan(initiativeDirected, directed)
+        : initiativeDirected;
 
     if (!responsePlanner || (directed.turnDebug.source === "llm" && directed.directive.responsePlan)) {
       return turnDirectedPlan;
@@ -1225,12 +1281,15 @@ async function prepareTurnAsync(
     traced.extraction,
     traced.traceExtractionDebug,
   );
+  const initiativeDirected = initiativeDirector
+    ? await applyInitiativeDirector(prepared, input, initiativeDirector)
+    : prepared;
 
   if (!responsePlanner) {
-    return prepared;
+    return initiativeDirected;
   }
 
-  return applyResponsePlanner(prepared, input, responsePlanner);
+  return applyResponsePlanner(initiativeDirected, input, responsePlanner);
 }
 
 function applyTurnDirectedPlan(

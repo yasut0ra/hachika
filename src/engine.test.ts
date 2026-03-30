@@ -4,6 +4,7 @@ import test from "node:test";
 import type { BehaviorDirector } from "./behavior-director.js";
 import { HachikaEngine } from "./engine.js";
 import type { InputInterpreter } from "./input-interpreter.js";
+import type { InitiativeDirector } from "./initiative-director.js";
 import type { ProactiveDirector } from "./proactive-director.js";
 import type { ResponsePlanner } from "./response-planner.js";
 import { createInitialSnapshot } from "./state.js";
@@ -2550,6 +2551,65 @@ test("respondAsync lets behavior director cool current context on topic shift tu
   assert.deepEqual(result.debug.signals.topics, []);
   assert.equal(result.snapshot.purpose.active, null);
   assert.equal(result.snapshot.initiative.pending, null);
+});
+
+test("respondAsync can use an initiative director to suppress a weak pending initiative", async () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+
+  const initiativeDirector: InitiativeDirector = {
+    name: "test-director",
+    async directInitiative() {
+      return {
+        directive: {
+          keep: false,
+          topic: null,
+          stateTopic: null,
+          place: null,
+          worldAction: null,
+          summary: "suppress/topic:none/state:none",
+        },
+        provider: "test-director",
+        model: "stub",
+      };
+    },
+  };
+
+  const result = await engine.respondAsync("名前はハチカで覚えてね。", {
+    initiativeDirector,
+  });
+
+  assert.equal(result.snapshot.initiative.pending, null);
+});
+
+test("respondAsync can use an initiative director to keep semantic initiative topic while dropping durable hardening", async () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+
+  const initiativeDirector: InitiativeDirector = {
+    name: "test-director",
+    async directInitiative() {
+      return {
+        directive: {
+          keep: true,
+          topic: "名前",
+          stateTopic: null,
+          place: "threshold",
+          worldAction: "observe",
+          summary: "keep/topic:名前/state:none",
+        },
+        provider: "test-director",
+        model: "stub",
+      };
+    },
+  };
+
+  const result = await engine.respondAsync("名前はハチカで覚えてね。", {
+    initiativeDirector,
+  });
+
+  assert.equal(result.snapshot.initiative.pending?.topic ?? null, "名前");
+  assert.equal(result.snapshot.initiative.pending?.stateTopic ?? null, null);
+  assert.equal(result.snapshot.initiative.pending?.place ?? null, "threshold");
+  assert.equal(result.snapshot.initiative.pending?.worldAction ?? null, "observe");
 });
 
 test("respondAsync can forward interpreted reply selection into the llm payload", async () => {

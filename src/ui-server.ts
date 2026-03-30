@@ -8,6 +8,7 @@ import { runWithConflictRetry } from "./conflict-retry.js";
 import { HachikaEngine } from "./engine.js";
 import { loadDotEnv } from "./env.js";
 import { createInputInterpreterFromEnv } from "./input-interpreter.js";
+import { createInitiativeDirectorFromEnv } from "./initiative-director.js";
 import { commitSnapshot, loadSnapshot } from "./persistence.js";
 import { createProactiveDirectorFromEnv } from "./proactive-director.js";
 import { createReplyGeneratorFromEnv } from "./reply-generator.js";
@@ -31,6 +32,7 @@ const proactiveDirector = createProactiveDirectorFromEnv();
 const turnDirector = createTurnDirectorFromEnv();
 const inputInterpreter = createInputInterpreterFromEnv();
 const behaviorDirector = createBehaviorDirectorFromEnv();
+const initiativeDirector = createInitiativeDirectorFromEnv();
 const responsePlanner = createResponsePlannerFromEnv();
 const traceExtractor = createTraceExtractorFromEnv();
 
@@ -59,12 +61,18 @@ const server = createServer(async (request, response) => {
 
       const replyResult = await runWithEngineConflictRetry(engine, {
         operate: () =>
-          replyGenerator || inputInterpreter || behaviorDirector || responsePlanner || traceExtractor
+          replyGenerator ||
+          inputInterpreter ||
+          behaviorDirector ||
+          initiativeDirector ||
+          responsePlanner ||
+          traceExtractor
             ? engine.respondAsync(text, {
                 replyGenerator,
                 turnDirector,
                 inputInterpreter,
                 behaviorDirector,
+                initiativeDirector,
                 responsePlanner,
                 traceExtractor,
               })

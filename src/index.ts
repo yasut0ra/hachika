@@ -18,6 +18,10 @@ import { loadDotEnv } from "./env.js";
 import { summarizeLiveGrowthMetrics } from "./growth-metrics.js";
 import { createInputInterpreterFromEnv, describeInputInterpreter } from "./input-interpreter.js";
 import {
+  createInitiativeDirectorFromEnv,
+  describeInitiativeDirector,
+} from "./initiative-director.js";
+import {
   sortedBoundaryImprints,
   sortedPreferenceImprints,
   sortedRelationImprints,
@@ -73,6 +77,7 @@ const proactiveDirector = createProactiveDirectorFromEnv();
 const turnDirector = createTurnDirectorFromEnv();
 const inputInterpreter = createInputInterpreterFromEnv();
 const behaviorDirector = createBehaviorDirectorFromEnv();
+const initiativeDirector = createInitiativeDirectorFromEnv();
 const responsePlanner = createResponsePlannerFromEnv();
 const traceExtractor = createTraceExtractorFromEnv();
 
@@ -232,12 +237,18 @@ try {
 
       const replyResult = await runWithEngineConflictRetry(engine, {
         operate: () =>
-          replyGenerator || inputInterpreter || behaviorDirector || responsePlanner || traceExtractor
+          replyGenerator ||
+          inputInterpreter ||
+          behaviorDirector ||
+          initiativeDirector ||
+          responsePlanner ||
+          traceExtractor
             ? engine.respondAsync(text, {
                 replyGenerator,
                 turnDirector,
                 inputInterpreter,
                 behaviorDirector,
+                initiativeDirector,
                 responsePlanner,
                 traceExtractor,
               })
@@ -277,6 +288,7 @@ async function printIntro(currentEngine: HachikaEngine): Promise<void> {
   console.log(`turn:${describeTurnDirector(turnDirector)}`);
   console.log(`interpret:${describeInputInterpreter(inputInterpreter)}`);
   console.log(`behavior:${describeBehaviorDirector(behaviorDirector)}`);
+  console.log(`initiative:${describeInitiativeDirector(initiativeDirector)}`);
   console.log(`planner:${describeResponsePlanner(responsePlanner)}`);
   console.log(`trace:${describeTraceExtractor(traceExtractor)}`);
   console.log(`loop:${formatResidentLoopStatus(loadResidentLoopStatusSync(residentStatusPath))}`);
@@ -371,6 +383,7 @@ function printReplyGeneratorStatus(): void {
   console.log(`turn:${describeTurnDirector(turnDirector)}`);
   console.log(`interpret:${describeInputInterpreter(inputInterpreter)}`);
   console.log(`behavior:${describeBehaviorDirector(behaviorDirector)}`);
+  console.log(`initiative:${describeInitiativeDirector(initiativeDirector)}`);
   console.log(`planner:${describeResponsePlanner(responsePlanner)}`);
   console.log(`trace:${describeTraceExtractor(traceExtractor)}`);
   console.log(`loop:${formatResidentLoopStatus(loadResidentLoopStatusSync(residentStatusPath))}`);
