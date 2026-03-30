@@ -11,9 +11,11 @@ export interface ResidentLoopStatus {
   heartbeatAt: string | null;
   lastTickAt: string | null;
   lastActivityAt: string | null;
+  lastInternalAt: string | null;
   lastProactiveAt: string | null;
   lastTickAttempts: number | null;
   lastError: string | null;
+  lastInternalActivities: string[];
   lastActivities: string[];
   reply: string | null;
   config: {
@@ -141,13 +143,14 @@ export function formatResidentLoopStatus(
   const state = health?.state ?? (status.active ? "active" : "inactive");
   const pid = status.pid !== null ? ` pid:${status.pid}` : "";
   const heartbeat = status.heartbeatAt ? ` heartbeat:${status.heartbeatAt}` : "";
+  const internal = status.lastInternalAt ? ` internal:${status.lastInternalAt}` : "";
   const proactive = status.lastProactiveAt ? ` proactive:${status.lastProactiveAt}` : "";
   const attempts =
     typeof status.lastTickAttempts === "number" && status.lastTickAttempts > 1
       ? ` attempts:${status.lastTickAttempts}`
       : "";
   const error = status.lastError ? ` error:${status.lastError}` : "";
-  return `${state}${pid}${heartbeat}${proactive}${attempts}${error}`;
+  return `${state}${pid}${heartbeat}${internal}${proactive}${attempts}${error}`;
 }
 
 export function deriveResidentLoopHealth(
@@ -230,12 +233,18 @@ function parseResidentLoopStatus(raw: unknown): ResidentLoopStatus | null {
     heartbeatAt: typeof raw.heartbeatAt === "string" ? raw.heartbeatAt : null,
     lastTickAt: typeof raw.lastTickAt === "string" ? raw.lastTickAt : null,
     lastActivityAt: typeof raw.lastActivityAt === "string" ? raw.lastActivityAt : null,
+    lastInternalAt: typeof raw.lastInternalAt === "string" ? raw.lastInternalAt : null,
     lastProactiveAt: typeof raw.lastProactiveAt === "string" ? raw.lastProactiveAt : null,
     lastTickAttempts:
       typeof raw.lastTickAttempts === "number" && Number.isFinite(raw.lastTickAttempts)
         ? Math.max(1, Math.round(raw.lastTickAttempts))
         : null,
     lastError: typeof raw.lastError === "string" ? raw.lastError : null,
+    lastInternalActivities: Array.isArray(raw.lastInternalActivities)
+      ? raw.lastInternalActivities
+          .filter((value): value is string => typeof value === "string")
+          .slice(0, 6)
+      : [],
     lastActivities: Array.isArray(raw.lastActivities)
       ? raw.lastActivities
           .filter((value): value is string => typeof value === "string")

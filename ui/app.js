@@ -390,10 +390,14 @@ function formatResidentLoopDetail(status, health) {
       : null,
     status.lastTickAt ? `tick ${status.lastTickAt}` : null,
     status.lastActivityAt ? `activity ${status.lastActivityAt}` : null,
+    status.lastInternalAt ? `internal ${status.lastInternalAt}` : null,
     status.lastProactiveAt ? `proactive ${status.lastProactiveAt}` : null,
     typeof status.lastTickAttempts === "number" ? `attempts ${status.lastTickAttempts}` : null,
     status.config
       ? `interval ${status.config.intervalMs}ms / idle ${status.config.idleHoursPerTick}h`
+      : null,
+    status.lastInternalActivities.length > 0
+      ? `internal recent ${status.lastInternalActivities.slice(-2).join(" | ")}`
       : null,
     status.lastActivities.length > 0
       ? `recent ${status.lastActivities.slice(-2).join(" | ")}`

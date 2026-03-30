@@ -13,6 +13,8 @@ export interface ResidentLoopTickOptions {
 export interface ResidentLoopTickResult {
   snapshot: HachikaSnapshot;
   proactiveMessage: string | null;
+  internalActivities: InitiativeActivity[];
+  outwardActivities: InitiativeActivity[];
   activities: InitiativeActivity[];
 }
 
@@ -28,11 +30,18 @@ export async function runResidentLoopTick(
   const engine = new HachikaEngine(snapshot);
   const beforeHistory = snapshot.initiative.history ?? [];
   const idleHours = Number.isFinite(options.idleHours) ? Math.max(0, options.idleHours) : 0;
+  let internalActivities: InitiativeActivity[] = [];
 
   if (idleHours > 0) {
     engine.rewindIdleHours(idleHours);
+    const afterIdleSnapshot = engine.getSnapshot();
+    internalActivities = diffInitiativeHistory(
+      beforeHistory,
+      afterIdleSnapshot.initiative.history ?? [],
+    );
   }
 
+  const historyBeforeOutward = engine.getSnapshot().initiative.history ?? [];
   const proactiveMessage = options.replyGenerator
     ? await engine.emitInitiativeAsync({
         ...(options.now ? { now: options.now } : {}),
@@ -41,14 +50,20 @@ export async function runResidentLoopTick(
       })
     : engine.emitInitiative(options.now ? { now: options.now } : {});
   const nextSnapshot = engine.getSnapshot();
-  const activities = diffInitiativeHistory(beforeHistory, nextSnapshot.initiative.history ?? []);
+  const outwardActivities = diffInitiativeHistory(
+    historyBeforeOutward,
+    nextSnapshot.initiative.history ?? [],
+  );
+  const activities = [...internalActivities, ...outwardActivities];
   if (proactiveMessage) {
-    appendResidentAutonomousMessage(nextSnapshot, proactiveMessage, activities);
+    appendResidentAutonomousMessage(nextSnapshot, proactiveMessage, outwardActivities);
   }
 
   return {
     snapshot: nextSnapshot,
     proactiveMessage,
+    internalActivities,
+    outwardActivities,
     activities,
   };
 }

@@ -52,6 +52,13 @@ test("resident loop can surface idle reactivation activity", async () => {
   assert.ok(
     result.activities.some((activity) => activity.kind === "idle_reactivation"),
   );
+  assert.ok(
+    result.internalActivities.some((activity) => activity.kind === "idle_reactivation"),
+  );
+  assert.equal(
+    result.outwardActivities.some((activity) => activity.kind === "idle_reactivation"),
+    false,
+  );
   assert.equal(result.snapshot.initiative.history.length > 0, true);
   assert.equal(result.snapshot.world.currentPlace, "studio");
   assert.notEqual(result.snapshot.world.clockHour, snapshot.world.clockHour);
@@ -115,6 +122,12 @@ test("resident loop can reactivate a current world object trace after quiet obse
   const emission = result.activities.find((activity) => activity.kind === "proactive_emission");
 
   assert.ok(result.proactiveMessage !== null);
+  assert.ok(
+    result.internalActivities.some((activity) => activity.kind === "idle_reactivation"),
+  );
+  assert.ok(
+    result.outwardActivities.some((activity) => activity.kind === "proactive_emission"),
+  );
   assert.equal(emission?.topic, "仕様の境界");
   assert.equal(emission?.place, "archive");
   assert.equal(emission?.worldAction, "touch");
@@ -141,6 +154,10 @@ test("resident loop can emit proactive wording and record the emission", async (
   assert.ok(result.proactiveMessage !== null);
   assert.ok(
     result.activities.some((activity) => activity.kind === "proactive_emission"),
+  );
+  assert.equal(result.internalActivities.length, 0);
+  assert.ok(
+    result.outwardActivities.some((activity) => activity.kind === "proactive_emission"),
   );
   assert.equal(result.snapshot.autonomousFeed.length, 1);
   assert.equal(result.snapshot.autonomousFeed[0]?.mode, "proactive");

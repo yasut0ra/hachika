@@ -47,9 +47,11 @@ const status: ResidentLoopStatus = {
   heartbeatAt: startedAt,
   lastTickAt: null,
   lastActivityAt: null,
+  lastInternalAt: null,
   lastProactiveAt: null,
   lastTickAttempts: null,
   lastError: null,
+  lastInternalActivities: [],
   lastActivities: [],
   reply: describeReplyGenerator(replyGenerator),
   config,
@@ -140,10 +142,17 @@ async function tick(): Promise<void> {
     status.lastTickAt = tickAt;
     status.lastTickAttempts = outcome.attempts;
     status.lastError = null;
+    status.lastInternalActivities = result.internalActivities
+      .map(formatResidentActivity)
+      .slice(-6);
     status.lastActivities = result.activities.map(formatResidentActivity).slice(-6);
 
     if (result.activities.length > 0) {
       status.lastActivityAt = tickAt;
+    }
+
+    if (result.internalActivities.length > 0) {
+      status.lastInternalAt = tickAt;
     }
 
     if (result.proactiveMessage) {
@@ -152,8 +161,12 @@ async function tick(): Promise<void> {
 
     await flushStatus();
 
-    for (const activity of result.activities) {
-      console.log(`[loop] ${formatResidentActivity(activity)}`);
+    for (const activity of result.internalActivities) {
+      console.log(`[loop/internal] ${formatResidentActivity(activity)}`);
+    }
+
+    for (const activity of result.outwardActivities) {
+      console.log(`[loop/outward] ${formatResidentActivity(activity)}`);
     }
 
     if (result.proactiveMessage) {

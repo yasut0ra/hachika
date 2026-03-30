@@ -342,7 +342,7 @@ npm run loop
 ```
 
 `HACHIKA_LOOP_INTERVAL_MS` で tick 間隔、`HACHIKA_LOOP_IDLE_HOURS_PER_TICK` で 1 tick あたりに進める疑似 idle 時間を変えられます。  
-loop は snapshot を定期的に読み込み、idle consolidation と proactive emission を進めて `initiative.history` と artifacts に反映します。
+loop は snapshot を定期的に読み込み、まず idle 由来の `internal action` を進め、その後で必要なら `outward proactive` を評価して `initiative.history` と artifacts に反映します。
 Web UI を開いていれば、loop が出した autonomous proactive は polling で自動表示されます。
 CLI も resident loop と併用していれば、入力待ちのまま autonomous proactive が流れます。
 CLI と UI server は各操作の直前に snapshot を再読込するので、loop と併用しても state の見え方がずれにくくなっています。

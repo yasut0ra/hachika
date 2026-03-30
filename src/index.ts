@@ -418,6 +418,7 @@ function printResidentLoop(): void {
   );
   console.log(`last tick: ${status.lastTickAt ?? "none"}`);
   console.log(`last activity: ${status.lastActivityAt ?? "none"}`);
+  console.log(`last internal: ${status.lastInternalAt ?? "none"}`);
   console.log(`last proactive: ${status.lastProactiveAt ?? "none"}`);
   console.log(`last tick attempts: ${status.lastTickAttempts ?? "none"}`);
   console.log(`stopped: ${status.stoppedAt ?? "none"}`);
@@ -428,6 +429,11 @@ function printResidentLoop(): void {
       : "config: none",
   );
   console.log(`last error: ${status.lastError ?? "none"}`);
+  console.log(
+    status.lastInternalActivities.length > 0
+      ? `recent internal: ${status.lastInternalActivities.join(" | ")}`
+      : "recent internal: none",
+  );
   console.log(
     status.lastActivities.length > 0
       ? `recent activity: ${status.lastActivities.join(" | ")}`
