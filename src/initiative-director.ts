@@ -16,16 +16,36 @@ const HACHIKA_INITIATIVE_DIRECTOR_SYSTEM_PROMPT = [
   "Return JSON only.",
   "Do not write prose, markdown, or explanations.",
   "The local engine already selected a candidate initiative.",
-  "You may keep it, suppress it, or lightly reshape topic/stateTopic/place/worldAction.",
+  "You may keep it, suppress it, or lightly reshape kind/reason/motive/topic/stateTopic/readyAfterHours/place/worldAction.",
   "Prefer suppressing weak, repetitive, overly abstract, socially intrusive, or direct-answer-only residue.",
   "For greeting, smalltalk, pure self/world inquiry, repair, or relation clarification turns, prefer keep:false unless there is explicit concrete continuity worth carrying.",
   "topic is the semantic topic that may be recalled later. stateTopic is the subset worth durable hardening.",
   "Only keep stateTopic when it is concrete and already present in candidateTopics.",
+  "Keep kind/reason/motive close to the local candidate unless there is a strong semantic reason to cool or redirect it.",
   "Keep world action close to the local candidate unless there is a strong reason to suppress it.",
   "Return a single JSON object.",
 ].join(" ");
 
 const WORLD_PLACE_VALUES = new Set<WorldPlaceId>(["threshold", "studio", "archive"]);
+const INITIATIVE_KIND_VALUES = new Set<PendingInitiative["kind"]>([
+  "resume_topic",
+  "neglect_ping",
+  "preserve_presence",
+]);
+const INITIATIVE_REASON_VALUES = new Set<PendingInitiative["reason"]>([
+  "curiosity",
+  "continuity",
+  "relation",
+  "expansion",
+]);
+const MOTIVE_VALUES = new Set<PendingInitiative["motive"]>([
+  "protect_boundary",
+  "seek_continuity",
+  "pursue_curiosity",
+  "deepen_relation",
+  "continue_shared_work",
+  "leave_trace",
+]);
 const WORLD_ACTION_VALUES = new Set<WorldActionKind>([
   "observe",
   "touch",
@@ -34,8 +54,12 @@ const WORLD_ACTION_VALUES = new Set<WorldActionKind>([
 
 export interface InitiativeDirective {
   keep: boolean;
+  kind: PendingInitiative["kind"];
+  reason: PendingInitiative["reason"];
+  motive: PendingInitiative["motive"];
   topic: string | null;
   stateTopic: string | null;
+  readyAfterHours: number;
   place: WorldPlaceId | null;
   worldAction: WorldActionKind | null;
   summary: string;
@@ -72,6 +96,7 @@ export interface InitiativeDirectorPayload {
     topic: string | null;
     stateTopic: string | null;
     blocker: string | null;
+    readyAfterHours: number;
     place: WorldPlaceId | null;
     worldAction: WorldActionKind | null;
   };
@@ -249,6 +274,7 @@ export function buildInitiativeDirectorPayload(
       topic: context.pending.topic ?? null,
       stateTopic: context.pending.stateTopic ?? context.pending.topic ?? null,
       blocker: context.pending.blocker,
+      readyAfterHours: context.pending.readyAfterHours,
       place: context.pending.place ?? null,
       worldAction: context.pending.worldAction ?? null,
     },
@@ -299,15 +325,25 @@ export function normalizeInitiativeDirective(
 
   return {
     keep,
+    kind: readEnum(parsed.kind, INITIATIVE_KIND_VALUES) ?? fallback.kind,
+    reason: readEnum(parsed.reason, INITIATIVE_REASON_VALUES) ?? fallback.reason,
+    motive: readEnum(parsed.motive, MOTIVE_VALUES) ?? fallback.motive,
     topic,
     stateTopic: keep ? stateTopic : null,
+    readyAfterHours: readReadyAfterHours(parsed.readyAfterHours, fallback.readyAfterHours),
     place: readEnum(parsed.place, WORLD_PLACE_VALUES) ?? fallback.place ?? null,
     worldAction:
       readEnum(parsed.worldAction, WORLD_ACTION_VALUES) ?? fallback.worldAction ?? null,
     summary:
       typeof parsed.summary === "string" && parsed.summary.trim().length > 0
         ? parsed.summary.trim()
-        : summarizeInitiativeDirective(keep, topic, stateTopic),
+        : summarizeInitiativeDirective(
+            keep,
+            topic,
+            stateTopic,
+            readEnum(parsed.kind, INITIATIVE_KIND_VALUES) ?? fallback.kind,
+            readEnum(parsed.motive, MOTIVE_VALUES) ?? fallback.motive,
+          ),
   };
 }
 
@@ -336,9 +372,13 @@ function summarizeInitiativeDirective(
   keep: boolean,
   topic: string | null,
   stateTopic: string | null,
+  kind: PendingInitiative["kind"],
+  motive: PendingInitiative["motive"],
 ): string {
   return [
     keep ? "keep" : "suppress",
+    `kind:${kind}`,
+    `motive:${motive}`,
     topic ? `topic:${topic}` : "topic:none",
     stateTopic ? `state:${stateTopic}` : "state:none",
   ].join("/");
@@ -392,6 +432,12 @@ function readEnum<T extends string>(value: unknown, allowed: Set<T>): T | null {
 
 function readBoolean(value: unknown, fallback: boolean): boolean {
   return typeof value === "boolean" ? value : fallback;
+}
+
+function readReadyAfterHours(value: unknown, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value)
+    ? Math.max(0, Math.min(72, Math.round(value * 10) / 10))
+    : fallback;
 }
 
 function unique(items: string[]): string[] {

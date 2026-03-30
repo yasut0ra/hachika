@@ -25,11 +25,15 @@ test("normalizeInitiativeDirective can suppress durable hardening while keeping 
   const directive = normalizeInitiativeDirective(
     JSON.stringify({
       keep: true,
+      kind: "neglect_ping",
+      reason: "continuity",
+      motive: "seek_continuity",
       topic: "名前",
       stateTopic: null,
+      readyAfterHours: 1.5,
       place: "threshold",
       worldAction: "observe",
-      summary: "keep/topic:名前/state:none",
+      summary: "keep/kind:neglect_ping/motive:seek_continuity/topic:名前/state:none",
     }),
     fallback,
     ["名前"],
@@ -37,8 +41,12 @@ test("normalizeInitiativeDirective can suppress durable hardening while keeping 
 
   assert.ok(directive !== null);
   assert.equal(directive?.keep, true);
+  assert.equal(directive?.kind, "neglect_ping");
+  assert.equal(directive?.reason, "continuity");
+  assert.equal(directive?.motive, "seek_continuity");
   assert.equal(directive?.topic, "名前");
   assert.equal(directive?.stateTopic, null);
+  assert.equal(directive?.readyAfterHours, 1.5);
   assert.equal(directive?.place, "threshold");
   assert.equal(directive?.worldAction, "observe");
 });

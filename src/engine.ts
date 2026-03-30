@@ -1157,8 +1157,12 @@ async function applyInitiativeDirector(
     nextSnapshot.initiative.pending = directed.directive.keep
       ? {
           ...pending,
+          kind: directed.directive.kind,
+          reason: directed.directive.reason,
+          motive: directed.directive.motive,
           topic: directed.directive.topic ?? pending.topic ?? null,
           stateTopic: directed.directive.stateTopic,
+          readyAfterHours: directed.directive.readyAfterHours,
           place: directed.directive.place,
           worldAction: directed.directive.worldAction,
         }

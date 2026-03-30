@@ -2562,11 +2562,15 @@ test("respondAsync can use an initiative director to suppress a weak pending ini
       return {
         directive: {
           keep: false,
+          kind: "resume_topic",
+          reason: "relation",
+          motive: "deepen_relation",
           topic: null,
           stateTopic: null,
+          readyAfterHours: 0,
           place: null,
           worldAction: null,
-          summary: "suppress/topic:none/state:none",
+          summary: "suppress/kind:resume_topic/motive:deepen_relation/topic:none/state:none",
         },
         provider: "test-director",
         model: "stub",
@@ -2590,11 +2594,15 @@ test("respondAsync can use an initiative director to keep semantic initiative to
       return {
         directive: {
           keep: true,
+          kind: "neglect_ping",
+          reason: "continuity",
+          motive: "seek_continuity",
           topic: "名前",
           stateTopic: null,
+          readyAfterHours: 1.5,
           place: "threshold",
           worldAction: "observe",
-          summary: "keep/topic:名前/state:none",
+          summary: "keep/kind:neglect_ping/motive:seek_continuity/topic:名前/state:none",
         },
         provider: "test-director",
         model: "stub",
@@ -2606,8 +2614,12 @@ test("respondAsync can use an initiative director to keep semantic initiative to
     initiativeDirector,
   });
 
+  assert.equal(result.snapshot.initiative.pending?.kind ?? null, "neglect_ping");
+  assert.equal(result.snapshot.initiative.pending?.reason ?? null, "continuity");
+  assert.equal(result.snapshot.initiative.pending?.motive ?? null, "seek_continuity");
   assert.equal(result.snapshot.initiative.pending?.topic ?? null, "名前");
   assert.equal(result.snapshot.initiative.pending?.stateTopic ?? null, null);
+  assert.equal(result.snapshot.initiative.pending?.readyAfterHours ?? null, 1.5);
   assert.equal(result.snapshot.initiative.pending?.place ?? null, "threshold");
   assert.equal(result.snapshot.initiative.pending?.worldAction ?? null, "observe");
 });
