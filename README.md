@@ -220,6 +220,7 @@ Hachika は、単に有用なだけでなく、
 - 応答直前には `response planner` が `act / stance / distance / focus` を決め、rule-based reply と LLM wording の両方が同じ返答意図を共有する
   - 直前には `turn-director` も置けるため、`subject / target / answerMode / relationMove / worldMention` だけでなく reply plan まで一段で決められる。これがある turn では separate な planner を呼ばず、semantic turn analysis をそのまま返答設計へ流す
   - `turn-director` は `topics` と `stateTopics` を分けて返せるので、「このターンでは答えるために参照するが、durable な memory / trace / purpose にはまだ固めない」という扱いができる
+  - 次段の統合方針は [docs/semantic-director-v2.md](/Users/yasut0ra/dev/hachika/docs/semantic-director-v2.md) に整理してあり、`semantic topic / durable topic / reply plan / proactive plan` を一段の contract に寄せていく
   - その手前には optional な `behavior director` も置けるため、trace / purpose / initiative をこの turn で本当に harden してよいか、topic shift や repair でいったん冷やすべきか、自己開示や world inquiry では先に直接答えるべきか、clarification を hostility に寄せるべきでないか、world 演出を抑えるべきかを LLM が structured に裁ける
   - greeting / repair / self-disclosure のような social turn では stale trace を引っ込め、関係の温度や自己開示を優先しやすくしている
   - `今どこにいるの` や `周りはどんな感じ` のような world inquiry では `mentionWorld` を立て、stale work より current place / phase / object state を返答に出しやすくしている
