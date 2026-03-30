@@ -28,6 +28,7 @@ import type { ProactivePlan } from "./response-planner.js";
 import {
   currentWorldObjectLinksTopic,
   describeWorldObjectJa,
+  describeWorldPlaceJa,
   getCurrentWorldLinkedTraceTopics,
   getCurrentWorldObjectId,
   performWorldAction,
@@ -1582,25 +1583,37 @@ function recordIdleConsolidation(
   hours: number,
   report: IdleConsolidationReport | null,
 ): void {
-  if (!report || (!report.focusTopic && !report.compressed)) {
+  const observationOnly = report === null;
+
+  if (!observationOnly && (!report.focusTopic && !report.compressed)) {
     return;
   }
 
+  const currentPlace = snapshot.world.currentPlace;
+  const observationWorldAction = observationOnly ? ("observe" as const) : null;
+
   recordInitiativeActivity(snapshot, {
     kind: "idle_consolidation",
-    autonomyAction:
-      report.focusTopic !== null ? "hold" : report.compressed ? "drift" : null,
+    autonomyAction: observationOnly
+      ? "observe"
+      : report.focusTopic !== null
+        ? "hold"
+        : report.compressed
+          ? "drift"
+          : null,
     timestamp: new Date().toISOString(),
     motive: null,
-    topic: report.focusTopic,
+    topic: observationOnly ? null : report.focusTopic,
     traceTopic: null,
     blocker: null,
-    place: null,
-    worldAction: null,
+    place: observationOnly ? currentPlace : null,
+    worldAction: observationWorldAction,
     maintenanceAction: null,
     reopened: false,
     hours: Math.round(hours * 10) / 10,
-    summary: buildIdleConsolidationSummary(report),
+    summary: observationOnly
+      ? buildIdleObservationSummary(snapshot)
+      : buildIdleConsolidationSummary(report),
   });
 }
 
@@ -1650,6 +1663,16 @@ function buildIdleConsolidationSummary(report: IdleConsolidationReport): string 
   }
 
   return "静かな時間で記憶のまとまりを寄せ直した。";
+}
+
+function buildIdleObservationSummary(snapshot: HachikaSnapshot): string {
+  const objectId = getCurrentWorldObjectId(snapshot.world);
+
+  if (objectId) {
+    return `静かな時間で${describeWorldObjectJa(objectId)}のそばを見ていた。`;
+  }
+
+  return `静かな時間で${describeWorldPlaceJa(snapshot.world.currentPlace)}の気配を見ていた。`;
 }
 
 function buildIdleReactivationSummary(

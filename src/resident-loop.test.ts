@@ -173,6 +173,53 @@ test("resident loop can emit proactive wording and record the emission", async (
   assert.equal(result.snapshot.autonomousFeed[0]?.text, result.proactiveMessage);
 });
 
+test("resident loop can record a quiet observe action without speaking", async () => {
+  const snapshot = createInitialSnapshot();
+  const observedPlace = snapshot.world.currentPlace;
+  snapshot.lastInteractionAt = "2026-03-20T10:00:00.000Z";
+  snapshot.body.energy = 0.08;
+  snapshot.body.loneliness = 0.04;
+  snapshot.preservation.threat = 0.1;
+  const proactiveDirector: ProactiveDirector = {
+    name: "quiet-observe-director",
+    async directProactive() {
+      return {
+        directive: {
+          emit: false,
+          plan: null,
+          summary: "suppress/observe-only",
+        },
+        provider: "test-director",
+        model: "stub",
+      };
+    },
+  };
+
+  const result = await runResidentLoopTick(snapshot, {
+    idleHours: 8,
+    proactiveDirector,
+    replyGenerator: {
+      name: "test-llm",
+      async generateReply() {
+        return null;
+      },
+      async generateProactive() {
+        throw new Error("should not generate when suppressed");
+      },
+    },
+  });
+  const observation = result.internalActivities.find(
+    (activity) => activity.autonomyAction === "observe",
+  );
+
+  assert.equal(result.proactiveMessage, null);
+  assert.ok(observation);
+  assert.equal(observation?.kind, "idle_consolidation");
+  assert.equal(observation?.worldAction, "observe");
+  assert.equal(observation?.topic, null);
+  assert.equal(observation?.place, observedPlace);
+});
+
 test("resident loop can suppress proactive emission through a proactive director", async () => {
   const snapshot = createInitialSnapshot();
   snapshot.lastInteractionAt = "2026-03-20T10:00:00.000Z";

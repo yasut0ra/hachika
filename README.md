@@ -290,7 +290,7 @@ Hachika は、単に有用なだけでなく、
   - active purpose の継続と解決、blocker maintenance、archive/reopen、preservation threat、body drift による wording 変化を長めの回帰テストとして固定している
   - async scenario では LLM adapter の `reply / proactive` fallback でも local state 更新と maintenance が保たれること、input interpreter が local topic を落として social reply selection へ寄せること、proactive selection が blocker repair / archive reopen の payload まで届くことを検証している
 - `initiative.history` により、idle consolidation / idle reactivation / proactive emission の自律行動が snapshot に残る
-  - 各 activity は `autonomyAction` も持ち、現在は `hold / recall / speak` の語彙で resident loop が何をしていたかを追える
+  - 各 activity は `autonomyAction` も持ち、現在は `observe / hold / drift / recall / speak` の語彙で resident loop が何をしていたかを追える
 - resident loop が自発発話した文は `autonomousFeed` にも残る
   - Web UI は数秒おきに `/api/state` を自動更新し、この feed を見てバックグラウンドの `proactive` を拾うので、`/proactive` を押さなくても loop が動いていれば会話欄へ自然に流れ込む
   - CLI も数秒おきに feed を監視し、入力待ち中でも新しい `hachika*` 行を自動表示する
