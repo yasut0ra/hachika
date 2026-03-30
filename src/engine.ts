@@ -25,13 +25,17 @@ import type {
 import type { InitiativeDirector } from "./initiative-director.js";
 import {
   materializePreparedInitiative,
+  materializeIdleAutonomyAction,
+  prepareIdleAutonomyAction,
   prepareInitiativeEmission,
   prepareScheduledInitiative,
+  rewindSnapshotBaseHours,
   rewindSnapshotHours,
   scheduleInitiative,
 } from "./initiative.js";
 import type { ScheduledInitiativeDecision } from "./initiative.js";
 import type { ProactiveEmission } from "./initiative.js";
+import type { AutonomyDirector } from "./autonomy-director.js";
 import type { ProactiveDirector } from "./proactive-director.js";
 import { applyBodyFromSignals } from "./body.js";
 import {
@@ -856,6 +860,45 @@ export class HachikaEngine {
   rewindIdleHours(hours: number): void {
     const nextSnapshot = structuredClone(this.#snapshot);
     rewindSnapshotHours(nextSnapshot, hours);
+    advanceWorldByIdle(nextSnapshot, hours);
+    updateIdentity(nextSnapshot, new Date().toISOString());
+    this.#snapshot = nextSnapshot;
+  }
+
+  async rewindIdleHoursAsync(
+    hours: number,
+    options: { autonomyDirector?: AutonomyDirector | null } = {},
+  ): Promise<void> {
+    const nextSnapshot = structuredClone(this.#snapshot);
+    rewindSnapshotBaseHours(nextSnapshot, hours);
+    let prepared = prepareIdleAutonomyAction(nextSnapshot, hours);
+
+    if (prepared && options.autonomyDirector) {
+      try {
+        const result = await options.autonomyDirector.directAutonomy({
+          previousSnapshot: this.#snapshot,
+          nextSnapshot,
+          hours,
+          prepared,
+        });
+
+        if (result?.directive) {
+          prepared = result.directive.keep
+            ? {
+                ...prepared,
+                action: result.directive.action,
+              }
+            : null;
+        }
+      } catch {
+        // Ignore autonomy-director errors and fall back to local idle behavior.
+      }
+    }
+
+    if (prepared) {
+      materializeIdleAutonomyAction(nextSnapshot, prepared);
+    }
+
     advanceWorldByIdle(nextSnapshot, hours);
     updateIdentity(nextSnapshot, new Date().toISOString());
     this.#snapshot = nextSnapshot;

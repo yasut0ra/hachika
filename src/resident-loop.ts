@@ -1,4 +1,5 @@
 import { HachikaEngine } from "./engine.js";
+import type { AutonomyDirector } from "./autonomy-director.js";
 import type { ProactiveDirector } from "./proactive-director.js";
 import type { ReplyGenerator } from "./reply-generator.js";
 import type { AutonomousFeedEntry, HachikaSnapshot, InitiativeActivity } from "./types.js";
@@ -6,6 +7,7 @@ import type { AutonomousFeedEntry, HachikaSnapshot, InitiativeActivity } from ".
 export interface ResidentLoopTickOptions {
   idleHours: number;
   now?: Date;
+  autonomyDirector?: AutonomyDirector | null;
   replyGenerator?: ReplyGenerator | null;
   proactiveDirector?: ProactiveDirector | null;
 }
@@ -33,7 +35,13 @@ export async function runResidentLoopTick(
   let internalActivities: InitiativeActivity[] = [];
 
   if (idleHours > 0) {
-    engine.rewindIdleHours(idleHours);
+    if (options.autonomyDirector) {
+      await engine.rewindIdleHoursAsync(idleHours, {
+        autonomyDirector: options.autonomyDirector,
+      });
+    } else {
+      engine.rewindIdleHours(idleHours);
+    }
     const afterIdleSnapshot = engine.getSnapshot();
     internalActivities = diffInitiativeHistory(
       beforeHistory,

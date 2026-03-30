@@ -1,6 +1,10 @@
 import { resolve } from "node:path";
 
 import { syncArtifacts } from "./artifacts.js";
+import {
+  createAutonomyDirectorFromEnv,
+  describeAutonomyDirector,
+} from "./autonomy-director.js";
 import { runWithConflictRetry } from "./conflict-retry.js";
 import { loadDotEnv } from "./env.js";
 import { commitSnapshot, loadSnapshot } from "./persistence.js";
@@ -33,6 +37,7 @@ loadDotEnv();
 
 const config = readResidentLoopConfigFromEnv();
 const replyGenerator = createReplyGeneratorFromEnv();
+const autonomyDirector = createAutonomyDirectorFromEnv();
 const proactiveDirector = createProactiveDirectorFromEnv();
 const startedAt = new Date().toISOString();
 
@@ -84,6 +89,7 @@ async function main(): Promise<void> {
   console.log("Hachika resident loop");
   console.log(describeResidentLoopConfig(config));
   console.log(`reply:${describeReplyGenerator(replyGenerator)}`);
+  console.log(`autonomy:${describeAutonomyDirector(autonomyDirector)}`);
   console.log(`proactive:${describeProactiveDirector(proactiveDirector)}`);
   console.log(`status:${formatResidentLoopStatus(status)}`);
 
@@ -108,6 +114,7 @@ async function tick(): Promise<void> {
         const snapshot = await loadSnapshot(snapshotPath);
         return runResidentLoopTick(snapshot, {
           idleHours: config.idleHoursPerTick,
+          autonomyDirector,
           replyGenerator,
           proactiveDirector,
         });

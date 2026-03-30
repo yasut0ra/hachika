@@ -73,7 +73,7 @@ interface IdleConsolidationReport {
   compressed: boolean;
 }
 
-type IdleAutonomyAction = Exclude<InitiativeActivity["autonomyAction"], "speak" | null>;
+export type IdleAutonomyAction = Exclude<InitiativeActivity["autonomyAction"], "speak" | null>;
 
 interface PreparedIdleRecallSelection {
   trace: HachikaSnapshot["traces"][string];
@@ -83,7 +83,7 @@ interface PreparedIdleRecallSelection {
   shouldInstallPending: boolean;
 }
 
-interface PreparedIdleAutonomyAction {
+export interface PreparedIdleAutonomyAction {
   action: IdleAutonomyAction;
   hours: number;
   prioritizedTopic: string | null;
@@ -344,6 +344,20 @@ export function rewindSnapshotHours(
   snapshot: HachikaSnapshot,
   hours: number,
 ): void {
+  rewindSnapshotBaseHours(snapshot, hours);
+  const prepared = prepareIdleAutonomyAction(snapshot, hours);
+
+  if (!prepared) {
+    return;
+  }
+
+  materializeIdleAutonomyAction(snapshot, prepared);
+}
+
+export function rewindSnapshotBaseHours(
+  snapshot: HachikaSnapshot,
+  hours: number,
+): void {
   if (!Number.isFinite(hours) || hours <= 0) {
     return;
   }
@@ -369,7 +383,6 @@ export function rewindSnapshotHours(
   rewindTemperamentHours(snapshot, hours);
   deriveVisibleStateFromDynamics(snapshot);
   applyLegacyIdleVisibleShift(snapshot, legacyVisible, hours);
-  consolidateIdleSnapshot(snapshot, hours);
 
   if (snapshot.initiative.pending) {
     snapshot.initiative.pending = {
@@ -449,7 +462,7 @@ function consolidateIdleSnapshot(
   materializeIdleAutonomyAction(snapshot, prepared);
 }
 
-function prepareIdleAutonomyAction(
+export function prepareIdleAutonomyAction(
   snapshot: HachikaSnapshot,
   hours: number,
 ): PreparedIdleAutonomyAction | null {
@@ -526,7 +539,7 @@ function prepareIdleAutonomyAction(
   };
 }
 
-function materializeIdleAutonomyAction(
+export function materializeIdleAutonomyAction(
   snapshot: HachikaSnapshot,
   prepared: PreparedIdleAutonomyAction,
 ): void {
@@ -596,6 +609,11 @@ function materializeIdleAutonomyAction(
     if (report?.focusTopic && report.focusTopic !== prepared.selected.trace.topic) {
       recordIdleConsolidation(snapshot, prepared.hours, report, "hold");
     }
+    return;
+  }
+
+  if (prepared.action === "observe") {
+    recordIdleConsolidation(snapshot, prepared.hours, null, "observe");
     return;
   }
 

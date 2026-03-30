@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import type { AutonomyDirector } from "./autonomy-director.js";
 import type { ProactiveDirector } from "./proactive-director.js";
 import { createInitialSnapshot } from "./state.js";
 import {
@@ -269,6 +270,96 @@ test("resident loop can suppress proactive emission through a proactive director
     false,
   );
   assert.equal(result.snapshot.autonomousFeed.length, 0);
+});
+
+test("resident loop can reshape internal autonomy action through an autonomy director", async () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.lastInteractionAt = "2026-03-20T10:00:00.000Z";
+  snapshot.body.energy = 0.46;
+  snapshot.body.boredom = 0.84;
+  snapshot.body.tension = 0.18;
+  snapshot.temperament.workDrive = 0.88;
+  snapshot.traces.設計 = {
+    topic: "設計",
+    kind: "decision",
+    status: "resolved",
+    lastAction: "resolved",
+    summary: "「設計」は決定として残っている。",
+    sourceMotive: "leave_trace",
+    artifact: {
+      memo: ["設計を残す"],
+      fragments: ["API を分ける"],
+      decisions: ["API を分ける"],
+      nextSteps: [],
+    },
+    work: {
+      focus: "API を分ける",
+      confidence: 0.92,
+      blockers: [],
+      staleAt: null,
+    },
+    lifecycle: {
+      phase: "archived",
+      archivedAt: "2026-03-20T09:00:00.000Z",
+      reopenedAt: null,
+      reopenCount: 0,
+    },
+    salience: 0.8,
+    mentions: 4,
+    createdAt: "2026-03-20T08:00:00.000Z",
+    lastUpdatedAt: "2026-03-20T09:00:00.000Z",
+  };
+  const autonomyDirector: AutonomyDirector = {
+    name: "test-autonomy",
+    async directAutonomy() {
+      return {
+        directive: {
+          keep: true,
+          action: "observe",
+          summary: "cool/observe",
+        },
+        provider: "test-autonomy",
+        model: "stub",
+      };
+    },
+  };
+  const proactiveDirector: ProactiveDirector = {
+    name: "quiet-director",
+    async directProactive() {
+      return {
+        directive: {
+          emit: false,
+          plan: null,
+          summary: "suppress/observe-only",
+        },
+        provider: "test-director",
+        model: "stub",
+      };
+    },
+  };
+
+  const result = await runResidentLoopTick(snapshot, {
+    idleHours: 18,
+    autonomyDirector,
+    proactiveDirector,
+    replyGenerator: {
+      name: "test-llm",
+      async generateReply() {
+        return null;
+      },
+      async generateProactive() {
+        throw new Error("should not generate when suppressed");
+      },
+    },
+  });
+
+  assert.ok(
+    result.internalActivities.some((activity) => activity.autonomyAction === "observe"),
+  );
+  assert.equal(
+    result.internalActivities.some((activity) => activity.autonomyAction === "recall"),
+    false,
+  );
 });
 
 test("resident loop config reads env overrides", () => {

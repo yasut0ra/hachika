@@ -344,7 +344,7 @@ npm run loop
 
 `HACHIKA_LOOP_INTERVAL_MS` で tick 間隔、`HACHIKA_LOOP_IDLE_HOURS_PER_TICK` で 1 tick あたりに進める疑似 idle 時間を変えられます。  
 loop は snapshot を定期的に読み込み、まず idle 由来の `internal action` を進め、その後で必要なら `outward proactive` を評価して `initiative.history` と artifacts に反映します。
-internal action はいま `observe / hold / drift / recall` の候補から先に選ばれ、そのあとで snapshot 上の変化として materialize されます。
+internal action はいま `observe / hold / drift / recall` の候補から先に選ばれ、そのあとで snapshot 上の変化として materialize されます。resident loop では `OPENAI_AUTONOMY_MODEL` があると、この internal action 候補を autonomy director が `keep / suppress / reshape` できます。
 Web UI を開いていれば、loop が出した autonomous proactive は polling で自動表示されます。
 CLI も resident loop と併用していれば、入力待ちのまま autonomous proactive が流れます。
 CLI と UI server は各操作の直前に snapshot を再読込するので、loop と併用しても state の見え方がずれにくくなっています。
@@ -358,7 +358,7 @@ LLM wording を有効にする場合:
 cp .env.example .env
 ```
 
-`.env` に `OPENAI_API_KEY` を入れると、CLI は OpenAI reply generator / turn director / input interpreter / behavior director / initiative director / response planner / proactive director / trace extractor を使います。  
+`.env` に `OPENAI_API_KEY` を入れると、CLI は OpenAI reply generator / turn director / input interpreter / behavior director / initiative director / response planner / proactive director / trace extractor を使います。resident loop では autonomy director も使えます。  
 返答のモデルは `OPENAI_MODEL`、turn 意味理解だけ別に変えたい場合は `OPENAI_TURN_MODEL`、入力解釈だけ別に変えたい場合は `OPENAI_INTERPRETER_MODEL`、behavior 境界だけ別に変えたい場合は `OPENAI_BEHAVIOR_MODEL`、pending initiative の裁定や弱い新規 synthesis だけ別に変えたい場合は `OPENAI_INITIATIVE_MODEL`、planner だけ別に変えたい場合は `OPENAI_PLANNER_MODEL`、自発行動の裁定だけ別に変えたい場合は `OPENAI_PROACTIVE_MODEL`、trace 抽出だけ別に変えたい場合は `OPENAI_TRACE_MODEL` を使えます。未設定時はどれも `gpt-5-mini` です。
 
 主なコマンド:
