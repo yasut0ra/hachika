@@ -30,6 +30,8 @@ test("normalizeProactiveDirective can parse emit and plan override", () => {
   const directive = normalizeProactiveDirective(
     JSON.stringify({
       emit: true,
+      topics: ["仕様の境界"],
+      stateTopics: ["仕様の境界"],
       plan: {
         act: "continue_work",
         stance: "open",
@@ -45,6 +47,8 @@ test("normalizeProactiveDirective can parse emit and plan override", () => {
       summary: "emit/continue_work",
     }),
     fallbackPlan,
+    ["仕様の境界"],
+    ["仕様の境界"],
   );
 
   assert.ok(directive !== null);
@@ -52,6 +56,9 @@ test("normalizeProactiveDirective can parse emit and plan override", () => {
   assert.equal(directive?.plan?.act, "continue_work");
   assert.equal(directive?.plan?.stance, "open");
   assert.equal(directive?.plan?.variation, "questioning");
+  assert.deepEqual(directive?.topics, ["仕様の境界"]);
+  assert.deepEqual(directive?.stateTopics, ["仕様の境界"]);
+  assert.equal(directive?.semantic?.mode, "proactive");
 });
 
 test("buildProactiveDirectorPayload keeps candidate topics grounded", () => {

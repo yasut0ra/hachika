@@ -1,4 +1,11 @@
 import {
+  buildSemanticReplyPlanFromResponsePlan,
+  buildSemanticTopicDecisions,
+  buildSemanticTraceHint,
+  describeSemanticDirective,
+  type SemanticTurnDirectiveV2,
+} from "./semantic-director-schema.js";
+import {
   buildRuleBehaviorDirective,
   type BehaviorDirective,
 } from "./behavior-director.js";
@@ -80,6 +87,7 @@ export interface TurnDirective {
   behavior: BehaviorDirective;
   responsePlan?: ResponsePlan | null;
   traceExtraction: StructuredTraceExtraction | null;
+  semantic?: SemanticTurnDirectiveV2;
   summary: string;
 }
 
@@ -472,6 +480,19 @@ export function buildRuleTurnDirective(
     behavior,
   });
 
+  const semantic = buildSemanticTurnDirective({
+    subject,
+    target,
+    answerMode,
+    relationMove,
+    worldMention,
+    topics,
+    stateTopics,
+    behavior,
+    responsePlan,
+    traceExtraction,
+  });
+
   return {
     subject,
     target,
@@ -483,19 +504,8 @@ export function buildRuleTurnDirective(
     behavior,
     responsePlan,
     traceExtraction,
-    summary: summarizeTurnDirective({
-      subject,
-      target,
-      answerMode,
-      relationMove,
-      worldMention,
-      topics,
-      stateTopics,
-      behavior,
-      responsePlan,
-      traceExtraction,
-      summary: "",
-    }),
+    semantic,
+    summary: describeSemanticDirective(semantic),
   };
 }
 
@@ -551,38 +561,73 @@ export function normalizeTurnDirective(
     traceExtraction: target === "work_topic" ? traceExtraction : null,
     summary: "",
   };
+  directive.semantic = buildSemanticTurnDirective(directive);
   directive.summary = summarizeTurnDirective(directive);
   return directive;
 }
 
 export function summarizeTurnDirective(directive: TurnDirective): string {
-  const parts = [
-    `subject:${directive.subject}`,
-    `target:${directive.target}`,
-    `mode:${directive.answerMode}`,
-  ];
+  return describeSemanticDirective(
+    directive.semantic ??
+      buildSemanticTurnDirective(directive),
+  );
+}
 
-  if (directive.relationMove !== "none") {
-    parts.push(`relation:${directive.relationMove}`);
-  }
-
-  if (directive.worldMention !== "none") {
-    parts.push(`world:${directive.worldMention}`);
-  }
-
-  if (directive.topics.length > 0) {
-    parts.push(`topics:${directive.topics.join(",")}`);
-  }
-
-  if (directive.stateTopics.length > 0) {
-    parts.push(`state:${directive.stateTopics.join(",")}`);
-  }
-
-  if (directive.responsePlan?.summary) {
-    parts.push(`plan:${directive.responsePlan.summary}`);
-  }
-
-  return parts.join("/");
+function buildSemanticTurnDirective(
+  directive: Pick<
+    TurnDirective,
+    | "subject"
+    | "target"
+    | "answerMode"
+    | "relationMove"
+    | "worldMention"
+    | "topics"
+    | "stateTopics"
+    | "behavior"
+    | "responsePlan"
+    | "traceExtraction"
+  >,
+): SemanticTurnDirectiveV2 {
+  return {
+    mode: "turn",
+    subject: directive.subject,
+    target: directive.target,
+    answerMode: directive.answerMode,
+    relationMove: directive.relationMove,
+    worldMention: directive.worldMention,
+    topics: buildSemanticTopicDecisions(
+      directive.topics,
+      directive.stateTopics,
+      directive.target === "work_topic"
+        ? "input"
+        : directive.target === "world_state"
+          ? "world"
+          : directive.target === "relation"
+            ? "relation"
+            : directive.target === "hachika_profile" ||
+                directive.target === "hachika_name"
+              ? "self"
+              : directive.target === "user_profile" ||
+                  directive.target === "user_name"
+                ? "relation"
+                : "input",
+    ),
+    behavior: {
+      topicAction: directive.behavior.topicAction,
+      traceAction: directive.behavior.traceAction,
+      purposeAction: directive.behavior.purposeAction,
+      initiativeAction: directive.behavior.initiativeAction,
+      boundaryAction: directive.behavior.boundaryAction,
+      worldAction: directive.behavior.worldAction,
+      coolCurrentContext: directive.behavior.coolCurrentContext,
+      directAnswer: directive.behavior.directAnswer,
+    },
+    replyPlan: buildSemanticReplyPlanFromResponsePlan(
+      directive.responsePlan ?? buildRuleTurnResponsePlan(directive),
+    ),
+    trace: buildSemanticTraceHint(directive.traceExtraction, directive.stateTopics),
+    summary: "",
+  };
 }
 
 function buildRuleTurnResponsePlan(

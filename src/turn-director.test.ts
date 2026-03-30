@@ -28,6 +28,8 @@ test("rule turn directive resolves Hachika name questions as direct self referen
   assert.equal(directive.behavior.worldAction, "suppress");
   assert.deepEqual(directive.topics, []);
   assert.deepEqual(directive.stateTopics, []);
+  assert.equal(directive.semantic?.mode, "turn");
+  assert.equal(directive.semantic?.target, "hachika_name");
 });
 
 test("rule turn directive resolves user naming questions without hardening work state", () => {
@@ -108,6 +110,8 @@ test("normalizeTurnDirective keeps fallback shape and parses turn semantics", ()
   assert.deepEqual(normalized?.topics, []);
   assert.deepEqual(normalized?.stateTopics, []);
   assert.equal(normalized?.traceExtraction, null);
+  assert.equal(normalized?.semantic?.mode, "turn");
+  assert.equal(normalized?.semantic?.target, "hachika_profile");
 });
 
 function createSignals(

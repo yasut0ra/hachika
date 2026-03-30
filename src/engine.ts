@@ -655,6 +655,9 @@ export class HachikaEngine {
     let plannerError: string | null = null;
     let plannerRulePlan: string | null = null;
     let plannerDiff: string | null = null;
+    let generationTopics = [...emission.topics];
+    let finalTopics = [...emission.topics];
+    let finalStateTopic = emission.pending.stateTopic ?? emission.pending.topic ?? null;
 
     if (proactiveDirector) {
       try {
@@ -678,6 +681,15 @@ export class HachikaEngine {
           plannerRulePlan = emission.plan.summary;
           finalPlan = directed.directive.plan ?? emission.plan;
           plannerDiff = summarizeProactivePlanDiff(emission.plan, finalPlan);
+          generationTopics =
+            directed.directive.topics && directed.directive.topics.length > 0
+              ? [...directed.directive.topics]
+              : [...emission.topics];
+          finalTopics =
+            directed.directive.stateTopics && directed.directive.stateTopics.length > 0
+              ? [...directed.directive.stateTopics]
+              : [];
+          finalStateTopic = finalTopics[0] ?? null;
         }
       } catch (error) {
         plannerFallbackUsed = true;
@@ -686,10 +698,21 @@ export class HachikaEngine {
     }
 
     const generationEmission =
-      finalPlan === emission.plan
+      finalPlan === emission.plan &&
+      generationTopics === emission.topics &&
+      finalStateTopic === (emission.pending.stateTopic ?? emission.pending.topic ?? null)
         ? emission
         : {
             ...emission,
+            topics: generationTopics,
+            pending: {
+              ...emission.pending,
+              stateTopic: finalStateTopic,
+            },
+            selection: {
+              ...emission.selection,
+              stateTopic: finalStateTopic,
+            },
             plan: finalPlan,
           };
 
@@ -698,7 +721,7 @@ export class HachikaEngine {
         previousSnapshot,
         nextSnapshot,
         fallbackMessage,
-        emission.topics,
+        finalTopics,
         {
           mode: "proactive",
           source: "rule",
@@ -747,7 +770,7 @@ export class HachikaEngine {
       });
       const message = generated.text;
 
-      return this.#finalizeProactiveEmission(previousSnapshot, nextSnapshot, message, emission.topics, {
+      return this.#finalizeProactiveEmission(previousSnapshot, nextSnapshot, message, finalTopics, {
         mode: "proactive",
         source: message === fallbackMessage ? "rule" : "llm",
         provider: generated.provider,
@@ -768,7 +791,7 @@ export class HachikaEngine {
         quality: generated.quality,
       });
     } catch (error) {
-      return this.#finalizeProactiveEmission(previousSnapshot, nextSnapshot, fallbackMessage, emission.topics, {
+      return this.#finalizeProactiveEmission(previousSnapshot, nextSnapshot, fallbackMessage, finalTopics, {
         mode: "proactive",
         source: "rule",
         provider: replyGenerator.name,

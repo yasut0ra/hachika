@@ -1,4 +1,5 @@
 import type {
+  StructuredTraceExtraction,
   TraceKind,
   TurnAnswerMode,
   TurnRelationMove,
@@ -105,6 +106,49 @@ export interface SemanticProactiveDirectiveV2 {
 export type SemanticDirectiveV2 =
   | SemanticTurnDirectiveV2
   | SemanticProactiveDirectiveV2;
+
+export function buildSemanticTopicDecisions(
+  topics: readonly string[],
+  stateTopics: readonly string[],
+  source: SemanticTopicSource,
+): SemanticTopicDecision[] {
+  const durableTopics = new Set(stateTopics);
+  const uniqueTopics = Array.from(new Set(topics));
+
+  return uniqueTopics.map((topic, index) => ({
+    topic,
+    source,
+    durability: durableTopics.has(topic) ? "durable" : "ephemeral",
+    confidence: Math.max(0.25, 0.92 - index * 0.12),
+  }));
+}
+
+export function buildSemanticTraceHint(
+  trace: Pick<
+    StructuredTraceExtraction,
+    | "topics"
+    | "kindHint"
+    | "completion"
+    | "blockers"
+    | "memo"
+    | "fragments"
+    | "decisions"
+    | "nextSteps"
+  > | null,
+  stateTopics: readonly string[],
+): SemanticTraceHint {
+  return {
+    topics: trace?.topics ? [...trace.topics] : [],
+    stateTopics: [...stateTopics],
+    kindHint: trace?.kindHint ?? null,
+    completion: trace?.completion ?? 0,
+    blockers: trace?.blockers ? [...trace.blockers] : [],
+    memo: trace?.memo ? [...trace.memo] : [],
+    fragments: trace?.fragments ? [...trace.fragments] : [],
+    decisions: trace?.decisions ? [...trace.decisions] : [],
+    nextSteps: trace?.nextSteps ? [...trace.nextSteps] : [],
+  };
+}
 
 export function buildSemanticReplyPlanFromResponsePlan(
   plan: ResponsePlan,
