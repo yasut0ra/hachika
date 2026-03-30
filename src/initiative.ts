@@ -73,6 +73,24 @@ interface IdleConsolidationReport {
   compressed: boolean;
 }
 
+type IdleAutonomyAction = Exclude<InitiativeActivity["autonomyAction"], "speak" | null>;
+
+interface PreparedIdleRecallSelection {
+  trace: HachikaSnapshot["traces"][string];
+  motive: MotiveKind;
+  score: number;
+  blocker: string | null;
+  shouldInstallPending: boolean;
+}
+
+interface PreparedIdleAutonomyAction {
+  action: IdleAutonomyAction;
+  hours: number;
+  prioritizedTopic: string | null;
+  prioritizedMotive: MotiveKind | null;
+  selected: PreparedIdleRecallSelection | null;
+}
+
 export interface ScheduledInitiativeDecision {
   shouldClear: boolean;
   candidate: PendingInitiative | null;
@@ -422,8 +440,21 @@ function consolidateIdleSnapshot(
   snapshot: HachikaSnapshot,
   hours: number,
 ): void {
-  if (!Number.isFinite(hours) || hours < 6) {
+  const prepared = prepareIdleAutonomyAction(snapshot, hours);
+
+  if (!prepared) {
     return;
+  }
+
+  materializeIdleAutonomyAction(snapshot, prepared);
+}
+
+function prepareIdleAutonomyAction(
+  snapshot: HachikaSnapshot,
+  hours: number,
+): PreparedIdleAutonomyAction | null {
+  if (!Number.isFinite(hours) || hours < 6) {
+    return null;
   }
 
   const preferredMotive = deriveIdlePreferredMotive(snapshot);
@@ -456,101 +487,147 @@ function consolidateIdleSnapshot(
       return { trace, motive, score };
     })
     .sort((left, right) => right.score - left.score)[0];
-  const selected =
+  const candidate =
     worldRecall && (!dormant || worldRecall.score >= dormant.score - 0.04)
       ? worldRecall
       : dormant;
 
-  if (!selected || selected.score < 0.42) {
-    const report = consolidateIdleMemoryImprints(snapshot, hours, null, null);
-    recordIdleConsolidation(snapshot, hours, report);
-    return;
-  }
+  const selected =
+    candidate && candidate.score >= 0.42
+      ? {
+          trace: candidate.trace,
+          motive: candidate.motive,
+          score: candidate.score,
+          blocker:
+            candidate.trace.status !== "resolved" &&
+            candidate.trace.work.blockers.length > 0 &&
+            candidate.trace.work.confidence < 0.82
+              ? candidate.trace.work.blockers[0] ?? null
+              : null,
+          shouldInstallPending:
+            !snapshot.initiative.pending ||
+            (snapshot.initiative.pending.kind !== "preserve_presence" &&
+              (snapshot.initiative.pending.topic === candidate.trace.topic ||
+                candidate.score >= 0.58)),
+        }
+      : null;
+  const prioritizedTopic = selected?.trace.topic ?? null;
+  const prioritizedMotive = selected?.motive ?? null;
+  const action = selected?.shouldInstallPending
+    ? "recall"
+    : selectIdleInternalAction(snapshot, hours, prioritizedTopic);
 
-  const selectedBoost =
-    Math.min(0.14, hours / 96) * (0.45 + selected.score * 0.4);
-  selected.trace.salience = clamp01(selected.trace.salience + selectedBoost);
+  return {
+    action,
+    hours,
+    prioritizedTopic,
+    prioritizedMotive,
+    selected,
+  };
+}
 
-  for (const archived of sortedArchivedInitiativeTraces(snapshot, 12)) {
-    if (archived.topic === selected.trace.topic) {
-      continue;
-    }
-
-    archived.salience = clamp01(
-      archived.salience - Math.min(0.03, hours / 240),
+function materializeIdleAutonomyAction(
+  snapshot: HachikaSnapshot,
+  prepared: PreparedIdleAutonomyAction,
+): void {
+  if (prepared.selected) {
+    const selectedBoost =
+      Math.min(0.14, prepared.hours / 96) * (0.45 + prepared.selected.score * 0.4);
+    prepared.selected.trace.salience = clamp01(
+      prepared.selected.trace.salience + selectedBoost,
     );
+
+    for (const archived of sortedArchivedInitiativeTraces(snapshot, 12)) {
+      if (archived.topic === prepared.selected.trace.topic) {
+        continue;
+      }
+
+      archived.salience = clamp01(
+        archived.salience - Math.min(0.03, prepared.hours / 240),
+      );
+    }
   }
 
-  const existingPending = snapshot.initiative.pending;
-  const shouldInstallPending =
-    !existingPending ||
-    (existingPending.kind !== "preserve_presence" &&
-      (existingPending.topic === selected.trace.topic || selected.score >= 0.58));
+  if (prepared.action === "recall" && prepared.selected) {
+    const readyAfter = Math.max(
+      0.5,
+      readyAfterMotive(snapshot, prepared.selected.motive) -
+        Math.min(2.5, prepared.hours / 12) -
+        Math.min(1.5, prepared.selected.score * 1.2),
+    );
 
-  if (!shouldInstallPending) {
+    snapshot.initiative.pending = {
+      ...withInitiativeWorldContext(snapshot, {
+        kind: "resume_topic",
+        reason: reasonFromMotive(prepared.selected.motive),
+        motive: prepared.selected.motive,
+        topic: prepared.selected.trace.topic,
+        blocker: prepared.selected.blocker,
+        concern: null,
+        createdAt: snapshot.lastInteractionAt ?? new Date().toISOString(),
+        readyAfterHours: Math.round(readyAfter * 10) / 10,
+      }),
+    };
     const report = consolidateIdleMemoryImprints(
       snapshot,
-      hours,
-      selected.trace.topic,
-      selected.motive,
+      prepared.hours,
+      prepared.selected.trace.topic,
+      prepared.selected.motive,
     );
-    recordIdleConsolidation(snapshot, hours, report);
+    recordInitiativeActivity(snapshot, {
+      kind: "idle_reactivation",
+      autonomyAction: "recall",
+      timestamp: new Date().toISOString(),
+      motive: prepared.selected.motive,
+      topic: prepared.selected.trace.topic,
+      traceTopic: prepared.selected.trace.topic,
+      blocker: prepared.selected.blocker,
+      place: snapshot.initiative.pending.place ?? null,
+      worldAction: snapshot.initiative.pending.worldAction ?? null,
+      maintenanceAction: null,
+      reopened: false,
+      hours: Math.round(prepared.hours * 10) / 10,
+      summary: buildIdleReactivationSummary(
+        snapshot,
+        prepared.selected.trace.topic,
+        prepared.selected.motive,
+      ),
+    });
+    if (report?.focusTopic && report.focusTopic !== prepared.selected.trace.topic) {
+      recordIdleConsolidation(snapshot, prepared.hours, report, "hold");
+    }
     return;
   }
 
-  const readyAfter = Math.max(
-    0.5,
-    readyAfterMotive(snapshot, selected.motive) -
-      Math.min(2.5, hours / 12) -
-      Math.min(1.5, selected.score * 1.2),
-  );
-  const selectedBlocker =
-    selected.trace.status !== "resolved" &&
-    selected.trace.work.blockers.length > 0 &&
-    selected.trace.work.confidence < 0.82
-      ? selected.trace.work.blockers[0] ?? null
-      : null;
-
-  snapshot.initiative.pending = {
-    ...withInitiativeWorldContext(snapshot, {
-      kind: "resume_topic",
-      reason: reasonFromMotive(selected.motive),
-      motive: selected.motive,
-      topic: selected.trace.topic,
-      blocker: selectedBlocker,
-      concern: null,
-      createdAt: snapshot.lastInteractionAt ?? new Date().toISOString(),
-      readyAfterHours: Math.round(readyAfter * 10) / 10,
-    }),
-  };
   const report = consolidateIdleMemoryImprints(
     snapshot,
-    hours,
-    selected.trace.topic,
-    selected.motive,
+    prepared.hours,
+    prepared.prioritizedTopic,
+    prepared.prioritizedMotive,
   );
-  recordInitiativeActivity(snapshot, {
-    kind: "idle_reactivation",
-    autonomyAction: "recall",
-    timestamp: new Date().toISOString(),
-    motive: selected.motive,
-    topic: selected.trace.topic,
-    traceTopic: selected.trace.topic,
-    blocker: selectedBlocker,
-    place: snapshot.initiative.pending.place ?? null,
-    worldAction: snapshot.initiative.pending.worldAction ?? null,
-    maintenanceAction: null,
-    reopened: false,
-    hours: Math.round(hours * 10) / 10,
-    summary: buildIdleReactivationSummary(
-      snapshot,
-      selected.trace.topic,
-      selected.motive,
-    ),
-  });
-  if (report?.focusTopic && report.focusTopic !== selected.trace.topic) {
-    recordIdleConsolidation(snapshot, hours, report);
+  recordIdleConsolidation(snapshot, prepared.hours, report, prepared.action);
+}
+
+function selectIdleInternalAction(
+  snapshot: HachikaSnapshot,
+  hours: number,
+  prioritizedTopic: string | null,
+): IdleAutonomyAction {
+  if (prioritizedTopic) {
+    return "hold";
   }
+
+  const topScore = scoreIdleMemoryTopics(snapshot, null)[0]?.[1] ?? 0;
+
+  if (topScore >= 1.05) {
+    return "hold";
+  }
+
+  if (snapshot.memories.length > 16 || (snapshot.memories.length > 10 && hours >= 18)) {
+    return "drift";
+  }
+
+  return "observe";
 }
 
 function consolidateIdleMemoryImprints(
@@ -1582,6 +1659,7 @@ function recordIdleConsolidation(
   snapshot: HachikaSnapshot,
   hours: number,
   report: IdleConsolidationReport | null,
+  desiredAction: IdleAutonomyAction = "observe",
 ): void {
   const observationOnly = report === null;
 
@@ -1591,16 +1669,15 @@ function recordIdleConsolidation(
 
   const currentPlace = snapshot.world.currentPlace;
   const observationWorldAction = observationOnly ? ("observe" as const) : null;
+  const autonomyAction = observationOnly
+    ? "observe"
+    : desiredAction === "drift"
+      ? "drift"
+      : "hold";
 
   recordInitiativeActivity(snapshot, {
     kind: "idle_consolidation",
-    autonomyAction: observationOnly
-      ? "observe"
-      : report.focusTopic !== null
-        ? "hold"
-        : report.compressed
-          ? "drift"
-          : null,
+    autonomyAction,
     timestamp: new Date().toISOString(),
     motive: null,
     topic: observationOnly ? null : report.focusTopic,
