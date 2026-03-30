@@ -15,8 +15,9 @@ const HACHIKA_INITIATIVE_DIRECTOR_SYSTEM_PROMPT = [
   "You decide whether a locally synthesized pending initiative should remain pending for Hachika after a turn.",
   "Return JSON only.",
   "Do not write prose, markdown, or explanations.",
-  "The local engine already selected a candidate initiative.",
+  "The local engine may or may not have selected a candidate initiative.",
   "You may keep it, suppress it, or lightly reshape kind/reason/motive/topic/stateTopic/readyAfterHours/place/worldAction.",
+  "When no candidate is present, you may synthesize one only if there is a clear grounded reason to carry something forward.",
   "Prefer suppressing weak, repetitive, overly abstract, socially intrusive, or direct-answer-only residue.",
   "For greeting, smalltalk, pure self/world inquiry, repair, or relation clarification turns, prefer keep:false unless there is explicit concrete continuity worth carrying.",
   "topic is the semantic topic that may be recalled later. stateTopic is the subset worth durable hardening.",
@@ -70,7 +71,7 @@ export interface InitiativeDirectorContext {
   snapshot: HachikaSnapshot;
   signals: InteractionSignals;
   selfModel: SelfModel;
-  pending: PendingInitiative;
+  pending: PendingInitiative | null;
 }
 
 export interface InitiativeDirectorPayload {
@@ -99,7 +100,7 @@ export interface InitiativeDirectorPayload {
     readyAfterHours: number;
     place: WorldPlaceId | null;
     worldAction: WorldActionKind | null;
-  };
+  } | null;
   candidateTopics: string[];
   purpose: {
     kind: string | null;
@@ -195,6 +196,7 @@ export class OpenAIInitiativeDirector implements InitiativeDirector {
         extractOpenAIReplyText(payload),
         context.pending,
         buildInitiativeDirectorPayload(context).candidateTopics,
+        context.selfModel.topMotives[0]?.kind ?? null,
       );
 
       if (!directive) {
@@ -244,11 +246,12 @@ export function buildInitiativeDirectorPayload(
 ): InitiativeDirectorPayload {
   const candidateTopics = unique(
     [
-      context.pending.topic,
-      context.pending.stateTopic,
+      context.pending?.topic ?? null,
+      context.pending?.stateTopic ?? null,
       ...context.signals.topics,
       context.snapshot.purpose.active?.topic ?? null,
       ...context.snapshot.identity.anchors,
+      ...context.selfModel.topMotives.map((motive) => motive.topic ?? null),
     ].filter((topic): topic is string => typeof topic === "string" && topic.length > 0),
   ).slice(0, 6);
 
@@ -267,17 +270,19 @@ export function buildInitiativeDirectorPayload(
       abandonment: context.signals.abandonment,
       intimacy: context.signals.intimacy,
     },
-    pending: {
-      kind: context.pending.kind,
-      reason: context.pending.reason,
-      motive: context.pending.motive,
-      topic: context.pending.topic ?? null,
-      stateTopic: context.pending.stateTopic ?? context.pending.topic ?? null,
-      blocker: context.pending.blocker,
-      readyAfterHours: context.pending.readyAfterHours,
-      place: context.pending.place ?? null,
-      worldAction: context.pending.worldAction ?? null,
-    },
+    pending: context.pending
+      ? {
+          kind: context.pending.kind,
+          reason: context.pending.reason,
+          motive: context.pending.motive,
+          topic: context.pending.topic ?? null,
+          stateTopic: context.pending.stateTopic ?? context.pending.topic ?? null,
+          blocker: context.pending.blocker,
+          readyAfterHours: context.pending.readyAfterHours,
+          place: context.pending.place ?? null,
+          worldAction: context.pending.worldAction ?? null,
+        }
+      : null,
     candidateTopics,
     purpose: {
       kind: context.snapshot.purpose.active?.kind ?? null,
@@ -306,8 +311,9 @@ export function buildInitiativeDirectorPayload(
 
 export function normalizeInitiativeDirective(
   rawText: string | null,
-  fallback: PendingInitiative,
+  fallback: PendingInitiative | null,
   candidateTopics: readonly string[],
+  fallbackMotive: PendingInitiative["motive"] | null = null,
 ): InitiativeDirective | null {
   const parsed = parseJsonRecord(rawText);
 
@@ -315,25 +321,34 @@ export function normalizeInitiativeDirective(
     return null;
   }
 
-  const keep = readBoolean(parsed.keep, true);
-  const topic = readTopic(parsed.topic, fallback.topic, candidateTopics);
+  const keep = readBoolean(parsed.keep, fallback !== null);
+  const topic = readTopic(parsed.topic, fallback?.topic ?? null, candidateTopics);
   const stateTopic = readStateTopic(
     parsed.stateTopic,
-    fallback.stateTopic ?? fallback.topic ?? null,
+    fallback?.stateTopic ?? fallback?.topic ?? null,
     candidateTopics,
   );
+  const kind = readEnum(parsed.kind, INITIATIVE_KIND_VALUES) ?? fallback?.kind ?? "resume_topic";
+  const reason =
+    readEnum(parsed.reason, INITIATIVE_REASON_VALUES) ??
+    fallback?.reason ??
+    inferReasonFromMotive(
+      readEnum(parsed.motive, MOTIVE_VALUES) ?? fallback?.motive ?? fallbackMotive,
+    );
+  const motive =
+    readEnum(parsed.motive, MOTIVE_VALUES) ?? fallback?.motive ?? fallbackMotive ?? "seek_continuity";
 
   return {
     keep,
-    kind: readEnum(parsed.kind, INITIATIVE_KIND_VALUES) ?? fallback.kind,
-    reason: readEnum(parsed.reason, INITIATIVE_REASON_VALUES) ?? fallback.reason,
-    motive: readEnum(parsed.motive, MOTIVE_VALUES) ?? fallback.motive,
+    kind,
+    reason,
+    motive,
     topic,
     stateTopic: keep ? stateTopic : null,
-    readyAfterHours: readReadyAfterHours(parsed.readyAfterHours, fallback.readyAfterHours),
-    place: readEnum(parsed.place, WORLD_PLACE_VALUES) ?? fallback.place ?? null,
+    readyAfterHours: readReadyAfterHours(parsed.readyAfterHours, fallback?.readyAfterHours ?? 0),
+    place: readEnum(parsed.place, WORLD_PLACE_VALUES) ?? fallback?.place ?? null,
     worldAction:
-      readEnum(parsed.worldAction, WORLD_ACTION_VALUES) ?? fallback.worldAction ?? null,
+      readEnum(parsed.worldAction, WORLD_ACTION_VALUES) ?? fallback?.worldAction ?? null,
     summary:
       typeof parsed.summary === "string" && parsed.summary.trim().length > 0
         ? parsed.summary.trim()
@@ -341,8 +356,8 @@ export function normalizeInitiativeDirective(
             keep,
             topic,
             stateTopic,
-            readEnum(parsed.kind, INITIATIVE_KIND_VALUES) ?? fallback.kind,
-            readEnum(parsed.motive, MOTIVE_VALUES) ?? fallback.motive,
+            kind,
+            motive,
           ),
   };
 }
@@ -438,6 +453,24 @@ function readReadyAfterHours(value: unknown, fallback: number): number {
   return typeof value === "number" && Number.isFinite(value)
     ? Math.max(0, Math.min(72, Math.round(value * 10) / 10))
     : fallback;
+}
+
+function inferReasonFromMotive(
+  motive: PendingInitiative["motive"] | null,
+): PendingInitiative["reason"] {
+  switch (motive) {
+    case "seek_continuity":
+      return "continuity";
+    case "deepen_relation":
+      return "relation";
+    case "continue_shared_work":
+    case "leave_trace":
+      return "expansion";
+    case "protect_boundary":
+    case "pursue_curiosity":
+    default:
+      return "curiosity";
+  }
 }
 
 function unique(items: string[]): string[] {

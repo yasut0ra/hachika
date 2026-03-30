@@ -356,7 +356,7 @@ cp .env.example .env
 ```
 
 `.env` に `OPENAI_API_KEY` を入れると、CLI は OpenAI reply generator / turn director / input interpreter / behavior director / initiative director / response planner / proactive director / trace extractor を使います。  
-返答のモデルは `OPENAI_MODEL`、turn 意味理解だけ別に変えたい場合は `OPENAI_TURN_MODEL`、入力解釈だけ別に変えたい場合は `OPENAI_INTERPRETER_MODEL`、behavior 境界だけ別に変えたい場合は `OPENAI_BEHAVIOR_MODEL`、pending initiative の裁定だけ別に変えたい場合は `OPENAI_INITIATIVE_MODEL`、planner だけ別に変えたい場合は `OPENAI_PLANNER_MODEL`、自発行動の裁定だけ別に変えたい場合は `OPENAI_PROACTIVE_MODEL`、trace 抽出だけ別に変えたい場合は `OPENAI_TRACE_MODEL` を使えます。未設定時はどれも `gpt-5-mini` です。
+返答のモデルは `OPENAI_MODEL`、turn 意味理解だけ別に変えたい場合は `OPENAI_TURN_MODEL`、入力解釈だけ別に変えたい場合は `OPENAI_INTERPRETER_MODEL`、behavior 境界だけ別に変えたい場合は `OPENAI_BEHAVIOR_MODEL`、pending initiative の裁定や弱い新規 synthesis だけ別に変えたい場合は `OPENAI_INITIATIVE_MODEL`、planner だけ別に変えたい場合は `OPENAI_PLANNER_MODEL`、自発行動の裁定だけ別に変えたい場合は `OPENAI_PROACTIVE_MODEL`、trace 抽出だけ別に変えたい場合は `OPENAI_TRACE_MODEL` を使えます。未設定時はどれも `gpt-5-mini` です。
 
 主なコマンド:
 

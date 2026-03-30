@@ -121,5 +121,56 @@ test("buildInitiativeDirectorPayload keeps candidate topics grounded", () => {
 
   assert.ok(payload.candidateTopics.includes("名前"));
   assert.ok(payload.candidateTopics.includes("仕様の境界"));
-  assert.equal(payload.pending.stateTopic, "名前");
+  assert.ok(payload.pending !== null);
+  assert.equal(payload.pending?.stateTopic, "名前");
+});
+
+test("buildInitiativeDirectorPayload can describe synthesis context without a local pending initiative", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.identity.anchors = ["関係", "仕様の境界"];
+
+  const payload = buildInitiativeDirectorPayload({
+    input: "こんにちは",
+    snapshot,
+    signals: {
+      positive: 0.1,
+      negative: 0,
+      question: 0,
+      novelty: 0,
+      intimacy: 0.1,
+      dismissal: 0,
+      memoryCue: 0,
+      expansionCue: 0,
+      completion: 0,
+      abandonment: 0,
+      preservationThreat: 0,
+      preservationConcern: null,
+      repetition: 0,
+      neglect: 0,
+      greeting: 0.9,
+      smalltalk: 0.5,
+      repair: 0,
+      selfInquiry: 0,
+      worldInquiry: 0,
+      workCue: 0,
+      topics: [],
+    },
+    selfModel: {
+      narrative: "test",
+      topMotives: [
+        {
+          kind: "seek_continuity",
+          score: 0.82,
+          topic: "関係",
+          reason: "test",
+        },
+      ],
+      conflicts: [],
+      dominantConflict: null,
+    },
+    pending: null,
+  });
+
+  assert.equal(payload.pending, null);
+  assert.ok(payload.candidateTopics.includes("関係"));
 });

@@ -2624,6 +2624,59 @@ test("respondAsync can use an initiative director to keep semantic initiative to
   assert.equal(result.snapshot.initiative.pending?.worldAction ?? null, "observe");
 });
 
+test("respondAsync can use an initiative director to synthesize a pending initiative when local scheduling is suppressed", async () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+
+  const behaviorDirector: BehaviorDirector = {
+    name: "test-behavior",
+    async directBehavior(context) {
+      return {
+        provider: "test-behavior",
+        model: "stub",
+        directive: {
+          ...context.fallbackDirective,
+          initiativeAction: "suppress",
+          summary: "suppress initiative locally",
+        },
+      };
+    },
+  };
+
+  const initiativeDirector: InitiativeDirector = {
+    name: "test-director",
+    async directInitiative() {
+      return {
+        directive: {
+          keep: true,
+          kind: "resume_topic",
+          reason: "continuity",
+          motive: "seek_continuity",
+          topic: "関係",
+          stateTopic: null,
+          readyAfterHours: 0.5,
+          place: "threshold",
+          worldAction: "observe",
+          summary: "keep/kind:resume_topic/motive:seek_continuity/topic:関係/state:none",
+        },
+        provider: "test-director",
+        model: "stub",
+      };
+    },
+  };
+
+  const result = await engine.respondAsync("こんにちは", {
+    behaviorDirector,
+    initiativeDirector,
+  });
+
+  assert.equal(result.snapshot.initiative.pending?.kind ?? null, "resume_topic");
+  assert.equal(result.snapshot.initiative.pending?.reason ?? null, "continuity");
+  assert.equal(result.snapshot.initiative.pending?.motive ?? null, "seek_continuity");
+  assert.equal(result.snapshot.initiative.pending?.topic ?? null, "関係");
+  assert.equal(result.snapshot.initiative.pending?.stateTopic ?? null, null);
+  assert.equal(result.snapshot.initiative.pending?.readyAfterHours ?? null, 0.5);
+});
+
 test("respondAsync can forward interpreted reply selection into the llm payload", async () => {
   const engine = new HachikaEngine(createInitialSnapshot());
   let capturedContext: ReplyGenerationContext | null = null;
