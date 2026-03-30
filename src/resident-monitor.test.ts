@@ -44,8 +44,8 @@ test("loadResidentLoopStatusSync reads a saved status and formats it", async () 
     lastProactiveAt: null,
     lastTickAttempts: 2,
     lastError: null,
-    lastInternalActivities: ["idle_reactivation/設計 静かな時間で寄せ直した。"],
-    lastActivities: ["idle_consolidation/設計 静かな時間で寄せ直した。"],
+    lastInternalActivities: ["recall idle_reactivation/設計 静かな時間で寄せ直した。"],
+    lastActivities: ["hold idle_consolidation/設計 静かな時間で寄せ直した。"],
     reply: "openai",
     config: {
       intervalMs: 15000,

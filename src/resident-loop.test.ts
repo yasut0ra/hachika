@@ -55,6 +55,9 @@ test("resident loop can surface idle reactivation activity", async () => {
   assert.ok(
     result.internalActivities.some((activity) => activity.kind === "idle_reactivation"),
   );
+  assert.ok(
+    result.internalActivities.some((activity) => activity.autonomyAction === "recall"),
+  );
   assert.equal(
     result.outwardActivities.some((activity) => activity.kind === "idle_reactivation"),
     false,
@@ -129,6 +132,8 @@ test("resident loop can reactivate a current world object trace after quiet obse
     result.outwardActivities.some((activity) => activity.kind === "proactive_emission"),
   );
   assert.equal(emission?.topic, "仕様の境界");
+  assert.equal(reactivation?.autonomyAction, "recall");
+  assert.equal(emission?.autonomyAction, "speak");
   assert.equal(emission?.place, "archive");
   assert.equal(emission?.worldAction, "touch");
   assert.match(reactivation?.summary ?? "", /棚/);
@@ -158,6 +163,9 @@ test("resident loop can emit proactive wording and record the emission", async (
   assert.equal(result.internalActivities.length, 0);
   assert.ok(
     result.outwardActivities.some((activity) => activity.kind === "proactive_emission"),
+  );
+  assert.ok(
+    result.outwardActivities.some((activity) => activity.autonomyAction === "speak"),
   );
   assert.equal(result.snapshot.autonomousFeed.length, 1);
   assert.equal(result.snapshot.autonomousFeed[0]?.mode, "proactive");

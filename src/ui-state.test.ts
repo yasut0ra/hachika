@@ -68,8 +68,8 @@ test("buildUiState includes resident loop status when a status file exists", () 
         lastProactiveAt: null,
         lastTickAttempts: 2,
         lastError: null,
-        lastInternalActivities: ["idle_reactivation/continuity 仕様を温め直した"],
-        lastActivities: ["idle_consolidation/continuity 仕様を温め直した"],
+        lastInternalActivities: ["recall idle_reactivation/continuity 仕様を温め直した"],
+        lastActivities: ["hold idle_consolidation/continuity 仕様を温め直した"],
         reply: "openai",
         config: {
           intervalMs: 5000,
@@ -96,9 +96,9 @@ test("buildUiState includes resident loop status when a status file exists", () 
   assert.equal(ui.summary.world.currentPlace, "threshold");
   assert.equal(ui.summary.residentLoopHealth?.state, "stale");
   assert.deepEqual(ui.summary.residentLoop?.lastInternalActivities, [
-    "idle_reactivation/continuity 仕様を温め直した",
+    "recall idle_reactivation/continuity 仕様を温め直した",
   ]);
   assert.deepEqual(ui.summary.residentLoop?.lastActivities, [
-    "idle_consolidation/continuity 仕様を温め直した",
+    "hold idle_consolidation/continuity 仕様を温め直した",
   ]);
 });

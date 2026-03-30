@@ -199,6 +199,7 @@ test("live growth metrics summarize archive, activity, and maintenance signals f
   snapshot.initiative.history = [
     {
       kind: "idle_consolidation",
+      autonomyAction: "hold",
       timestamp: "2026-03-19T03:00:00.000Z",
       motive: null,
       topic: "設計",
@@ -211,6 +212,7 @@ test("live growth metrics summarize archive, activity, and maintenance signals f
     },
     {
       kind: "proactive_emission",
+      autonomyAction: "speak",
       timestamp: "2026-03-19T04:00:00.000Z",
       motive: "continue_shared_work",
       topic: "設計",

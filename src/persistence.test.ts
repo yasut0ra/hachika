@@ -84,6 +84,7 @@ test("sanitizeSnapshot removes low-information topics and repairs polluted trace
   snapshot.initiative.history = [
     {
       kind: "idle_consolidation",
+      autonomyAction: "hold",
       timestamp: "2026-03-21T00:30:00.000Z",
       motive: null,
       topic: "かな",
@@ -96,6 +97,7 @@ test("sanitizeSnapshot removes low-information topics and repairs polluted trace
     },
     {
       kind: "proactive_emission",
+      autonomyAction: "speak",
       timestamp: "2026-03-21T01:00:00.000Z",
       motive: "continue_shared_work",
       topic: "自分",

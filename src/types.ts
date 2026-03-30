@@ -281,8 +281,16 @@ export type InitiativeActivityKind =
   | "idle_consolidation"
   | "proactive_emission";
 
+export type InitiativeAutonomyAction =
+  | "observe"
+  | "recall"
+  | "hold"
+  | "drift"
+  | "speak";
+
 export interface InitiativeActivity {
   kind: InitiativeActivityKind;
+  autonomyAction: InitiativeAutonomyAction | null;
   timestamp: string;
   motive: MotiveKind | null;
   topic: string | null;

@@ -1001,6 +1001,9 @@ function hydrateInitiativeActivity(raw: unknown): InitiativeActivity | null {
 
   return {
     kind: raw.kind,
+    autonomyAction: isInitiativeAutonomyAction(raw.autonomyAction)
+      ? raw.autonomyAction
+      : inferInitiativeAutonomyAction(raw.kind),
     timestamp:
       typeof raw.timestamp === "string" ? raw.timestamp : new Date().toISOString(),
     motive: isMotiveKind(raw.motive) ? raw.motive : null,
@@ -1481,6 +1484,9 @@ function sanitizeInitiative(
     history: initiative.history
       .map((activity) => ({
         ...activity,
+        autonomyAction: isInitiativeAutonomyAction(activity.autonomyAction)
+          ? activity.autonomyAction
+          : inferInitiativeAutonomyAction(activity.kind),
         topic:
           activity.topic &&
           isMeaningfulTopic(activity.topic) &&
@@ -1998,6 +2004,31 @@ function isInitiativeActivityKind(value: unknown): value is InitiativeActivity["
     value === "idle_consolidation" ||
     value === "proactive_emission"
   );
+}
+
+function isInitiativeAutonomyAction(
+  value: unknown,
+): value is InitiativeActivity["autonomyAction"] {
+  return (
+    value === "observe" ||
+    value === "recall" ||
+    value === "hold" ||
+    value === "drift" ||
+    value === "speak"
+  );
+}
+
+function inferInitiativeAutonomyAction(
+  kind: InitiativeActivity["kind"],
+): InitiativeActivity["autonomyAction"] {
+  switch (kind) {
+    case "idle_reactivation":
+      return "recall";
+    case "idle_consolidation":
+      return "hold";
+    case "proactive_emission":
+      return "speak";
+  }
 }
 
 function isTraceMaintenanceAction(value: unknown): value is TraceMaintenanceAction {

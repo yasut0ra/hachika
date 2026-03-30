@@ -82,7 +82,7 @@ export function describeResidentLoopConfig(config: ResidentLoopConfig): string {
 }
 
 export function formatResidentActivity(activity: InitiativeActivity): string {
-  return `${activity.kind}${activity.motive ? `/${activity.motive}` : ""}${activity.topic ? `/${activity.topic}` : ""}${activity.traceTopic && activity.traceTopic !== activity.topic ? ` trace:${activity.traceTopic}` : ""}${activity.blocker ? ` blocker:${activity.blocker}` : ""}${activity.maintenanceAction ? ` action:${activity.maintenanceAction}` : ""}${activity.reopened ? " reopened" : ""}${activity.hours !== null ? ` hours:${activity.hours.toFixed(1)}` : ""} ${activity.summary}`;
+  return `${activity.autonomyAction ?? "act"} ${activity.kind}${activity.motive ? `/${activity.motive}` : ""}${activity.topic ? `/${activity.topic}` : ""}${activity.traceTopic && activity.traceTopic !== activity.topic ? ` trace:${activity.traceTopic}` : ""}${activity.blocker ? ` blocker:${activity.blocker}` : ""}${activity.maintenanceAction ? ` action:${activity.maintenanceAction}` : ""}${activity.reopened ? " reopened" : ""}${activity.hours !== null ? ` hours:${activity.hours.toFixed(1)}` : ""} ${activity.summary}`;
 }
 
 function diffInitiativeHistory(
@@ -110,6 +110,7 @@ function diffInitiativeHistory(
 function initiativeActivityKey(activity: InitiativeActivity): string {
   return [
     activity.kind,
+    activity.autonomyAction ?? "",
     activity.timestamp,
     activity.motive ?? "",
     activity.topic ?? "",

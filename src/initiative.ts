@@ -530,6 +530,7 @@ function consolidateIdleSnapshot(
   );
   recordInitiativeActivity(snapshot, {
     kind: "idle_reactivation",
+    autonomyAction: "recall",
     timestamp: new Date().toISOString(),
     motive: selected.motive,
     topic: selected.trace.topic,
@@ -1544,6 +1545,7 @@ function finalizeEmission(
 
   recordInitiativeActivity(snapshot, {
     kind: "proactive_emission",
+    autonomyAction: "speak",
     timestamp: emittedAt,
     motive: pending.motive,
     topic: pending.topic,
@@ -1586,6 +1588,8 @@ function recordIdleConsolidation(
 
   recordInitiativeActivity(snapshot, {
     kind: "idle_consolidation",
+    autonomyAction:
+      report.focusTopic !== null ? "hold" : report.compressed ? "drift" : null,
     timestamp: new Date().toISOString(),
     motive: null,
     topic: report.focusTopic,
@@ -1610,6 +1614,7 @@ function recordInitiativeActivity(
   if (
     last &&
     last.kind === activity.kind &&
+    last.autonomyAction === activity.autonomyAction &&
     last.topic === activity.topic &&
     last.traceTopic === activity.traceTopic &&
     last.blocker === activity.blocker &&
@@ -1626,6 +1631,7 @@ function recordInitiativeActivity(
         motive: activity.motive ?? last.motive,
         reopened: last.reopened || activity.reopened,
         hours: activity.hours ?? last.hours,
+        autonomyAction: activity.autonomyAction ?? last.autonomyAction,
       },
     ].slice(-16);
     return;
