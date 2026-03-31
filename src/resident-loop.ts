@@ -33,14 +33,14 @@ export async function runResidentLoopTick(
   const beforeHistory = snapshot.initiative.history ?? [];
   const idleHours = Number.isFinite(options.idleHours) ? Math.max(0, options.idleHours) : 0;
   let internalActivities: InitiativeActivity[] = [];
-  let allowOutward = true;
+  let outwardMode: "none" | "touch" | "speak" = "speak";
 
   if (idleHours > 0) {
     if (options.autonomyDirector) {
       const autonomy = await engine.rewindIdleHoursAsync(idleHours, {
         autonomyDirector: options.autonomyDirector,
       });
-      allowOutward = autonomy.allowOutward;
+      outwardMode = autonomy.outwardMode;
     } else {
       engine.rewindIdleHours(idleHours);
     }
@@ -52,15 +52,21 @@ export async function runResidentLoopTick(
   }
 
   const historyBeforeOutward = engine.getSnapshot().initiative.history ?? [];
-  const proactiveMessage = allowOutward
-    ? options.replyGenerator
+  let proactiveMessage: string | null = null;
+  if (outwardMode === "speak") {
+    proactiveMessage = options.replyGenerator
       ? await engine.emitInitiativeAsync({
           ...(options.now ? { now: options.now } : {}),
           replyGenerator: options.replyGenerator,
           proactiveDirector: options.proactiveDirector ?? null,
         })
-      : engine.emitInitiative(options.now ? { now: options.now } : {})
-    : null;
+      : engine.emitInitiative(options.now ? { now: options.now } : {});
+  } else if (outwardMode === "touch") {
+    engine.emitInitiativeOutwardAction({
+      ...(options.now ? { now: options.now } : {}),
+      outwardAction: "touch",
+    });
+  }
   const nextSnapshot = engine.getSnapshot();
   const outwardActivities = diffInitiativeHistory(
     historyBeforeOutward,

@@ -25,6 +25,7 @@ import type {
 import type { InitiativeDirector } from "./initiative-director.js";
 import {
   materializePreparedInitiative,
+  materializePreparedOutwardAction,
   materializeIdleAutonomyAction,
   prepareIdleAutonomyAction,
   prepareInitiativeEmission,
@@ -35,7 +36,7 @@ import {
 } from "./initiative.js";
 import type { ScheduledInitiativeDecision } from "./initiative.js";
 import type { ProactiveEmission } from "./initiative.js";
-import type { AutonomyDirector } from "./autonomy-director.js";
+import type { AutonomyDirector, AutonomyOutwardMode } from "./autonomy-director.js";
 import type { ProactiveDirector } from "./proactive-director.js";
 import { applyBodyFromSignals } from "./body.js";
 import {
@@ -638,6 +639,31 @@ export class HachikaEngine {
     });
   }
 
+  emitInitiativeOutwardAction(
+    options: {
+      force?: boolean;
+      now?: Date;
+      outwardAction?: "observe" | "touch";
+    } = {},
+  ): boolean {
+    const nextSnapshot = structuredClone(this.#snapshot);
+    const prepared = prepareInitiativeEmission(nextSnapshot, options);
+
+    if (!prepared) {
+      return false;
+    }
+
+    materializePreparedOutwardAction(nextSnapshot, prepared, {
+      worldAction: options.outwardAction ?? "touch",
+    });
+    updateIdentity(
+      nextSnapshot,
+      nextSnapshot.initiative.lastProactiveAt ?? new Date().toISOString(),
+    );
+    this.#snapshot = nextSnapshot;
+    return true;
+  }
+
   async emitInitiativeAsync(
     options: {
       force?: boolean;
@@ -868,11 +894,11 @@ export class HachikaEngine {
   async rewindIdleHoursAsync(
     hours: number,
     options: { autonomyDirector?: AutonomyDirector | null } = {},
-  ): Promise<{ allowOutward: boolean }> {
+  ): Promise<{ outwardMode: AutonomyOutwardMode }> {
     const nextSnapshot = structuredClone(this.#snapshot);
     rewindSnapshotBaseHours(nextSnapshot, hours);
     let prepared = prepareIdleAutonomyAction(nextSnapshot, hours);
-    let allowOutward = true;
+    let outwardMode: AutonomyOutwardMode = "speak";
 
     if (prepared && options.autonomyDirector) {
       try {
@@ -884,7 +910,7 @@ export class HachikaEngine {
         });
 
         if (result?.directive) {
-          allowOutward = result.directive.allowOutward;
+          outwardMode = result.directive.outwardMode;
           prepared = result.directive.keep
             ? {
                 ...prepared,
@@ -904,7 +930,7 @@ export class HachikaEngine {
     advanceWorldByIdle(nextSnapshot, hours);
     updateIdentity(nextSnapshot, new Date().toISOString());
     this.#snapshot = nextSnapshot;
-    return { allowOutward };
+    return { outwardMode };
   }
 
   respond(input: string): TurnResult {

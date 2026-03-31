@@ -2014,6 +2014,7 @@ function isInitiativeAutonomyAction(
     value === "recall" ||
     value === "hold" ||
     value === "drift" ||
+    value === "touch" ||
     value === "speak"
   );
 }

@@ -316,7 +316,7 @@ test("resident loop can reshape internal autonomy action through an autonomy dir
         directive: {
           keep: true,
           action: "observe",
-          allowOutward: false,
+          outwardMode: "none",
           summary: "cool/observe",
         },
         provider: "test-autonomy",
@@ -348,6 +348,71 @@ test("resident loop can reshape internal autonomy action through an autonomy dir
   );
   assert.equal(result.proactiveMessage, null);
   assert.equal(result.outwardActivities.length, 0);
+});
+
+test("resident loop can materialize silent touch when autonomy director chooses touch", async () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.lastInteractionAt = "2026-03-20T00:00:00.000Z";
+  snapshot.body.energy = 0.84;
+  snapshot.body.loneliness = 0.74;
+  snapshot.attachment = 0.72;
+  snapshot.state.continuity = 0.82;
+  snapshot.temperament.traceHunger = 0.81;
+  snapshot.initiative.pending = {
+    kind: "resume_topic",
+    motive: "seek_continuity",
+    reason: "continuity",
+    topic: "設計",
+    stateTopic: "設計",
+    blocker: null,
+    concern: null,
+    createdAt: "2026-03-20T00:00:00.000Z",
+    readyAfterHours: 0,
+    place: "archive",
+    worldAction: "observe",
+  };
+
+  const autonomyDirector: AutonomyDirector = {
+    name: "test-autonomy",
+    async directAutonomy() {
+      return {
+        directive: {
+          keep: true,
+          action: "observe",
+          outwardMode: "touch",
+          summary: "observe/touch",
+        },
+        provider: "test-autonomy",
+        model: "stub",
+      };
+    },
+  };
+
+  const result = await runResidentLoopTick(snapshot, {
+    idleHours: 8,
+    autonomyDirector,
+    replyGenerator: {
+      name: "test-llm",
+      async generateReply() {
+        return null;
+      },
+      async generateProactive() {
+        throw new Error("should not generate when outward mode is touch");
+      },
+    },
+  });
+
+  assert.equal(result.proactiveMessage, null);
+  assert.ok(
+    result.outwardActivities.some(
+      (activity) =>
+        activity.kind === "proactive_emission" &&
+        activity.autonomyAction === "touch" &&
+        activity.worldAction === "touch",
+    ),
+  );
+  assert.equal(result.snapshot.initiative.pending, null);
+  assert.equal(result.snapshot.world.recentEvents.at(-1)?.kind, "touch");
 });
 
 test("resident loop config reads env overrides", () => {

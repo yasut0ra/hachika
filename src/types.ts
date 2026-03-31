@@ -286,6 +286,7 @@ export type InitiativeAutonomyAction =
   | "recall"
   | "hold"
   | "drift"
+  | "touch"
   | "speak";
 
 export interface InitiativeActivity {

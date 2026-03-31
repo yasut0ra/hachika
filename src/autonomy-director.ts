@@ -14,28 +14,33 @@ const HACHIKA_AUTONOMY_DIRECTOR_SYSTEM_PROMPT = [
   "Do not write prose, markdown, or explanations.",
   "The local engine already prepared an internal action candidate: observe, hold, drift, or recall.",
   "You may keep it, suppress it, or lightly reshape the action.",
-  "You may also decide whether outward proactive should be evaluated after this internal action.",
+  "You may also decide the outward mode after this internal action: none, touch, or speak.",
   "Prefer recall only when there is clear grounded continuity in a concrete trace, object-linked topic, or unfinished work.",
   "Prefer hold or drift for quiet internal organization.",
   "Prefer observe for low-pressure silent ticks where it is more natural to simply stay with the world.",
-  "Prefer allowOutward:false for quiet, settled ticks that should remain silent after the internal action.",
-  "Prefer allowOutward:true only when there is clear grounded continuity, neglect pressure, or a concrete follow-through worth evaluating.",
-  "Do not introduce speak here.",
+  "Prefer outwardMode:none for quiet, settled ticks that should remain silent after the internal action.",
+  "Prefer outwardMode:touch when a light outward action would feel natural but speaking would be too heavy.",
+  "Prefer outwardMode:speak only when there is clear grounded continuity, neglect pressure, or a concrete follow-through worth expressing.",
+  "Do not introduce speak as the internal action here.",
   "Keep the action close to the local suggestion unless there is a strong semantic reason to cool it.",
   "Return a single JSON object.",
 ].join(" ");
 
-const INTERNAL_ACTION_VALUES = new Set<Exclude<InitiativeAutonomyAction, "speak" | null>>([
+const INTERNAL_ACTION_VALUES = new Set<Exclude<InitiativeAutonomyAction, "speak" | "touch" | null>>([
   "observe",
   "hold",
   "drift",
   "recall",
 ]);
 
+const OUTWARD_MODE_VALUES = new Set<AutonomyOutwardMode>(["none", "touch", "speak"]);
+
+export type AutonomyOutwardMode = "none" | "touch" | "speak";
+
 export interface AutonomyDirective {
   keep: boolean;
-  action: Exclude<InitiativeAutonomyAction, "speak" | null>;
-  allowOutward: boolean;
+  action: Exclude<InitiativeAutonomyAction, "speak" | "touch" | null>;
+  outwardMode: AutonomyOutwardMode;
   summary: string;
 }
 
@@ -48,7 +53,7 @@ export interface AutonomyDirectorContext {
 
 export interface AutonomyDirectorPayload {
   hours: number;
-  suggestedAction: Exclude<InitiativeAutonomyAction, "speak" | null>;
+  suggestedAction: Exclude<InitiativeAutonomyAction, "speak" | "touch" | null>;
   prioritizedTopic: string | null;
   prioritizedMotive: string | null;
   selected: {
@@ -253,24 +258,28 @@ function buildOpenAIAutonomyDirectorMessages(
 
 function normalizeAutonomyDirective(
   text: string,
-  fallbackAction: Exclude<InitiativeAutonomyAction, "speak" | null>,
+  fallbackAction: Exclude<InitiativeAutonomyAction, "speak" | "touch" | null>,
 ): AutonomyDirective | null {
   try {
     const raw = JSON.parse(text) as Record<string, unknown>;
     const keep = raw.keep !== false;
-    const allowOutward = raw.allowOutward !== false;
+    const outwardMode = OUTWARD_MODE_VALUES.has(raw.outwardMode as AutonomyOutwardMode)
+      ? (raw.outwardMode as AutonomyOutwardMode)
+      : raw.allowOutward === false
+        ? "none"
+        : "speak";
     const action = INTERNAL_ACTION_VALUES.has(raw.action as never)
-      ? (raw.action as Exclude<InitiativeAutonomyAction, "speak" | null>)
+      ? (raw.action as Exclude<InitiativeAutonomyAction, "speak" | "touch" | null>)
       : fallbackAction;
     const summary =
       typeof raw.summary === "string" && raw.summary.trim().length > 0
         ? raw.summary.trim()
-        : `${keep ? "keep" : "suppress"}/${action}`;
+        : `${keep ? "keep" : "suppress"}/${action}/${outwardMode}`;
 
     return {
       keep,
       action,
-      allowOutward,
+      outwardMode,
       summary,
     };
   } catch {

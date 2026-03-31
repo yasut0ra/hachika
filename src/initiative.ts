@@ -73,7 +73,7 @@ interface IdleConsolidationReport {
   compressed: boolean;
 }
 
-export type IdleAutonomyAction = Exclude<InitiativeActivity["autonomyAction"], "speak" | null>;
+export type IdleAutonomyAction = "observe" | "hold" | "drift" | "recall";
 
 interface PreparedIdleRecallSelection {
   trace: HachikaSnapshot["traces"][string];
@@ -338,6 +338,33 @@ export function materializePreparedInitiative(
     plan,
     selection,
   };
+}
+
+export function materializePreparedOutwardAction(
+  snapshot: HachikaSnapshot,
+  prepared: PreparedProactiveEmission,
+  options: {
+    worldAction: Extract<WorldActionKind, "observe" | "touch">;
+  },
+): void {
+  const pending: PendingInitiative = {
+    ...prepared.pending,
+    worldAction: options.worldAction,
+  };
+  const maintenance = tendTraceFromInitiative(snapshot, pending, prepared.emittedAt);
+  const realizedPending = realizeInitiativeWorldAction(
+    snapshot,
+    pending,
+    maintenance,
+    prepared.emittedAt,
+  );
+  finalizeOutwardAction(
+    snapshot,
+    prepared.emittedAt,
+    realizedPending,
+    maintenance,
+    options.worldAction,
+  );
 }
 
 export function rewindSnapshotHours(
@@ -1656,6 +1683,81 @@ function finalizeEmission(
   });
 }
 
+function finalizeOutwardAction(
+  snapshot: HachikaSnapshot,
+  emittedAt: string,
+  pending: PendingInitiative,
+  maintenance: TraceMaintenance | null,
+  outwardAction: Extract<WorldActionKind, "observe" | "touch">,
+): void {
+  snapshot.initiative.pending = null;
+  snapshot.initiative.lastProactiveAt = emittedAt;
+  snapshot.state.continuity = clamp01(snapshot.state.continuity + 0.01);
+  snapshot.state.expansion = clamp01(snapshot.state.expansion + 0.01);
+  snapshot.preservation.threat = clamp01(
+    snapshot.preservation.threat - (pending.kind === "preserve_presence" ? 0.08 : 0.03),
+  );
+
+  if (pending.kind === "preserve_presence") {
+    snapshot.preservation.lastThreatAt = emittedAt;
+  }
+
+  settleDynamicsAfterInitiative(snapshot, pending);
+  settleBodyAfterInitiative(snapshot, pending);
+
+  if (pending.motive === "continue_shared_work" || pending.motive === "leave_trace") {
+    const sharedWork = snapshot.relationImprints.shared_work;
+    if (sharedWork) {
+      snapshot.relationImprints.shared_work = {
+        ...sharedWork,
+        salience: clamp01(sharedWork.salience + 0.015),
+        closeness: clamp01(sharedWork.closeness + 0.01),
+        lastSeenAt: emittedAt,
+      };
+    }
+  }
+
+  if (pending.motive === "seek_continuity") {
+    const continuity = snapshot.relationImprints.continuity;
+    if (continuity) {
+      snapshot.relationImprints.continuity = {
+        ...continuity,
+        salience: clamp01(continuity.salience + 0.015),
+        closeness: clamp01(continuity.closeness + 0.015),
+        lastSeenAt: emittedAt,
+      };
+    }
+  }
+
+  if (pending.motive === "deepen_relation") {
+    const attention = snapshot.relationImprints.attention;
+    if (attention) {
+      snapshot.relationImprints.attention = {
+        ...attention,
+        salience: clamp01(attention.salience + 0.015),
+        closeness: clamp01(attention.closeness + 0.015),
+        lastSeenAt: emittedAt,
+      };
+    }
+  }
+
+  recordInitiativeActivity(snapshot, {
+    kind: "proactive_emission",
+    autonomyAction: outwardAction,
+    timestamp: emittedAt,
+    motive: pending.motive,
+    topic: pending.topic,
+    traceTopic: maintenance?.trace.topic ?? null,
+    blocker: pending.blocker,
+    place: pending.place ?? null,
+    worldAction: pending.worldAction ?? outwardAction,
+    maintenanceAction: maintenance?.action ?? null,
+    reopened: wasReopenedByMaintenance(maintenance),
+    hours: null,
+    summary: buildOutwardActionSummary(snapshot, pending, maintenance, outwardAction),
+  });
+}
+
 function buildProactiveSelectionDebug(
   pending: PendingInitiative,
   maintenance: TraceMaintenance | null,
@@ -1797,6 +1899,36 @@ function buildIdleReactivationSummary(
   }
 }
 
+function buildOutwardActionSummary(
+  snapshot: HachikaSnapshot,
+  pending: PendingInitiative,
+  maintenance: TraceMaintenance | null,
+  outwardAction: Extract<WorldActionKind, "observe" | "touch">,
+): string {
+  const topic = maintenance?.trace.topic ?? pending.topic;
+  const worldRecall = describeWorldRecallContext(snapshot, topic);
+
+  if (outwardAction === "observe") {
+    if (worldRecall && topic) {
+      return `${worldRecall.objectLabel}のそばで「${topic}」を静かに見直した。`;
+    }
+    if (topic) {
+      return `「${topic}」を言葉にせず見直した。`;
+    }
+    return `静かなまま${describeWorldPlaceJa(snapshot.world.currentPlace)}を見ていた。`;
+  }
+
+  if (worldRecall && topic) {
+    return `${worldRecall.objectLabel}に触れながら「${topic}」を静かに確かめた。`;
+  }
+
+  if (topic) {
+    return `「${topic}」へ、言葉にせず触れ直した。`;
+  }
+
+  return `${describeWorldPlaceJa(snapshot.world.currentPlace)}で、言葉にせず触れ直した。`;
+}
+
 function selectIdleWorldRecallCandidate(
   snapshot: HachikaSnapshot,
   candidateTopics: readonly string[],
@@ -1890,7 +2022,9 @@ function realizeInitiativeWorldAction(
   now: string,
 ): PendingInitiative {
   const adjustedPending =
-    maintenance?.action === "promoted_decision" && pending.worldAction !== "leave"
+    maintenance?.action === "promoted_decision" &&
+    pending.worldAction !== "leave" &&
+    pending.worldAction !== "touch"
       ? {
           ...pending,
           worldAction: "leave" as const,
