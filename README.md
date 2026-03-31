@@ -224,6 +224,7 @@ Hachika は、単に有用なだけでなく、
 - 次段の統合方針は [docs/semantic-director-v2.md](/Users/yasut0ra/dev/hachika/docs/semantic-director-v2.md) に整理してあり、`semantic topic / durable topic / reply plan / proactive plan` を一段の contract に寄せていく
 - `turn-director` と `proactive-director` は runtime でもその v2 contract を受け始めていて、`mode: "turn" / "proactive"` の semantic directive をそのまま parse し、必要な legacy field はそこから projection する
 - `initiative-director` と `autonomy-director` も同じ family の v2 contract を受け始めていて、`mode: "initiative" / "autonomy"` の semantic directive を parse し、pending initiative や idle autonomy action をそこから materialize できる
+- engine / resident loop の initiative/autonomy 適用も `semantic` を優先し始めていて、legacy field と semantic plan が矛盾した時は `semantic.initiativePlan / semantic.autonomyPlan` を authoritative に採る
 - loop / idle / proactive の見直し方針は [docs/autonomy-v2.md](/Users/yasut0ra/dev/hachika/docs/autonomy-v2.md) に整理してあり、`発話を行動の一部へ下げる / idle を batch ではなく静かな生存時間へ寄せる / proactive を outward action の一種として扱う` 方向で再構成していく
 - 現在の `turn-director` と `proactive-director` は、内部的には [src/semantic-director-schema.ts](/Users/yasut0ra/dev/hachika/src/semantic-director-schema.ts) の v2 contract を持ち始めていて、semantic topic と durable topic を分けて扱う下地が入っている
   - proactive 側は runtime でもその分離を使い始めていて、`proactive-director` が `stateTopics: []` を返した時は「今だけ話すが durable な trace は作らない」という扱いができる

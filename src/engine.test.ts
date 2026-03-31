@@ -2631,6 +2631,74 @@ test("respondAsync can use an initiative director to keep semantic initiative to
   assert.equal(result.snapshot.initiative.pending?.worldAction ?? null, "observe");
 });
 
+test("respondAsync prefers semantic initiative plan over conflicting legacy initiative fields", async () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+
+  const initiativeDirector: InitiativeDirector = {
+    name: "test-director",
+    async directInitiative() {
+      return {
+        directive: {
+          keep: false,
+          kind: "resume_topic",
+          reason: "relation",
+          motive: "deepen_relation",
+          topic: null,
+          stateTopic: null,
+          readyAfterHours: 0,
+          place: null,
+          worldAction: null,
+          semantic: {
+            mode: "initiative",
+            topics: [
+              {
+                topic: "関係",
+                source: "relation",
+                durability: "ephemeral",
+                confidence: 0.72,
+              },
+              {
+                topic: "呼び方",
+                source: "relation",
+                durability: "durable",
+                confidence: 0.9,
+              },
+            ],
+            initiativePlan: {
+              keep: true,
+              kind: "neglect_ping",
+              reason: "continuity",
+              motive: "seek_continuity",
+              topic: "関係",
+              stateTopic: "呼び方",
+              readyAfterHours: 2,
+              place: "threshold",
+              worldAction: "observe",
+            },
+            summary: "initiative/keep",
+          },
+          summary: "legacy/suppress",
+        },
+        provider: "test-director",
+        model: "stub",
+      };
+    },
+  };
+
+  const result = await engine.respondAsync("こんにちは", {
+    initiativeDirector,
+  });
+
+  assert.equal(result.snapshot.initiative.pending?.kind ?? null, "neglect_ping");
+  assert.equal(result.snapshot.initiative.pending?.reason ?? null, "continuity");
+  assert.equal(result.snapshot.initiative.pending?.motive ?? null, "seek_continuity");
+  assert.equal(result.snapshot.initiative.pending?.topic ?? null, "関係");
+  assert.equal(result.snapshot.initiative.pending?.stateTopic ?? null, "呼び方");
+  assert.equal(result.snapshot.initiative.pending?.readyAfterHours ?? null, 2);
+  assert.equal(result.snapshot.initiative.pending?.place ?? null, "threshold");
+  assert.equal(result.snapshot.initiative.pending?.worldAction ?? null, "observe");
+});
+
 test("respondAsync can use an initiative director to synthesize a pending initiative when local scheduling is suppressed", async () => {
   const engine = new HachikaEngine(createInitialSnapshot());
 

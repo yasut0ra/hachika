@@ -15,6 +15,7 @@ import {
   topPreferredTopics,
   topicsLooselyMatch,
 } from "./memory.js";
+import { buildPendingInitiativeFromSemanticInitiativePlan } from "./semantic-director-schema.js";
 import { pickFreshText, recentAssistantReplies } from "./expression.js";
 import {
   buildRuleBehaviorDirective,
@@ -911,11 +912,12 @@ export class HachikaEngine {
         });
 
         if (result?.directive) {
-          outwardMode = result.directive.outwardMode;
-          prepared = result.directive.keep
+          const semanticAutonomy = result.directive.semantic?.autonomyPlan ?? null;
+          outwardMode = semanticAutonomy?.outwardMode ?? result.directive.outwardMode;
+          prepared = (semanticAutonomy?.keep ?? result.directive.keep)
             ? {
                 ...prepared,
-                action: result.directive.action,
+                action: semanticAutonomy?.action ?? result.directive.action,
               }
             : null;
         }
@@ -1226,23 +1228,35 @@ async function applyInitiativeDirector(
     }
 
     const nextSnapshot = structuredClone(prepared.nextSnapshot);
-    nextSnapshot.initiative.pending = directed.directive.keep
-      ? {
-          ...(pending ?? {
-            blocker: null,
+    const semanticInitiative = directed.directive.semantic?.initiativePlan ?? null;
+    nextSnapshot.initiative.pending = semanticInitiative
+      ? semanticInitiative.keep
+        ? buildPendingInitiativeFromSemanticInitiativePlan(semanticInitiative, {
+            blocker: pending?.blocker ?? null,
             concern: nextSnapshot.preservation.concern,
-            createdAt: nextSnapshot.lastInteractionAt ?? new Date().toISOString(),
-          }),
-          kind: directed.directive.kind,
-          reason: directed.directive.reason,
-          motive: directed.directive.motive,
-          topic: directed.directive.topic ?? pending?.topic ?? null,
-          stateTopic: directed.directive.stateTopic,
-          readyAfterHours: directed.directive.readyAfterHours,
-          place: directed.directive.place,
-          worldAction: directed.directive.worldAction,
-        }
-      : null;
+            createdAt:
+              pending?.createdAt ??
+              nextSnapshot.lastInteractionAt ??
+              new Date().toISOString(),
+          })
+        : null
+      : directed.directive.keep
+        ? {
+            ...(pending ?? {
+              blocker: null,
+              concern: nextSnapshot.preservation.concern,
+              createdAt: nextSnapshot.lastInteractionAt ?? new Date().toISOString(),
+            }),
+            kind: directed.directive.kind,
+            reason: directed.directive.reason,
+            motive: directed.directive.motive,
+            topic: directed.directive.topic ?? pending?.topic ?? null,
+            stateTopic: directed.directive.stateTopic,
+            readyAfterHours: directed.directive.readyAfterHours,
+            place: directed.directive.place,
+            worldAction: directed.directive.worldAction,
+          }
+        : null;
     updateIdentity(
       nextSnapshot,
       nextSnapshot.lastInteractionAt ?? new Date().toISOString(),

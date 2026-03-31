@@ -415,6 +415,71 @@ test("resident loop can materialize silent touch when autonomy director chooses 
   assert.equal(result.snapshot.world.recentEvents.at(-1)?.kind, "touch");
 });
 
+test("resident loop prefers semantic autonomy plan over conflicting legacy autonomy fields", async () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.lastInteractionAt = "2026-03-20T10:00:00.000Z";
+  snapshot.body.energy = 0.5;
+  snapshot.body.boredom = 0.72;
+  snapshot.body.tension = 0.18;
+
+  const autonomyDirector: AutonomyDirector = {
+    name: "test-autonomy",
+    async directAutonomy() {
+      return {
+        directive: {
+          keep: false,
+          action: "recall",
+          outwardMode: "speak",
+          semantic: {
+            mode: "autonomy",
+            topics: [
+              {
+                topic: "棚",
+                source: "world",
+                durability: "ephemeral",
+                confidence: 0.61,
+              },
+            ],
+            autonomyPlan: {
+              keep: true,
+              action: "observe",
+              outwardMode: "none",
+            },
+            summary: "autonomy/observe",
+          },
+          summary: "legacy/recall/speak",
+        },
+        provider: "test-autonomy",
+        model: "stub",
+      };
+    },
+  };
+
+  const result = await runResidentLoopTick(snapshot, {
+    idleHours: 6,
+    autonomyDirector,
+    replyGenerator: {
+      name: "test-llm",
+      async generateReply() {
+        return null;
+      },
+      async generateProactive() {
+        throw new Error("should not generate when semantic autonomy keeps outward silent");
+      },
+    },
+  });
+
+  assert.equal(result.proactiveMessage, null);
+  assert.ok(
+    result.internalActivities.some((activity) => activity.autonomyAction === "observe"),
+  );
+  assert.equal(
+    result.internalActivities.some((activity) => activity.autonomyAction === "recall"),
+    false,
+  );
+  assert.equal(result.outwardActivities.length, 0);
+});
+
 test("resident loop config reads env overrides", () => {
   const config = readResidentLoopConfigFromEnv({
     HACHIKA_LOOP_INTERVAL_MS: "9000",
