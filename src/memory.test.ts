@@ -47,6 +47,12 @@ test("extractLocalTopics drops abstract self/world candidates but keeps concrete
   assert.ok(extractLocalTopics("仕様の境界が未定で曖昧だ。").includes("仕様の境界"));
 });
 
+test("extractLocalTopics rejects malformed mixed-script fragments from japanese segmentation", () => {
+  const topics = extractLocalTopics("何か気になることはある？");
+
+  assert.ok(!topics.includes("か気"));
+});
+
 test("isMeaningfulTopic rejects low-information conversational fragments", () => {
   assert.equal(isMeaningfulTopic("かな"), false);
   assert.equal(isMeaningfulTopic("って"), false);

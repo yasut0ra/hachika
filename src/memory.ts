@@ -149,6 +149,8 @@ const STOPWORDS = new Set([
 
 const HIRAGANA_ONLY = /^[ぁ-ゖー]+$/u;
 const SINGLE_KANJI = /^[一-龠々]$/u;
+const HAS_HIRAGANA = /[ぁ-ゖー]/u;
+const HAS_KANJI = /[一-龠々]/u;
 const OVERBROAD_TOPIC_PARTS = new Set([
   "会話",
   "話",
@@ -688,6 +690,14 @@ export function isMeaningfulTopic(topic: string): boolean {
   }
 
   if (HIRAGANA_ONLY.test(normalized) && normalized.length <= 2) {
+    return false;
+  }
+
+  if (
+    normalized.length <= 2 &&
+    HAS_HIRAGANA.test(normalized) &&
+    HAS_KANJI.test(normalized)
+  ) {
     return false;
   }
 

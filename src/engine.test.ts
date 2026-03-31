@@ -3219,6 +3219,51 @@ test("respondAsync falls back to local analysis when the input interpreter fails
   assert.equal(result.snapshot.traces.仕様?.kind, ruleResult.snapshot.traces.仕様?.kind);
 });
 
+test("local fallback does not harden malformed topic fragments into durable state", async () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+
+  const inputInterpreter: InputInterpreter = {
+    name: "broken-interpreter",
+    async interpretInput() {
+      throw new Error("input interpreter offline");
+    },
+  };
+
+  const result = await engine.respondAsync("何か気になることはある？", {
+    inputInterpreter,
+  });
+
+  assert.equal(result.snapshot.topicCounts["か気"], undefined);
+  assert.equal(result.snapshot.preferences["か気"], undefined);
+  assert.equal(result.snapshot.traces["か気"], undefined);
+  assert.ok(!result.snapshot.memories.some((memory) => memory.topics.includes("か気")));
+});
+
+test("local fallback weights concrete work cues above generic action verbs", async () => {
+  const inputInterpreter: InputInterpreter = {
+    name: "broken-interpreter",
+    async interpretInput() {
+      throw new Error("input interpreter offline");
+    },
+  };
+
+  const genericEngine = new HachikaEngine(createInitialSnapshot());
+  const generic = await genericEngine.respondAsync("どう進める？", {
+    inputInterpreter,
+  });
+
+  const concreteEngine = new HachikaEngine(createInitialSnapshot());
+  const concrete = await concreteEngine.respondAsync("仕様を記録として残したい。", {
+    inputInterpreter,
+  });
+
+  assert.ok((generic.debug.interpretation.scores.workCue ?? 0) < 0.4);
+  assert.ok(
+    (concrete.debug.interpretation.scores.workCue ?? 0) >
+      (generic.debug.interpretation.scores.workCue ?? 0),
+  );
+});
+
 test("local fallback keeps punctuation questions from over-weighting question score", async () => {
   const engine = new HachikaEngine(createInitialSnapshot());
 

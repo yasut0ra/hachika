@@ -300,27 +300,30 @@ const WORLD_REFERENCE_MARKERS = [
   "書庫",
 ];
 
-const WORK_MARKERS = [
-  "build",
-  "make",
-  "plan",
-  "design",
+const STRONG_WORK_MARKERS = [
   "spec",
   "implement",
-  "fix",
   "整理",
   "設計",
   "仕様",
   "実装",
-  "作る",
-  "進める",
-  "決める",
-  "改善",
   "記録",
   "保存",
   "残す",
   "issue",
   "task",
+];
+
+const SOFT_WORK_MARKERS = [
+  "build",
+  "make",
+  "plan",
+  "design",
+  "fix",
+  "作る",
+  "進める",
+  "決める",
+  "改善",
 ];
 
 const MEMORY_MARKERS = [
@@ -1604,9 +1607,15 @@ function prepareTurnFromSignals(
   deferInitiativeScheduling: boolean,
 ): PreparedTurn {
   const previousSnapshot = structuredClone(snapshot);
-  const stateSignals = applyBehaviorDirectiveToSignals(
+  const semanticSignals = applyBehaviorDirectiveToSignals(
     deriveStateSignals(signals, traceExtraction),
     behaviorDirective,
+  );
+  const stateSignals = deriveDurableStateSignals(
+    snapshot,
+    semanticSignals,
+    turnDebug,
+    traceExtraction,
   );
   const normalizedTraceExtractionDebug = finalizeTraceExtractionDebug(
     traceExtractionDebug,
@@ -1625,7 +1634,7 @@ function prepareTurnFromSignals(
   }
   advanceWorldFromInteraction(
     nextSnapshot,
-    stateSignals,
+    semanticSignals,
     nextSnapshot.lastInteractionAt ?? new Date().toISOString(),
     input,
   );
@@ -1655,8 +1664,8 @@ function prepareTurnFromSignals(
   performWorldActionFromTurn(
     nextSnapshot,
     input,
-    stateSignals,
-    deriveWorldActionFocus(nextSnapshot, stateSignals, traceExtraction),
+    semanticSignals,
+    deriveWorldActionFocus(nextSnapshot, semanticSignals, traceExtraction),
     nextSnapshot.lastInteractionAt ?? new Date().toISOString(),
   );
   if (updatedTrace) {
@@ -1684,7 +1693,7 @@ function prepareTurnFromSignals(
   }
   updateIdentity(nextSnapshot, nextSnapshot.lastInteractionAt ?? new Date().toISOString());
   selfModel = buildSelfModel(nextSnapshot);
-  const responseSignals = deriveResponseSignals(stateSignals, traceExtraction);
+  const responseSignals = deriveResponseSignals(semanticSignals, traceExtraction);
   const responsePlan = applyBehaviorDirectiveToPlan(
     buildResponsePlan(
       nextSnapshot,
@@ -3085,6 +3094,30 @@ function deriveStateSignals(
   };
 }
 
+function deriveDurableStateSignals(
+  snapshot: HachikaSnapshot,
+  signals: InteractionSignals,
+  turnDebug: TurnDirectiveDebug | null,
+  traceExtraction: StructuredTraceExtraction | null,
+): InteractionSignals {
+  const topics =
+    turnDebug?.source === "llm"
+      ? uniqueTopics(signals.topics.filter((topic) => isMeaningfulTopic(topic))).slice(0, 4)
+      : filterDurableStateTopics(snapshot, signals.topics, signals, traceExtraction);
+
+  if (
+    topics.length === signals.topics.length &&
+    topics.every((topic, index) => topic === signals.topics[index])
+  ) {
+    return signals;
+  }
+
+  return {
+    ...signals,
+    topics,
+  };
+}
+
 function uniqueTopics(topics: string[]): string[] {
   return Array.from(new Set(topics.filter((topic) => topic.length > 0)));
 }
@@ -3180,6 +3213,15 @@ function analyzeInteraction(
   const explicitQuestionPunctuation =
     normalized.includes("?") || normalized.includes("？") ? 0.22 : 0;
   const questionMarkers = countMatchesWithDivisor(normalized, QUESTION_MARKERS, 3.2);
+  const greeting = countMatchesWithDivisor(normalized, GREETING_MARKERS, 2.6);
+  const smalltalk = countMatchesWithDivisor(normalized, SMALLTALK_MARKERS, 3.1);
+  const selfInquiry = countMatchesWithDivisor(normalized, SELF_INQUIRY_MARKERS, 1.45);
+  const explicitWorldInquiry = countMatchesWithDivisor(normalized, WORLD_INQUIRY_MARKERS, 1.5);
+  const referencedWorldInquiry = countMatchesWithDivisor(normalized, WORLD_REFERENCE_MARKERS, 3.1);
+  const workCue = Math.max(
+    countMatchesWithDivisor(normalized, STRONG_WORK_MARKERS, 1.7),
+    countMatchesWithDivisor(normalized, SOFT_WORK_MARKERS, 3.3),
+  );
   const intimacy = countMatchesWithDivisor(normalized, INTIMACY_MARKERS, 3.6);
   const dismissal = countMatchesWithDivisor(normalized, DISMISSAL_MARKERS, 3);
   const repair = Math.max(
@@ -3199,17 +3241,12 @@ function analyzeInteraction(
     preservationThreat: preservation.threat,
     preservationConcern: preservation.concern,
     neglect: calculateNeglect(snapshot.lastInteractionAt),
-    greeting: countMatches(normalized, GREETING_MARKERS),
-    smalltalk: countMatches(normalized, SMALLTALK_MARKERS),
+    greeting,
+    smalltalk,
     repair,
-    selfInquiry: countMatches(normalized, SELF_INQUIRY_MARKERS),
-    worldInquiry: clamp01(
-      Math.max(
-        countMatches(normalized, WORLD_INQUIRY_MARKERS),
-        countMatches(normalized, WORLD_REFERENCE_MARKERS) * 0.7,
-      ),
-    ),
-    workCue: countMatches(normalized, WORK_MARKERS),
+    selfInquiry,
+    worldInquiry: clamp01(Math.max(explicitWorldInquiry, referencedWorldInquiry)),
+    workCue,
     topics,
   });
 
@@ -3425,6 +3462,39 @@ function filterLiveTopicsBySupport(
   );
 }
 
+function filterDurableStateTopics(
+  snapshot: HachikaSnapshot,
+  topics: readonly string[],
+  signals: Pick<
+    InteractionSignals,
+    | "positive"
+    | "negative"
+    | "dismissal"
+    | "memoryCue"
+    | "expansionCue"
+    | "completion"
+    | "greeting"
+    | "smalltalk"
+    | "repair"
+    | "selfInquiry"
+    | "worldInquiry"
+    | "abandonment"
+    | "workCue"
+    | "topics"
+  >,
+  traceExtraction: StructuredTraceExtraction | null,
+): string[] {
+  const dedupedTopics = uniqueTopics([...topics]).filter((topic) => isMeaningfulTopic(topic));
+
+  if (dedupedTopics.length === 0) {
+    return dedupedTopics;
+  }
+
+  return dedupedTopics.filter((topic) =>
+    shouldKeepDurableStateTopic(snapshot, topic, dedupedTopics, signals, traceExtraction),
+  );
+}
+
 function shouldKeepLiveTopic(
   snapshot: HachikaSnapshot,
   topic: string,
@@ -3484,6 +3554,80 @@ function hasStrongLiveTopicSupport(snapshot: HachikaSnapshot, topic: string): bo
     concreteTraceSupport ||
     topicCount >= 5 ||
     ((preferenceImprint?.mentions ?? 0) >= 4 && (preferenceImprint?.salience ?? 0) >= 0.72)
+  );
+}
+
+function shouldKeepDurableStateTopic(
+  snapshot: HachikaSnapshot,
+  topic: string,
+  topics: readonly string[],
+  signals: Pick<
+    InteractionSignals,
+    | "positive"
+    | "negative"
+    | "dismissal"
+    | "memoryCue"
+    | "expansionCue"
+    | "completion"
+    | "greeting"
+    | "smalltalk"
+    | "repair"
+    | "selfInquiry"
+    | "worldInquiry"
+    | "abandonment"
+    | "workCue"
+  >,
+  traceExtraction: StructuredTraceExtraction | null,
+): boolean {
+  if (shouldSkipSoftRelationTopicHardening(topic, signals as InteractionSignals)) {
+    return false;
+  }
+
+  const hasConcreteTraceTopic =
+    traceExtraction !== null &&
+    hasConcreteTraceCue(signals as InteractionSignals, traceExtraction) &&
+    traceExtraction.topics.some((candidate) => topicsLooselyMatch(candidate, topic));
+  const hasConcreteCompanion = topics.some(
+    (candidate) =>
+      candidate !== topic &&
+      !requiresConcreteTopicSupport(candidate) &&
+      !isAmbientWorldTopic(candidate) &&
+      !isRelationalTopic(candidate) &&
+      !topicsLooselyMatch(candidate, topic),
+  );
+  const hasStrongTurnCue =
+    hasConcreteTraceTopic ||
+    Math.max(signals.workCue, signals.memoryCue, signals.expansionCue) >= 0.22 ||
+    signals.completion >= 0.18 ||
+    signals.negative >= 0.22 ||
+    signals.dismissal >= 0.18;
+
+  if (hasConcreteCompanion || hasStrongTurnCue) {
+    return true;
+  }
+
+  return hasDurableTopicSupport(snapshot, topic);
+}
+
+function hasDurableTopicSupport(snapshot: HachikaSnapshot, topic: string): boolean {
+  const topicCount = snapshot.topicCounts[topic] ?? 0;
+  const preferenceImprint = snapshot.preferenceImprints[topic];
+  const traceSupport = Object.values(snapshot.traces).some((trace) =>
+    topicsLooselyMatch(trace.topic, topic),
+  );
+  const activePurposeSupport = topicsLooselyMatch(topic, snapshot.purpose.active?.topic);
+  const pendingSupport = topicsLooselyMatch(
+    topic,
+    snapshot.initiative.pending?.stateTopic ??
+      snapshot.initiative.pending?.topic,
+  );
+
+  return (
+    activePurposeSupport ||
+    pendingSupport ||
+    traceSupport ||
+    topicCount >= 2 ||
+    ((preferenceImprint?.mentions ?? 0) >= 2 && (preferenceImprint?.salience ?? 0) >= 0.45)
   );
 }
 
