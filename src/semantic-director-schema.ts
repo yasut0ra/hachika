@@ -167,6 +167,38 @@ export function buildSemanticReplyPlanFromResponsePlan(
   };
 }
 
+export function listSemanticTopics(
+  topics: readonly SemanticTopicDecision[],
+): string[] {
+  return topics.map((topic) => topic.topic);
+}
+
+export function listDurableSemanticTopics(
+  topics: readonly SemanticTopicDecision[],
+): string[] {
+  return topics
+    .filter((topic) => topic.durability === "durable")
+    .map((topic) => topic.topic);
+}
+
+export function buildResponsePlanFromSemanticReplyPlan(
+  plan: SemanticReplyPlan,
+): ResponsePlan {
+  return {
+    act: plan.act,
+    stance: plan.stance,
+    distance: plan.distance,
+    focusTopic: plan.focusTopic,
+    mentionTrace: plan.mentionTrace,
+    mentionIdentity: plan.mentionIdentity,
+    mentionBoundary: plan.mentionBoundary,
+    mentionWorld: plan.mentionWorld,
+    askBack: plan.askBack,
+    variation: plan.variation,
+    summary: `${plan.act}/${plan.stance}/${plan.distance}${plan.focusTopic ? ` on ${plan.focusTopic}` : ""}`,
+  };
+}
+
 export function buildSemanticProactivePlan(
   plan: ProactivePlan,
   options: {
@@ -192,6 +224,51 @@ export function buildSemanticProactivePlan(
     place: options.place,
     worldAction: options.worldAction,
   };
+}
+
+export function buildProactivePlanFromSemanticProactivePlan(
+  plan: SemanticProactivePlan,
+): ProactivePlan {
+  return {
+    act: plan.act,
+    stance: plan.stance,
+    distance: plan.distance,
+    focusTopic: plan.focusTopic,
+    emphasis: plan.emphasis,
+    mentionBlocker: plan.mentionBlocker,
+    mentionReopen: plan.mentionReopen,
+    mentionMaintenance: plan.mentionMaintenance,
+    mentionIntent: plan.mentionIntent,
+    variation: plan.variation,
+    summary: `${plan.act}/${plan.stance}/${plan.distance}/${plan.emphasis}${plan.focusTopic ? ` on ${plan.focusTopic}` : ""}`,
+  };
+}
+
+export function buildStructuredTraceExtractionFromSemanticTraceHint(
+  trace: SemanticTraceHint,
+): StructuredTraceExtraction | null {
+  const extraction: StructuredTraceExtraction = {
+    topics: [...trace.topics],
+    kindHint: trace.kindHint,
+    completion: trace.completion,
+    blockers: [...trace.blockers],
+    memo: [...trace.memo],
+    fragments: [...trace.fragments],
+    decisions: [...trace.decisions],
+    nextSteps: [...trace.nextSteps],
+  };
+
+  const hasContent =
+    extraction.topics.length > 0 ||
+    extraction.kindHint !== null ||
+    extraction.completion > 0 ||
+    extraction.blockers.length > 0 ||
+    extraction.memo.length > 0 ||
+    extraction.fragments.length > 0 ||
+    extraction.decisions.length > 0 ||
+    extraction.nextSteps.length > 0;
+
+  return hasContent ? extraction : null;
 }
 
 export function describeSemanticDirective(

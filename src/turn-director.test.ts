@@ -114,6 +114,85 @@ test("normalizeTurnDirective keeps fallback shape and parses turn semantics", ()
   assert.equal(normalized?.semantic?.target, "hachika_profile");
 });
 
+test("normalizeTurnDirective can parse semantic-director v2 turn contract", () => {
+  const fallback = buildRuleTurnDirective(
+    createInitialSnapshot(),
+    "仕様の境界が曖昧だ。",
+    createSignals({
+      workCue: 0.62,
+      topics: ["仕様の境界"],
+    }),
+  );
+
+  const normalized = normalizeTurnDirective(
+    JSON.stringify({
+      mode: "turn",
+      subject: "shared",
+      target: "work_topic",
+      answerMode: "direct",
+      relationMove: "none",
+      worldMention: "light",
+      topics: [
+        {
+          topic: "仕様の境界",
+          source: "input",
+          durability: "durable",
+          confidence: 0.94,
+        },
+        {
+          topic: "机",
+          source: "world",
+          durability: "ephemeral",
+          confidence: 0.51,
+        },
+      ],
+      behavior: {
+        topicAction: "keep",
+        traceAction: "allow",
+        purposeAction: "allow",
+        initiativeAction: "allow",
+        boundaryAction: "suppress",
+        worldAction: "allow",
+        coolCurrentContext: false,
+        directAnswer: true,
+      },
+      replyPlan: {
+        act: "continue_work",
+        stance: "measured",
+        distance: "measured",
+        focusTopic: "仕様の境界",
+        mentionTrace: true,
+        mentionIdentity: false,
+        mentionBoundary: false,
+        mentionWorld: true,
+        askBack: false,
+        variation: "textured",
+      },
+      trace: {
+        topics: ["仕様の境界"],
+        stateTopics: ["仕様の境界"],
+        kindHint: "spec_fragment",
+        completion: 0.18,
+        blockers: ["責務が未定"],
+        memo: [],
+        fragments: ["仕様の境界を切る"],
+        decisions: [],
+        nextSteps: ["候補を3つ書く"],
+      },
+      summary: "turn/work_topic",
+    }),
+    fallback,
+  );
+
+  assert.ok(normalized);
+  assert.equal(normalized?.semantic?.mode, "turn");
+  assert.deepEqual(normalized?.topics, ["仕様の境界", "机"]);
+  assert.deepEqual(normalized?.stateTopics, ["仕様の境界"]);
+  assert.equal(normalized?.responsePlan?.focusTopic, "仕様の境界");
+  assert.equal(normalized?.traceExtraction?.kindHint, "spec_fragment");
+  assert.deepEqual(normalized?.traceExtraction?.nextSteps, ["候補を3つ書く"]);
+});
+
 function createSignals(
   overrides: Partial<InteractionSignals> = {},
 ): InteractionSignals {

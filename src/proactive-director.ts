@@ -3,7 +3,11 @@ import {
   buildSemanticProactivePlan,
   buildSemanticTopicDecisions,
   buildSemanticTraceHint,
+  buildProactivePlanFromSemanticProactivePlan,
   describeSemanticDirective,
+  listDurableSemanticTopics,
+  listSemanticTopics,
+  type SemanticTopicDecision,
   type SemanticProactiveDirectiveV2,
 } from "./semantic-director-schema.js";
 import { summarizeWorldForPrompt } from "./world.js";
@@ -11,6 +15,8 @@ import type {
   HachikaSnapshot,
   PendingInitiative,
   ProactiveSelectionDebug,
+  WorldActionKind,
+  WorldPlaceId,
 } from "./types.js";
 
 const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1";
@@ -60,6 +66,16 @@ const RESPONSE_VARIATION_VALUES = new Set<ProactivePlan["variation"]>([
   "brief",
   "textured",
   "questioning",
+]);
+const WORLD_PLACE_VALUES = new Set<WorldPlaceId>([
+  "threshold",
+  "studio",
+  "archive",
+]);
+const WORLD_ACTION_VALUES = new Set<WorldActionKind>([
+  "observe",
+  "touch",
+  "leave",
 ]);
 
 export interface ProactiveDirective {
@@ -302,14 +318,16 @@ export function buildOpenAIProactiveDirectorMessages(
       content: [
         "Decide whether this proactive action should materialize for Hachika.",
         "Return a single JSON object with this exact shape:",
-        '{"emit":true,"plan":{"act":"reconnect","stance":"open","distance":"close","focusTopic":null,"emphasis":"relation","mentionBlocker":false,"mentionReopen":false,"mentionMaintenance":false,"mentionIntent":true,"variation":"brief"},"summary":"emit/reconnect"}',
-        "emit must be true or false.",
-        "plan.act must be one of preserve, reconnect, continue_work, leave_trace, explore, untangle, reopen.",
-        "plan.stance must be one of open, measured, guarded.",
-        "plan.distance must be one of close, measured, far.",
-        "plan.emphasis must be one of presence, relation, blocker, reopen, maintenance.",
-        "plan.variation must be one of brief, textured, questioning.",
-        "plan.focusTopic must be null or one of candidateTopics.",
+        '{"mode":"proactive","topics":[],"proactivePlan":{"emit":false,"act":"reconnect","stance":"open","distance":"close","focusTopic":null,"stateTopic":null,"emphasis":"relation","mentionBlocker":false,"mentionReopen":false,"mentionMaintenance":false,"mentionIntent":true,"variation":"brief","place":null,"worldAction":null},"trace":{"topics":[],"stateTopics":[],"kindHint":null,"completion":0,"blockers":[],"memo":[],"fragments":[],"decisions":[],"nextSteps":[]},"summary":"proactive/suppress"}',
+        "mode must be proactive.",
+        "proactivePlan.emit must be true or false.",
+        "proactivePlan.act must be one of preserve, reconnect, continue_work, leave_trace, explore, untangle, reopen.",
+        "proactivePlan.stance must be one of open, measured, guarded.",
+        "proactivePlan.distance must be one of close, measured, far.",
+        "proactivePlan.emphasis must be one of presence, relation, blocker, reopen, maintenance.",
+        "proactivePlan.variation must be one of brief, textured, questioning.",
+        "proactivePlan.focusTopic must be null or one of candidateTopics.",
+        "topics is an array of semantic topic objects: { topic, source, durability, confidence }.",
         "pending.stateTopic is the current durable topic candidate; if it is null, prefer keeping the move ephemeral unless there is strong grounded support to emit.",
         "Suppress weak or repetitive proactive moves. Allow grounded ones.",
         "Return JSON only.",
@@ -331,6 +349,16 @@ export function normalizeProactiveDirective(
     return null;
   }
 
+  const semantic = normalizeSemanticProactiveDirectiveRecord(
+    parsed,
+    fallbackPlan,
+    fallbackTopics,
+    fallbackStateTopics,
+  );
+  if (semantic) {
+    return materializeProactiveDirectiveFromSemantic(semantic);
+  }
+
   const emit = readBoolean(parsed.emit, true);
   const plan = normalizeProactivePlan(parsed.plan, fallbackPlan);
   const topics = normalizeStringArray(parsed.topics, 4);
@@ -345,7 +373,7 @@ export function normalizeProactiveDirective(
     topics.length > 0 || fallbackStateTopics.length > 0
       ? stateTopics
       : [...fallbackStateTopics];
-  const semantic = buildSemanticProactiveDirective({
+  const semanticDirective = buildSemanticProactiveDirective({
     emit,
     plan: plan ?? fallbackPlan,
     topics: resolvedTopics,
@@ -353,16 +381,117 @@ export function normalizeProactiveDirective(
   });
 
   return {
-    emit,
-    plan,
-    topics: resolvedTopics,
-    stateTopics: resolvedStateTopics,
-    semantic,
+    emit: semanticDirective.proactivePlan.emit,
+    plan: buildProactivePlanFromSemanticProactivePlan(
+      semanticDirective.proactivePlan,
+    ),
+    topics: listSemanticTopics(semanticDirective.topics),
+    stateTopics: listDurableSemanticTopics(semanticDirective.topics),
+    semantic: semanticDirective,
     summary:
       typeof parsed.summary === "string" && parsed.summary.trim().length > 0
         ? parsed.summary.trim()
-        : summarizeProactiveDirective(emit, plan ?? fallbackPlan, semantic),
+        : summarizeProactiveDirective(
+            emit,
+            plan ?? fallbackPlan,
+            semanticDirective,
+          ),
   };
+}
+
+function normalizeSemanticProactiveDirectiveRecord(
+  raw: Record<string, unknown>,
+  fallbackPlan: ProactivePlan,
+  fallbackTopics: readonly string[],
+  fallbackStateTopics: readonly string[],
+): SemanticProactiveDirectiveV2 | null {
+  if (raw.mode !== "proactive") {
+    return null;
+  }
+
+  const parsedTopics = normalizeSemanticTopicDecisions(
+    raw.topics,
+    fallbackTopics,
+    fallbackStateTopics,
+  );
+  const stateTopics = listDurableSemanticTopics(parsedTopics);
+  const proactivePlan = normalizeSemanticProactivePlanRecord(
+    raw.proactivePlan,
+    fallbackPlan,
+    listSemanticTopics(parsedTopics),
+    stateTopics,
+  );
+  const trace = buildSemanticTraceHint(null, stateTopics);
+
+  return {
+    mode: "proactive",
+    topics: parsedTopics,
+    proactivePlan,
+    trace,
+    summary:
+      typeof raw.summary === "string" && raw.summary.trim().length > 0
+        ? raw.summary.trim()
+        : describeSemanticDirective({
+            mode: "proactive",
+            topics: parsedTopics,
+            proactivePlan,
+            trace,
+            summary: "",
+          }),
+  };
+}
+
+function materializeProactiveDirectiveFromSemantic(
+  semantic: SemanticProactiveDirectiveV2,
+): ProactiveDirective {
+  return {
+    emit: semantic.proactivePlan.emit,
+    plan: buildProactivePlanFromSemanticProactivePlan(semantic.proactivePlan),
+    topics: listSemanticTopics(semantic.topics),
+    stateTopics: listDurableSemanticTopics(semantic.topics),
+    semantic,
+    summary:
+      semantic.summary.trim().length > 0
+        ? semantic.summary
+        : describeSemanticDirective(semantic),
+  };
+}
+
+function normalizeSemanticProactivePlanRecord(
+  raw: unknown,
+  fallback: ProactivePlan,
+  candidateTopics: string[],
+  stateTopics: string[],
+): ReturnType<typeof buildSemanticProactivePlan> {
+  if (!isRecord(raw)) {
+    return buildSemanticProactivePlan(fallback, {
+      emit: true,
+      stateTopic: stateTopics[0] ?? null,
+      place: null,
+      worldAction: null,
+    });
+  }
+
+  const normalizedPlan = normalizeProactivePlan(raw, fallback) ?? fallback;
+  const emit = readBoolean(raw.emit, true);
+  const place = readEnum(raw.place, WORLD_PLACE_VALUES) ?? null;
+  const worldAction = readEnum(raw.worldAction, WORLD_ACTION_VALUES) ?? null;
+
+  return buildSemanticProactivePlan(
+    {
+      ...normalizedPlan,
+      focusTopic:
+        normalizedPlan.focusTopic && candidateTopics.includes(normalizedPlan.focusTopic)
+          ? normalizedPlan.focusTopic
+          : fallback.focusTopic,
+    },
+    {
+      emit,
+      stateTopic: stateTopics[0] ?? null,
+      place,
+      worldAction,
+    },
+  );
 }
 
 function normalizeProactivePlan(
@@ -485,6 +614,45 @@ function normalizeStateTopics(
 
   const allowed = new Set(candidateTopics);
   return parsed.filter((topic) => allowed.has(topic));
+}
+
+function normalizeSemanticTopicDecisions(
+  value: unknown,
+  fallbackTopics: readonly string[],
+  fallbackStateTopics: readonly string[],
+): SemanticTopicDecision[] {
+  if (!Array.isArray(value)) {
+    return buildSemanticTopicDecisions(fallbackTopics, fallbackStateTopics, "trace");
+  }
+
+  const decisions: SemanticTopicDecision[] = value
+    .filter((entry): entry is Record<string, unknown> => isRecord(entry))
+    .map((entry) => {
+      const topic =
+        typeof entry.topic === "string" ? entry.topic.normalize("NFKC").trim() : "";
+      if (!topic) {
+        return null;
+      }
+      const durability =
+        entry.durability === "durable" ? "durable" : "ephemeral";
+      const confidence =
+        typeof entry.confidence === "number" && Number.isFinite(entry.confidence)
+          ? Math.max(0, Math.min(1, entry.confidence))
+          : durability === "durable"
+            ? 0.84
+            : 0.62;
+      return {
+        topic,
+        source: "trace" as const,
+        durability,
+        confidence,
+      } satisfies SemanticTopicDecision;
+    })
+    .filter((entry): entry is NonNullable<typeof entry> => entry !== null);
+
+  return decisions.length > 0
+    ? decisions
+    : buildSemanticTopicDecisions(fallbackTopics, fallbackStateTopics, "trace");
 }
 
 function trimTrailingSlash(value: string): string {

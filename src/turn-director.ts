@@ -2,7 +2,12 @@ import {
   buildSemanticReplyPlanFromResponsePlan,
   buildSemanticTopicDecisions,
   buildSemanticTraceHint,
+  buildResponsePlanFromSemanticReplyPlan,
+  buildStructuredTraceExtractionFromSemanticTraceHint,
   describeSemanticDirective,
+  listDurableSemanticTopics,
+  listSemanticTopics,
+  type SemanticTopicDecision,
   type SemanticTurnDirectiveV2,
 } from "./semantic-director-schema.js";
 import {
@@ -355,26 +360,27 @@ export function buildOpenAITurnDirectorMessages(
       content: [
         "Decide the semantic role of this turn for Hachika's local engine.",
         "Return a single JSON object with this exact shape:",
-        '{"subject":"none","target":"none","answerMode":"reflective","relationMove":"none","worldMention":"none","topics":[],"stateTopics":[],"behavior":{"topicAction":"keep","traceAction":"allow","purposeAction":"allow","initiativeAction":"allow","boundaryAction":"allow","worldAction":"allow","coolCurrentContext":false,"directAnswer":false},"plan":{"act":"attune","stance":"measured","distance":"measured","focusTopic":null,"mentionTrace":false,"mentionIdentity":false,"mentionBoundary":false,"mentionWorld":false,"askBack":false,"variation":"brief"},"trace":{"topics":[],"kindHint":null,"completion":0,"blockers":[],"memo":[],"fragments":[],"decisions":[],"nextSteps":[]}}',
+        '{"mode":"turn","subject":"none","target":"none","answerMode":"reflective","relationMove":"none","worldMention":"none","topics":[],"behavior":{"topicAction":"keep","traceAction":"allow","purposeAction":"allow","initiativeAction":"allow","boundaryAction":"allow","worldAction":"allow","coolCurrentContext":false,"directAnswer":false},"replyPlan":{"act":"attune","stance":"measured","distance":"measured","focusTopic":null,"mentionTrace":false,"mentionIdentity":false,"mentionBoundary":false,"mentionWorld":false,"askBack":false,"variation":"brief"},"trace":{"topics":[],"stateTopics":[],"kindHint":null,"completion":0,"blockers":[],"memo":[],"fragments":[],"decisions":[],"nextSteps":[]},"summary":"turn/none"}',
+        "mode must be turn.",
         "subject must be one of user, hachika, shared, world, none.",
         "target must be one of user_name, hachika_name, user_profile, hachika_profile, relation, world_state, work_topic, none.",
         "answerMode must be one of direct, clarify, reflective.",
         "relationMove must be one of naming, repair, attune, boundary, none.",
         "worldMention must be one of none, light, full.",
-        "topics are semantic topics relevant to the immediate reply and trace hinting.",
-        "stateTopics are the subset worth persisting into durable state this turn.",
-        "stateTopics must be empty or a subset of topics.",
+        "topics is an array of semantic topic objects: { topic, source, durability, confidence }.",
+        "Each topic.durability must be ephemeral or durable.",
+        "Durable topics are the subset worth persisting into durable state this turn.",
         "behavior must preserve the exact field names shown above.",
-        "plan must preserve the exact field names shown above.",
-        "plan.act must be one of greet, repair, self_disclose, boundary, attune, continue_work, preserve, explore.",
-        "plan.stance must be one of open, measured, guarded.",
-        "plan.distance must be one of close, measured, far.",
-        "plan.variation must be one of brief, textured, questioning.",
-        "plan.focusTopic must be null or one of rule.responsePlan.focusTopic, localTopics, or knownTopics.",
+        "replyPlan must preserve the exact field names shown above.",
+        "replyPlan.act must be one of greet, repair, self_disclose, boundary, attune, continue_work, preserve, explore.",
+        "replyPlan.stance must be one of open, measured, guarded.",
+        "replyPlan.distance must be one of close, measured, far.",
+        "replyPlan.variation must be one of brief, textured, questioning.",
+        "replyPlan.focusTopic must be null or one of rule.responsePlan.focusTopic, localTopics, or knownTopics.",
         "trace.kindHint must be one of note, continuity_marker, spec_fragment, decision, or null.",
         "If the turn is social, naming, repair, self-question, or pure world-question, prefer trace.topics: [] and empty trace arrays unless concrete reusable work is explicit.",
-        "For naming, directness requests, vague daily chat, self/world questions, and relation clarification, prefer stateTopics: [] even if topics is non-empty.",
-        "Only keep stateTopics when the topic is concrete and worth durable memory, trace, purpose, or initiative hardening.",
+        "For naming, directness requests, vague daily chat, self/world questions, and relation clarification, prefer topics with durability:ephemeral only.",
+        "Only keep durable topics when the topic is concrete and worth durable memory, trace, purpose, or initiative hardening.",
         "For direct naming, self/profile questions, and light daily chat, prefer a concrete direct plan rather than stale work exploration.",
         "Return JSON only.",
         JSON.stringify(payload, null, 2),
@@ -519,6 +525,11 @@ export function normalizeTurnDirective(
     return null;
   }
 
+  const semantic = normalizeSemanticTurnDirectiveRecord(parsed, fallback);
+  if (semantic) {
+    return materializeTurnDirectiveFromSemantic(semantic, fallback.behavior.summary);
+  }
+
   const subject = readEnum(parsed.subject, SUBJECT_VALUES) ?? fallback.subject;
   const target = readEnum(parsed.target, TARGET_VALUES) ?? fallback.target;
   const answerMode = readEnum(parsed.answerMode, ANSWER_MODE_VALUES) ?? fallback.answerMode;
@@ -562,8 +573,139 @@ export function normalizeTurnDirective(
     summary: "",
   };
   directive.semantic = buildSemanticTurnDirective(directive);
+  directive.topics = listSemanticTopics(directive.semantic.topics);
+  directive.stateTopics = listDurableSemanticTopics(directive.semantic.topics);
+  directive.responsePlan = buildResponsePlanFromSemanticReplyPlan(directive.semantic.replyPlan);
+  directive.traceExtraction = buildStructuredTraceExtractionFromSemanticTraceHint(
+    directive.semantic.trace,
+  );
   directive.summary = summarizeTurnDirective(directive);
   return directive;
+}
+
+function normalizeSemanticTurnDirectiveRecord(
+  raw: Record<string, unknown>,
+  fallback: TurnDirective,
+): SemanticTurnDirectiveV2 | null {
+  if (raw.mode !== "turn") {
+    return null;
+  }
+
+  const fallbackSemantic =
+    fallback.semantic ?? buildSemanticTurnDirective(fallback);
+  const fallbackTopics = fallbackSemantic.topics;
+  const parsedTopics = normalizeSemanticTopicDecisions(
+    raw.topics,
+    fallbackTopics,
+  );
+  const behavior = normalizeBehaviorDirective(raw.behavior, fallback.behavior);
+  const durableTopics = listDurableSemanticTopics(parsedTopics);
+  const traceExtraction = normalizeTraceExtractionRecord(
+    raw.trace,
+    buildStructuredTraceExtractionFromSemanticTraceHint(fallbackSemantic.trace),
+  );
+  const trace = buildSemanticTraceHint(traceExtraction, durableTopics);
+  const responsePlan = normalizeEmbeddedResponsePlan(
+    raw.replyPlan,
+    buildResponsePlanFromSemanticReplyPlan(fallbackSemantic.replyPlan),
+    listSemanticTopics(parsedTopics),
+  );
+
+  return {
+    mode: "turn",
+    subject: readEnum(raw.subject, SUBJECT_VALUES) ?? fallbackSemantic.subject,
+    target: readEnum(raw.target, TARGET_VALUES) ?? fallbackSemantic.target,
+    answerMode:
+      readEnum(raw.answerMode, ANSWER_MODE_VALUES) ?? fallbackSemantic.answerMode,
+    relationMove:
+      readEnum(raw.relationMove, RELATION_MOVE_VALUES) ??
+      fallbackSemantic.relationMove,
+    worldMention:
+      readEnum(raw.worldMention, WORLD_MENTION_VALUES) ??
+      fallbackSemantic.worldMention,
+    topics: parsedTopics,
+    behavior: {
+      topicAction: behavior.topicAction,
+      traceAction: behavior.traceAction,
+      purposeAction: behavior.purposeAction,
+      initiativeAction: behavior.initiativeAction,
+      boundaryAction: behavior.boundaryAction,
+      worldAction: behavior.worldAction,
+      coolCurrentContext: behavior.coolCurrentContext,
+      directAnswer: behavior.directAnswer,
+    },
+    replyPlan: buildSemanticReplyPlanFromResponsePlan(
+      responsePlan ?? buildResponsePlanFromSemanticReplyPlan(fallbackSemantic.replyPlan),
+    ),
+    trace,
+    summary:
+      typeof raw.summary === "string" && raw.summary.trim().length > 0
+        ? raw.summary.trim()
+        : describeSemanticDirective({
+            mode: "turn",
+            subject: readEnum(raw.subject, SUBJECT_VALUES) ?? fallbackSemantic.subject,
+            target: readEnum(raw.target, TARGET_VALUES) ?? fallbackSemantic.target,
+            answerMode:
+              readEnum(raw.answerMode, ANSWER_MODE_VALUES) ??
+              fallbackSemantic.answerMode,
+            relationMove:
+              readEnum(raw.relationMove, RELATION_MOVE_VALUES) ??
+              fallbackSemantic.relationMove,
+            worldMention:
+              readEnum(raw.worldMention, WORLD_MENTION_VALUES) ??
+              fallbackSemantic.worldMention,
+            topics: parsedTopics,
+            behavior: {
+              topicAction: behavior.topicAction,
+              traceAction: behavior.traceAction,
+              purposeAction: behavior.purposeAction,
+              initiativeAction: behavior.initiativeAction,
+              boundaryAction: behavior.boundaryAction,
+              worldAction: behavior.worldAction,
+              coolCurrentContext: behavior.coolCurrentContext,
+              directAnswer: behavior.directAnswer,
+            },
+            replyPlan: buildSemanticReplyPlanFromResponsePlan(
+              responsePlan ??
+                buildResponsePlanFromSemanticReplyPlan(fallbackSemantic.replyPlan),
+            ),
+            trace,
+            summary: "",
+          }),
+  };
+}
+
+function materializeTurnDirectiveFromSemantic(
+  semantic: SemanticTurnDirectiveV2,
+  behaviorSummary: string,
+): TurnDirective {
+  return {
+    subject: semantic.subject,
+    target: semantic.target,
+    answerMode: semantic.answerMode,
+    relationMove: semantic.relationMove,
+    worldMention: semantic.worldMention,
+    topics: listSemanticTopics(semantic.topics),
+    stateTopics: listDurableSemanticTopics(semantic.topics),
+    behavior: {
+      topicAction: semantic.behavior.topicAction,
+      traceAction: semantic.behavior.traceAction,
+      purposeAction: semantic.behavior.purposeAction,
+      initiativeAction: semantic.behavior.initiativeAction,
+      boundaryAction: semantic.behavior.boundaryAction,
+      worldAction: semantic.behavior.worldAction,
+      coolCurrentContext: semantic.behavior.coolCurrentContext,
+      directAnswer: semantic.behavior.directAnswer,
+      summary: behaviorSummary,
+    },
+    responsePlan: buildResponsePlanFromSemanticReplyPlan(semantic.replyPlan),
+    traceExtraction: buildStructuredTraceExtractionFromSemanticTraceHint(semantic.trace),
+    semantic,
+    summary:
+      semantic.summary.trim().length > 0
+        ? semantic.summary
+        : describeSemanticDirective(semantic),
+  };
 }
 
 export function summarizeTurnDirective(directive: TurnDirective): string {
@@ -926,6 +1068,52 @@ function normalizeTraceExtractionRecord(
     extraction.nextSteps.length > 0;
 
   return hasContent ? extraction : fallback;
+}
+
+function normalizeSemanticTopicDecisions(
+  value: unknown,
+  fallback: SemanticTurnDirectiveV2["topics"],
+): SemanticTurnDirectiveV2["topics"] {
+  if (!Array.isArray(value)) {
+    return [...fallback];
+  }
+
+  const decisions: SemanticTopicDecision[] = value
+    .filter((entry): entry is Record<string, unknown> => isRecord(entry))
+    .map((entry) => {
+      const topic =
+        typeof entry.topic === "string" ? entry.topic.normalize("NFKC").trim() : "";
+      if (!topic) {
+        return null;
+      }
+      const source =
+        entry.source === "input" ||
+        entry.source === "memory" ||
+        entry.source === "trace" ||
+        entry.source === "world" ||
+        entry.source === "relation" ||
+        entry.source === "self"
+          ? entry.source
+          : "input";
+      const durability =
+        entry.durability === "durable" ? "durable" : "ephemeral";
+      const confidence =
+        typeof entry.confidence === "number" && Number.isFinite(entry.confidence)
+          ? clamp01(entry.confidence)
+          : durability === "durable"
+            ? 0.84
+            : 0.62;
+
+      return {
+        topic,
+        source,
+        durability,
+        confidence,
+      } satisfies SemanticTopicDecision;
+    })
+    .filter((entry): entry is NonNullable<typeof entry> => entry !== null);
+
+  return decisions.length > 0 ? decisions : [...fallback];
 }
 
 function normalizeStringArray(value: unknown, limit: number): string[] {

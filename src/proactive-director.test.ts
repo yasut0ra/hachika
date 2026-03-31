@@ -111,3 +111,66 @@ test("buildProactiveDirectorPayload keeps candidate topics grounded", () => {
   assert.equal(payload.pending.stateTopic, "仕様の境界");
   assert.equal(payload.rulePlan.act, "leave_trace");
 });
+
+test("normalizeProactiveDirective can parse semantic-director v2 proactive contract", () => {
+  const directive = normalizeProactiveDirective(
+    JSON.stringify({
+      mode: "proactive",
+      topics: [
+        {
+          topic: "仕様の境界",
+          source: "trace",
+          durability: "durable",
+          confidence: 0.93,
+        },
+        {
+          topic: "机",
+          source: "world",
+          durability: "ephemeral",
+          confidence: 0.56,
+        },
+      ],
+      proactivePlan: {
+        emit: true,
+        act: "continue_work",
+        stance: "open",
+        distance: "close",
+        focusTopic: "仕様の境界",
+        stateTopic: "仕様の境界",
+        emphasis: "maintenance",
+        mentionBlocker: true,
+        mentionReopen: false,
+        mentionMaintenance: true,
+        mentionIntent: true,
+        variation: "questioning",
+        place: "studio",
+        worldAction: "touch",
+      },
+      trace: {
+        topics: ["仕様の境界"],
+        stateTopics: ["仕様の境界"],
+        kindHint: "spec_fragment",
+        completion: 0,
+        blockers: [],
+        memo: [],
+        fragments: [],
+        decisions: [],
+        nextSteps: [],
+      },
+      summary: "proactive/continue_work",
+    }),
+    createRulePlan(),
+    ["仕様の境界"],
+    ["仕様の境界"],
+  );
+
+  assert.ok(directive);
+  assert.equal(directive?.semantic?.mode, "proactive");
+  assert.equal(directive?.emit, true);
+  assert.equal(directive?.plan?.act, "continue_work");
+  assert.equal(directive?.plan?.stance, "open");
+  assert.deepEqual(directive?.topics, ["仕様の境界", "机"]);
+  assert.deepEqual(directive?.stateTopics, ["仕様の境界"]);
+  assert.equal(directive?.semantic?.proactivePlan.place, "studio");
+  assert.equal(directive?.semantic?.proactivePlan.worldAction, "touch");
+});
