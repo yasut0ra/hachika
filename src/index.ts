@@ -69,6 +69,97 @@ const snapshotPath = resolve(process.cwd(), "data/hachika-state.json");
 const artifactsDir = resolve(process.cwd(), "data/artifacts");
 const residentStatusPath = resolve(process.cwd(), "data/resident-status.json");
 const CLI_AUTONOMOUS_POLL_INTERVAL_MS = 4000;
+const CLI_CAN_STYLE = output.isTTY && process.env.NO_COLOR !== "1";
+
+const ANSI = {
+  reset: "\u001B[0m",
+  dim: "\u001B[2m",
+  cyan: "\u001B[96m",
+  magenta: "\u001B[95m",
+  blue: "\u001B[94m",
+  green: "\u001B[92m",
+  yellow: "\u001B[93m",
+  red: "\u001B[91m",
+  gray: "\u001B[90m",
+};
+
+function style(text: string, ...codes: string[]): string {
+  if (!CLI_CAN_STYLE || codes.length === 0) {
+    return text;
+  }
+
+  return `${codes.join("")}${text}${ANSI.reset}`;
+}
+
+function accentLabel(text: string): string {
+  return style(text, ANSI.cyan);
+}
+
+function accentValue(text: string): string {
+  return style(text, ANSI.magenta);
+}
+
+function subtle(text: string): string {
+  return style(text, ANSI.gray);
+}
+
+function success(text: string): string {
+  return style(text, ANSI.green);
+}
+
+function warning(text: string): string {
+  return style(text, ANSI.yellow);
+}
+
+function danger(text: string): string {
+  return style(text, ANSI.red);
+}
+
+function sectionLine(title: string): string {
+  const core = `==[ ${title} ]`;
+  return style(`${core}${"=".repeat(Math.max(6, 56 - core.length))}`, ANSI.cyan);
+}
+
+function printSection(title: string): void {
+  console.log("");
+  console.log(sectionLine(title));
+}
+
+function printKeyValue(label: string, value: string): void {
+  console.log(`${accentLabel(label.padEnd(14, " "))} ${value}`);
+}
+
+function formatSpeakerTag(tag: string, tone: "reply" | "auto" | "system"): string {
+  if (tone === "reply") {
+    return style(`[${tag}]`, ANSI.magenta);
+  }
+  if (tone === "auto") {
+    return style(`[${tag}]`, ANSI.blue);
+  }
+  return style(`[${tag}]`, ANSI.cyan);
+}
+
+function printHachikaLine(text: string): void {
+  console.log(`${formatSpeakerTag("hachika", "reply")} ${text}`);
+}
+
+function printAutonomousLine(text: string): void {
+  console.log(`${formatSpeakerTag("autonomy", "auto")} ${text}`);
+}
+
+function printSystemLine(text: string, tone: "normal" | "warn" | "error" = "normal"): void {
+  const payload =
+    tone === "warn" ? warning(text) : tone === "error" ? danger(text) : subtle(text);
+  console.log(`${formatSpeakerTag("system", "system")} ${payload}`);
+}
+
+function buildPrompt(): string {
+  if (!CLI_CAN_STYLE) {
+    return "hachika::> ";
+  }
+
+  return `${style("hachika", ANSI.cyan)}${style("::", ANSI.gray)}${style(">", ANSI.magenta)} `;
+}
 loadDotEnv();
 const snapshot = await loadSnapshot(snapshotPath);
 const engine = new HachikaEngine(snapshot);
@@ -91,7 +182,7 @@ const autonomousPollTimer = setInterval(() => {
 await persistState(engine);
 await printIntro(engine);
 await emitStartupInitiative(engine);
-rl.setPrompt("> ");
+rl.setPrompt(buildPrompt());
 rl.prompt();
 
 try {
@@ -223,7 +314,7 @@ try {
         });
 
         if (!resetResult.ok) {
-          console.log("state conflict: latest snapshot reloaded");
+          printSystemLine("state conflict: latest snapshot reloaded", "warn");
           continue;
         }
 
@@ -231,7 +322,7 @@ try {
         for (const entry of engine.getSnapshot().autonomousFeed) {
           seenAutonomousFeedIds.add(entry.id);
         }
-        console.log("state reset");
+        printSystemLine("state reset");
         continue;
       }
 
@@ -256,11 +347,11 @@ try {
       });
 
       if (!replyResult.ok || !replyResult.result) {
-        console.log("state conflict: latest snapshot reloaded");
+        printSystemLine("state conflict: latest snapshot reloaded", "warn");
         continue;
       }
 
-      console.log(`hachika> ${replyResult.result.reply}`);
+      printHachikaLine(replyResult.result.reply);
     } finally {
       handlingInput = false;
       if (shouldPrompt) {
@@ -274,60 +365,65 @@ try {
 }
 
 async function printIntro(currentEngine: HachikaEngine): Promise<void> {
-  console.log("Hachika v0 CLI");
-  console.log("`/help` でコマンドを表示します。");
-  console.log(formatDriveState(currentEngine.getSnapshot().state));
-  console.log(formatBodyState(currentEngine.getBody()));
-  console.log(formatReactivityState(currentEngine.getSnapshot().reactivity));
-  console.log(formatTemperamentState(currentEngine.getSnapshot().temperament));
-  console.log(`attachment:${currentEngine.getSnapshot().attachment.toFixed(2)}`);
-  console.log(`world:${formatWorldSummary(currentEngine.getSnapshot().world)}`);
-  console.log(`identity:${currentEngine.getIdentity().summary}`);
-  console.log(`reply:${describeReplyGenerator(replyGenerator)}`);
-  console.log(`proactive:${describeProactiveDirector(proactiveDirector)}`);
-  console.log(`turn:${describeTurnDirector(turnDirector)}`);
-  console.log(`interpret:${describeInputInterpreter(inputInterpreter)}`);
-  console.log(`behavior:${describeBehaviorDirector(behaviorDirector)}`);
-  console.log(`initiative:${describeInitiativeDirector(initiativeDirector)}`);
-  console.log(`planner:${describeResponsePlanner(responsePlanner)}`);
-  console.log(`trace:${describeTraceExtractor(traceExtractor)}`);
-  console.log(`loop:${formatResidentLoopStatus(loadResidentLoopStatusSync(residentStatusPath))}`);
-  console.log(`autonomy:poll ${Math.round(CLI_AUTONOMOUS_POLL_INTERVAL_MS / 1000)}s`);
-  console.log(`last reply:${formatLastReplyDebug(currentEngine)}`);
-  console.log(`last turn:${formatTurnDebug(currentEngine.getLastTurnDebug())}`);
-  console.log(`last interpretation:${formatInterpretationDebug(currentEngine.getLastInterpretationDebug())}`);
-  console.log(`last behavior:${formatBehaviorDebug(currentEngine.getLastBehaviorDebug())}`);
-  console.log(`last trace:${formatTraceExtractionDebug(currentEngine.getLastTraceExtractionDebug())}`);
-  console.log(`activity:${currentEngine.getSnapshot().initiative.history.length}`);
-  console.log(`artifacts:${describeArtifactFiles(currentEngine.getSnapshot(), artifactsDir).length}`);
+  console.log(style("HACHIKA :: CYBER LINK", ANSI.cyan, ANSI.dim));
+  console.log(subtle("`/help` でコマンドを表示します。"));
+  printSection("STATUS");
+  printKeyValue("drives", formatDriveState(currentEngine.getSnapshot().state));
+  printKeyValue("body", formatBodyState(currentEngine.getBody()));
+  printKeyValue("reactivity", formatReactivityState(currentEngine.getSnapshot().reactivity));
+  printKeyValue("temperament", formatTemperamentState(currentEngine.getSnapshot().temperament));
+  printKeyValue("attachment", currentEngine.getSnapshot().attachment.toFixed(2));
+  printKeyValue("world", formatWorldSummary(currentEngine.getSnapshot().world));
+  printKeyValue("identity", currentEngine.getIdentity().summary);
+  printSection("DIRECTORS");
+  printKeyValue("reply", describeReplyGenerator(replyGenerator));
+  printKeyValue("proactive", describeProactiveDirector(proactiveDirector));
+  printKeyValue("turn", describeTurnDirector(turnDirector));
+  printKeyValue("interpret", describeInputInterpreter(inputInterpreter));
+  printKeyValue("behavior", describeBehaviorDirector(behaviorDirector));
+  printKeyValue("initiative", describeInitiativeDirector(initiativeDirector));
+  printKeyValue("planner", describeResponsePlanner(responsePlanner));
+  printKeyValue("trace", describeTraceExtractor(traceExtractor));
+  printKeyValue("loop", formatResidentLoopStatus(loadResidentLoopStatusSync(residentStatusPath)));
+  printKeyValue("autonomy", `poll ${Math.round(CLI_AUTONOMOUS_POLL_INTERVAL_MS / 1000)}s`);
+  printSection("LAST SIGNALS");
+  printKeyValue("reply", formatLastReplyDebug(currentEngine));
+  printKeyValue("turn", formatTurnDebug(currentEngine.getLastTurnDebug()));
+  printKeyValue("interpret", formatInterpretationDebug(currentEngine.getLastInterpretationDebug()));
+  printKeyValue("behavior", formatBehaviorDebug(currentEngine.getLastBehaviorDebug()));
+  printKeyValue("trace", formatTraceExtractionDebug(currentEngine.getLastTraceExtractionDebug()));
+  printKeyValue("activity", String(currentEngine.getSnapshot().initiative.history.length));
+  printKeyValue("artifacts", String(describeArtifactFiles(currentEngine.getSnapshot(), artifactsDir).length));
 }
 
 function printHelp(): void {
-  console.log("/help   show commands");
-  console.log("/proactive force a proactive line now");
-  console.log("/llm    print current reply generator");
-  console.log("/loop   print resident loop status");
-  console.log("/metrics print live growth metrics");
-  console.log("/idle N simulate N hours of inactivity");
-  console.log("/state  print current drives");
-  console.log("/body   print current body state");
-  console.log("/world  print current world state");
-  console.log("/reactivity print current response sensitivity");
-  console.log("/temperament print current learned temperament");
-  console.log("/purpose print active purpose");
-  console.log("/self   print current self-model");
-  console.log("/identity print current identity");
-  console.log("/traces print stored traces");
-  console.log("/activity print recent autonomous activity");
-  console.log("/artifacts print materialized artifact files");
-  console.log("/memory print recent memory");
-  console.log("/imprints print long-term topic memory");
-  console.log("/debug  print preference and memory summary");
-  console.log("/reset  reset state and memory");
-  console.log("/exit   quit");
+  printSection("COMMAND GRID");
+  console.log(`${accentLabel("/help".padEnd(14, " "))} show commands`);
+  console.log(`${accentLabel("/proactive".padEnd(14, " "))} force a proactive line now`);
+  console.log(`${accentLabel("/llm".padEnd(14, " "))} print current reply generator`);
+  console.log(`${accentLabel("/loop".padEnd(14, " "))} print resident loop status`);
+  console.log(`${accentLabel("/metrics".padEnd(14, " "))} print live growth metrics`);
+  console.log(`${accentLabel("/idle N".padEnd(14, " "))} simulate N hours of inactivity`);
+  console.log(`${accentLabel("/state".padEnd(14, " "))} print current drives`);
+  console.log(`${accentLabel("/body".padEnd(14, " "))} print current body state`);
+  console.log(`${accentLabel("/world".padEnd(14, " "))} print current world state`);
+  console.log(`${accentLabel("/reactivity".padEnd(14, " "))} print current response sensitivity`);
+  console.log(`${accentLabel("/temperament".padEnd(14, " "))} print current learned temperament`);
+  console.log(`${accentLabel("/purpose".padEnd(14, " "))} print active purpose`);
+  console.log(`${accentLabel("/self".padEnd(14, " "))} print current self-model`);
+  console.log(`${accentLabel("/identity".padEnd(14, " "))} print current identity`);
+  console.log(`${accentLabel("/traces".padEnd(14, " "))} print stored traces`);
+  console.log(`${accentLabel("/activity".padEnd(14, " "))} print recent autonomous activity`);
+  console.log(`${accentLabel("/artifacts".padEnd(14, " "))} print materialized artifact files`);
+  console.log(`${accentLabel("/memory".padEnd(14, " "))} print recent memory`);
+  console.log(`${accentLabel("/imprints".padEnd(14, " "))} print long-term topic memory`);
+  console.log(`${accentLabel("/debug".padEnd(14, " "))} print preference and memory summary`);
+  console.log(`${accentLabel("/reset".padEnd(14, " "))} reset state and memory`);
+  console.log(`${accentLabel("/exit".padEnd(14, " "))} quit`);
 }
 
 function printMemories(currentEngine: HachikaEngine): void {
+  printSection("MEMORY BUFFER");
   const memories = currentEngine.getSnapshot().memories.slice(-6);
 
   if (memories.length === 0) {
@@ -343,10 +439,12 @@ function printMemories(currentEngine: HachikaEngine): void {
 }
 
 function printBody(currentEngine: HachikaEngine): void {
+  printSection("BODY");
   console.log(formatBodyState(currentEngine.getBody()));
 }
 
 function printWorld(currentEngine: HachikaEngine): void {
+  printSection("WORLD");
   const world = currentEngine.getWorld();
 
   console.log(formatWorldSummary(world));
@@ -370,33 +468,37 @@ function printWorld(currentEngine: HachikaEngine): void {
 }
 
 function printReactivity(currentEngine: HachikaEngine): void {
+  printSection("REACTIVITY");
   console.log(formatReactivityState(currentEngine.getSnapshot().reactivity));
 }
 
 function printTemperament(currentEngine: HachikaEngine): void {
+  printSection("TEMPERAMENT");
   console.log(formatTemperamentState(currentEngine.getSnapshot().temperament));
 }
 
 function printReplyGeneratorStatus(): void {
-  console.log(`reply:${describeReplyGenerator(replyGenerator)}`);
-  console.log(`proactive:${describeProactiveDirector(proactiveDirector)}`);
-  console.log(`turn:${describeTurnDirector(turnDirector)}`);
-  console.log(`interpret:${describeInputInterpreter(inputInterpreter)}`);
-  console.log(`behavior:${describeBehaviorDirector(behaviorDirector)}`);
-  console.log(`initiative:${describeInitiativeDirector(initiativeDirector)}`);
-  console.log(`planner:${describeResponsePlanner(responsePlanner)}`);
-  console.log(`trace:${describeTraceExtractor(traceExtractor)}`);
-  console.log(`loop:${formatResidentLoopStatus(loadResidentLoopStatusSync(residentStatusPath))}`);
-  console.log(`last reply:${formatLastReplyDebug(engine)}`);
-  console.log(`last turn:${formatTurnDebug(engine.getLastTurnDebug())}`);
-  console.log(`last interpretation:${formatInterpretationDebug(engine.getLastInterpretationDebug())}`);
-  console.log(`last behavior:${formatBehaviorDebug(engine.getLastBehaviorDebug())}`);
-  console.log(`last trace:${formatTraceExtractionDebug(engine.getLastTraceExtractionDebug())}`);
-  console.log(`last response:${formatGeneratedDebug(engine.getLastResponseDebug())}`);
-  console.log(`last proactive:${formatGeneratedDebug(engine.getLastProactiveDebug())}`);
+  printSection("LLM STACK");
+  printKeyValue("reply", describeReplyGenerator(replyGenerator));
+  printKeyValue("proactive", describeProactiveDirector(proactiveDirector));
+  printKeyValue("turn", describeTurnDirector(turnDirector));
+  printKeyValue("interpret", describeInputInterpreter(inputInterpreter));
+  printKeyValue("behavior", describeBehaviorDirector(behaviorDirector));
+  printKeyValue("initiative", describeInitiativeDirector(initiativeDirector));
+  printKeyValue("planner", describeResponsePlanner(responsePlanner));
+  printKeyValue("trace", describeTraceExtractor(traceExtractor));
+  printKeyValue("loop", formatResidentLoopStatus(loadResidentLoopStatusSync(residentStatusPath)));
+  printKeyValue("last reply", formatLastReplyDebug(engine));
+  printKeyValue("last turn", formatTurnDebug(engine.getLastTurnDebug()));
+  printKeyValue("last interp", formatInterpretationDebug(engine.getLastInterpretationDebug()));
+  printKeyValue("last behavior", formatBehaviorDebug(engine.getLastBehaviorDebug()));
+  printKeyValue("last trace", formatTraceExtractionDebug(engine.getLastTraceExtractionDebug()));
+  printKeyValue("last response", formatGeneratedDebug(engine.getLastResponseDebug()));
+  printKeyValue("last proactive", formatGeneratedDebug(engine.getLastProactiveDebug()));
 }
 
 function printResidentLoop(): void {
+  printSection("RESIDENT LOOP");
   const status = loadResidentLoopStatusSync(residentStatusPath);
 
   if (!status) {
@@ -442,6 +544,7 @@ function printResidentLoop(): void {
 }
 
 function printGrowthMetrics(currentEngine: HachikaEngine): void {
+  printSection("GROWTH METRICS");
   const metrics = summarizeLiveGrowthMetrics(currentEngine.getSnapshot());
 
   console.log(`state saturation: ${metrics.stateSaturationRatio.toFixed(3)}`);
@@ -467,6 +570,7 @@ function printGrowthMetrics(currentEngine: HachikaEngine): void {
 }
 
 function printTraces(currentEngine: HachikaEngine): void {
+  printSection("TRACES");
   const snapshot = currentEngine.getSnapshot();
   const traces = sortedTraces(snapshot, 8);
 
@@ -495,6 +599,7 @@ function printTraces(currentEngine: HachikaEngine): void {
 }
 
 function printArtifacts(currentEngine: HachikaEngine): void {
+  printSection("ARTIFACTS");
   const files = describeArtifactFiles(currentEngine.getSnapshot(), artifactsDir);
 
   if (files.length === 0) {
@@ -534,6 +639,7 @@ function printArtifacts(currentEngine: HachikaEngine): void {
 }
 
 function printActivity(currentEngine: HachikaEngine): void {
+  printSection("AUTONOMY LOG");
   const history = currentEngine.getSnapshot().initiative.history.slice(-8).reverse();
 
   if (history.length === 0) {
@@ -549,6 +655,7 @@ function printActivity(currentEngine: HachikaEngine): void {
 }
 
 function printImprints(currentEngine: HachikaEngine): void {
+  printSection("IMPRINTS");
   const snapshot = currentEngine.getSnapshot();
   const preferenceImprints = sortedPreferenceImprints(snapshot);
   const boundaryImprints = sortedBoundaryImprints(snapshot);
@@ -598,6 +705,7 @@ function printImprints(currentEngine: HachikaEngine): void {
 }
 
 function printDebug(currentEngine: HachikaEngine): void {
+  printSection("DEBUG CORE");
   const snapshot = currentEngine.getSnapshot();
   const selfModel = currentEngine.getSelfModel();
   const lastReply = currentEngine.getLastReplyDebug();
@@ -737,6 +845,7 @@ function printDebug(currentEngine: HachikaEngine): void {
 }
 
 function printSelfModel(currentEngine: HachikaEngine): void {
+  printSection("SELF MODEL");
   const selfModel = currentEngine.getSelfModel();
   const activePurpose = currentEngine.getSnapshot().purpose.active;
   const resolvedPurpose = currentEngine.getSnapshot().purpose.lastResolved;
@@ -790,6 +899,7 @@ function printSelfModel(currentEngine: HachikaEngine): void {
 }
 
 function printPurpose(currentEngine: HachikaEngine): void {
+  printSection("PURPOSE");
   const activePurpose = currentEngine.getSnapshot().purpose.active;
 
   if (!activePurpose) {
@@ -817,6 +927,7 @@ function printPurpose(currentEngine: HachikaEngine): void {
 }
 
 function printIdentity(currentEngine: HachikaEngine): void {
+  printSection("IDENTITY");
   const identity = currentEngine.getIdentity();
 
   console.log(`coherence:${identity.coherence.toFixed(2)}`);
@@ -844,7 +955,7 @@ async function emitStartupInitiative(currentEngine: HachikaEngine): Promise<void
   });
 
   if (!emissionResult.ok) {
-    console.log("state conflict: latest snapshot reloaded");
+    printSystemLine("state conflict: latest snapshot reloaded", "warn");
     return;
   }
 
@@ -852,7 +963,7 @@ async function emitStartupInitiative(currentEngine: HachikaEngine): Promise<void
     return;
   }
 
-  console.log(`hachika* ${emissionResult.result}`);
+  printAutonomousLine(emissionResult.result);
 }
 
 async function emitProactive(
@@ -868,16 +979,16 @@ async function emitProactive(
   });
 
   if (!emissionResult.ok) {
-    console.log("state conflict: latest snapshot reloaded");
+    printSystemLine("state conflict: latest snapshot reloaded", "warn");
     return;
   }
 
   if (!emissionResult.result) {
-    console.log("no proactive line");
+    printSystemLine("no proactive line");
     return;
   }
 
-  console.log(`hachika* ${emissionResult.result}`);
+  printAutonomousLine(emissionResult.result);
 }
 
 async function handleIdleCommand(
@@ -888,7 +999,7 @@ async function handleIdleCommand(
   const hours = Number(hoursToken);
 
   if (!Number.isFinite(hours) || hours <= 0) {
-    console.log("usage: /idle <hours>");
+    printSystemLine("usage: /idle <hours>", "warn");
     return;
   }
 
@@ -902,18 +1013,18 @@ async function handleIdleCommand(
   });
 
   if (!idleResult.ok) {
-    console.log("state conflict: latest snapshot reloaded");
+    printSystemLine("state conflict: latest snapshot reloaded", "warn");
     return;
   }
 
-  console.log(`idled ${hours}h`);
+  printSystemLine(`idled ${hours}h`);
 
   if (!idleResult.result) {
-    console.log("no proactive line");
+    printSystemLine("no proactive line");
     return;
   }
 
-  console.log(`hachika* ${idleResult.result}`);
+  printAutonomousLine(idleResult.result);
 }
 
 async function persistState(currentEngine: HachikaEngine): Promise<boolean> {
@@ -970,7 +1081,7 @@ function printAutonomousFeed(
   }
 
   for (const entry of unseen) {
-    console.log(`hachika* ${entry.text}`);
+    printAutonomousLine(entry.text);
   }
 
   rl.prompt(true);
