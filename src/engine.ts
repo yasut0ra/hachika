@@ -23,6 +23,7 @@ import {
   buildStructuredTraceExtractionFromSemanticTraceHint,
   describeSemanticDirective,
   listDurableSemanticTopics,
+  listSemanticAttentionRationales,
   listSemanticTopics,
 } from "./semantic-director-schema.js";
 import { pickFreshText, recentAssistantReplies } from "./expression.js";
@@ -122,6 +123,7 @@ import {
   syncWorldObjectTraceLinks,
 } from "./world.js";
 import type {
+  AttentionRationale,
   BehaviorDirectiveDebug,
   DriveName,
   GeneratedTextDebug,
@@ -2881,6 +2883,9 @@ function buildDirectedTurnDebug(
     worldMention: resolvedDirective.worldMention,
     topics: [...resolvedDirective.topics],
     stateTopics: [...resolvedDirective.stateTopics],
+    attentionReasons: listSemanticAttentionRationales(
+      directed.directive.semantic?.topics ?? [],
+    ),
     plan: resolvedDirective.responsePlan?.summary ?? null,
     summary: resolvedDirective.summary,
   };
@@ -2903,6 +2908,7 @@ function buildRuleTurnDebug(
     worldMention: resolvedDirective.worldMention,
     topics: [...resolvedDirective.topics],
     stateTopics: [...resolvedDirective.stateTopics],
+    attentionReasons: deriveTurnAttentionReasonsForDebug(directive),
     plan: resolvedDirective.responsePlan?.summary ?? null,
     summary: resolvedDirective.summary,
   };
@@ -2927,9 +2933,50 @@ function buildFallbackTurnDebug(
     worldMention: resolvedDirective.worldMention,
     topics: [...resolvedDirective.topics],
     stateTopics: [...resolvedDirective.stateTopics],
+    attentionReasons: deriveTurnAttentionReasonsForDebug(directive),
     plan: resolvedDirective.responsePlan?.summary ?? null,
     summary: resolvedDirective.summary,
   };
+}
+
+function deriveTurnAttentionReasonsForDebug(
+  directive: TurnDirective,
+): AttentionRationale[] {
+  if (directive.semantic) {
+    return listSemanticAttentionRationales(directive.semantic.topics);
+  }
+
+  const resolvedDirective = resolveTurnDirective(directive);
+
+  if (resolvedDirective.target === "work_topic") {
+    return ["unfinished_work"];
+  }
+
+  if (resolvedDirective.target === "world_state") {
+    return ["world_pull"];
+  }
+
+  if (resolvedDirective.target === "hachika_profile") {
+    return ["self_definition"];
+  }
+
+  if (
+    resolvedDirective.target === "hachika_name" ||
+    resolvedDirective.target === "user_name" ||
+    resolvedDirective.target === "user_profile"
+  ) {
+    return ["direct_referent"];
+  }
+
+  if (resolvedDirective.target === "relation") {
+    return [resolvedDirective.relationMove === "repair" ? "repair_pressure" : "relation_uncertain"];
+  }
+
+  if (resolvedDirective.answerMode === "clarify") {
+    return ["curiosity"];
+  }
+
+  return ["memory_pull"];
 }
 
 function buildTurnBehaviorDebug(
@@ -3184,15 +3231,18 @@ function filterTurnDirectiveDurableTopics(
     return [...topics];
   }
 
-  if (turnDebug.target === "work_topic") {
+  const strongRationale =
+    turnDebug.attentionReasons.some((reason) => STRONG_SUPPORT_RATIONALES.has(reason));
+
+  if (turnDebug.target === "work_topic" && !strongRationale) {
     return [...topics];
   }
 
-  if (turnDebug.target === "relation") {
-    return topics.filter((topic) => hasDurableTopicSupport(snapshot, topic));
-  }
-
-  return topics.filter((topic) => hasDurableTopicSupport(snapshot, topic));
+  return topics.filter((topic) =>
+    strongRationale
+      ? hasStrongDurableTopicSupport(snapshot, topic)
+      : hasDurableTopicSupport(snapshot, topic),
+  );
 }
 
 function sanitizeInitiativeStateTopic(
@@ -3794,6 +3844,38 @@ function hasDurableTopicSupport(
     traceSupport ||
     topicCount >= 2 ||
     ((preferenceImprint?.mentions ?? 0) >= 2 && (preferenceImprint?.salience ?? 0) >= 0.45)
+  );
+}
+
+const STRONG_SUPPORT_RATIONALES = new Set<AttentionRationale>([
+  "direct_referent",
+  "relation_uncertain",
+  "world_pull",
+  "self_definition",
+]);
+
+function hasStrongDurableTopicSupport(
+  snapshot: HachikaSnapshot,
+  topic: string,
+): boolean {
+  const preferenceSalience = snapshot.preferenceImprints[topic]?.salience ?? 0;
+  const topicCount = snapshot.topicCounts[topic] ?? 0;
+  const traceSupport = Object.values(snapshot.traces).some((trace) =>
+    topicsLooselyMatch(trace.topic, topic),
+  );
+  const activePurposeSupport = topicsLooselyMatch(topic, snapshot.purpose.active?.topic);
+  const pendingSupport = topicsLooselyMatch(
+    topic,
+    snapshot.initiative.pending?.stateTopic ??
+      snapshot.initiative.pending?.topic,
+  );
+
+  return (
+    traceSupport ||
+    activePurposeSupport ||
+    pendingSupport ||
+    topicCount >= 2 ||
+    preferenceSalience >= 0.42
   );
 }
 

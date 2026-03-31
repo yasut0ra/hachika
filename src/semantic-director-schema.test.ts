@@ -7,6 +7,8 @@ import {
   buildSemanticReplyPlanFromResponsePlan,
   buildStructuredTraceExtractionFromSemanticTraceHint,
   describeSemanticDirective,
+  listSemanticAttentionRationales,
+  normalizeSemanticTopicDecisionRecord,
   listDurableSemanticTopics,
   listSemanticTopics,
 } from "./semantic-director-schema.js";
@@ -25,6 +27,7 @@ test("describeSemanticDirective summarizes turn semantic/state topics separately
         source: "input",
         durability: "ephemeral",
         confidence: 0.92,
+        rationale: "direct_referent",
       },
     ],
     behavior: {
@@ -67,6 +70,7 @@ test("describeSemanticDirective summarizes turn semantic/state topics separately
   assert.match(summary, /turn/);
   assert.match(summary, /topics:名前/);
   assert.match(summary, /state:none/);
+  assert.match(summary, /why:direct_referent/);
   assert.match(summary, /act:self_disclose/);
 });
 
@@ -142,6 +146,7 @@ test("semantic helper projections recover legacy topic and trace shapes", () => 
 
   assert.deepEqual(listSemanticTopics(topics), ["仕様の境界", "机"]);
   assert.deepEqual(listDurableSemanticTopics(topics), ["仕様の境界"]);
+  assert.deepEqual(listSemanticAttentionRationales(topics), []);
 
   const proactivePlan = buildSemanticProactivePlan(
     {
@@ -183,4 +188,29 @@ test("semantic helper projections recover legacy topic and trace shapes", () => 
   assert.ok(trace);
   assert.deepEqual(trace?.topics, ["仕様の境界"]);
   assert.equal(trace?.kindHint, "spec_fragment");
+});
+
+test("normalizeSemanticTopicDecisionRecord derives and preserves attention rationale", () => {
+  const derived = normalizeSemanticTopicDecisionRecord(
+    {
+      topic: "机",
+      source: "world",
+      durability: "ephemeral",
+      confidence: 0.55,
+    },
+    "input",
+  );
+  const explicit = normalizeSemanticTopicDecisionRecord(
+    {
+      topic: "仕様の境界",
+      source: "trace",
+      durability: "durable",
+      confidence: 0.91,
+      rationale: "unfinished_work",
+    },
+    "trace",
+  );
+
+  assert.equal(derived?.rationale, "world_pull");
+  assert.equal(explicit?.rationale, "unfinished_work");
 });

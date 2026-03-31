@@ -6,7 +6,9 @@ import {
   buildStructuredTraceExtractionFromSemanticTraceHint,
   describeSemanticDirective,
   listDurableSemanticTopics,
+  listSemanticAttentionRationales,
   listSemanticTopics,
+  normalizeSemanticTopicDecisionRecord,
   type SemanticTopicDecision,
   type SemanticTurnDirectiveV2,
 } from "./semantic-director-schema.js";
@@ -30,6 +32,7 @@ import { clamp01 } from "./state.js";
 import { sortedTraces } from "./traces.js";
 import { hasExplicitWorldObjectReference, summarizeWorldForPrompt } from "./world.js";
 import type {
+  AttentionRationale,
   HachikaSnapshot,
   InteractionSignals,
   StructuredTraceExtraction,
@@ -774,6 +777,7 @@ function buildSemanticTurnDirective(
                   directive.target === "user_name"
                 ? "relation"
                 : "input",
+      deriveTurnAttentionRationale(directive),
     ),
     behavior: {
       topicAction: directive.behavior.topicAction,
@@ -1100,41 +1104,32 @@ function normalizeSemanticTopicDecisions(
   }
 
   const decisions: SemanticTopicDecision[] = value
-    .filter((entry): entry is Record<string, unknown> => isRecord(entry))
-    .map((entry) => {
-      const topic =
-        typeof entry.topic === "string" ? entry.topic.normalize("NFKC").trim() : "";
-      if (!topic) {
-        return null;
-      }
-      const source =
-        entry.source === "input" ||
-        entry.source === "memory" ||
-        entry.source === "trace" ||
-        entry.source === "world" ||
-        entry.source === "relation" ||
-        entry.source === "self"
-          ? entry.source
-          : "input";
-      const durability =
-        entry.durability === "durable" ? "durable" : "ephemeral";
-      const confidence =
-        typeof entry.confidence === "number" && Number.isFinite(entry.confidence)
-          ? clamp01(entry.confidence)
-          : durability === "durable"
-            ? 0.84
-            : 0.62;
-
-      return {
-        topic,
-        source,
-        durability,
-        confidence,
-      } satisfies SemanticTopicDecision;
-    })
+    .map((entry) => normalizeSemanticTopicDecisionRecord(entry, "input"))
     .filter((entry): entry is NonNullable<typeof entry> => entry !== null);
 
   return decisions.length > 0 ? decisions : [...fallback];
+}
+
+function deriveTurnAttentionRationale(
+  directive: Pick<TurnDirective, "target" | "relationMove" | "answerMode">,
+): AttentionRationale {
+  switch (directive.target) {
+    case "work_topic":
+      return "unfinished_work";
+    case "world_state":
+      return "world_pull";
+    case "hachika_profile":
+      return "self_definition";
+    case "hachika_name":
+    case "user_name":
+    case "user_profile":
+      return "direct_referent";
+    case "relation":
+      return directive.relationMove === "repair" ? "repair_pressure" : "relation_uncertain";
+    case "none":
+    default:
+      return directive.answerMode === "clarify" ? "curiosity" : "memory_pull";
+  }
 }
 
 function normalizeStringArray(value: unknown, limit: number): string[] {

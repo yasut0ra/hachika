@@ -5,6 +5,7 @@ import {
   describeSemanticDirective,
   listDurableSemanticTopics,
   listSemanticTopics,
+  normalizeSemanticTopicDecisionRecord,
   type SemanticInitiativeDirectiveV2,
   type SemanticTopicDecision,
 } from "./semantic-director-schema.js";
@@ -654,37 +655,7 @@ function normalizeSemanticTopicDecisions(
   }
 
   const decisions: SemanticTopicDecision[] = value
-    .filter((entry): entry is Record<string, unknown> => isRecord(entry))
-    .map((entry) => {
-      const topic =
-        typeof entry.topic === "string" ? entry.topic.normalize("NFKC").trim() : "";
-      if (!topic) {
-        return null;
-      }
-      const source =
-        entry.source === "input" ||
-        entry.source === "memory" ||
-        entry.source === "trace" ||
-        entry.source === "world" ||
-        entry.source === "relation" ||
-        entry.source === "self"
-          ? entry.source
-          : "trace";
-      const durability =
-        entry.durability === "durable" ? "durable" : "ephemeral";
-      const confidence =
-        typeof entry.confidence === "number" && Number.isFinite(entry.confidence)
-          ? Math.max(0, Math.min(1, entry.confidence))
-          : durability === "durable"
-            ? 0.84
-            : 0.62;
-      return {
-        topic,
-        source,
-        durability,
-        confidence,
-      } satisfies SemanticTopicDecision;
-    })
+    .map((entry) => normalizeSemanticTopicDecisionRecord(entry, "trace"))
     .filter((entry): entry is NonNullable<typeof entry> => entry !== null);
 
   return decisions.length > 0

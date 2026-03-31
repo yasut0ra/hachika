@@ -143,6 +143,17 @@ export type TurnRelationMove = "naming" | "repair" | "attune" | "boundary" | "no
 
 export type TurnWorldMention = "none" | "light" | "full";
 
+export type AttentionRationale =
+  | "direct_referent"
+  | "relation_uncertain"
+  | "self_definition"
+  | "unfinished_work"
+  | "repair_pressure"
+  | "memory_pull"
+  | "trace_pull"
+  | "world_pull"
+  | "curiosity";
+
 export interface WorldPlaceState {
   warmth: number;
   quiet: number;
@@ -493,6 +504,7 @@ export interface TurnDirectiveDebug {
   worldMention: TurnWorldMention;
   topics: string[];
   stateTopics: string[];
+  attentionReasons: AttentionRationale[];
   plan: string | null;
   summary: string;
 }

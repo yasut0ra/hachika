@@ -1,4 +1,5 @@
 import type {
+  AttentionRationale,
   InitiativeAutonomyAction,
   PendingInitiative,
   StructuredTraceExtraction,
@@ -40,7 +41,20 @@ export interface SemanticTopicDecision {
   source: SemanticTopicSource;
   durability: SemanticTopicDurability;
   confidence: number;
+  rationale?: AttentionRationale;
 }
+
+const ATTENTION_RATIONALE_VALUES = new Set<AttentionRationale>([
+  "direct_referent",
+  "relation_uncertain",
+  "self_definition",
+  "unfinished_work",
+  "repair_pressure",
+  "memory_pull",
+  "trace_pull",
+  "world_pull",
+  "curiosity",
+]);
 
 export interface SemanticTraceHint {
   topics: string[];
@@ -148,6 +162,7 @@ export function buildSemanticTopicDecisions(
   topics: readonly string[],
   stateTopics: readonly string[],
   source: SemanticTopicSource,
+  rationale: AttentionRationale = defaultAttentionRationaleForSource(source),
 ): SemanticTopicDecision[] {
   const durableTopics = new Set(stateTopics);
   const uniqueTopics = Array.from(new Set(topics));
@@ -157,6 +172,7 @@ export function buildSemanticTopicDecisions(
     source,
     durability: durableTopics.has(topic) ? "durable" : "ephemeral",
     confidence: Math.max(0.25, 0.92 - index * 0.12),
+    rationale,
   }));
 }
 
@@ -216,6 +232,82 @@ export function listDurableSemanticTopics(
   return topics
     .filter((topic) => topic.durability === "durable")
     .map((topic) => topic.topic);
+}
+
+export function listSemanticAttentionRationales(
+  topics: readonly SemanticTopicDecision[],
+): AttentionRationale[] {
+  return Array.from(
+    new Set(
+      topics
+        .map((topic) => topic.rationale)
+        .filter((rationale): rationale is AttentionRationale => !!rationale),
+    ),
+  );
+}
+
+export function defaultAttentionRationaleForSource(
+  source: SemanticTopicSource,
+): AttentionRationale {
+  switch (source) {
+    case "memory":
+      return "memory_pull";
+    case "trace":
+      return "trace_pull";
+    case "world":
+      return "world_pull";
+    case "relation":
+      return "relation_uncertain";
+    case "self":
+      return "self_definition";
+    case "input":
+    default:
+      return "curiosity";
+  }
+}
+
+export function normalizeSemanticTopicDecisionRecord(
+  value: unknown,
+  fallbackSource: SemanticTopicSource,
+): SemanticTopicDecision | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const topic =
+    typeof value.topic === "string" ? value.topic.normalize("NFKC").trim() : "";
+  if (!topic) {
+    return null;
+  }
+
+  const source =
+    value.source === "input" ||
+    value.source === "memory" ||
+    value.source === "trace" ||
+    value.source === "world" ||
+    value.source === "relation" ||
+    value.source === "self"
+      ? value.source
+      : fallbackSource;
+  const durability = value.durability === "durable" ? "durable" : "ephemeral";
+  const confidence =
+    typeof value.confidence === "number" && Number.isFinite(value.confidence)
+      ? Math.max(0, Math.min(1, value.confidence))
+      : durability === "durable"
+        ? 0.84
+        : 0.62;
+  const rationale =
+    typeof value.rationale === "string" && ATTENTION_RATIONALE_VALUES.has(value.rationale as AttentionRationale)
+      ? (value.rationale as AttentionRationale)
+      : defaultAttentionRationaleForSource(source);
+
+  return {
+    topic,
+    source,
+    durability,
+    confidence,
+    rationale,
+  };
 }
 
 export function buildResponsePlanFromSemanticReplyPlan(
@@ -375,14 +467,18 @@ export function describeSemanticDirective(
       .filter((topic) => topic.durability === "durable")
       .map((topic) => topic.topic)
       .join(",");
+    const reasons = listSemanticAttentionRationales(directive.topics).join(",");
 
     return [
       "turn",
       `${directive.subject}/${directive.target}/${directive.answerMode}`,
       `topics:${semanticTopics || "none"}`,
       `state:${stateTopics || "none"}`,
+      reasons ? `why:${reasons}` : "",
       `act:${directive.replyPlan.act}`,
-    ].join(" ");
+    ]
+      .filter((part) => part.length > 0)
+      .join(" ");
   }
 
   if (directive.mode === "proactive") {
@@ -391,12 +487,14 @@ export function describeSemanticDirective(
       .filter((topic) => topic.durability === "durable")
       .map((topic) => topic.topic)
       .join(",");
+    const reasons = listSemanticAttentionRationales(directive.topics).join(",");
 
     return [
       "proactive",
       directive.proactivePlan.emit ? "emit" : "suppress",
       `topics:${semanticTopics || "none"}`,
       `state:${stateTopics || "none"}`,
+      reasons ? `why:${reasons}` : "",
       `act:${directive.proactivePlan.act}`,
       directive.proactivePlan.place ? `@${directive.proactivePlan.place}` : "",
       directive.proactivePlan.worldAction
@@ -413,12 +511,14 @@ export function describeSemanticDirective(
       .filter((topic) => topic.durability === "durable")
       .map((topic) => topic.topic)
       .join(",");
+    const reasons = listSemanticAttentionRationales(directive.topics).join(",");
 
     return [
       "initiative",
       directive.initiativePlan.keep ? "keep" : "suppress",
       `topics:${semanticTopics || "none"}`,
       `state:${stateTopics || "none"}`,
+      reasons ? `why:${reasons}` : "",
       `kind:${directive.initiativePlan.kind}`,
       `motive:${directive.initiativePlan.motive}`,
       directive.initiativePlan.place ? `@${directive.initiativePlan.place}` : "",
@@ -435,13 +535,19 @@ export function describeSemanticDirective(
     .filter((topic) => topic.durability === "durable")
     .map((topic) => topic.topic)
     .join(",");
+  const reasons = listSemanticAttentionRationales(directive.topics).join(",");
 
   return [
     "autonomy",
     directive.autonomyPlan.keep ? "keep" : "suppress",
     `topics:${semanticTopics || "none"}`,
     `state:${stateTopics || "none"}`,
+    reasons ? `why:${reasons}` : "",
     `action:${directive.autonomyPlan.action}`,
     `out:${directive.autonomyPlan.outwardMode}`,
   ].join(" ");
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
