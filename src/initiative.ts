@@ -602,6 +602,11 @@ export function materializeIdleAutonomyAction(
         reason: reasonFromMotive(prepared.selected.motive),
         motive: prepared.selected.motive,
         topic: prepared.selected.trace.topic,
+        stateTopic: selectInitiativeStateTopic(
+          snapshot,
+          prepared.selected.trace.topic,
+          prepared.selected.motive,
+        ),
         blocker: prepared.selected.blocker,
         concern: null,
         createdAt: snapshot.lastInteractionAt ?? new Date().toISOString(),

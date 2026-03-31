@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  extractDeclaredUserName,
   extractLocalTopics,
   extractTopics,
   isMeaningfulTopic,
@@ -51,6 +52,12 @@ test("extractLocalTopics rejects malformed mixed-script fragments from japanese 
   const topics = extractLocalTopics("何か気になることはある？");
 
   assert.ok(!topics.includes("か気"));
+});
+
+test("extractDeclaredUserName reads simple japanese self introductions", () => {
+  assert.equal(extractDeclaredUserName("私はやすとら"), "やすとら");
+  assert.equal(extractDeclaredUserName("僕の名前はやすとらです"), "やすとら");
+  assert.equal(extractDeclaredUserName("私はそう思う"), null);
 });
 
 test("isMeaningfulTopic rejects low-information conversational fragments", () => {

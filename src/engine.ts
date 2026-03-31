@@ -1,4 +1,5 @@
 import {
+  extractDeclaredUserName,
   consolidateBoundaryImprints,
   consolidatePreferenceImprints,
   consolidateRelationImprints,
@@ -128,6 +129,7 @@ import type {
   InterpretationDebug,
   InteractionSignals,
   MoodLabel,
+  PendingInitiative,
   ReplySelectionDebug,
   SelfModel,
   StructuredTraceExtraction,
@@ -622,7 +624,10 @@ export class HachikaEngine {
       return null;
     }
 
-    const emission = materializePreparedInitiative(nextSnapshot, prepared);
+    const emission = materializePreparedInitiative(nextSnapshot, {
+      ...prepared,
+      pending: sanitizePendingInitiativeDurability(nextSnapshot, prepared.pending),
+    });
 
     return this.#finalizeProactiveEmission(previousSnapshot, nextSnapshot, emission.message, emission.topics, {
       mode: "proactive",
@@ -665,9 +670,16 @@ export class HachikaEngine {
       return false;
     }
 
-    materializePreparedOutwardAction(nextSnapshot, prepared, {
-      worldAction: options.outwardAction ?? "touch",
-    });
+    materializePreparedOutwardAction(
+      nextSnapshot,
+      {
+        ...prepared,
+        pending: sanitizePendingInitiativeDurability(nextSnapshot, prepared.pending),
+      },
+      {
+        worldAction: options.outwardAction ?? "touch",
+      },
+    );
     updateIdentity(
       nextSnapshot,
       nextSnapshot.initiative.lastProactiveAt ?? new Date().toISOString(),
@@ -706,7 +718,10 @@ export class HachikaEngine {
     let plannerDiff: string | null = null;
     let generationTopics =
       prepared.pending.topic !== null ? [prepared.pending.topic] : [];
-    let finalStateTopic = prepared.pending.stateTopic ?? prepared.pending.topic ?? null;
+    let finalStateTopic = sanitizeInitiativeStateTopic(
+      nextSnapshot,
+      prepared.pending.stateTopic ?? prepared.pending.topic ?? null,
+    );
 
     if (proactiveDirector) {
       try {
@@ -735,14 +750,17 @@ export class HachikaEngine {
             generationTopics = [...resolvedDirective.topics];
           }
           if (resolvedDirective.stateTopic !== undefined) {
-            finalStateTopic = resolvedDirective.stateTopic;
+            finalStateTopic = sanitizeInitiativeStateTopic(
+              nextSnapshot,
+              resolvedDirective.stateTopic,
+            );
           }
           if (
             resolvedDirective.stateTopic !== undefined ||
             resolvedDirective.place !== undefined ||
             resolvedDirective.worldAction !== undefined
           ) {
-            const nextPending = {
+            const nextPending = sanitizePendingInitiativeDurability(nextSnapshot, {
               ...prepared.pending,
               ...(resolvedDirective.stateTopic !== undefined
                 ? { stateTopic: resolvedDirective.stateTopic }
@@ -753,7 +771,7 @@ export class HachikaEngine {
               ...(resolvedDirective.worldAction !== undefined
                 ? { worldAction: resolvedDirective.worldAction }
                 : {}),
-            };
+            });
             prepared = {
               ...prepared,
               pending: nextPending,
@@ -1265,17 +1283,20 @@ async function applyInitiativeDirector(
     const semanticInitiative = directed.directive.semantic?.initiativePlan ?? null;
     nextSnapshot.initiative.pending = semanticInitiative
       ? semanticInitiative.keep
-        ? buildPendingInitiativeFromSemanticInitiativePlan(semanticInitiative, {
-            blocker: pending?.blocker ?? null,
-            concern: nextSnapshot.preservation.concern,
-            createdAt:
-              pending?.createdAt ??
-              nextSnapshot.lastInteractionAt ??
-              new Date().toISOString(),
-          })
+        ? sanitizePendingInitiativeDurability(
+            nextSnapshot,
+            buildPendingInitiativeFromSemanticInitiativePlan(semanticInitiative, {
+              blocker: pending?.blocker ?? null,
+              concern: nextSnapshot.preservation.concern,
+              createdAt:
+                pending?.createdAt ??
+                nextSnapshot.lastInteractionAt ??
+                new Date().toISOString(),
+            }),
+          )
         : null
       : directed.directive.keep
-        ? {
+        ? sanitizePendingInitiativeDurability(nextSnapshot, {
             ...(pending ?? {
               blocker: null,
               concern: nextSnapshot.preservation.concern,
@@ -1289,7 +1310,7 @@ async function applyInitiativeDirector(
             readyAfterHours: directed.directive.readyAfterHours,
             place: directed.directive.place,
             worldAction: directed.directive.worldAction,
-          }
+          })
         : null;
     updateIdentity(
       nextSnapshot,
@@ -1325,7 +1346,10 @@ function materializeInitiativeFallback(prepared: PreparedTurn): PreparedTurn {
   }
 
   if (decision.candidate) {
-    nextSnapshot.initiative.pending = decision.candidate;
+    nextSnapshot.initiative.pending = sanitizePendingInitiativeDurability(
+      nextSnapshot,
+      decision.candidate,
+    );
   }
 
   updateIdentity(
@@ -1456,20 +1480,25 @@ function prepareTurn(
   snapshot: HachikaSnapshot,
   input: string,
 ): PreparedTurn {
-  const signals = analyzeInteraction(input, snapshot);
-  const behaviorDirective = buildRuleBehaviorDirective(snapshot, input, signals, null, null);
-  return prepareTurnFromSignals(
+  const localSignals = analyzeInteraction(input, snapshot);
+  const directive = buildRuleTurnDirective(snapshot, input, localSignals);
+  const resolvedDirective = resolveTurnDirective(directive);
+  const signals = mergeTurnDirectedSignals(snapshot, localSignals, directive);
+  const turnDebug = buildRuleTurnDebug(directive);
+  const prepared = prepareTurnFromSignals(
     snapshot,
     signals,
     input,
-    null,
-    buildRuleInterpretationDebug(signals),
-    behaviorDirective,
-    buildRuleBehaviorDebug(behaviorDirective),
-    null,
-    buildRuleTraceExtractionDebug(signals),
+    turnDebug,
+    buildTurnInterpretationDebug(localSignals, signals, { directive, turnDebug }),
+    resolvedDirective.behavior,
+    buildTurnBehaviorDebug({ directive, turnDebug }),
+    resolvedDirective.traceExtraction,
+    buildTurnTraceExtractionDebug(localSignals, signals, { directive, turnDebug }),
     false,
   );
+
+  return applyTurnDirectedPlan(prepared, { directive, turnDebug });
 }
 
 async function prepareTurnAsync(
@@ -2857,6 +2886,28 @@ function buildDirectedTurnDebug(
   };
 }
 
+function buildRuleTurnDebug(
+  directive: TurnDirective,
+): TurnDirectiveDebug {
+  const resolvedDirective = resolveTurnDirective(directive);
+  return {
+    source: "rule",
+    provider: null,
+    model: null,
+    fallbackUsed: false,
+    error: null,
+    subject: resolvedDirective.subject,
+    target: resolvedDirective.target,
+    answerMode: resolvedDirective.answerMode,
+    relationMove: resolvedDirective.relationMove,
+    worldMention: resolvedDirective.worldMention,
+    topics: [...resolvedDirective.topics],
+    stateTopics: [...resolvedDirective.stateTopics],
+    plan: resolvedDirective.responsePlan?.summary ?? null,
+    summary: resolvedDirective.summary,
+  };
+}
+
 function buildFallbackTurnDebug(
   turnDirector: TurnDirector,
   directive: TurnDirective,
@@ -3142,6 +3193,36 @@ function filterTurnDirectiveDurableTopics(
   }
 
   return topics.filter((topic) => hasDurableTopicSupport(snapshot, topic));
+}
+
+function sanitizeInitiativeStateTopic(
+  snapshot: HachikaSnapshot,
+  topic: string | null | undefined,
+): string | null {
+  if (!topic) {
+    return null;
+  }
+
+  if (!requiresConcreteTopicSupport(topic) && !isRelationalTopic(topic)) {
+    return topic;
+  }
+
+  return hasDurableTopicSupport(snapshot, topic, { ignorePendingSupport: true }) ? topic : null;
+}
+
+function sanitizePendingInitiativeDurability(
+  snapshot: HachikaSnapshot,
+  pending: PendingInitiative,
+): PendingInitiative {
+  const candidateStateTopic =
+    Object.prototype.hasOwnProperty.call(pending, "stateTopic")
+      ? (pending.stateTopic ?? null)
+      : (pending.topic ?? null);
+
+  return {
+    ...pending,
+    stateTopic: sanitizeInitiativeStateTopic(snapshot, candidateStateTopic),
+  };
 }
 
 function applyTurnDirectiveLifecycleBehavior(
@@ -3686,18 +3767,26 @@ function shouldKeepDurableStateTopic(
   return hasDurableTopicSupport(snapshot, topic);
 }
 
-function hasDurableTopicSupport(snapshot: HachikaSnapshot, topic: string): boolean {
+function hasDurableTopicSupport(
+  snapshot: HachikaSnapshot,
+  topic: string,
+  options: {
+    ignorePendingSupport?: boolean;
+  } = {},
+): boolean {
   const topicCount = snapshot.topicCounts[topic] ?? 0;
   const preferenceImprint = snapshot.preferenceImprints[topic];
   const traceSupport = Object.values(snapshot.traces).some((trace) =>
     topicsLooselyMatch(trace.topic, topic),
   );
   const activePurposeSupport = topicsLooselyMatch(topic, snapshot.purpose.active?.topic);
-  const pendingSupport = topicsLooselyMatch(
-    topic,
-    snapshot.initiative.pending?.stateTopic ??
-      snapshot.initiative.pending?.topic,
-  );
+  const pendingSupport = options.ignorePendingSupport
+    ? false
+    : topicsLooselyMatch(
+        topic,
+        snapshot.initiative.pending?.stateTopic ??
+          snapshot.initiative.pending?.topic,
+      );
 
   return (
     activePurposeSupport ||
@@ -4207,21 +4296,26 @@ function composeReply(
   const bodyLine = buildBodyLine(nextSnapshot, mood, signals, currentTopic);
   const prioritizeBodyLine = shouldPrioritizeBodyLine(nextSnapshot, signals);
   const recentAssistantLines = recentAssistantReplies(previousSnapshot, 4);
+  const directNameTurn =
+    turnDebug?.target === "hachika_name" || turnDebug?.target === "user_name";
   const parts: string[] = [
     buildPlannedOpener(previousSnapshot, responsePlan, mood, turnIndex),
   ];
   const directReferentLine = buildDirectReferentAnswerLine(
+    input,
     previousSnapshot,
     nextSnapshot,
     mood,
     turnDebug,
   );
   const socialLine = buildSocialLine(
+    input,
     previousSnapshot,
     nextSnapshot,
     mood,
     signals,
     responsePlan,
+    turnDebug,
   );
 
   if (signals.neglect > 0.45) {
@@ -4236,7 +4330,11 @@ function composeReply(
     parts.push(directReferentLine);
   }
 
-  if (!worldTurn && (socialTurn || responsePlan.act === "attune") && socialLine) {
+  if (!worldTurn && directNameTurn && directReferentLine) {
+    return [...new Set(parts)].slice(0, 2).join(" ");
+  }
+
+  if (!worldTurn && !directNameTurn && (socialTurn || responsePlan.act === "attune") && socialLine) {
     parts.push(socialLine);
   }
 
@@ -4320,6 +4418,8 @@ function composeReply(
 
   const closingLine = worldTurn
     ? buildWorldClosingLine(nextSnapshot)
+    : directNameTurn
+      ? null
     : socialTurn || responsePlan.act === "attune"
       ? buildSocialClosingLine(previousSnapshot, nextSnapshot, mood, signals) ??
         (currentTopic != null ? buildIdentityLine(nextSnapshot, currentTopic) : null) ??
@@ -4673,11 +4773,13 @@ function buildPlannedOpener(
 }
 
 function buildSocialLine(
+  input: string,
   previousSnapshot: HachikaSnapshot,
   snapshot: HachikaSnapshot,
   mood: MoodLabel,
   signals: InteractionSignals,
   responsePlan: ResponsePlan,
+  turnDebug: TurnDirectiveDebug | null,
 ): string | null {
   const recentAssistantLines = recentAssistantReplies(previousSnapshot, 4);
   const relationTopic =
@@ -4729,6 +4831,22 @@ function buildSocialLine(
   }
 
   if (responsePlan.act === "attune" || signals.smalltalk > 0.48) {
+    if (turnDebug?.target === "relation" && turnDebug.relationMove === "naming") {
+      const assignedName = extractAssignedHachikaName(input);
+
+      if (assignedName) {
+        return pickFreshText(
+          [
+            `呼ぶなら、「${assignedName}」で受け取る。`,
+            `こちらの名前は、「${assignedName}」で馴染ませていく。`,
+            `その呼び方なら、「${assignedName}」として受け取れる。`,
+          ],
+          recentAssistantLines,
+          snapshot.conversationCount,
+        );
+      }
+    }
+
     if (relationTopic && signals.question > 0.24 && signals.workCue < 0.28) {
       const nameCue = companionTopic ?? relationTopic;
 
@@ -4771,7 +4889,22 @@ function buildSocialLine(
   return null;
 }
 
+function extractAssignedHachikaName(text: string): string | null {
+  const normalized = text.normalize("NFKC").trim();
+  const match = normalized.match(
+    /(?:あなた|君|きみ)の名前は([^\s。、！？?？]{1,24}?)(?:です|だよ|だ)?(?:[。！？!?]|$)/u,
+  );
+  const candidate = match?.[1]?.trim() ?? null;
+
+  if (!candidate || candidate.length <= 1) {
+    return null;
+  }
+
+  return candidate;
+}
+
 function buildDirectReferentAnswerLine(
+  input: string,
   previousSnapshot: HachikaSnapshot,
   snapshot: HachikaSnapshot,
   mood: MoodLabel,
@@ -4795,6 +4928,29 @@ function buildDirectReferentAnswerLine(
         snapshot.conversationCount,
       );
     case "user_name":
+      {
+        const declaredName = extractDeclaredUserName(input);
+        const rememberedName =
+          declaredName ?? findRememberedUserName(previousSnapshot);
+
+        if (rememberedName) {
+          return pickFreshText(
+            declaredName
+              ? [
+                  `${rememberedName}、そう受け取る。`,
+                  `呼ぶなら、「${rememberedName}」で受け取った。`,
+                  `あなたの名前は、「${rememberedName}」として覚える。`,
+                ]
+              : [
+                  `あなたの名前なら、「${rememberedName}」として覚えている。`,
+                  `呼ぶなら、「${rememberedName}」で受け取っている。`,
+                  `名前なら、「${rememberedName}」で覚えている。`,
+                ],
+            recentAssistantLines,
+            snapshot.conversationCount,
+          );
+        }
+      }
       return pickFreshText(
         [
           "あなたの名前は、まだこちらで取り違えたくない。もう一度聞かせて。",
@@ -4809,6 +4965,21 @@ function buildDirectReferentAnswerLine(
     default:
       return null;
   }
+}
+
+function findRememberedUserName(snapshot: HachikaSnapshot): string | null {
+  for (const memory of [...snapshot.memories].reverse()) {
+    if (memory.role !== "user") {
+      continue;
+    }
+
+    const declared = extractDeclaredUserName(memory.text);
+    if (declared) {
+      return declared;
+    }
+  }
+
+  return null;
 }
 
 function buildSocialClosingLine(

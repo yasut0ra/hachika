@@ -14,7 +14,11 @@ import {
   buildRuleBehaviorDirective,
   type BehaviorDirective,
 } from "./behavior-director.js";
-import { isRelationalTopic, topPreferredTopics } from "./memory.js";
+import {
+  extractDeclaredUserName,
+  isRelationalTopic,
+  topPreferredTopics,
+} from "./memory.js";
 import type {
   ResponseAct,
   ResponseDistance,
@@ -404,15 +408,21 @@ export function buildRuleTurnDirective(
   let answerMode: TurnAnswerMode = explicitQuestion ? "clarify" : "reflective";
   let relationMove: TurnRelationMove = "none";
   let worldMention: TurnWorldMention = "none";
+  const declaredUserName = extractDeclaredUserName(input);
 
   if (signals.worldInquiry >= 0.45 || hasExplicitWorldObjectReference(input)) {
     subject = "world";
     target = "world_state";
     answerMode = "direct";
     worldMention = "full";
+  } else if (declaredUserName) {
+    subject = "user";
+    target = "user_name";
+    answerMode = "direct";
+    relationMove = "naming";
   } else if (containsAny(normalized, HACHIKA_NAME_PATTERNS)) {
-    subject = "hachika";
-    target = "hachika_name";
+    subject = explicitQuestion ? "hachika" : "shared";
+    target = explicitQuestion ? "hachika_name" : "relation";
     answerMode = explicitQuestion ? "direct" : "reflective";
     relationMove = "naming";
   } else if (containsAny(normalized, USER_NAME_PATTERNS)) {
@@ -434,6 +444,17 @@ export function buildRuleTurnDirective(
     target = "relation";
     answerMode = "direct";
     relationMove = "repair";
+  } else if (
+    snapshot.purpose.active?.kind === "deepen_relation" &&
+    localTopics.length === 0 &&
+    (normalized.includes("具体") ||
+      normalized.includes("何が気にな") ||
+      normalized.includes("わからない"))
+  ) {
+    subject = "shared";
+    target = "relation";
+    answerMode = "direct";
+    relationMove = isRelationalTopic(snapshot.purpose.active.topic ?? "") ? "naming" : "attune";
   } else if (containsAny(normalized, NAMING_PATTERNS) || localTopics.some((topic) => isRelationalTopic(topic))) {
     subject = "shared";
     target = "relation";

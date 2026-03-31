@@ -32,6 +32,24 @@ test("rule turn directive resolves Hachika name questions as direct self referen
   assert.equal(directive.semantic?.target, "hachika_name");
 });
 
+test("rule turn directive keeps hachika naming assignments relational when they are not questions", () => {
+  const snapshot = createInitialSnapshot();
+  const directive = buildRuleTurnDirective(
+    snapshot,
+    "あなたの名前はハチカ。覚えてね。",
+    createSignals({
+      intimacy: 0.42,
+      topics: ["名前"],
+    }),
+  );
+
+  assert.equal(directive.subject, "shared");
+  assert.equal(directive.target, "relation");
+  assert.equal(directive.answerMode, "reflective");
+  assert.equal(directive.relationMove, "naming");
+  assert.equal(directive.behavior.traceAction, "suppress");
+});
+
 test("rule turn directive resolves user naming questions without hardening work state", () => {
   const snapshot = createInitialSnapshot();
   const directive = buildRuleTurnDirective(
@@ -51,6 +69,27 @@ test("rule turn directive resolves user naming questions without hardening work 
   assert.equal(directive.behavior.traceAction, "suppress");
   assert.equal(directive.behavior.purposeAction, "suppress");
   assert.equal(directive.behavior.directAnswer, true);
+});
+
+test("rule turn directive treats direct self-introduction as a user-name referent turn", () => {
+  const snapshot = createInitialSnapshot();
+  const directive = buildRuleTurnDirective(
+    snapshot,
+    "私はやすとら",
+    createSignals({
+      intimacy: 0.22,
+      smalltalk: 0.18,
+      topics: [],
+    }),
+  );
+
+  assert.equal(directive.subject, "user");
+  assert.equal(directive.target, "user_name");
+  assert.equal(directive.answerMode, "direct");
+  assert.equal(directive.behavior.traceAction, "suppress");
+  assert.equal(directive.behavior.worldAction, "suppress");
+  assert.deepEqual(directive.topics, []);
+  assert.deepEqual(directive.stateTopics, []);
 });
 
 test("normalizeTurnDirective keeps fallback shape and parses turn semantics", () => {

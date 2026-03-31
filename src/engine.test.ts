@@ -1030,6 +1030,29 @@ test("proactive emission can stay semantic without hardening a durable topic", (
   assert.equal(proactiveDebug?.proactiveSelection?.maintenanceTraceTopic, null);
 });
 
+test("proactive emission does not harden a relational pending topic without durable support", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.initiative.pending = {
+    kind: "resume_topic",
+    reason: "relation",
+    motive: "deepen_relation",
+    topic: "名前",
+    blocker: null,
+    concern: null,
+    createdAt: "2026-03-22T09:35:00.000Z",
+    readyAfterHours: 0,
+  };
+
+  const engine = new HachikaEngine(snapshot);
+  const message = engine.emitInitiative({ force: true });
+  const proactiveDebug = engine.getLastProactiveDebug();
+
+  assert.ok(message !== null);
+  assert.equal(engine.getSnapshot().traces["名前"], undefined);
+  assert.equal(proactiveDebug?.proactiveSelection?.stateTopic ?? null, null);
+  assert.equal(proactiveDebug?.proactiveSelection?.maintenanceTraceTopic ?? null, null);
+});
+
 test("proactive reply avoids repeating the most recent proactive opener", () => {
   const snapshot = createInitialSnapshot();
   snapshot.memories.push({
@@ -1619,6 +1642,19 @@ test("early naming turn stays relational instead of becoming trace work immediat
   assert.equal(result.snapshot.preferences["名前"], undefined);
 });
 
+test("local fallback keeps user and hachika names distinct across a short exchange", () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+
+  const first = engine.respond("私はやすとら");
+  const second = engine.respond("あなたの名前は？");
+
+  assert.match(first.reply, /やすとら/);
+  assert.doesNotMatch(first.reply, /もう一度聞かせて|取り違え/);
+  assert.match(second.reply, /ハチカ/);
+  assert.doesNotMatch(second.reply, /やすとら/);
+  assert.equal(second.snapshot.traces["名前"], undefined);
+});
+
 test("relation clarification answers directly without turning the naming exchange into work", () => {
   const engine = new HachikaEngine(createInitialSnapshot());
 
@@ -1631,7 +1667,7 @@ test("relation clarification answers directly without turning the naming exchang
   assert.notEqual(result.snapshot.purpose.active?.kind, "continue_shared_work");
   assert.equal(result.snapshot.boundaryImprints["hostility:名前"], undefined);
   assert.equal(/[?？]$/.test(result.reply.trim()), false);
-  assert.match(result.reply, /名前|呼び方|馴染|自然|気になって|ハチカ/);
+  assert.match(result.reply, /名前|呼び方|馴染|自然|気になって|ハチカ|距離の近い話|しっくり/);
 });
 
 test("self introduction request answers directly before asking anything back", () => {
@@ -2915,7 +2951,7 @@ test("respondAsync prefers semantic initiative plan over conflicting legacy init
   assert.equal(result.snapshot.initiative.pending?.reason ?? null, "continuity");
   assert.equal(result.snapshot.initiative.pending?.motive ?? null, "seek_continuity");
   assert.equal(result.snapshot.initiative.pending?.topic ?? null, "関係");
-  assert.equal(result.snapshot.initiative.pending?.stateTopic ?? null, "呼び方");
+  assert.equal(result.snapshot.initiative.pending?.stateTopic ?? null, null);
   assert.equal(result.snapshot.initiative.pending?.readyAfterHours ?? null, 2);
   assert.equal(result.snapshot.initiative.pending?.place ?? null, "threshold");
   assert.equal(result.snapshot.initiative.pending?.worldAction ?? null, "observe");
@@ -4086,6 +4122,48 @@ test("emitInitiativeAsync lets proactive director keep semantic proactive topics
   assert.equal(engine.getLastReplyDebug()?.proactiveSelection?.stateTopic ?? null, null);
   assert.equal(engine.getSnapshot().traces["名前"], undefined);
   assert.equal(engine.getSnapshot().initiative.history.at(-1)?.traceTopic ?? null, null);
+});
+
+test("emitInitiativeAsync sanitizes unsupported relational state topics before proactive maintenance", async () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.initiative.pending = {
+    kind: "resume_topic",
+    reason: "relation",
+    motive: "deepen_relation",
+    topic: "名前",
+    stateTopic: "名前",
+    blocker: null,
+    concern: null,
+    createdAt: "2026-03-31T00:00:00.000Z",
+    readyAfterHours: 0,
+  };
+  const engine = new HachikaEngine(snapshot);
+
+  const proactiveDirector: ProactiveDirector = {
+    name: "test-director",
+    async directProactive() {
+      return {
+        directive: {
+          emit: true,
+          plan: null,
+          topics: ["名前"],
+          stateTopics: ["名前"],
+          summary: "proactive emit topics:名前 state:名前",
+        },
+        provider: "test-director",
+        model: "stub",
+      };
+    },
+  };
+
+  const message = await engine.emitInitiativeAsync({
+    proactiveDirector,
+  });
+
+  assert.ok(message !== null);
+  assert.equal(engine.getSnapshot().traces["名前"], undefined);
+  assert.equal(engine.getLastReplyDebug()?.proactiveSelection?.stateTopic ?? null, null);
+  assert.equal(engine.getLastReplyDebug()?.proactiveSelection?.maintenanceTraceTopic ?? null, null);
 });
 
 test("emitInitiativeAsync prefers semantic proactive directive over conflicting legacy fields", async () => {

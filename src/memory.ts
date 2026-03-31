@@ -179,6 +179,7 @@ const BROAD_ABSTRACT_TOPICS = new Set([
   "内側",
   "外側",
   "周辺",
+  "具体",
   "具体的",
   "具体化",
   "棚の残り",
@@ -243,6 +244,39 @@ export function extractTopics(text: string): string[] {
   }
 
   return topics;
+}
+
+const USER_SELF_NAME_PATTERNS = [
+  /^(?:私|わたし|僕|ぼく|俺|おれ)は([^\s。、！？?？]{1,24}?)(?:です|だよ|だ)?$/u,
+  /^(?:私|わたし|僕|ぼく|俺|おれ)の名前は([^\s。、！？?？]{1,24}?)(?:です|だよ|だ)?$/u,
+] as const;
+
+export function extractDeclaredUserName(text: string): string | null {
+  const normalized = text.normalize("NFKC").trim();
+
+  for (const pattern of USER_SELF_NAME_PATTERNS) {
+    const match = normalized.match(pattern);
+    const candidate = match?.[1]?.trim() ?? null;
+
+    if (!candidate) {
+      continue;
+    }
+
+    if (
+      candidate.length <= 1 ||
+      STOPWORDS.has(candidate) ||
+      /^(?:あなた|君|きみ|私|わたし|僕|ぼく|俺|おれ|ハチカ)$/u.test(candidate) ||
+      /(?:思う|思っ|感じる|感じ|言う|言っ|してる|する|したい|した|いる|ある)$/u.test(
+        candidate,
+      )
+    ) {
+      continue;
+    }
+
+    return candidate;
+  }
+
+  return null;
 }
 
 export function extractLocalTopics(text: string): string[] {
