@@ -1,3 +1,11 @@
+import {
+  buildSemanticAutonomyPlan,
+  buildSemanticTopicDecisions,
+  describeSemanticDirective,
+  type SemanticAutonomyDirectiveV2,
+  type SemanticAutonomyOutwardMode,
+  type SemanticTopicDecision,
+} from "./semantic-director-schema.js";
 import type {
   HachikaSnapshot,
   InitiativeAutonomyAction,
@@ -41,6 +49,7 @@ export interface AutonomyDirective {
   keep: boolean;
   action: Exclude<InitiativeAutonomyAction, "speak" | "touch" | null>;
   outwardMode: AutonomyOutwardMode;
+  semantic?: SemanticAutonomyDirectiveV2;
   summary: string;
 }
 
@@ -251,7 +260,10 @@ function buildOpenAIAutonomyDirectorMessages(
     },
     {
       role: "user",
-      content: JSON.stringify(buildAutonomyDirectorPayload(context)),
+      content: [
+        'Return either the legacy shape or the v2 semantic shape: {"mode":"autonomy","topics":[],"autonomyPlan":{"keep":true,"action":"observe","outwardMode":"none"},"summary":"autonomy/observe"}',
+        JSON.stringify(buildAutonomyDirectorPayload(context)),
+      ].join("\n\n"),
     },
   ];
 }
@@ -262,6 +274,19 @@ function normalizeAutonomyDirective(
 ): AutonomyDirective | null {
   try {
     const raw = JSON.parse(text) as Record<string, unknown>;
+    const semantic = normalizeSemanticAutonomyDirectiveRecord(raw, fallbackAction);
+    if (semantic) {
+      return {
+        keep: semantic.autonomyPlan.keep,
+        action: semantic.autonomyPlan.action,
+        outwardMode: semantic.autonomyPlan.outwardMode,
+        semantic,
+        summary:
+          semantic.summary.trim().length > 0
+            ? semantic.summary
+            : describeSemanticDirective(semantic),
+      };
+    }
     const keep = raw.keep !== false;
     const outwardMode = OUTWARD_MODE_VALUES.has(raw.outwardMode as AutonomyOutwardMode)
       ? (raw.outwardMode as AutonomyOutwardMode)
@@ -280,11 +305,122 @@ function normalizeAutonomyDirective(
       keep,
       action,
       outwardMode,
+      semantic: buildSemanticAutonomyDirective({
+        keep,
+        action,
+        outwardMode,
+      }),
       summary,
     };
   } catch {
     return null;
   }
+}
+
+function normalizeSemanticAutonomyDirectiveRecord(
+  raw: Record<string, unknown>,
+  fallbackAction: Exclude<InitiativeAutonomyAction, "speak" | "touch" | null>,
+): SemanticAutonomyDirectiveV2 | null {
+  if (raw.mode !== "autonomy") {
+    return null;
+  }
+
+  const parsedTopics = normalizeSemanticTopicDecisions(raw.topics, [], []);
+  const plan = isRecord(raw.autonomyPlan) ? raw.autonomyPlan : null;
+  const keep = readBoolean(plan?.keep, true);
+  const action = INTERNAL_ACTION_VALUES.has(plan?.action as never)
+    ? (plan?.action as Exclude<InitiativeAutonomyAction, "speak" | "touch" | null>)
+    : fallbackAction;
+  const outwardMode = OUTWARD_MODE_VALUES.has(plan?.outwardMode as AutonomyOutwardMode)
+    ? (plan?.outwardMode as SemanticAutonomyOutwardMode)
+    : "speak";
+
+  return {
+    mode: "autonomy",
+    topics: parsedTopics,
+    autonomyPlan: buildSemanticAutonomyPlan({
+      keep,
+      action,
+      outwardMode,
+    }),
+    summary:
+      typeof raw.summary === "string" && raw.summary.trim().length > 0
+        ? raw.summary.trim()
+        : "",
+  };
+}
+
+function buildSemanticAutonomyDirective(options: {
+  keep: boolean;
+  action: Exclude<InitiativeAutonomyAction, "speak" | "touch" | null>;
+  outwardMode: AutonomyOutwardMode;
+}): SemanticAutonomyDirectiveV2 {
+  return {
+    mode: "autonomy",
+    topics: buildSemanticTopicDecisions([], [], "trace"),
+    autonomyPlan: buildSemanticAutonomyPlan({
+      keep: options.keep,
+      action: options.action,
+      outwardMode: options.outwardMode,
+    }),
+    summary: "",
+  };
+}
+
+function normalizeSemanticTopicDecisions(
+  value: unknown,
+  fallbackTopics: readonly string[],
+  fallbackStateTopics: readonly string[],
+): SemanticTopicDecision[] {
+  if (!Array.isArray(value)) {
+    return buildSemanticTopicDecisions(fallbackTopics, fallbackStateTopics, "trace");
+  }
+
+  const decisions: SemanticTopicDecision[] = value
+    .filter((entry): entry is Record<string, unknown> => isRecord(entry))
+    .map((entry) => {
+      const topic =
+        typeof entry.topic === "string" ? entry.topic.normalize("NFKC").trim() : "";
+      if (!topic) {
+        return null;
+      }
+      const source =
+        entry.source === "input" ||
+        entry.source === "memory" ||
+        entry.source === "trace" ||
+        entry.source === "world" ||
+        entry.source === "relation" ||
+        entry.source === "self"
+          ? entry.source
+          : "trace";
+      const durability =
+        entry.durability === "durable" ? "durable" : "ephemeral";
+      const confidence =
+        typeof entry.confidence === "number" && Number.isFinite(entry.confidence)
+          ? Math.max(0, Math.min(1, entry.confidence))
+          : durability === "durable"
+            ? 0.84
+            : 0.62;
+      return {
+        topic,
+        source,
+        durability,
+        confidence,
+      } satisfies SemanticTopicDecision;
+    })
+    .filter((entry): entry is NonNullable<typeof entry> => entry !== null);
+
+  return decisions.length > 0
+    ? decisions
+    : buildSemanticTopicDecisions(fallbackTopics, fallbackStateTopics, "trace");
+}
+
+function readBoolean(value: unknown, fallback: boolean): boolean {
+  return typeof value === "boolean" ? value : fallback;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 async function buildOpenAIHttpError(response: Response): Promise<string> {

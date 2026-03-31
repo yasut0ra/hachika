@@ -1,4 +1,6 @@
 import type {
+  InitiativeAutonomyAction,
+  PendingInitiative,
   StructuredTraceExtraction,
   TraceKind,
   TurnAnswerMode,
@@ -21,6 +23,7 @@ import type {
 import type { BehaviorDirective } from "./behavior-director.js";
 
 export type SemanticDirectiveMode = "turn" | "proactive";
+export type SemanticAutonomyOutwardMode = "none" | "touch" | "speak";
 
 export type SemanticTopicSource =
   | "input"
@@ -81,6 +84,24 @@ export interface SemanticProactivePlan {
   worldAction: WorldActionKind | null;
 }
 
+export interface SemanticInitiativePlan {
+  keep: boolean;
+  kind: PendingInitiative["kind"];
+  reason: PendingInitiative["reason"];
+  motive: PendingInitiative["motive"];
+  topic: string | null;
+  stateTopic: string | null;
+  readyAfterHours: number;
+  place: WorldPlaceId | null;
+  worldAction: WorldActionKind | null;
+}
+
+export interface SemanticAutonomyPlan {
+  keep: boolean;
+  action: Exclude<InitiativeAutonomyAction, "speak" | "touch" | null>;
+  outwardMode: SemanticAutonomyOutwardMode;
+}
+
 export interface SemanticTurnDirectiveV2 {
   mode: "turn";
   subject: TurnSubject;
@@ -103,9 +124,25 @@ export interface SemanticProactiveDirectiveV2 {
   summary: string;
 }
 
+export interface SemanticInitiativeDirectiveV2 {
+  mode: "initiative";
+  topics: SemanticTopicDecision[];
+  initiativePlan: SemanticInitiativePlan;
+  summary: string;
+}
+
+export interface SemanticAutonomyDirectiveV2 {
+  mode: "autonomy";
+  topics: SemanticTopicDecision[];
+  autonomyPlan: SemanticAutonomyPlan;
+  summary: string;
+}
+
 export type SemanticDirectiveV2 =
   | SemanticTurnDirectiveV2
-  | SemanticProactiveDirectiveV2;
+  | SemanticProactiveDirectiveV2
+  | SemanticInitiativeDirectiveV2
+  | SemanticAutonomyDirectiveV2;
 
 export function buildSemanticTopicDecisions(
   topics: readonly string[],
@@ -226,6 +263,42 @@ export function buildSemanticProactivePlan(
   };
 }
 
+export function buildSemanticInitiativePlan(options: {
+  keep: boolean;
+  kind: PendingInitiative["kind"];
+  reason: PendingInitiative["reason"];
+  motive: PendingInitiative["motive"];
+  topic: string | null;
+  stateTopic: string | null;
+  readyAfterHours: number;
+  place: WorldPlaceId | null;
+  worldAction: WorldActionKind | null;
+}): SemanticInitiativePlan {
+  return {
+    keep: options.keep,
+    kind: options.kind,
+    reason: options.reason,
+    motive: options.motive,
+    topic: options.topic,
+    stateTopic: options.stateTopic,
+    readyAfterHours: options.readyAfterHours,
+    place: options.place,
+    worldAction: options.worldAction,
+  };
+}
+
+export function buildSemanticAutonomyPlan(options: {
+  keep: boolean;
+  action: Exclude<InitiativeAutonomyAction, "speak" | "touch" | null>;
+  outwardMode: SemanticAutonomyOutwardMode;
+}): SemanticAutonomyPlan {
+  return {
+    keep: options.keep,
+    action: options.action,
+    outwardMode: options.outwardMode,
+  };
+}
+
 export function buildProactivePlanFromSemanticProactivePlan(
   plan: SemanticProactivePlan,
 ): ProactivePlan {
@@ -271,6 +344,28 @@ export function buildStructuredTraceExtractionFromSemanticTraceHint(
   return hasContent ? extraction : null;
 }
 
+export function buildPendingInitiativeFromSemanticInitiativePlan(
+  plan: SemanticInitiativePlan,
+  fallback: Pick<
+    PendingInitiative,
+    "blocker" | "concern" | "createdAt"
+  >,
+): PendingInitiative {
+  return {
+    kind: plan.kind,
+    reason: plan.reason,
+    motive: plan.motive,
+    topic: plan.topic,
+    stateTopic: plan.stateTopic,
+    blocker: fallback.blocker,
+    place: plan.place,
+    worldAction: plan.worldAction,
+    concern: fallback.concern,
+    createdAt: fallback.createdAt,
+    readyAfterHours: plan.readyAfterHours,
+  };
+}
+
 export function describeSemanticDirective(
   directive: SemanticDirectiveV2,
 ): string {
@@ -290,6 +385,51 @@ export function describeSemanticDirective(
     ].join(" ");
   }
 
+  if (directive.mode === "proactive") {
+    const semanticTopics = directive.topics.map((topic) => topic.topic).join(",");
+    const stateTopics = directive.topics
+      .filter((topic) => topic.durability === "durable")
+      .map((topic) => topic.topic)
+      .join(",");
+
+    return [
+      "proactive",
+      directive.proactivePlan.emit ? "emit" : "suppress",
+      `topics:${semanticTopics || "none"}`,
+      `state:${stateTopics || "none"}`,
+      `act:${directive.proactivePlan.act}`,
+      directive.proactivePlan.place ? `@${directive.proactivePlan.place}` : "",
+      directive.proactivePlan.worldAction
+        ? `/${directive.proactivePlan.worldAction}`
+        : "",
+    ]
+      .filter((part) => part.length > 0)
+      .join(" ");
+  }
+
+  if (directive.mode === "initiative") {
+    const semanticTopics = directive.topics.map((topic) => topic.topic).join(",");
+    const stateTopics = directive.topics
+      .filter((topic) => topic.durability === "durable")
+      .map((topic) => topic.topic)
+      .join(",");
+
+    return [
+      "initiative",
+      directive.initiativePlan.keep ? "keep" : "suppress",
+      `topics:${semanticTopics || "none"}`,
+      `state:${stateTopics || "none"}`,
+      `kind:${directive.initiativePlan.kind}`,
+      `motive:${directive.initiativePlan.motive}`,
+      directive.initiativePlan.place ? `@${directive.initiativePlan.place}` : "",
+      directive.initiativePlan.worldAction
+        ? `/${directive.initiativePlan.worldAction}`
+        : "",
+    ]
+      .filter((part) => part.length > 0)
+      .join(" ");
+  }
+
   const semanticTopics = directive.topics.map((topic) => topic.topic).join(",");
   const stateTopics = directive.topics
     .filter((topic) => topic.durability === "durable")
@@ -297,16 +437,11 @@ export function describeSemanticDirective(
     .join(",");
 
   return [
-    "proactive",
-    directive.proactivePlan.emit ? "emit" : "suppress",
+    "autonomy",
+    directive.autonomyPlan.keep ? "keep" : "suppress",
     `topics:${semanticTopics || "none"}`,
     `state:${stateTopics || "none"}`,
-    `act:${directive.proactivePlan.act}`,
-    directive.proactivePlan.place ? `@${directive.proactivePlan.place}` : "",
-    directive.proactivePlan.worldAction
-      ? `/${directive.proactivePlan.worldAction}`
-      : "",
-  ]
-    .filter((part) => part.length > 0)
-    .join(" ");
+    `action:${directive.autonomyPlan.action}`,
+    `out:${directive.autonomyPlan.outwardMode}`,
+  ].join(" ");
 }

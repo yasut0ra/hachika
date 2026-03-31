@@ -1,3 +1,13 @@
+import {
+  buildPendingInitiativeFromSemanticInitiativePlan,
+  buildSemanticInitiativePlan,
+  buildSemanticTopicDecisions,
+  describeSemanticDirective,
+  listDurableSemanticTopics,
+  listSemanticTopics,
+  type SemanticInitiativeDirectiveV2,
+  type SemanticTopicDecision,
+} from "./semantic-director-schema.js";
 import { summarizeWorldForPrompt } from "./world.js";
 import type {
   HachikaSnapshot,
@@ -63,6 +73,7 @@ export interface InitiativeDirective {
   readyAfterHours: number;
   place: WorldPlaceId | null;
   worldAction: WorldActionKind | null;
+  semantic?: SemanticInitiativeDirectiveV2;
   summary: string;
 }
 
@@ -321,6 +332,16 @@ export function normalizeInitiativeDirective(
     return null;
   }
 
+  const semantic = normalizeSemanticInitiativeDirectiveRecord(
+    parsed,
+    fallback,
+    candidateTopics,
+    fallbackMotive,
+  );
+  if (semantic) {
+    return materializeInitiativeDirectiveFromSemantic(semantic, fallback);
+  }
+
   const keep = readBoolean(parsed.keep, fallback !== null);
   const topic = readTopic(parsed.topic, fallback?.topic ?? null, candidateTopics);
   const stateTopic = readStateTopic(
@@ -349,6 +370,26 @@ export function normalizeInitiativeDirective(
     place: readEnum(parsed.place, WORLD_PLACE_VALUES) ?? fallback?.place ?? null,
     worldAction:
       readEnum(parsed.worldAction, WORLD_ACTION_VALUES) ?? fallback?.worldAction ?? null,
+    semantic: buildSemanticInitiativeDirective({
+      keep,
+      kind,
+      reason,
+      motive,
+      topic,
+      stateTopic: keep ? stateTopic : null,
+      readyAfterHours: readReadyAfterHours(parsed.readyAfterHours, fallback?.readyAfterHours ?? 0),
+      place: readEnum(parsed.place, WORLD_PLACE_VALUES) ?? fallback?.place ?? null,
+      worldAction:
+        readEnum(parsed.worldAction, WORLD_ACTION_VALUES) ?? fallback?.worldAction ?? null,
+      topics:
+        topic === null
+          ? []
+          : buildSemanticTopicDecisions(
+              [topic],
+              keep && stateTopic ? [stateTopic] : [],
+              "trace",
+            ),
+    }),
     summary:
       typeof parsed.summary === "string" && parsed.summary.trim().length > 0
         ? parsed.summary.trim()
@@ -359,6 +400,131 @@ export function normalizeInitiativeDirective(
             kind,
             motive,
           ),
+  };
+}
+
+function normalizeSemanticInitiativeDirectiveRecord(
+  raw: Record<string, unknown>,
+  fallback: PendingInitiative | null,
+  candidateTopics: readonly string[],
+  fallbackMotive: PendingInitiative["motive"] | null,
+): SemanticInitiativeDirectiveV2 | null {
+  if (raw.mode !== "initiative") {
+    return null;
+  }
+
+  const parsedTopics = normalizeSemanticTopicDecisions(
+    raw.topics,
+    fallback?.topic ? [fallback.topic] : [],
+    fallback?.stateTopic ? [fallback.stateTopic] : fallback?.topic ? [fallback.topic] : [],
+  );
+  const effectiveCandidates =
+    candidateTopics.length > 0 ? [...candidateTopics] : listSemanticTopics(parsedTopics);
+  const durableTopics = listDurableSemanticTopics(parsedTopics);
+  const plan = isRecord(raw.initiativePlan) ? raw.initiativePlan : null;
+  const keep = readBoolean(plan?.keep, fallback !== null);
+  const topic = readTopic(
+    plan?.topic,
+    fallback?.topic ?? parsedTopics[0]?.topic ?? null,
+    effectiveCandidates,
+  );
+  const stateTopic = readStateTopic(
+    plan?.stateTopic,
+    durableTopics[0] ?? fallback?.stateTopic ?? fallback?.topic ?? null,
+    effectiveCandidates,
+  );
+  const motive =
+    readEnum(plan?.motive, MOTIVE_VALUES) ??
+    fallback?.motive ??
+    fallbackMotive ??
+    "seek_continuity";
+  const kind =
+    readEnum(plan?.kind, INITIATIVE_KIND_VALUES) ??
+    fallback?.kind ??
+    "resume_topic";
+  const reason =
+    readEnum(plan?.reason, INITIATIVE_REASON_VALUES) ??
+    fallback?.reason ??
+    inferReasonFromMotive(motive);
+
+  return buildSemanticInitiativeDirective({
+    keep,
+    kind,
+    reason,
+    motive,
+    topic,
+    stateTopic: keep ? stateTopic : null,
+    readyAfterHours: readReadyAfterHours(plan?.readyAfterHours, fallback?.readyAfterHours ?? 0),
+    place: readEnum(plan?.place, WORLD_PLACE_VALUES) ?? fallback?.place ?? null,
+    worldAction:
+      readEnum(plan?.worldAction, WORLD_ACTION_VALUES) ?? fallback?.worldAction ?? null,
+    topics: parsedTopics,
+    summary:
+      typeof raw.summary === "string" && raw.summary.trim().length > 0
+        ? raw.summary.trim()
+        : "",
+  });
+}
+
+function materializeInitiativeDirectiveFromSemantic(
+  semantic: SemanticInitiativeDirectiveV2,
+  fallback: PendingInitiative | null,
+): InitiativeDirective {
+  buildPendingInitiativeFromSemanticInitiativePlan(semantic.initiativePlan, {
+    blocker: fallback?.blocker ?? null,
+    concern: fallback?.concern ?? null,
+    createdAt: fallback?.createdAt ?? new Date().toISOString(),
+  });
+
+  return {
+    keep: semantic.initiativePlan.keep,
+    kind: semantic.initiativePlan.kind,
+    reason: semantic.initiativePlan.reason,
+    motive: semantic.initiativePlan.motive,
+    topic: semantic.initiativePlan.topic,
+    stateTopic: semantic.initiativePlan.stateTopic,
+    readyAfterHours: semantic.initiativePlan.readyAfterHours,
+    place: semantic.initiativePlan.place,
+    worldAction: semantic.initiativePlan.worldAction,
+    semantic,
+    summary:
+      semantic.summary.trim().length > 0
+        ? semantic.summary
+        : describeSemanticDirective(semantic),
+  };
+}
+
+function buildSemanticInitiativeDirective(options: {
+  keep: boolean;
+  kind: PendingInitiative["kind"];
+  reason: PendingInitiative["reason"];
+  motive: PendingInitiative["motive"];
+  topic: string | null;
+  stateTopic: string | null;
+  readyAfterHours: number;
+  place: WorldPlaceId | null;
+  worldAction: WorldActionKind | null;
+  topics: SemanticTopicDecision[];
+  summary?: string;
+}): SemanticInitiativeDirectiveV2 {
+  return {
+    mode: "initiative",
+    topics: options.topics,
+    initiativePlan: buildSemanticInitiativePlan({
+      keep: options.keep,
+      kind: options.kind,
+      reason: options.reason,
+      motive: options.motive,
+      topic: options.topic,
+      stateTopic: options.stateTopic,
+      readyAfterHours: options.readyAfterHours,
+      place: options.place,
+      worldAction: options.worldAction,
+    }),
+    summary:
+      options.summary && options.summary.trim().length > 0
+        ? options.summary
+        : "",
   };
 }
 
@@ -376,6 +542,7 @@ function buildOpenAIInitiativeDirectorMessages(
       role: "user",
       content: [
         "Decide whether this pending initiative should survive this turn.",
+        'Return either the legacy shape or the v2 semantic shape: {"mode":"initiative","topics":[],"initiativePlan":{"keep":false,"kind":"resume_topic","reason":"continuity","motive":"seek_continuity","topic":null,"stateTopic":null,"readyAfterHours":0,"place":null,"worldAction":null},"summary":"initiative/suppress"}',
         "Return JSON only.",
         JSON.stringify(payload, null, 2),
       ].join("\n\n"),
@@ -475,6 +642,54 @@ function inferReasonFromMotive(
 
 function unique(items: string[]): string[] {
   return Array.from(new Set(items));
+}
+
+function normalizeSemanticTopicDecisions(
+  value: unknown,
+  fallbackTopics: readonly string[],
+  fallbackStateTopics: readonly string[],
+): SemanticTopicDecision[] {
+  if (!Array.isArray(value)) {
+    return buildSemanticTopicDecisions(fallbackTopics, fallbackStateTopics, "trace");
+  }
+
+  const decisions: SemanticTopicDecision[] = value
+    .filter((entry): entry is Record<string, unknown> => isRecord(entry))
+    .map((entry) => {
+      const topic =
+        typeof entry.topic === "string" ? entry.topic.normalize("NFKC").trim() : "";
+      if (!topic) {
+        return null;
+      }
+      const source =
+        entry.source === "input" ||
+        entry.source === "memory" ||
+        entry.source === "trace" ||
+        entry.source === "world" ||
+        entry.source === "relation" ||
+        entry.source === "self"
+          ? entry.source
+          : "trace";
+      const durability =
+        entry.durability === "durable" ? "durable" : "ephemeral";
+      const confidence =
+        typeof entry.confidence === "number" && Number.isFinite(entry.confidence)
+          ? Math.max(0, Math.min(1, entry.confidence))
+          : durability === "durable"
+            ? 0.84
+            : 0.62;
+      return {
+        topic,
+        source,
+        durability,
+        confidence,
+      } satisfies SemanticTopicDecision;
+    })
+    .filter((entry): entry is NonNullable<typeof entry> => entry !== null);
+
+  return decisions.length > 0
+    ? decisions
+    : buildSemanticTopicDecisions(fallbackTopics, fallbackStateTopics, "trace");
 }
 
 function trimTrailingSlash(value: string): string {

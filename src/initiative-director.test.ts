@@ -174,3 +174,63 @@ test("buildInitiativeDirectorPayload can describe synthesis context without a lo
   assert.equal(payload.pending, null);
   assert.ok(payload.candidateTopics.includes("関係"));
 });
+
+test("normalizeInitiativeDirective can parse semantic-director v2 initiative contract", () => {
+  const fallback = {
+    kind: "resume_topic" as const,
+    reason: "relation" as const,
+    motive: "deepen_relation" as const,
+    topic: "名前",
+    stateTopic: "名前",
+    blocker: null,
+    concern: null,
+    createdAt: "2026-03-31T00:00:00.000Z",
+    readyAfterHours: 0,
+    place: "threshold" as const,
+    worldAction: "observe" as const,
+  };
+
+  const directive = normalizeInitiativeDirective(
+    JSON.stringify({
+      mode: "initiative",
+      topics: [
+        {
+          topic: "名前",
+          source: "relation",
+          durability: "ephemeral",
+          confidence: 0.72,
+        },
+        {
+          topic: "呼び方",
+          source: "relation",
+          durability: "durable",
+          confidence: 0.88,
+        },
+      ],
+      initiativePlan: {
+        keep: true,
+        kind: "neglect_ping",
+        reason: "continuity",
+        motive: "seek_continuity",
+        topic: "名前",
+        stateTopic: "呼び方",
+        readyAfterHours: 1.5,
+        place: "threshold",
+        worldAction: "observe",
+      },
+      summary: "initiative/keep",
+    }),
+    fallback,
+    ["名前", "呼び方"],
+  );
+
+  assert.ok(directive);
+  assert.equal(directive?.semantic?.mode, "initiative");
+  assert.equal(directive?.keep, true);
+  assert.equal(directive?.kind, "neglect_ping");
+  assert.equal(directive?.motive, "seek_continuity");
+  assert.equal(directive?.topic, "名前");
+  assert.equal(directive?.stateTopic, "呼び方");
+  assert.equal(directive?.place, "threshold");
+  assert.equal(directive?.worldAction, "observe");
+});
