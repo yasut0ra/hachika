@@ -8,6 +8,7 @@ import {
   type SemanticTopicDecision,
 } from "./semantic-director-schema.js";
 import type {
+  AttentionRationale,
   HachikaSnapshot,
   InitiativeAutonomyAction,
 } from "./types.js";
@@ -30,6 +31,7 @@ const HACHIKA_AUTONOMY_DIRECTOR_SYSTEM_PROMPT = [
   "Prefer outwardMode:none for quiet, settled ticks that should remain silent after the internal action.",
   "Prefer outwardMode:touch when a light outward action would feel natural but speaking would be too heavy.",
   "Prefer outwardMode:speak only when there is clear grounded continuity, neglect pressure, or a concrete follow-through worth expressing.",
+  "attentionReasons explains why the local engine thinks this action is salient. Cool direct_referent, self_definition, relation_uncertain, and world_pull when they do not justify durable carry-over.",
   "Do not introduce speak as the internal action here.",
   "Keep the action close to the local suggestion unless there is a strong semantic reason to cool it.",
   "Return a single JSON object.",
@@ -64,6 +66,7 @@ export interface AutonomyDirectorContext {
 export interface AutonomyDirectorPayload {
   hours: number;
   suggestedAction: Exclude<InitiativeAutonomyAction, "speak" | "touch" | null>;
+  attentionReasons: AttentionRationale[];
   prioritizedTopic: string | null;
   prioritizedMotive: string | null;
   selected: {
@@ -163,6 +166,7 @@ export class OpenAIAutonomyDirector implements AutonomyDirector {
       const directive = normalizeAutonomyDirective(
         extractOpenAIReplyText(payload),
         context.prepared.action,
+        context.prepared.attentionReasons ?? [],
       );
 
       if (!directive) {
@@ -222,6 +226,7 @@ export function buildAutonomyDirectorPayload(
   return {
     hours: context.hours,
     suggestedAction: context.prepared.action,
+    attentionReasons: [...(context.prepared.attentionReasons ?? [])],
     prioritizedTopic: context.prepared.prioritizedTopic,
     prioritizedMotive: context.prepared.prioritizedMotive,
     selected: {
@@ -272,10 +277,15 @@ function buildOpenAIAutonomyDirectorMessages(
 function normalizeAutonomyDirective(
   text: string,
   fallbackAction: Exclude<InitiativeAutonomyAction, "speak" | "touch" | null>,
+  attentionReasons: readonly AttentionRationale[] = [],
 ): AutonomyDirective | null {
   try {
     const raw = JSON.parse(text) as Record<string, unknown>;
-    const semantic = normalizeSemanticAutonomyDirectiveRecord(raw, fallbackAction);
+    const semantic = normalizeSemanticAutonomyDirectiveRecord(
+      raw,
+      fallbackAction,
+      attentionReasons,
+    );
     if (semantic) {
       return {
         keep: semantic.autonomyPlan.keep,
@@ -310,6 +320,7 @@ function normalizeAutonomyDirective(
         keep,
         action,
         outwardMode,
+        attentionReasons,
       }),
       summary,
     };
@@ -321,12 +332,18 @@ function normalizeAutonomyDirective(
 function normalizeSemanticAutonomyDirectiveRecord(
   raw: Record<string, unknown>,
   fallbackAction: Exclude<InitiativeAutonomyAction, "speak" | "touch" | null>,
+  attentionReasons: readonly AttentionRationale[],
 ): SemanticAutonomyDirectiveV2 | null {
   if (raw.mode !== "autonomy") {
     return null;
   }
 
-  const parsedTopics = normalizeSemanticTopicDecisions(raw.topics, [], []);
+  const parsedTopics = normalizeSemanticTopicDecisions(
+    raw.topics,
+    [],
+    [],
+    primaryAttentionRationale(attentionReasons, "trace_pull"),
+  );
   const plan = isRecord(raw.autonomyPlan) ? raw.autonomyPlan : null;
   const keep = readBoolean(plan?.keep, true);
   const action = INTERNAL_ACTION_VALUES.has(plan?.action as never)
@@ -355,10 +372,16 @@ function buildSemanticAutonomyDirective(options: {
   keep: boolean;
   action: Exclude<InitiativeAutonomyAction, "speak" | "touch" | null>;
   outwardMode: AutonomyOutwardMode;
+  attentionReasons?: readonly AttentionRationale[];
 }): SemanticAutonomyDirectiveV2 {
   return {
     mode: "autonomy",
-    topics: buildSemanticTopicDecisions([], [], "trace"),
+    topics: buildSemanticTopicDecisions(
+      [],
+      [],
+      "trace",
+      primaryAttentionRationale(options.attentionReasons ?? [], "trace_pull"),
+    ),
     autonomyPlan: buildSemanticAutonomyPlan({
       keep: options.keep,
       action: options.action,
@@ -372,9 +395,15 @@ function normalizeSemanticTopicDecisions(
   value: unknown,
   fallbackTopics: readonly string[],
   fallbackStateTopics: readonly string[],
+  fallbackRationale: AttentionRationale,
 ): SemanticTopicDecision[] {
   if (!Array.isArray(value)) {
-    return buildSemanticTopicDecisions(fallbackTopics, fallbackStateTopics, "trace");
+    return buildSemanticTopicDecisions(
+      fallbackTopics,
+      fallbackStateTopics,
+      "trace",
+      fallbackRationale,
+    );
   }
 
   const decisions: SemanticTopicDecision[] = value
@@ -383,7 +412,19 @@ function normalizeSemanticTopicDecisions(
 
   return decisions.length > 0
     ? decisions
-    : buildSemanticTopicDecisions(fallbackTopics, fallbackStateTopics, "trace");
+    : buildSemanticTopicDecisions(
+        fallbackTopics,
+        fallbackStateTopics,
+        "trace",
+        fallbackRationale,
+      );
+}
+
+function primaryAttentionRationale(
+  reasons: readonly AttentionRationale[],
+  fallback: AttentionRationale,
+): AttentionRationale {
+  return reasons[0] ?? fallback;
 }
 
 function readBoolean(value: unknown, fallback: boolean): boolean {

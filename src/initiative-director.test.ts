@@ -175,6 +175,48 @@ test("buildInitiativeDirectorPayload can describe synthesis context without a lo
   assert.ok(payload.candidateTopics.includes("関係"));
 });
 
+test("buildInitiativeDirectorPayload preserves attention reasons from local scheduling", () => {
+  const snapshot = createInitialSnapshot();
+
+  const payload = buildInitiativeDirectorPayload({
+    input: "名前は覚えてね",
+    snapshot,
+    signals: {
+      positive: 0,
+      negative: 0,
+      question: 0,
+      novelty: 0,
+      intimacy: 0.5,
+      dismissal: 0,
+      memoryCue: 0,
+      expansionCue: 0,
+      completion: 0,
+      abandonment: 0,
+      preservationThreat: 0,
+      preservationConcern: null,
+      repetition: 0,
+      neglect: 0,
+      greeting: 0,
+      smalltalk: 0.4,
+      repair: 0,
+      selfInquiry: 0,
+      worldInquiry: 0,
+      workCue: 0,
+      topics: ["名前"],
+    },
+    selfModel: {
+      narrative: "test",
+      topMotives: [],
+      conflicts: [],
+      dominantConflict: null,
+    },
+    pending: null,
+    attentionReasons: ["relation_uncertain"],
+  });
+
+  assert.deepEqual(payload.attentionReasons, ["relation_uncertain"]);
+});
+
 test("normalizeInitiativeDirective can parse semantic-director v2 initiative contract", () => {
   const fallback = {
     kind: "resume_topic" as const,
@@ -233,4 +275,40 @@ test("normalizeInitiativeDirective can parse semantic-director v2 initiative con
   assert.equal(directive?.stateTopic, "呼び方");
   assert.equal(directive?.place, "threshold");
   assert.equal(directive?.worldAction, "observe");
+});
+
+test("normalizeInitiativeDirective threads attention rationale into legacy semantic fallback topics", () => {
+  const fallback = {
+    kind: "resume_topic" as const,
+    reason: "relation" as const,
+    motive: "deepen_relation" as const,
+    topic: "名前",
+    stateTopic: "呼び方",
+    blocker: null,
+    concern: null,
+    createdAt: "2026-03-31T00:00:00.000Z",
+    readyAfterHours: 0,
+    place: "threshold" as const,
+    worldAction: "observe" as const,
+  };
+
+  const directive = normalizeInitiativeDirective(
+    JSON.stringify({
+      keep: true,
+      topic: "名前",
+      stateTopic: "呼び方",
+      kind: "resume_topic",
+      reason: "relation",
+      motive: "deepen_relation",
+      readyAfterHours: 0,
+      place: "threshold",
+      worldAction: "observe",
+    }),
+    fallback,
+    ["名前", "呼び方"],
+    "deepen_relation",
+    ["relation_uncertain"],
+  );
+
+  assert.equal(directive?.semantic?.topics[0]?.rationale, "relation_uncertain");
 });

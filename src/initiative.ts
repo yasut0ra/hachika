@@ -35,6 +35,7 @@ import {
   syncWorldObjectTraceLinks,
 } from "./world.js";
 import type {
+  AttentionRationale,
   HachikaSnapshot,
   InitiativeActivity,
   InitiativeReason,
@@ -89,11 +90,13 @@ export interface PreparedIdleAutonomyAction {
   prioritizedTopic: string | null;
   prioritizedMotive: MotiveKind | null;
   selected: PreparedIdleRecallSelection | null;
+  attentionReasons?: AttentionRationale[];
 }
 
 export interface ScheduledInitiativeDecision {
   shouldClear: boolean;
   candidate: PendingInitiative | null;
+  attentionReasons?: AttentionRationale[];
 }
 
 export function scheduleInitiative(
@@ -119,7 +122,7 @@ export function prepareScheduledInitiative(
   nowIso: string = new Date().toISOString(),
 ): ScheduledInitiativeDecision {
   if (shouldCoolInitiativeInertia(signals)) {
-    return { shouldClear: true, candidate: null };
+    return { shouldClear: true, candidate: null, attentionReasons: [] };
   }
 
   const preservationPending = synthesizePreservationInitiative(
@@ -129,11 +132,15 @@ export function prepareScheduledInitiative(
   );
 
   if (preservationPending) {
-    return { shouldClear: true, candidate: preservationPending };
+    return {
+      shouldClear: true,
+      candidate: preservationPending,
+      attentionReasons: ["memory_pull"],
+    };
   }
 
   if (signals.negative > 0.15 || signals.dismissal > 0.15) {
-    return { shouldClear: true, candidate: null };
+    return { shouldClear: true, candidate: null, attentionReasons: [] };
   }
 
   const pending = synthesizePendingInitiative(
@@ -144,10 +151,58 @@ export function prepareScheduledInitiative(
   );
 
   if (!pending) {
-    return { shouldClear: false, candidate: null };
+    return { shouldClear: false, candidate: null, attentionReasons: [] };
   }
 
-  return { shouldClear: true, candidate: pending };
+  return {
+    shouldClear: true,
+    candidate: pending,
+    attentionReasons: deriveScheduledInitiativeAttentionReasons(signals, pending),
+  };
+}
+
+function deriveScheduledInitiativeAttentionReasons(
+  signals: InteractionSignals,
+  pending: PendingInitiative,
+): AttentionRationale[] {
+  const reasons = new Set<AttentionRationale>();
+
+  if (signals.workCue >= 0.38 || pending.motive === "continue_shared_work") {
+    reasons.add("unfinished_work");
+  }
+
+  if (signals.repair >= 0.42) {
+    reasons.add("repair_pressure");
+  }
+
+  if (signals.worldInquiry >= 0.45 && signals.workCue < 0.3) {
+    reasons.add("world_pull");
+  }
+
+  if (signals.selfInquiry >= 0.45 && signals.workCue < 0.3) {
+    reasons.add("self_definition");
+  }
+
+  if (
+    pending.motive === "deepen_relation" ||
+    (signals.intimacy >= 0.36 && signals.workCue < 0.3)
+  ) {
+    reasons.add("relation_uncertain");
+  }
+
+  if (signals.memoryCue >= 0.24) {
+    reasons.add("memory_pull");
+  }
+
+  if (pending.motive === "seek_continuity" || pending.motive === "leave_trace") {
+    reasons.add("trace_pull");
+  }
+
+  if (reasons.size === 0) {
+    reasons.add("curiosity");
+  }
+
+  return [...reasons];
 }
 
 export function emitInitiative(
@@ -563,7 +618,43 @@ export function prepareIdleAutonomyAction(
     prioritizedTopic,
     prioritizedMotive,
     selected,
+    attentionReasons: deriveIdleAutonomyAttentionReasons(action, selected),
   };
+}
+
+function deriveIdleAutonomyAttentionReasons(
+  action: IdleAutonomyAction,
+  selected: PreparedIdleRecallSelection | null,
+): AttentionRationale[] {
+  const reasons = new Set<AttentionRationale>();
+
+  if (action === "observe") {
+    reasons.add("world_pull");
+  }
+
+  if (action === "hold") {
+    reasons.add("memory_pull");
+  }
+
+  if (action === "drift") {
+    reasons.add("curiosity");
+  }
+
+  if (action === "recall") {
+    if (selected?.trace.worldContext?.objectId) {
+      reasons.add("world_pull");
+    }
+    if (selected?.blocker) {
+      reasons.add("unfinished_work");
+    }
+    reasons.add("trace_pull");
+  }
+
+  if (reasons.size === 0) {
+    reasons.add("memory_pull");
+  }
+
+  return [...reasons];
 }
 
 export function materializeIdleAutonomyAction(

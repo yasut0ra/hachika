@@ -11,6 +11,7 @@ import {
 } from "./semantic-director-schema.js";
 import { summarizeWorldForPrompt } from "./world.js";
 import type {
+  AttentionRationale,
   HachikaSnapshot,
   InteractionSignals,
   PendingInitiative,
@@ -33,6 +34,7 @@ const HACHIKA_INITIATIVE_DIRECTOR_SYSTEM_PROMPT = [
   "For greeting, smalltalk, pure self/world inquiry, repair, or relation clarification turns, prefer keep:false unless there is explicit concrete continuity worth carrying.",
   "topic is the semantic topic that may be recalled later. stateTopic is the subset worth durable hardening.",
   "Only keep stateTopic when it is concrete and already present in candidateTopics.",
+  "attentionReasons explains why the local engine thinks something still matters. Cool direct_referent, relation_uncertain, self_definition, and world_pull unless there is grounded continuity.",
   "Keep kind/reason/motive close to the local candidate unless there is a strong semantic reason to cool or redirect it.",
   "Keep world action close to the local candidate unless there is a strong reason to suppress it.",
   "Return a single JSON object.",
@@ -84,6 +86,7 @@ export interface InitiativeDirectorContext {
   signals: InteractionSignals;
   selfModel: SelfModel;
   pending: PendingInitiative | null;
+  attentionReasons?: AttentionRationale[];
 }
 
 export interface InitiativeDirectorPayload {
@@ -114,6 +117,7 @@ export interface InitiativeDirectorPayload {
     worldAction: WorldActionKind | null;
   } | null;
   candidateTopics: string[];
+  attentionReasons: AttentionRationale[];
   purpose: {
     kind: string | null;
     topic: string | null;
@@ -209,6 +213,7 @@ export class OpenAIInitiativeDirector implements InitiativeDirector {
         context.pending,
         buildInitiativeDirectorPayload(context).candidateTopics,
         context.selfModel.topMotives[0]?.kind ?? null,
+        context.attentionReasons ?? [],
       );
 
       if (!directive) {
@@ -296,6 +301,7 @@ export function buildInitiativeDirectorPayload(
         }
       : null,
     candidateTopics,
+    attentionReasons: [...(context.attentionReasons ?? [])],
     purpose: {
       kind: context.snapshot.purpose.active?.kind ?? null,
       topic: context.snapshot.purpose.active?.topic ?? null,
@@ -326,6 +332,7 @@ export function normalizeInitiativeDirective(
   fallback: PendingInitiative | null,
   candidateTopics: readonly string[],
   fallbackMotive: PendingInitiative["motive"] | null = null,
+  attentionReasons: readonly AttentionRationale[] = [],
 ): InitiativeDirective | null {
   const parsed = parseJsonRecord(rawText);
 
@@ -338,6 +345,7 @@ export function normalizeInitiativeDirective(
     fallback,
     candidateTopics,
     fallbackMotive,
+    attentionReasons,
   );
   if (semantic) {
     return materializeInitiativeDirectiveFromSemantic(semantic, fallback);
@@ -389,6 +397,7 @@ export function normalizeInitiativeDirective(
               [topic],
               keep && stateTopic ? [stateTopic] : [],
               "trace",
+              primaryAttentionRationale(attentionReasons, "trace_pull"),
             ),
     }),
     summary:
@@ -409,6 +418,7 @@ function normalizeSemanticInitiativeDirectiveRecord(
   fallback: PendingInitiative | null,
   candidateTopics: readonly string[],
   fallbackMotive: PendingInitiative["motive"] | null,
+  attentionReasons: readonly AttentionRationale[],
 ): SemanticInitiativeDirectiveV2 | null {
   if (raw.mode !== "initiative") {
     return null;
@@ -418,6 +428,7 @@ function normalizeSemanticInitiativeDirectiveRecord(
     raw.topics,
     fallback?.topic ? [fallback.topic] : [],
     fallback?.stateTopic ? [fallback.stateTopic] : fallback?.topic ? [fallback.topic] : [],
+    primaryAttentionRationale(attentionReasons, "trace_pull"),
   );
   const effectiveCandidates =
     candidateTopics.length > 0 ? [...candidateTopics] : listSemanticTopics(parsedTopics);
@@ -649,9 +660,15 @@ function normalizeSemanticTopicDecisions(
   value: unknown,
   fallbackTopics: readonly string[],
   fallbackStateTopics: readonly string[],
+  fallbackRationale: AttentionRationale,
 ): SemanticTopicDecision[] {
   if (!Array.isArray(value)) {
-    return buildSemanticTopicDecisions(fallbackTopics, fallbackStateTopics, "trace");
+    return buildSemanticTopicDecisions(
+      fallbackTopics,
+      fallbackStateTopics,
+      "trace",
+      fallbackRationale,
+    );
   }
 
   const decisions: SemanticTopicDecision[] = value
@@ -660,7 +677,19 @@ function normalizeSemanticTopicDecisions(
 
   return decisions.length > 0
     ? decisions
-    : buildSemanticTopicDecisions(fallbackTopics, fallbackStateTopics, "trace");
+    : buildSemanticTopicDecisions(
+        fallbackTopics,
+        fallbackStateTopics,
+        "trace",
+        fallbackRationale,
+      );
+}
+
+function primaryAttentionRationale(
+  reasons: readonly AttentionRationale[],
+  fallback: AttentionRationale,
+): AttentionRationale {
+  return reasons[0] ?? fallback;
 }
 
 function trimTrailingSlash(value: string): string {

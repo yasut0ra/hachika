@@ -3,7 +3,10 @@ import test from "node:test";
 
 import { createInitialSnapshot } from "./state.js";
 import type { PreparedIdleAutonomyAction } from "./initiative.js";
-import { createAutonomyDirectorFromEnv } from "./autonomy-director.js";
+import {
+  buildAutonomyDirectorPayload,
+  createAutonomyDirectorFromEnv,
+} from "./autonomy-director.js";
 
 test("autonomy-director env factory returns null without api key", () => {
   assert.equal(createAutonomyDirectorFromEnv({}), null);
@@ -17,6 +20,7 @@ test("semantic-director v2 autonomy contract can be parsed through directAutonom
     selected: null,
     prioritizedTopic: "仕様の境界",
     prioritizedMotive: "continue_shared_work",
+    attentionReasons: ["world_pull"],
   };
 
   const originalFetch = globalThis.fetch;
@@ -74,4 +78,25 @@ test("semantic-director v2 autonomy contract can be parsed through directAutonom
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+test("buildAutonomyDirectorPayload preserves prepared attention reasons", () => {
+  const snapshot = createInitialSnapshot();
+  const prepared: PreparedIdleAutonomyAction = {
+    action: "observe",
+    hours: 8,
+    selected: null,
+    prioritizedTopic: "棚",
+    prioritizedMotive: "seek_continuity",
+    attentionReasons: ["world_pull"],
+  };
+
+  const payload = buildAutonomyDirectorPayload({
+    previousSnapshot: snapshot,
+    nextSnapshot: snapshot,
+    hours: 8,
+    prepared,
+  });
+
+  assert.deepEqual(payload.attentionReasons, ["world_pull"]);
 });

@@ -1275,6 +1275,7 @@ async function applyInitiativeDirector(
       signals: prepared.signals,
       selfModel: prepared.selfModel,
       pending,
+      attentionReasons: prepared.initiativeDecision?.attentionReasons ?? [],
     });
 
     if (!directed) {
@@ -1295,6 +1296,7 @@ async function applyInitiativeDirector(
                 nextSnapshot.lastInteractionAt ??
                 new Date().toISOString(),
             }),
+            prepared.initiativeDecision?.attentionReasons ?? [],
           )
         : null
       : directed.directive.keep
@@ -1312,7 +1314,7 @@ async function applyInitiativeDirector(
             readyAfterHours: directed.directive.readyAfterHours,
             place: directed.directive.place,
             worldAction: directed.directive.worldAction,
-          })
+          }, prepared.initiativeDecision?.attentionReasons ?? [])
         : null;
     updateIdentity(
       nextSnapshot,
@@ -1351,6 +1353,7 @@ function materializeInitiativeFallback(prepared: PreparedTurn): PreparedTurn {
     nextSnapshot.initiative.pending = sanitizePendingInitiativeDurability(
       nextSnapshot,
       decision.candidate,
+      decision.attentionReasons ?? [],
     );
   }
 
@@ -3263,15 +3266,26 @@ function sanitizeInitiativeStateTopic(
 function sanitizePendingInitiativeDurability(
   snapshot: HachikaSnapshot,
   pending: PendingInitiative,
+  attentionReasons: readonly AttentionRationale[] = [],
 ): PendingInitiative {
   const candidateStateTopic =
     Object.prototype.hasOwnProperty.call(pending, "stateTopic")
       ? (pending.stateTopic ?? null)
       : (pending.topic ?? null);
+  const strongRationale = attentionReasons.some((reason) =>
+    STRONG_SUPPORT_RATIONALES.has(reason),
+  );
 
   return {
     ...pending,
-    stateTopic: sanitizeInitiativeStateTopic(snapshot, candidateStateTopic),
+    stateTopic:
+      candidateStateTopic === null
+        ? null
+        : strongRationale
+          ? hasStrongDurableTopicSupport(snapshot, candidateStateTopic)
+            ? candidateStateTopic
+            : null
+          : sanitizeInitiativeStateTopic(snapshot, candidateStateTopic),
   };
 }
 
