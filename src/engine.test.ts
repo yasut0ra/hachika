@@ -2186,6 +2186,10 @@ test("respondAsync can use a turn director to keep user-name turns out of durabl
   const result = await engine.respondAsync("私の名前覚えてる？", { turnDirector });
 
   assert.equal(result.debug.turn?.target, "user_name");
+  assert.ok((result.debug.signals.workCue ?? 0) <= 0.12);
+  assert.ok((result.debug.signals.expansionCue ?? 0) <= 0.12);
+  assert.ok((result.debug.signals.completion ?? 0) <= 0.12);
+  assert.ok((result.debug.signals.memoryCue ?? 0) >= 0.24);
   assert.equal(result.snapshot.purpose.active, null);
   assert.equal(result.snapshot.initiative.pending, null);
   assert.equal(result.snapshot.traces["名前"], undefined);
@@ -2339,6 +2343,9 @@ test("respondAsync can use semantic turn topics without hardening them into dura
 
   assert.deepEqual(result.debug.turn?.topics, ["仕様の境界"]);
   assert.deepEqual(result.debug.turn?.stateTopics, []);
+  assert.ok((result.debug.signals.workCue ?? 0) >= 0.55);
+  assert.ok((result.debug.signals.selfInquiry ?? 0) <= 0.18);
+  assert.ok((result.debug.signals.worldInquiry ?? 0) <= 0.18);
   assert.deepEqual(result.debug.signals.topics, []);
   assert.equal(result.snapshot.topicCounts["仕様の境界"], undefined);
   assert.equal(result.snapshot.traces["仕様の境界"], undefined);

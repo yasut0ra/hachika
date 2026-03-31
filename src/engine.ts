@@ -2098,8 +2098,9 @@ function mergeTurnDirectedSignals(
     localSignals,
     buildTurnDirectedInterpretation(localSignals, directive),
   );
+  const profiledSignals = applyTurnDirectiveSignalProfile(mergedSignals, directive);
 
-  const { novelty: _novelty, repetition: _repetition, ...baseSignals } = mergedSignals;
+  const { novelty: _novelty, repetition: _repetition, ...baseSignals } = profiledSignals;
   return finalizeInteractionSignals(snapshot, {
     ...baseSignals,
     topics: [...directive.stateTopics],
@@ -2167,6 +2168,73 @@ function buildTurnDirectedInterpretation(
         ? Math.min(localSignals.workCue, 0.22)
         : localSignals.workCue,
   };
+}
+
+function applyTurnDirectiveSignalProfile(
+  signals: InteractionSignals,
+  directive: TurnDirective,
+): InteractionSignals {
+  const directReferentTarget =
+    directive.target === "hachika_name" ||
+    directive.target === "hachika_profile" ||
+    directive.target === "user_name" ||
+    directive.target === "user_profile";
+  const relationTurn = directive.target === "relation";
+  const worldTurn = directive.target === "world_state";
+  const workTurn = directive.target === "work_topic";
+
+  if (workTurn) {
+    return {
+      ...signals,
+      workCue: clamp01(Math.max(signals.workCue, 0.55)),
+      memoryCue: clamp01(Math.min(signals.memoryCue, 0.35)),
+      expansionCue: clamp01(Math.max(Math.min(signals.expansionCue, 0.35), 0.12)),
+      completion: clamp01(Math.min(signals.completion, 0.48)),
+      selfInquiry: clamp01(Math.min(signals.selfInquiry, 0.18)),
+      worldInquiry: clamp01(Math.min(signals.worldInquiry, 0.18)),
+    };
+  }
+
+  if (worldTurn) {
+    return {
+      ...signals,
+      workCue: clamp01(Math.min(signals.workCue, 0.08)),
+      memoryCue: clamp01(Math.min(signals.memoryCue, 0.08)),
+      expansionCue: clamp01(Math.min(signals.expansionCue, 0.08)),
+      completion: clamp01(Math.min(signals.completion, 0.08)),
+      worldInquiry: clamp01(Math.max(signals.worldInquiry, 0.82)),
+      selfInquiry: clamp01(Math.min(signals.selfInquiry, 0.12)),
+    };
+  }
+
+  if (directReferentTarget) {
+    return {
+      ...signals,
+      workCue: clamp01(Math.min(signals.workCue, 0.08)),
+      memoryCue: clamp01(
+        directive.target === "user_name"
+          ? Math.max(Math.min(signals.memoryCue, 0.42), 0.24)
+          : Math.min(signals.memoryCue, 0.08),
+      ),
+      expansionCue: clamp01(Math.min(signals.expansionCue, 0.08)),
+      completion: clamp01(Math.min(signals.completion, 0.08)),
+      worldInquiry: clamp01(Math.min(signals.worldInquiry, 0.12)),
+    };
+  }
+
+  if (relationTurn) {
+    return {
+      ...signals,
+      workCue: clamp01(Math.min(signals.workCue, 0.08)),
+      memoryCue: clamp01(Math.min(signals.memoryCue, 0.08)),
+      expansionCue: clamp01(Math.min(signals.expansionCue, 0.08)),
+      completion: clamp01(Math.min(signals.completion, 0.08)),
+      worldInquiry: clamp01(Math.min(signals.worldInquiry, 0.12)),
+      selfInquiry: clamp01(Math.min(signals.selfInquiry, 0.18)),
+    };
+  }
+
+  return signals;
 }
 
 async function analyzeTraceExtractionAsync(
