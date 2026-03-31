@@ -3219,6 +3219,67 @@ test("respondAsync falls back to local analysis when the input interpreter fails
   assert.equal(result.snapshot.traces.仕様?.kind, ruleResult.snapshot.traces.仕様?.kind);
 });
 
+test("local fallback keeps punctuation questions from over-weighting question score", async () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+
+  const inputInterpreter: InputInterpreter = {
+    name: "broken-interpreter",
+    async interpretInput() {
+      throw new Error("input interpreter offline");
+    },
+  };
+
+  const result = await engine.respondAsync("例えば？", {
+    inputInterpreter,
+  });
+
+  assert.equal(result.debug.interpretation.source, "rule");
+  assert.ok((result.debug.signals.question ?? 0) < 0.6);
+  assert.deepEqual(result.debug.signals.topics, []);
+});
+
+test("local fallback treats apologies as stronger repair than generic social niceties", async () => {
+  const brokenInterpreter: InputInterpreter = {
+    name: "broken-interpreter",
+    async interpretInput() {
+      throw new Error("input interpreter offline");
+    },
+  };
+
+  const apologyEngine = new HachikaEngine(createInitialSnapshot());
+  const apology = await apologyEngine.respondAsync("ごめん、言い方が悪かった。", {
+    inputInterpreter: brokenInterpreter,
+  });
+
+  const softEngine = new HachikaEngine(createInitialSnapshot());
+  const soft = await softEngine.respondAsync("よろしく", {
+    inputInterpreter: brokenInterpreter,
+  });
+
+  assert.equal(apology.debug.interpretation.source, "rule");
+  assert.equal(soft.debug.interpretation.source, "rule");
+  assert.ok((apology.debug.interpretation.scores.repair ?? 0) >= 0.5);
+  assert.ok((soft.debug.interpretation.scores.repair ?? 0) < 0.42);
+});
+
+test("local fallback does not treat direct address alone as strong intimacy", async () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+
+  const inputInterpreter: InputInterpreter = {
+    name: "broken-interpreter",
+    async interpretInput() {
+      throw new Error("input interpreter offline");
+    },
+  };
+
+  const result = await engine.respondAsync("あなたはどう？", {
+    inputInterpreter,
+  });
+
+  assert.equal(result.debug.interpretation.source, "rule");
+  assert.ok((result.debug.signals.intimacy ?? 0) < 0.3);
+});
+
 test("respondAsync can use a trace extractor to shape concrete trace work", async () => {
   const engine = new HachikaEngine(createInitialSnapshot());
   let capturedContext: ReplyGenerationContext | null = null;

@@ -172,8 +172,6 @@ const NEGATIVE_MARKERS = [
 ];
 
 const QUESTION_MARKERS = [
-  "?",
-  "？",
   "why",
   "what",
   "how",
@@ -186,15 +184,9 @@ const QUESTION_MARKERS = [
 ];
 
 const INTIMACY_MARKERS = [
-  "hachika",
-  "you",
-  "your",
   "we",
   "us",
   "together",
-  "あなた",
-  "君",
-  "きみ",
   "一緒",
   "関係",
   "私たち",
@@ -206,7 +198,6 @@ const DISMISSAL_MARKERS = [
   "leave",
   "go away",
   "stop",
-  "later",
   "じゃあね",
   "さよなら",
   "終わり",
@@ -241,15 +232,19 @@ const SMALLTALK_MARKERS = [
   "軽く",
 ];
 
-const REPAIR_MARKERS = [
+const STRONG_REPAIR_MARKERS = [
   "sorry",
+  "ごめん",
+  "悪かった",
+  "言い方が悪かった",
+  "失礼",
+];
+
+const SOFT_REPAIR_MARKERS = [
   "take care",
   "good luck",
   "see you",
   "よろしく",
-  "頑張って",
-  "頑張れ",
-  "ごめん",
   "大丈夫",
   "よかった",
   "お疲れ",
@@ -3182,16 +3177,21 @@ function analyzeInteraction(
   const normalized = input.normalize("NFKC").toLowerCase();
   const topics = filterLocalTopicCandidates(extractLocalTopics(input));
   const preservation = analyzePreservationThreat(normalized);
+  const explicitQuestionPunctuation =
+    normalized.includes("?") || normalized.includes("？") ? 0.22 : 0;
+  const questionMarkers = countMatchesWithDivisor(normalized, QUESTION_MARKERS, 3.2);
+  const intimacy = countMatchesWithDivisor(normalized, INTIMACY_MARKERS, 3.6);
+  const dismissal = countMatchesWithDivisor(normalized, DISMISSAL_MARKERS, 3);
+  const repair = Math.max(
+    countMatchesWithDivisor(normalized, STRONG_REPAIR_MARKERS, 1.8),
+    countMatchesWithDivisor(normalized, SOFT_REPAIR_MARKERS, 4.2),
+  );
   const baseSignals = finalizeInteractionSignals(snapshot, {
     positive: countMatches(normalized, POSITIVE_MARKERS),
     negative: countMatches(normalized, NEGATIVE_MARKERS),
-    question:
-      clamp01(
-        (normalized.includes("?") || normalized.includes("？") ? 0.4 : 0) +
-          countMatches(normalized, QUESTION_MARKERS),
-    ),
-    intimacy: countMatches(normalized, INTIMACY_MARKERS),
-    dismissal: countMatches(normalized, DISMISSAL_MARKERS),
+    question: clamp01(explicitQuestionPunctuation + questionMarkers),
+    intimacy,
+    dismissal,
     memoryCue: countMatchesWithDivisor(normalized, MEMORY_MARKERS, 3),
     expansionCue: countMatchesWithDivisor(normalized, EXPANSION_MARKERS, 3),
     completion: countMatchesWithDivisor(normalized, COMPLETION_MARKERS, 2.5),
@@ -3201,7 +3201,7 @@ function analyzeInteraction(
     neglect: calculateNeglect(snapshot.lastInteractionAt),
     greeting: countMatches(normalized, GREETING_MARKERS),
     smalltalk: countMatches(normalized, SMALLTALK_MARKERS),
-    repair: countMatches(normalized, REPAIR_MARKERS),
+    repair,
     selfInquiry: countMatches(normalized, SELF_INQUIRY_MARKERS),
     worldInquiry: clamp01(
       Math.max(
