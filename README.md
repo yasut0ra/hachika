@@ -219,7 +219,8 @@ Hachika は、単に有用なだけでなく、
   - `別の話` のような明示的な topic shift は abandonment として扱い、old purpose / trace をそのまま前景化しにくくしている
 - 応答直前には `response planner` が `act / stance / distance / focus` を決め、rule-based reply と LLM wording の両方が同じ返答意図を共有する
   - 直前には `turn-director` も置けるため、`subject / target / answerMode / relationMove / worldMention` だけでなく reply plan まで一段で決められる。これがある turn では separate な planner を呼ばず、semantic turn analysis をそのまま返答設計へ流す
-  - `turn-director` は `topics` と `stateTopics` を分けて返せるので、「このターンでは答えるために参照するが、durable な memory / trace / purpose にはまだ固めない」という扱いができる
+- `turn-director` は `topics` と `stateTopics` を分けて返せるので、「このターンでは答えるために参照するが、durable な memory / trace / purpose にはまだ固めない」という扱いができる
+- local の topic 抽出は最近さらに保守的にしてあり、`存在 / 世界 / 棚の残り` のような broad/self/world 候補は一次候補からも落としやすくしている。trace extractor や turn-director が concrete topic を返した時は、durable state にはそちらを優先し、local 候補を混ぜ戻しにくい
 - 次段の統合方針は [docs/semantic-director-v2.md](/Users/yasut0ra/dev/hachika/docs/semantic-director-v2.md) に整理してあり、`semantic topic / durable topic / reply plan / proactive plan` を一段の contract に寄せていく
 - loop / idle / proactive の見直し方針は [docs/autonomy-v2.md](/Users/yasut0ra/dev/hachika/docs/autonomy-v2.md) に整理してあり、`発話を行動の一部へ下げる / idle を batch ではなく静かな生存時間へ寄せる / proactive を outward action の一種として扱う` 方向で再構成していく
 - 現在の `turn-director` と `proactive-director` は、内部的には [src/semantic-director-schema.ts](/Users/yasut0ra/dev/hachika/src/semantic-director-schema.ts) の v2 contract を持ち始めていて、semantic topic と durable topic を分けて扱う下地が入っている

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  extractLocalTopics,
   extractTopics,
   isMeaningfulTopic,
   requiresConcreteTopicSupport,
@@ -37,6 +38,13 @@ test("extractTopics prefers compound concrete topics over split fragments", () =
   assert.ok(!problemTopics.includes("じゃあ"));
   assert.ok(boundaryTopics.includes("仕様の境界"));
   assert.ok(worldviewTopics.includes("世界観"));
+});
+
+test("extractLocalTopics drops abstract self/world candidates but keeps concrete and relational ones", () => {
+  assert.deepEqual(extractLocalTopics("今どこにいるの？"), []);
+  assert.deepEqual(extractLocalTopics("君はどんな存在？"), []);
+  assert.ok(extractLocalTopics("私の名前覚えてる？").includes("名前"));
+  assert.ok(extractLocalTopics("仕様の境界が未定で曖昧だ。").includes("仕様の境界"));
 });
 
 test("isMeaningfulTopic rejects low-information conversational fragments", () => {

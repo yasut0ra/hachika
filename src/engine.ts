@@ -2,6 +2,7 @@ import {
   consolidateBoundaryImprints,
   consolidatePreferenceImprints,
   consolidateRelationImprints,
+  extractLocalTopics,
   extractTopics,
   findRelevantBoundaryImprint,
   findRelevantMemory,
@@ -2930,6 +2931,10 @@ function mergeStateTopics(
   localTopics: readonly string[],
   extractedTopics: readonly string[],
 ): string[] {
+  if (extractedTopics.length > 0) {
+    return uniqueTopics([...extractedTopics]).slice(0, 4);
+  }
+
   const filteredLocalTopics = localTopics.filter((localTopic) => {
     if (!isMeaningfulTopic(localTopic)) {
       return false;
@@ -2949,7 +2954,7 @@ function analyzeInteraction(
   snapshot: HachikaSnapshot,
 ): InteractionSignals {
   const normalized = input.normalize("NFKC").toLowerCase();
-  const topics = extractTopics(input);
+  const topics = filterLocalTopicCandidates(extractLocalTopics(input));
   const preservation = analyzePreservationThreat(normalized);
   const baseSignals = finalizeInteractionSignals(snapshot, {
     positive: countMatches(normalized, POSITIVE_MARKERS),
@@ -2990,6 +2995,12 @@ function analyzeInteraction(
   }
 
   return baseSignals;
+}
+
+function filterLocalTopicCandidates(topics: readonly string[]): string[] {
+  return uniqueTopics([...topics])
+    .filter((topic) => !isAmbientWorldTopic(topic))
+    .slice(0, 4);
 }
 
 function mergeInterpretedSignals(

@@ -3074,7 +3074,7 @@ test("respondAsync can use a trace extractor to shape concrete trace work", asyn
   assert.ok(result.debug.traceExtraction.topics.includes("仕様の境界"));
   assert.equal(result.debug.traceExtraction.stateTopics[0], "仕様の境界");
   assert.deepEqual(result.debug.traceExtraction.adoptedTopics, ["仕様の境界"]);
-  assert.deepEqual(result.debug.traceExtraction.droppedTopics, ["仕様"]);
+  assert.ok(result.debug.traceExtraction.droppedTopics.includes("仕様"));
   assert.equal(result.debug.signals.topics[0], "仕様の境界");
   assert.equal(receivedContext.responsePlan.focusTopic, "仕様の境界");
   assert.equal(receivedContext.replySelection.currentTopic, "仕様の境界");
@@ -3087,6 +3087,41 @@ test("respondAsync can use a trace extractor to shape concrete trace work", asyn
   assert.equal(result.snapshot.preferences["仕様の境界"] !== undefined, true);
   assert.ok(result.snapshot.memories.at(-2)?.topics.includes("仕様の境界"));
   assert.ok(!result.snapshot.memories.at(-2)?.topics.includes("仕様"));
+});
+
+test("respondAsync prefers extractor topics over unrelated local topic candidates for state hardening", async () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+
+  const traceExtractor: TraceExtractor = {
+    name: "test-trace",
+    async extractTrace() {
+      return {
+        provider: "test-trace",
+        model: "stub",
+        extraction: {
+          topics: ["仕様の境界"],
+          kindHint: "spec_fragment",
+          completion: 0,
+          blockers: ["責務が未定"],
+          memo: ["仕様の境界を見直す"],
+          fragments: ["責務の切り分けを先に決める"],
+          decisions: [],
+          nextSteps: ["API の責務を分ける"],
+        },
+      };
+    },
+  };
+
+  const result = await engine.respondAsync("仕様と設計の境界がまだ曖昧だ。", {
+    traceExtractor,
+  });
+
+  assert.deepEqual(result.debug.signals.topics, ["仕様の境界"]);
+  assert.deepEqual(result.debug.traceExtraction.stateTopics, ["仕様の境界"]);
+  assert.equal(result.snapshot.topicCounts["仕様の境界"], 1);
+  assert.equal(result.snapshot.topicCounts["設計"] ?? 0, 0);
+  assert.ok(result.snapshot.memories.at(-2)?.topics.includes("仕様の境界"));
+  assert.ok(!result.snapshot.memories.at(-2)?.topics.includes("設計"));
 });
 
 test("respondAsync falls back to local trace extraction when the extractor fails", async () => {

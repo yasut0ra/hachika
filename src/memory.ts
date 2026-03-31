@@ -243,6 +243,12 @@ export function extractTopics(text: string): string[] {
   return topics;
 }
 
+export function extractLocalTopics(text: string): string[] {
+  return extractTopics(text)
+    .filter((topic) => shouldKeepLocalTopicCandidate(topic))
+    .slice(0, 4);
+}
+
 function extractCompoundTopics(
   segments: Intl.SegmentData[],
 ): string[] {
@@ -705,6 +711,18 @@ export function requiresConcreteTopicSupport(topic: string): boolean {
 export function isRelationalTopic(topic: string): boolean {
   const normalized = topic.normalize("NFKC").trim().toLowerCase();
   return normalized.length > 0 && RELATIONAL_TOPICS.has(normalized);
+}
+
+function shouldKeepLocalTopicCandidate(topic: string): boolean {
+  if (!isMeaningfulTopic(topic)) {
+    return false;
+  }
+
+  if (isRelationalTopic(topic)) {
+    return true;
+  }
+
+  return !requiresConcreteTopicSupport(topic);
 }
 
 function isSoftRelationTopicTurn(topic: string, signals: InteractionSignals): boolean {
