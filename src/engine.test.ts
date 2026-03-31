@@ -2352,6 +2352,128 @@ test("respondAsync can use semantic turn topics without hardening them into dura
   assert.equal(result.snapshot.purpose.active, null);
 });
 
+test("respondAsync prefers semantic turn directive over conflicting legacy fields", async () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+
+  const turnDirector: TurnDirector = {
+    name: "test-turn",
+    async directTurn() {
+      return {
+        provider: "test-turn",
+        model: "stub",
+        directive: {
+          subject: "shared",
+          target: "relation",
+          answerMode: "reflective",
+          relationMove: "attune",
+          worldMention: "none",
+          topics: ["名前"],
+          stateTopics: ["名前"],
+          behavior: {
+            topicAction: "keep",
+            traceAction: "suppress",
+            purposeAction: "suppress",
+            initiativeAction: "suppress",
+            boundaryAction: "allow",
+            worldAction: "suppress",
+            coolCurrentContext: false,
+            directAnswer: false,
+            summary: "legacy_relation",
+          },
+          responsePlan: {
+            act: "attune",
+            stance: "open",
+            distance: "close",
+            focusTopic: "名前",
+            mentionTrace: true,
+            mentionIdentity: true,
+            mentionBoundary: false,
+            mentionWorld: false,
+            askBack: true,
+            variation: "questioning",
+            summary: "attune/open/close on 名前",
+          },
+          traceExtraction: {
+            topics: ["名前"],
+            kindHint: "spec_fragment",
+            completion: 0,
+            blockers: [],
+            memo: [],
+            fragments: ["legacy"],
+            decisions: [],
+            nextSteps: [],
+          },
+          semantic: {
+            mode: "turn",
+            subject: "shared",
+            target: "work_topic",
+            answerMode: "direct",
+            relationMove: "none",
+            worldMention: "light",
+            topics: [
+              {
+                topic: "仕様の境界",
+                source: "input",
+                durability: "durable",
+                confidence: 0.94,
+              },
+            ],
+            behavior: {
+              topicAction: "keep",
+              traceAction: "allow",
+              purposeAction: "allow",
+              initiativeAction: "allow",
+              boundaryAction: "suppress",
+              worldAction: "allow",
+              coolCurrentContext: false,
+              directAnswer: true,
+            },
+            replyPlan: {
+              act: "continue_work",
+              stance: "measured",
+              distance: "measured",
+              focusTopic: "仕様の境界",
+              mentionTrace: false,
+              mentionIdentity: false,
+              mentionBoundary: false,
+              mentionWorld: false,
+              askBack: false,
+              variation: "brief",
+            },
+            trace: {
+              topics: ["仕様の境界"],
+              stateTopics: ["仕様の境界"],
+              kindHint: "spec_fragment",
+              completion: 0.15,
+              blockers: [],
+              memo: [],
+              fragments: ["semantic"],
+              decisions: [],
+              nextSteps: ["候補を3つ書く"],
+            },
+            summary: "turn/work_topic",
+          },
+          summary: "legacy_relation",
+        },
+      };
+    },
+  };
+
+  const result = await engine.respondAsync("具体的に整理したい。", {
+    turnDirector,
+  });
+
+  assert.equal(result.debug.turn?.target, "work_topic");
+  assert.deepEqual(result.debug.turn?.topics, ["仕様の境界"]);
+  assert.deepEqual(result.debug.turn?.stateTopics, ["仕様の境界"]);
+  assert.equal(result.debug.reply.plan, "continue_work/measured/measured on 仕様の境界");
+  assert.deepEqual(result.debug.traceExtraction.topics, ["仕様の境界"]);
+  assert.equal(result.snapshot.topicCounts["名前"], undefined);
+  assert.equal(result.snapshot.traces["名前"], undefined);
+  assert.ok(result.snapshot.topicCounts["仕様の境界"] !== undefined);
+  assert.ok(result.snapshot.traces["仕様の境界"] !== undefined);
+});
+
 test("respondAsync retries llm wording once when the first reply stays too close to fallback", async () => {
   const engine = new HachikaEngine(createInitialSnapshot());
   const attempts: ReplyGenerationContext[] = [];
@@ -3758,6 +3880,101 @@ test("emitInitiativeAsync lets proactive director keep semantic proactive topics
   assert.equal(engine.getLastReplyDebug()?.proactiveSelection?.stateTopic ?? null, null);
   assert.equal(engine.getSnapshot().traces["名前"], undefined);
   assert.equal(engine.getSnapshot().initiative.history.at(-1)?.traceTopic ?? null, null);
+});
+
+test("emitInitiativeAsync prefers semantic proactive directive over conflicting legacy fields", async () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.initiative.pending = {
+    kind: "resume_topic",
+    reason: "relation",
+    motive: "deepen_relation",
+    topic: "名前",
+    stateTopic: "名前",
+    blocker: null,
+    concern: null,
+    createdAt: "2026-03-31T00:00:00.000Z",
+    readyAfterHours: 0,
+  };
+  const engine = new HachikaEngine(snapshot);
+
+  const proactiveDirector: ProactiveDirector = {
+    name: "test-director",
+    async directProactive() {
+      return {
+        directive: {
+          emit: false,
+          plan: {
+            act: "reconnect",
+            stance: "guarded",
+            distance: "far",
+            focusTopic: "名前",
+            emphasis: "relation",
+            mentionBlocker: false,
+            mentionReopen: false,
+            mentionMaintenance: false,
+            mentionIntent: true,
+            variation: "brief",
+            summary: "reconnect/guarded/far/relation on 名前",
+          },
+          topics: ["名前"],
+          stateTopics: ["名前"],
+          semantic: {
+            mode: "proactive",
+            topics: [
+              {
+                topic: "仕様の境界",
+                source: "trace",
+                durability: "durable",
+                confidence: 0.93,
+              },
+            ],
+            proactivePlan: {
+              emit: true,
+              act: "continue_work",
+              stance: "open",
+              distance: "close",
+              focusTopic: "仕様の境界",
+              stateTopic: "仕様の境界",
+              emphasis: "maintenance",
+              mentionBlocker: false,
+              mentionReopen: false,
+              mentionMaintenance: true,
+              mentionIntent: true,
+              variation: "brief",
+              place: "studio",
+              worldAction: "touch",
+            },
+            trace: {
+              topics: ["仕様の境界"],
+              stateTopics: ["仕様の境界"],
+              kindHint: "spec_fragment",
+              completion: 0,
+              blockers: [],
+              memo: [],
+              fragments: [],
+              decisions: [],
+              nextSteps: [],
+            },
+            summary: "proactive/continue_work",
+          },
+          summary: "legacy_suppress",
+        },
+        provider: "test-director",
+        model: "stub",
+      };
+    },
+  };
+
+  const message = await engine.emitInitiativeAsync({
+    proactiveDirector,
+  });
+
+  assert.ok(message !== null);
+  assert.ok(engine.getSnapshot().traces["仕様の境界"] !== undefined);
+  assert.equal(engine.getSnapshot().traces["名前"], undefined);
+  assert.equal(engine.getSnapshot().initiative.history.at(-1)?.place ?? null, "studio");
+  assert.equal(engine.getSnapshot().initiative.history.at(-1)?.worldAction ?? null, "touch");
+  assert.equal(engine.getLastReplyDebug()?.plannerSource, "llm");
 });
 
 function createArchivedTrace(
