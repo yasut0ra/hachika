@@ -223,6 +223,7 @@ Hachika は、単に有用なだけでなく、
 - local の topic 抽出は最近さらに保守的にしてあり、`存在 / 世界 / 棚の残り` のような broad/self/world 候補は一次候補からも落としやすくしている。trace extractor や turn-director が concrete topic を返した時は、durable state にはそちらを優先し、local 候補を混ぜ戻しにくい
 - local の marker も少しずつ薄くしていて、`?` のような記号、`あなた` のような直呼、`よろしく` のような社交句だけで question / intimacy / repair が強く立ちすぎないようにしている
 - 次段の統合方針は [docs/semantic-director-v2.md](/Users/yasut0ra/dev/hachika/docs/semantic-director-v2.md) に整理してあり、`semantic topic / durable topic / reply plan / proactive plan` を一段の contract に寄せていく
+- 設計全体の判断基準は [docs/design-principles.md](/Users/yasut0ra/dev/hachika/docs/design-principles.md) に整理してあり、`topic-first` ではなく `semantic core / substrate / attention rationale / fact` を中心に考える
 - `turn-director` と `proactive-director` は runtime でもその v2 contract を受け始めていて、`mode: "turn" / "proactive"` の semantic directive をそのまま parse し、必要な legacy field はそこから projection する
 - engine の turn/proactive 適用も `semantic` を優先し始めていて、legacy field と semantic plan が矛盾した時は `semantic.replyPlan / semantic.trace / semantic.proactivePlan` を authoritative に採る
 - `initiative-director` と `autonomy-director` も同じ family の v2 contract を受け始めていて、`mode: "initiative" / "autonomy"` の semantic directive を parse し、pending initiative や idle autonomy action をそこから materialize できる
