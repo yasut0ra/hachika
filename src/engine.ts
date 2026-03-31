@@ -3031,12 +3031,12 @@ function analyzeInteraction(
       clamp01(
         (normalized.includes("?") || normalized.includes("？") ? 0.4 : 0) +
           countMatches(normalized, QUESTION_MARKERS),
-      ),
+    ),
     intimacy: countMatches(normalized, INTIMACY_MARKERS),
     dismissal: countMatches(normalized, DISMISSAL_MARKERS),
-    memoryCue: countMatches(normalized, MEMORY_MARKERS),
-    expansionCue: countMatches(normalized, EXPANSION_MARKERS),
-    completion: countMatches(normalized, COMPLETION_MARKERS),
+    memoryCue: countMatchesWithDivisor(normalized, MEMORY_MARKERS, 3),
+    expansionCue: countMatchesWithDivisor(normalized, EXPANSION_MARKERS, 3),
+    completion: countMatchesWithDivisor(normalized, COMPLETION_MARKERS, 2.5),
     abandonment: countMatches(normalized, ABANDONMENT_MARKERS),
     preservationThreat: preservation.threat,
     preservationConcern: preservation.concern,
@@ -5041,6 +5041,22 @@ function countMatches(text: string, markers: readonly string[]): number {
   }
 
   return Math.min(1, score / 2);
+}
+
+function countMatchesWithDivisor(
+  text: string,
+  markers: readonly string[],
+  divisor: number,
+): number {
+  let score = 0;
+
+  for (const marker of markers) {
+    if (text.includes(marker)) {
+      score += 1;
+    }
+  }
+
+  return Math.min(1, score / divisor);
 }
 
 function analyzePreservationThreat(
