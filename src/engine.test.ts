@@ -2610,6 +2610,106 @@ test("respondAsync drops interpreter-proposed abstract self topics on pure self 
   assert.equal(result.debug.interpretation.topics.includes("存在"), false);
 });
 
+test("respondAsync lets llm interpretation override local work heuristics on self inquiry turns", async () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+
+  const inputInterpreter: InputInterpreter = {
+    name: "self-over-work",
+    async interpretInput() {
+      return {
+        provider: "self-over-work",
+        model: "stub",
+        interpretation: {
+          topics: [],
+          positive: 0,
+          negative: 0,
+          question: 0.72,
+          intimacy: 0.12,
+          dismissal: 0,
+          memoryCue: 0,
+          expansionCue: 0,
+          completion: 0,
+          abandonment: 0,
+          preservationThreat: 0,
+          preservationConcern: null,
+          greeting: 0,
+          smalltalk: 0,
+          repair: 0,
+          selfInquiry: 0.94,
+          worldInquiry: 0,
+          workCue: 0,
+        },
+      };
+    },
+  };
+
+  const result = await engine.respondAsync("あなたの名前は？仕様の話じゃなくて、それだけ聞いてる。", {
+    inputInterpreter,
+  });
+
+  assert.ok((result.debug.signals.selfInquiry ?? 0) >= 0.8);
+  assert.ok((result.debug.signals.workCue ?? 0) <= 0.22);
+  assert.equal(result.snapshot.traces["仕様"], undefined);
+});
+
+test("respondAsync suppresses unsupported durable topics when semantic turn target is non-work", async () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+
+  const turnDirector: TurnDirector = {
+    name: "misaligned-turn",
+    async directTurn() {
+      return {
+        provider: "misaligned-turn",
+        model: "stub",
+        directive: {
+          subject: "hachika",
+          target: "hachika_name",
+          answerMode: "direct",
+          relationMove: "none",
+          worldMention: "none",
+          topics: ["名前"],
+          stateTopics: ["名前"],
+          behavior: {
+            topicAction: "keep",
+            traceAction: "allow",
+            purposeAction: "allow",
+            initiativeAction: "allow",
+            boundaryAction: "suppress",
+            worldAction: "suppress",
+            coolCurrentContext: false,
+            directAnswer: true,
+            summary: "misaligned_durable_name_topic",
+          },
+          responsePlan: {
+            act: "self_disclose",
+            stance: "open",
+            distance: "close",
+            focusTopic: null,
+            mentionTrace: false,
+            mentionIdentity: false,
+            mentionBoundary: false,
+            mentionWorld: false,
+            askBack: false,
+            variation: "brief",
+            summary: "self_disclose/open/close",
+          },
+          traceExtraction: null,
+          summary: "subject:hachika/target:hachika_name/topics:名前/state:名前",
+        },
+      };
+    },
+  };
+
+  const result = await engine.respondAsync("あなたの名前は？", { turnDirector });
+
+  assert.deepEqual(result.debug.turn?.stateTopics, ["名前"]);
+  assert.deepEqual(result.debug.signals.topics, []);
+  assert.equal(result.snapshot.topicCounts["名前"], undefined);
+  assert.equal(result.snapshot.traces["名前"], undefined);
+  assert.equal(result.snapshot.purpose.active, null);
+  assert.equal(result.snapshot.initiative.pending, null);
+});
+
 test("respondAsync lets behavior director keep relation turns out of trace and initiative hardening", async () => {
   const engine = new HachikaEngine(createInitialSnapshot());
 

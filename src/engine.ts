@@ -1617,6 +1617,11 @@ function prepareTurnFromSignals(
     turnDebug,
     traceExtraction,
   );
+  const lifecycleBehaviorDirective = applyTurnDirectiveLifecycleBehavior(
+    behaviorDirective,
+    turnDebug,
+    stateSignals,
+  );
   const normalizedTraceExtractionDebug = finalizeTraceExtractionDebug(
     traceExtractionDebug,
     signals,
@@ -1641,7 +1646,7 @@ function prepareTurnFromSignals(
   const mood = resolveMood(nextSnapshot, stateSignals);
   const dominant = dominantDrive(nextSnapshot.state);
   const preliminarySelfModel = buildSelfModel(nextSnapshot);
-  if (behaviorDirective.purposeAction === "allow") {
+  if (lifecycleBehaviorDirective.purposeAction === "allow") {
     updatePurpose(
       nextSnapshot,
       preliminarySelfModel,
@@ -1651,7 +1656,7 @@ function prepareTurnFromSignals(
   }
   let selfModel = buildSelfModel(nextSnapshot);
   const updatedTrace =
-    behaviorDirective.traceAction === "allow"
+    lifecycleBehaviorDirective.traceAction === "allow"
       ? updateTraces(
           nextSnapshot,
           input,
@@ -1674,7 +1679,7 @@ function prepareTurnFromSignals(
   updateIdentity(nextSnapshot, nextSnapshot.lastInteractionAt ?? new Date().toISOString());
   selfModel = buildSelfModel(nextSnapshot);
   let initiativeDecision: ScheduledInitiativeDecision | null = null;
-  if (behaviorDirective.initiativeAction === "allow") {
+  if (lifecycleBehaviorDirective.initiativeAction === "allow") {
     if (deferInitiativeScheduling) {
       initiativeDecision = prepareScheduledInitiative(
         nextSnapshot,
@@ -1714,7 +1719,7 @@ function prepareTurnFromSignals(
     responseSignals,
     turnDebug,
     interpretationDebug,
-    behaviorDirective,
+    behaviorDirective: lifecycleBehaviorDirective,
     behaviorDebug,
     traceExtraction,
     traceExtractionDebug: normalizedTraceExtractionDebug,
@@ -3100,10 +3105,11 @@ function deriveDurableStateSignals(
   turnDebug: TurnDirectiveDebug | null,
   traceExtraction: StructuredTraceExtraction | null,
 ): InteractionSignals {
-  const topics =
+  const baseTopics =
     turnDebug?.source === "llm"
       ? uniqueTopics(signals.topics.filter((topic) => isMeaningfulTopic(topic))).slice(0, 4)
       : filterDurableStateTopics(snapshot, signals.topics, signals, traceExtraction);
+  const topics = filterTurnDirectiveDurableTopics(snapshot, baseTopics, turnDebug);
 
   if (
     topics.length === signals.topics.length &&
@@ -3116,6 +3122,60 @@ function deriveDurableStateSignals(
     ...signals,
     topics,
   };
+}
+
+function filterTurnDirectiveDurableTopics(
+  snapshot: HachikaSnapshot,
+  topics: readonly string[],
+  turnDebug: TurnDirectiveDebug | null,
+): string[] {
+  if (!turnDebug || turnDebug.source !== "llm" || topics.length === 0) {
+    return [...topics];
+  }
+
+  if (turnDebug.target === "work_topic") {
+    return [...topics];
+  }
+
+  if (turnDebug.target === "relation") {
+    return topics.filter((topic) => hasDurableTopicSupport(snapshot, topic));
+  }
+
+  return topics.filter((topic) => hasDurableTopicSupport(snapshot, topic));
+}
+
+function applyTurnDirectiveLifecycleBehavior(
+  behaviorDirective: BehaviorDirective,
+  turnDebug: TurnDirectiveDebug | null,
+  stateSignals: InteractionSignals,
+): BehaviorDirective {
+  if (!turnDebug || turnDebug.source !== "llm") {
+    return behaviorDirective;
+  }
+
+  const directReferentTarget =
+    turnDebug.target === "hachika_name" ||
+    turnDebug.target === "hachika_profile" ||
+    turnDebug.target === "user_name" ||
+    turnDebug.target === "user_profile";
+  const worldTurn = turnDebug.target === "world_state";
+
+  if ((directReferentTarget || worldTurn) && stateSignals.topics.length === 0) {
+    return {
+      ...behaviorDirective,
+      traceAction: "suppress",
+      purposeAction: "suppress",
+      initiativeAction: "suppress",
+      summary: summarizeBehaviorDirective({
+        ...behaviorDirective,
+        traceAction: "suppress",
+        purposeAction: "suppress",
+        initiativeAction: "suppress",
+      }),
+    };
+  }
+
+  return behaviorDirective;
 }
 
 function uniqueTopics(topics: string[]): string[] {
@@ -3343,10 +3403,10 @@ function mergeInterpretedSignals(
     positive: clamp01(Math.max(localSignals.positive, positive)),
     negative: clamp01(Math.max(localSignals.negative, negative)),
     question: clamp01(Math.max(localSignals.question, question, selfInquiry * 0.34)),
-    worldInquiry: clamp01(Math.max(localSignals.worldInquiry, worldInquiry)),
+    worldInquiry: preferInterpretedSignal(localSignals.worldInquiry, worldInquiry, 0.22),
     intimacy: clamp01(
       Math.max(
-        localSignals.intimacy,
+        localSignals.intimacy * 0.45,
         intimacy,
         greeting * 0.16,
         smalltalk * 0.2,
@@ -3355,11 +3415,15 @@ function mergeInterpretedSignals(
       ),
     ),
     dismissal: clamp01(softenedDismissal),
-    memoryCue: clamp01(Math.max(localSignals.memoryCue, memoryCue)),
+    memoryCue: preferInterpretedSignal(localSignals.memoryCue, memoryCue, 0.22),
     expansionCue: clamp01(
-      Math.max(localSignals.expansionCue, expansionCue, workCue * 0.22),
+      Math.max(
+        localSignals.expansionCue * 0.22,
+        expansionCue,
+        workCue * 0.18,
+      ),
     ),
-    completion: clamp01(Math.max(localSignals.completion, completion)),
+    completion: preferInterpretedSignal(localSignals.completion, completion, 0.22),
     abandonment: clamp01(Math.max(localSignals.abandonment, abandonment)),
     preservationThreat: clamp01(
       Math.max(localSignals.preservationThreat, preservationThreat),
@@ -3368,13 +3432,26 @@ function mergeInterpretedSignals(
       ? interpretation.preservationConcern
       : localSignals.preservationConcern,
     neglect: localSignals.neglect,
-    greeting: clamp01(Math.max(localSignals.greeting, greeting)),
-    smalltalk: clamp01(Math.max(localSignals.smalltalk, smalltalk)),
-    repair: clamp01(Math.max(localSignals.repair, repair)),
-    selfInquiry: clamp01(Math.max(localSignals.selfInquiry, selfInquiry)),
-    workCue: clamp01(Math.max(localSignals.workCue, workCue)),
+    greeting: preferInterpretedSignal(localSignals.greeting, greeting, 0.22),
+    smalltalk: preferInterpretedSignal(localSignals.smalltalk, smalltalk, 0.22),
+    repair: preferInterpretedSignal(localSignals.repair, repair, 0.28),
+    selfInquiry: preferInterpretedSignal(localSignals.selfInquiry, selfInquiry, 0.18),
+    workCue: preferInterpretedSignal(localSignals.workCue, workCue, 0.18),
     topics,
   });
+}
+
+function preferInterpretedSignal(
+  localScore: number,
+  interpretedScore: number,
+  localRetain = 0.3,
+): number {
+  return clamp01(
+    Math.max(
+      interpretedScore,
+      localScore * localRetain,
+    ),
+  );
 }
 
 function finalizeInteractionSignals(
