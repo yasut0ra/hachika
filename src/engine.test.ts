@@ -1650,9 +1650,22 @@ test("local fallback keeps user and hachika names distinct across a short exchan
 
   assert.match(first.reply, /やすとら/);
   assert.doesNotMatch(first.reply, /もう一度聞かせて|取り違え/);
+  assert.equal(second.snapshot.discourse.userName?.value, "やすとら");
   assert.match(second.reply, /ハチカ/);
   assert.doesNotMatch(second.reply, /やすとら/);
   assert.equal(second.snapshot.traces["名前"], undefined);
+});
+
+test("local fallback remembers assigned hachika naming as a discourse fact", () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+
+  engine.respond("あなたの名前はネオン。覚えてね。");
+  const result = engine.respond("あなたの名前は？");
+
+  assert.equal(result.snapshot.discourse.hachikaName?.value, "ネオン");
+  assert.match(result.reply, /ネオン/);
+  assert.doesNotMatch(result.reply, /ハチカでいい/);
+  assert.equal(result.snapshot.traces["名前"], undefined);
 });
 
 test("relation clarification answers directly without turning the naming exchange into work", () => {

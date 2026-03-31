@@ -1170,6 +1170,7 @@ export class HachikaEngine {
 
     remember(prepared.nextSnapshot, "user", input, prepared.signals.topics, sentiment);
     remember(prepared.nextSnapshot, "hachika", reply, prepared.signals.topics, "neutral");
+    updateDiscourseFacts(prepared.nextSnapshot, input, prepared.turnDebug);
     recordGeneratedQuality(
       prepared.nextSnapshot,
       replyDebug,
@@ -4999,6 +5000,36 @@ function extractAssignedHachikaName(text: string): string | null {
   return candidate;
 }
 
+function updateDiscourseFacts(
+  snapshot: HachikaSnapshot,
+  input: string,
+  turnDebug: TurnDirectiveDebug | null,
+): void {
+  const timestamp = snapshot.lastInteractionAt ?? new Date().toISOString();
+  const declaredUserName = extractDeclaredUserName(input);
+  const assignedHachikaName = extractAssignedHachikaName(input);
+
+  if (declaredUserName && turnDebug?.target === "user_name") {
+    snapshot.discourse.userName = {
+      kind: "user_name",
+      value: declaredUserName,
+      confidence: 0.94,
+      source: "user_assertion",
+      updatedAt: timestamp,
+    };
+  }
+
+  if (assignedHachikaName && turnDebug?.relationMove === "naming") {
+    snapshot.discourse.hachikaName = {
+      kind: "hachika_name",
+      value: assignedHachikaName,
+      confidence: 0.86,
+      source: "relation_assignment",
+      updatedAt: timestamp,
+    };
+  }
+}
+
 function buildDirectReferentAnswerLine(
   input: string,
   previousSnapshot: HachikaSnapshot,
@@ -5014,15 +5045,18 @@ function buildDirectReferentAnswerLine(
 
   switch (turnDebug.target) {
     case "hachika_name":
-      return pickFreshText(
-        [
-          "名前なら、ハチカでいい。",
-          "呼ぶなら、ハチカで受け取れる。",
-          "こちらの名前は、ハチカでいい。",
-        ],
-        recentAssistantLines,
-        snapshot.conversationCount,
-      );
+      {
+        const rememberedName = snapshot.discourse.hachikaName?.value ?? "ハチカ";
+        return pickFreshText(
+          [
+            `名前なら、${rememberedName}でいい。`,
+            `呼ぶなら、${rememberedName}で受け取れる。`,
+            `こちらの名前は、${rememberedName}でいい。`,
+          ],
+          recentAssistantLines,
+          snapshot.conversationCount,
+        );
+      }
     case "user_name":
       {
         const declaredName = extractDeclaredUserName(input);
@@ -5064,6 +5098,11 @@ function buildDirectReferentAnswerLine(
 }
 
 function findRememberedUserName(snapshot: HachikaSnapshot): string | null {
+  const discourseName = snapshot.discourse.userName?.value ?? null;
+  if (discourseName) {
+    return discourseName;
+  }
+
   for (const memory of [...snapshot.memories].reverse()) {
     if (memory.role !== "user") {
       continue;

@@ -400,6 +400,7 @@ test("loadSnapshot and saveSnapshot apply sanitation to persisted files", async 
     assert.deepEqual(loaded.identity.anchors, []);
     assert.equal(loaded.traces.かな, undefined);
     assert.deepEqual(loaded.temperament, createInitialSnapshot().temperament);
+    assert.equal(loaded.discourse.hachikaName?.value, "ハチカ");
 
     await saveSnapshot(filePath, loaded);
     const raw = await readFile(filePath, "utf8");
@@ -408,6 +409,29 @@ test("loadSnapshot and saveSnapshot apply sanitation to persisted files", async 
   } finally {
     await rm(tempDir, { recursive: true, force: true });
   }
+});
+
+test("sanitizeSnapshot keeps valid discourse facts and falls back on invalid hachika naming", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.discourse.userName = {
+    kind: "user_name",
+    value: "やすとら",
+    confidence: 0.91,
+    source: "user_assertion",
+    updatedAt: "2026-03-31T00:00:00.000Z",
+  };
+  snapshot.discourse.hachikaName = {
+    kind: "hachika_name",
+    value: "!",
+    confidence: 0.3,
+    source: "relation_assignment",
+    updatedAt: "2026-03-31T00:00:00.000Z",
+  };
+
+  sanitizeSnapshot(snapshot);
+
+  assert.equal(snapshot.discourse.userName?.value, "やすとら");
+  assert.equal(snapshot.discourse.hachikaName?.value, "ハチカ");
 });
 
 test("loadSnapshot seeds latent dynamics from older visible-only snapshots", async () => {
@@ -458,8 +482,9 @@ test("loadSnapshot seeds latent dynamics from older visible-only snapshots", asy
 
     const loaded = await loadSnapshot(filePath);
 
-    assert.equal(loaded.version, 22);
+    assert.equal(loaded.version, 23);
     assert.equal(loaded.revision, 3);
+    assert.equal(loaded.discourse.hachikaName?.value, "ハチカ");
     assert.ok(loaded.dynamics.safety < 0.5);
     assert.ok(loaded.dynamics.trust > 0.5);
     assert.ok(loaded.dynamics.activation > 0.5);

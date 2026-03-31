@@ -21,6 +21,10 @@ import type {
   AutonomousFeedEntry,
   BoundaryImprint,
     BodyState,
+    DiscourseFact,
+    DiscourseState,
+    DiscourseFactKind,
+    DiscourseFactSource,
     DynamicsState,
     GenerationHistoryEntry,
     DriveState,
@@ -121,7 +125,7 @@ function hydrateSnapshot(raw: unknown): HachikaSnapshot {
   }
 
   return {
-    version: 22,
+    version: 23,
     revision:
       typeof raw.revision === "number" && Number.isFinite(raw.revision)
         ? Math.max(0, Math.round(raw.revision))
@@ -134,6 +138,7 @@ function hydrateSnapshot(raw: unknown): HachikaSnapshot {
     attachment:
       typeof raw.attachment === "number" ? clamp01(raw.attachment) : initial.attachment,
     world: hydrateWorld(raw.world),
+    discourse: hydrateDiscourse(raw.discourse),
     preferences: hydrateNumberRecord(raw.preferences, clampSigned),
     topicCounts: hydrateNumberRecord(raw.topicCounts, (value) =>
       Math.max(0, Math.round(value)),
@@ -167,6 +172,7 @@ export function sanitizeSnapshot(snapshot: HachikaSnapshot): HachikaSnapshot {
   deriveVisibleStateFromDynamics(snapshot);
   snapshot.reactivity = sanitizeReactivity(snapshot.reactivity);
   snapshot.world = sanitizeWorld(snapshot.world);
+  snapshot.discourse = sanitizeDiscourse(snapshot.discourse);
   snapshot.memories = snapshot.memories
     .map((memory) => ({
       ...memory,
@@ -347,6 +353,52 @@ function hydrateWorld(raw: unknown): WorldState {
   };
 }
 
+function hydrateDiscourse(raw: unknown): DiscourseState {
+  const initial = createInitialSnapshot().discourse;
+
+  if (!isRecord(raw)) {
+    return initial;
+  }
+
+  return {
+    userName: hydrateDiscourseFact(raw.userName, "user_name"),
+    hachikaName:
+      hydrateDiscourseFact(raw.hachikaName, "hachika_name") ?? initial.hachikaName,
+  };
+}
+
+function hydrateDiscourseFact(
+  raw: unknown,
+  kind: DiscourseFactKind,
+): DiscourseFact | null {
+  if (!isRecord(raw)) {
+    return null;
+  }
+
+  const value = sanitizeDiscourseValue(raw.value);
+  if (!value) {
+    return null;
+  }
+
+  return {
+    kind,
+    value,
+    confidence:
+      typeof raw.confidence === "number" && Number.isFinite(raw.confidence)
+        ? clamp01(raw.confidence)
+        : 0.82,
+    source: isDiscourseFactSource(raw.source)
+      ? raw.source
+      : kind === "hachika_name"
+        ? "relation_assignment"
+        : "user_assertion",
+    updatedAt:
+      typeof raw.updatedAt === "string" && raw.updatedAt.trim().length > 0
+        ? raw.updatedAt
+        : new Date(0).toISOString(),
+  };
+}
+
 function hydrateNumberRecord(
   raw: unknown,
   normalize: (value: number) => number,
@@ -364,6 +416,74 @@ function hydrateNumberRecord(
   }
 
   return result;
+}
+
+function sanitizeDiscourse(discourse: DiscourseState): DiscourseState {
+  return {
+    userName: sanitizeDiscourseFact(discourse.userName, "user_name"),
+    hachikaName:
+      sanitizeDiscourseFact(discourse.hachikaName, "hachika_name") ??
+      createInitialSnapshot().discourse.hachikaName,
+  };
+}
+
+function sanitizeDiscourseFact(
+  fact: DiscourseFact | null,
+  kind: DiscourseFactKind,
+): DiscourseFact | null {
+  if (!fact) {
+    return null;
+  }
+
+  const value = sanitizeDiscourseValue(fact.value);
+  if (!value) {
+    return null;
+  }
+
+  return {
+    kind,
+    value,
+    confidence: clamp01(fact.confidence),
+    source: isDiscourseFactSource(fact.source)
+      ? fact.source
+      : kind === "hachika_name"
+        ? "relation_assignment"
+        : "user_assertion",
+    updatedAt:
+      typeof fact.updatedAt === "string" && fact.updatedAt.trim().length > 0
+        ? fact.updatedAt
+        : new Date(0).toISOString(),
+  };
+}
+
+function sanitizeDiscourseValue(value: unknown): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const normalized = value.normalize("NFKC").trim();
+  if (normalized.length < 2 || normalized.length > 24) {
+    return null;
+  }
+
+  if (!/[\p{Letter}\p{Number}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Han}]/u.test(normalized)) {
+    return null;
+  }
+
+  if (/^[、。！？!?_\-\s]+$/u.test(normalized)) {
+    return null;
+  }
+
+  return normalized;
+}
+
+function isDiscourseFactSource(value: unknown): value is DiscourseFactSource {
+  return (
+    value === "user_assertion" ||
+    value === "relation_assignment" ||
+    value === "self_assertion" ||
+    value === "seed"
+  );
 }
 
 function hydrateWorldPlaces(raw: unknown): Record<WorldPlaceId, WorldPlaceState> {

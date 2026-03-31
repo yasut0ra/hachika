@@ -57,6 +57,27 @@ export interface MemoryEntry {
   weight?: number;
 }
 
+export type DiscourseFactKind = "user_name" | "hachika_name";
+
+export type DiscourseFactSource =
+  | "user_assertion"
+  | "relation_assignment"
+  | "self_assertion"
+  | "seed";
+
+export interface DiscourseFact {
+  kind: DiscourseFactKind;
+  value: string;
+  confidence: number;
+  source: DiscourseFactSource;
+  updatedAt: string;
+}
+
+export interface DiscourseState {
+  userName: DiscourseFact | null;
+  hachikaName: DiscourseFact | null;
+}
+
 export interface PreferenceImprint {
   topic: string;
   salience: number;
@@ -386,6 +407,7 @@ export interface HachikaSnapshot {
   temperament: LearnedTemperament;
   attachment: number;
   world: WorldState;
+  discourse: DiscourseState;
   preferences: Record<string, number>;
   topicCounts: Record<string, number>;
   memories: MemoryEntry[];

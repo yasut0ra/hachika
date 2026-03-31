@@ -94,7 +94,7 @@ export function applyBoundedPressure(
 
 export function createInitialSnapshot(): HachikaSnapshot {
   return {
-    version: 22,
+    version: 23,
     revision: 0,
     state: { ...INITIAL_STATE },
     body: { ...INITIAL_BODY },
@@ -103,6 +103,16 @@ export function createInitialSnapshot(): HachikaSnapshot {
     temperament: { ...INITIAL_TEMPERAMENT },
     attachment: INITIAL_ATTACHMENT,
     world: createInitialWorldState(),
+    discourse: {
+      userName: null,
+      hachikaName: {
+        kind: "hachika_name",
+        value: "ハチカ",
+        confidence: 1,
+        source: "seed",
+        updatedAt: new Date(0).toISOString(),
+      },
+    },
     preferences: {},
     topicCounts: {},
     memories: [],
