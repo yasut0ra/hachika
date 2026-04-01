@@ -278,7 +278,7 @@ const SELF_INQUIRY_MARKERS = [
   "世界がどう見えて",
 ];
 
-const WORLD_INQUIRY_MARKERS = [
+const ANCHORED_WORLD_INQUIRY_MARKERS = [
   "今どこ",
   "どこにいる",
   "どこに居る",
@@ -287,9 +287,12 @@ const WORLD_INQUIRY_MARKERS = [
   "周りは",
   "周囲は",
   "どんな場所",
+  "空気は",
+];
+
+const GENERIC_WORLD_INQUIRY_MARKERS = [
   "どんな感じ",
   "景色",
-  "空気は",
 ];
 
 const WORLD_REFERENCE_MARKERS = [
@@ -3624,20 +3627,62 @@ function analyzeInteraction(
   const concreteTopics = topics.filter(
     (topic) => !requiresConcreteTopicSupport(topic) && !isRelationalTopic(topic),
   );
+  const relationalTopics = topics.filter((topic) => isRelationalTopic(topic));
+  const explicitQuestion =
+    normalized.includes("?") || normalized.includes("？");
   const preservation = analyzePreservationThreat(normalized);
-  const explicitQuestionPunctuation =
-    normalized.includes("?") || normalized.includes("？") ? 0.14 : 0;
+  const explicitQuestionPunctuation = explicitQuestion ? 0.14 : 0;
   const questionMarkers = countMatchesWithDivisor(normalized, QUESTION_MARKERS, 4.1);
-  const greeting = countMatchesWithDivisor(normalized, GREETING_MARKERS, 3.3);
-  const smalltalk = countMatchesWithDivisor(normalized, SMALLTALK_MARKERS, 3.7);
-  const selfInquiry = countMatchesWithDivisor(normalized, SELF_INQUIRY_MARKERS, 1.85);
-  const explicitWorldInquiry = countMatchesWithDivisor(normalized, WORLD_INQUIRY_MARKERS, 1.8);
+  const greetingBase = countMatchesWithDivisor(normalized, GREETING_MARKERS, 3.3);
+  const smalltalkBase = countMatchesWithDivisor(normalized, SMALLTALK_MARKERS, 3.7);
+  const selfInquiryBase = countMatchesWithDivisor(normalized, SELF_INQUIRY_MARKERS, 1.85);
+  const anchoredWorldInquiry = countMatchesWithDivisor(
+    normalized,
+    ANCHORED_WORLD_INQUIRY_MARKERS,
+    1.8,
+  );
+  const genericWorldInquiry = countMatchesWithDivisor(
+    normalized,
+    GENERIC_WORLD_INQUIRY_MARKERS,
+    2.8,
+  );
   const referencedWorldInquiry = countMatchesWithDivisor(normalized, WORLD_REFERENCE_MARKERS, 3.8);
   const strongWorkCue = countMatchesWithDivisor(normalized, STRONG_WORK_MARKERS, 2.2);
   const softWorkCue = countMatchesWithDivisor(normalized, SOFT_WORK_MARKERS, 4.4);
+  const greeting =
+    concreteTopics.length > 0 || explicitQuestion
+      ? greetingBase * 0.4
+      : relationalTopics.length > 0
+        ? greetingBase * 0.72
+        : greetingBase;
+  const smalltalk =
+    concreteTopics.length > 0 || selfInquiryBase > 0.35 || anchoredWorldInquiry > 0.35
+      ? smalltalkBase * 0.35
+      : relationalTopics.length > 0
+        ? smalltalkBase * 0.72
+        : smalltalkBase;
+  const selfInquiry =
+    concreteTopics.length > 0
+      ? selfInquiryBase * 0.45
+      : explicitQuestion || relationalTopics.length > 0
+        ? selfInquiryBase
+        : selfInquiryBase * 0.72;
+  const worldInquiry = clamp01(
+    hasExplicitWorldObjectReference(input)
+      ? Math.max(anchoredWorldInquiry, referencedWorldInquiry, genericWorldInquiry * 0.5, 0.52)
+      : anchoredWorldInquiry > 0.35
+        ? Math.max(anchoredWorldInquiry, referencedWorldInquiry * 0.72, genericWorldInquiry * 0.4)
+        : referencedWorldInquiry > 0.22
+          ? Math.max(referencedWorldInquiry * 0.42, genericWorldInquiry * 0.35)
+          : genericWorldInquiry * 0.24,
+  );
   const workCue = Math.max(
     concreteTopics.length > 0 ? strongWorkCue : strongWorkCue * 0.72,
-    concreteTopics.length > 0 ? softWorkCue : softWorkCue * 0.48,
+    concreteTopics.length > 0
+      ? softWorkCue
+      : selfInquiryBase > 0.35 || anchoredWorldInquiry > 0.35
+        ? softWorkCue * 0.22
+        : softWorkCue * 0.48,
   );
   const intimacy = countMatchesWithDivisor(normalized, INTIMACY_MARKERS, 4.4);
   const dismissal = countMatchesWithDivisor(normalized, DISMISSAL_MARKERS, 3);
@@ -3662,18 +3707,10 @@ function analyzeInteraction(
     smalltalk,
     repair,
     selfInquiry,
-    worldInquiry: clamp01(Math.max(explicitWorldInquiry, referencedWorldInquiry)),
+    worldInquiry,
     workCue,
     topics,
   });
-
-  if (hasExplicitWorldObjectReference(input)) {
-    return {
-      ...baseSignals,
-      worldInquiry: Math.max(baseSignals.worldInquiry, 0.52),
-    };
-  }
-
   return baseSignals;
 }
 

@@ -3787,6 +3787,38 @@ test("local fallback weights concrete work cues above generic action verbs", asy
   );
 });
 
+test("local fallback does not let greeting markers dominate concrete work turns", async () => {
+  const inputInterpreter: InputInterpreter = {
+    name: "broken-interpreter",
+    async interpretInput() {
+      throw new Error("input interpreter offline");
+    },
+  };
+
+  const result = await new HachikaEngine(createInitialSnapshot()).respondAsync(
+    "こんにちは、仕様を記録として残したい。",
+    { inputInterpreter },
+  );
+
+  assert.ok((result.debug.interpretation.scores.workCue ?? 0) >= 0.3);
+  assert.ok((result.debug.interpretation.scores.greeting ?? 0) < 0.4);
+});
+
+test("local fallback does not treat generic atmosphere follow-ups as world inquiry without world context", async () => {
+  const inputInterpreter: InputInterpreter = {
+    name: "broken-interpreter",
+    async interpretInput() {
+      throw new Error("input interpreter offline");
+    },
+  };
+
+  const result = await new HachikaEngine(createInitialSnapshot()).respondAsync("どんな感じ？", {
+    inputInterpreter,
+  });
+
+  assert.ok((result.debug.interpretation.scores.worldInquiry ?? 0) < 0.3);
+});
+
 test("local fallback keeps punctuation questions from over-weighting question score", async () => {
   const engine = new HachikaEngine(createInitialSnapshot());
 
