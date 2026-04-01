@@ -1892,6 +1892,16 @@ function buildReplyGenerationContext(
     feedback: string[];
   },
 ): ReplyGenerationContext {
+  const discourse = resolveDiscourseReplyObligation(
+    prepared.nextSnapshot,
+    prepared.responseSignals,
+    prepared.responsePlan,
+  );
+  const recentUserClaim =
+    [...prepared.nextSnapshot.discourse.recentClaims]
+      .reverse()
+      .find((claim) => claim.subject === "user")?.text ?? null;
+
   return {
     input,
     previousSnapshot: prepared.previousSnapshot,
@@ -1907,6 +1917,13 @@ function buildReplyGenerationContext(
       directAnswer: prepared.behaviorDirective.directAnswer,
       boundaryAction: prepared.behaviorDirective.boundaryAction,
       worldAction: prepared.behaviorDirective.worldAction,
+    },
+    discourse: {
+      target: discourse.target,
+      source: discourse.source,
+      requestKind: discourse.requestKind,
+      correctionKind: discourse.correctionKind,
+      recentUserClaim,
     },
     fallbackReply,
     ...(retry
@@ -4563,6 +4580,12 @@ function composeReply(
   const turnIndex = nextSnapshot.conversationCount;
   const socialTurn = replySelection.socialTurn;
   const worldTurn = responsePlan.mentionWorld || signals.worldInquiry > 0.42;
+  const discourseTarget = replySelection.discourseTarget ?? null;
+  const directReferentTurn =
+    discourseTarget === "user_name" ||
+    discourseTarget === "hachika_name" ||
+    discourseTarget === "user_profile" ||
+    discourseTarget === "hachika_profile";
   const currentTopic = replySelection.currentTopic;
   const relevantMemory = findRelevantMemory(previousSnapshot, signals.topics);
   const relevantTrace = replySelection.relevantTrace;
@@ -4618,6 +4641,15 @@ function composeReply(
 
   if (!worldTurn && directNameTurn && directReferentLine) {
     return [...new Set(parts)].slice(0, 2).join(" ");
+  }
+
+  if (!worldTurn && directReferentTurn && directReferentLine) {
+    const closing =
+      discourseTarget === "hachika_profile"
+        ? buildSelfDisclosureClosingLine(nextSnapshot, mood)
+        : null;
+    const directParts = closing ? [...new Set([...parts, closing])] : [...new Set(parts)];
+    return directParts.slice(0, closing ? 3 : 2).join(" ");
   }
 
   if (!worldTurn && !directNameTurn && (socialTurn || responsePlan.act === "attune") && socialLine) {

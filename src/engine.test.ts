@@ -1856,6 +1856,8 @@ test("local fallback can answer user-profile questions from recent discourse cla
 
   assert.match(result.reply, /疲れ|疲れて|負荷|余裕/);
   assert.equal(/[?？]$/.test(result.reply.trim()), false);
+  assert.equal(result.debug.reply.selection?.currentTopic, null);
+  assert.equal(result.debug.reply.selection?.relevantTraceTopic, null);
 });
 
 test("local fallback prioritizes unresolved direct-answer requests over stale trace fallback", () => {

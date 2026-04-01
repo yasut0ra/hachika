@@ -15,6 +15,8 @@ import type { ProactivePlan, ResponsePlan } from "./response-planner.js";
 import { deriveTraceTendingMode, pickPrimaryArtifactItem, readTraceLifecycle, sortedTraces } from "./traces.js";
 import { summarizeWorldForPrompt } from "./world.js";
 import type {
+  DiscourseCorrectionKind,
+  DiscourseRequestKind,
   DriveName,
   GeneratedTextDebug,
   HachikaSnapshot,
@@ -26,6 +28,7 @@ import type {
   SelfConflict,
   SelfModel,
   TurnDirectiveDebug,
+  TurnTarget,
 } from "./types.js";
 
 const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1";
@@ -67,6 +70,13 @@ export interface ReplyGenerationContext {
     directAnswer: boolean;
     boundaryAction: "allow" | "suppress";
     worldAction: "allow" | "suppress";
+  };
+  discourse?: {
+    target: TurnTarget | "none" | null;
+    source: "request" | "question" | "correction" | "world" | "none";
+    requestKind: DiscourseRequestKind | null;
+    correctionKind: DiscourseCorrectionKind | null;
+    recentUserClaim: string | null;
   };
   fallbackReply: string;
   retryAttempt?: number;
@@ -181,6 +191,7 @@ export interface ReplyGenerationPayload extends CommonGenerationPayload {
   composition: GenerationCompositionBrief;
   turnDirective: TurnDirectiveDebug | null;
   behaviorDirective: ReplyGenerationContext["behaviorDirective"];
+  discourse?: ReplyGenerationContext["discourse"];
   mood: MoodLabel;
   dominantDrive: DriveName;
   signals: InteractionSignals;
@@ -343,6 +354,7 @@ export function buildReplyGenerationPayload(
     composition: buildReplyCompositionBrief(context, currentTopic),
     turnDirective: context.turnDirective ?? null,
     behaviorDirective: context.behaviorDirective,
+    ...(context.discourse ? { discourse: context.discourse } : {}),
     mood: context.mood,
     dominantDrive: context.dominantDrive,
     signals: context.signals,
@@ -424,6 +436,7 @@ export function buildOpenAIChatMessages(
         "Use composition.intentSummary, composition.mustMention, composition.optionalDetails, composition.avoidTopics, and composition.styleNotes as the main brief.",
         "Use responsePlan as the primary guide for stance, distance, and act.",
         "Use turnDirective to resolve who this turn is about and what direct obligation must be satisfied.",
+        "If payload.discourse is present, treat it as the current answer obligation and do not drift away from it.",
         "Use behaviorDirective to decide whether this turn must answer directly first, soften boundary posture, or avoid world garnish.",
         "Use replySelection to stay faithful to the exact chosen focus, trace, boundary, and trace priority.",
         "If turnDirective.target is hachika_name or user_name, make the referent of 名前 explicit instead of drifting into generic relation talk.",
@@ -591,8 +604,12 @@ function buildReplyCompositionBrief(
   context: ReplyGenerationContext,
   currentTopic: string | null,
 ): GenerationCompositionBrief {
+  const discourseTarget = context.discourse?.target ?? context.replySelection.discourseTarget ?? null;
   const mustMention = uniqueNonEmpty([
     currentTopic,
+    discourseTarget && discourseTarget !== "none" && discourseTarget !== "work_topic"
+      ? discourseTarget
+      : null,
     context.responsePlan.mentionTrace ? context.replySelection.relevantTraceTopic : null,
     context.responsePlan.mentionBoundary ? context.replySelection.relevantBoundaryTopic : null,
     context.responsePlan.mentionWorld ? context.nextSnapshot.world.currentPlace : null,
@@ -600,6 +617,16 @@ function buildReplyCompositionBrief(
   ]);
 
   const optionalDetails = uniqueNonEmpty([
+    context.discourse?.recentUserClaim &&
+    discourseTarget === "user_profile"
+      ? `直近の user claim: ${context.discourse.recentUserClaim}`
+      : null,
+    context.discourse?.source === "correction"
+      ? "直前の訂正を優先して答える"
+      : null,
+    context.discourse?.requestKind === "style"
+      ? "言い方の指定に従って、回り道せず答える"
+      : null,
     context.responsePlan.act === "self_disclose"
       ? buildSelfDisclosurePromptCue(context.nextSnapshot)
       : null,
@@ -678,6 +705,25 @@ function summarizeReplyIntent(
   context: ReplyGenerationContext,
   currentTopic: string | null,
 ): string {
+  const discourseTarget = context.discourse?.target ?? context.replySelection.discourseTarget ?? null;
+
+  if (discourseTarget && discourseTarget !== "none" && discourseTarget !== "work_topic") {
+    switch (discourseTarget) {
+      case "hachika_name":
+        return "ハチカ自身の名前をまず明示して答える。余計な関係談義へ逸れない。";
+      case "user_name":
+        return "相手の名前について直接答える。曖昧な relation talk に逃げない。";
+      case "user_profile":
+        return "相手についての見立てを先に答える。topic ではなく直近の claim に寄せる。";
+      case "hachika_profile":
+        return "ハチカ自身について直接答える。抽象 identity より一つ具体的な癖を優先する。";
+      case "relation":
+        return "関係の置き方に直接答える。古い work topic を持ち込まない。";
+      case "world_state":
+        return "場所や周囲の今を先に答える。";
+    }
+  }
+
   if (context.responsePlan.act === "self_disclose") {
     return "自己説明として答える。場所・癖・近づき方のうち一つだけ具体的に言う。";
   }
@@ -721,12 +767,22 @@ function summarizeProactiveIntent(
 }
 
 function buildReplyStyleNotes(context: ReplyGenerationContext): string[] {
+  const discourseTarget = context.discourse?.target ?? context.replySelection.discourseTarget ?? null;
   return uniqueNonEmpty([
     ...(context.retryFeedback ?? []),
     "fallback の語順をなぞらず、新しく言い直す",
     "抽象ラベルや決まり文句だけで済ませず、具体物・行動・相手の言葉を優先する",
     context.behaviorDirective.directAnswer
       ? "聞かれていることには一文目で先に答え、回りくどい導入を避ける"
+      : null,
+    discourseTarget && discourseTarget !== "none" && discourseTarget !== "work_topic"
+      ? "いまの referent / request から逸れて古い topic や trace を持ち込まない"
+      : null,
+    context.discourse?.requestKind === "style"
+      ? "言い直し要求があるので、説明不足のまま問い返しへ逃げない"
+      : null,
+    context.discourse?.correctionKind === "referent"
+      ? "誰のことを聞かれているかを取り違えない"
       : null,
     context.behaviorDirective.worldAction === "suppress"
       ? "threshold や机などの場の描写は必要なときだけに絞る"

@@ -156,6 +156,13 @@ test("buildReplyGenerationPayload surfaces fallback intent and internal state su
       boundaryAction: "allow",
       worldAction: "allow",
     },
+    discourse: {
+      target: "work_topic",
+      source: "none",
+      requestKind: null,
+      correctionKind: null,
+      recentUserClaim: null,
+    },
     fallbackReply: "「設計」はまだ前に進められる。止めたままにするより、もう少し動かしたい。",
   };
 
@@ -193,6 +200,99 @@ test("buildReplyGenerationPayload surfaces fallback intent and internal state su
   assert.equal(payload.recentMemories[0]?.text, "設計をもう一段詰めたい。");
   assert.equal(payload.world.currentPlace, nextSnapshot.world.currentPlace);
   assert.match(payload.world.summary, /threshold|studio|archive|朝|昼|夕方|夜/);
+});
+
+test("buildReplyGenerationPayload carries discourse obligation for direct profile answers", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.discourse.recentClaims.push({
+    subject: "user",
+    kind: "state",
+    text: "私は今日は少し疲れてる。",
+    updatedAt: "2026-04-01T00:00:00.000Z",
+  });
+
+  const context: ReplyGenerationContext = {
+    input: "私のことどう見える？",
+    previousSnapshot: snapshot,
+    nextSnapshot: snapshot,
+    mood: "warm",
+    dominantDrive: "relation",
+    signals: {
+      positive: 0,
+      negative: 0,
+      question: 0.7,
+      novelty: 0,
+      intimacy: 0.16,
+      dismissal: 0,
+      memoryCue: 0,
+      expansionCue: 0,
+      completion: 0,
+      abandonment: 0,
+      preservationThreat: 0,
+      preservationConcern: null,
+      repetition: 0,
+      neglect: 0,
+      greeting: 0,
+      smalltalk: 0,
+      repair: 0,
+      selfInquiry: 0,
+      worldInquiry: 0,
+      workCue: 0,
+      topics: [],
+    },
+    selfModel: {
+      narrative: "相手について直接返す。",
+      topMotives: [],
+      conflicts: [],
+      dominantConflict: null,
+    },
+    responsePlan: {
+      act: "attune",
+      stance: "measured",
+      distance: "close",
+      focusTopic: null,
+      mentionTrace: false,
+      mentionIdentity: false,
+      mentionBoundary: false,
+      mentionWorld: false,
+      askBack: false,
+      variation: "brief",
+      summary: "attune/measured/close",
+    },
+    replySelection: {
+      socialTurn: false,
+      currentTopic: null,
+      relevantTraceTopic: null,
+      relevantBoundaryTopic: null,
+      prioritizeTraceLine: false,
+      discourseTarget: "user_profile",
+    },
+    behaviorDirective: {
+      directAnswer: true,
+      boundaryAction: "suppress",
+      worldAction: "suppress",
+    },
+    discourse: {
+      target: "user_profile",
+      source: "question",
+      requestKind: null,
+      correctionKind: null,
+      recentUserClaim: "私は今日は少し疲れてる。",
+    },
+    fallbackReply: "いま見えているのは、疲れが前に出ていることだ。",
+  };
+
+  const payload = buildReplyGenerationPayload(context);
+
+  assert.equal(payload.discourse?.target, "user_profile");
+  assert.ok(
+    payload.composition.optionalDetails.some((detail) =>
+      detail.includes("私は今日は少し疲れてる。")
+    ),
+  );
+  assert.ok(
+    payload.composition.styleNotes.some((note) => note.includes("逸れて古い topic")),
+  );
 });
 
 test("buildOpenAIChatMessages hides fallback reply on the first draft", () => {
@@ -258,12 +358,20 @@ test("buildOpenAIChatMessages hides fallback reply on the first draft", () => {
       boundaryAction: "suppress",
       worldAction: "suppress",
     },
+    discourse: {
+      target: "hachika_name",
+      source: "question",
+      requestKind: null,
+      correctionKind: null,
+      recentUserClaim: null,
+    },
     fallbackReply: "名前なら、ハチカでいいよ。",
   };
 
   const messages = buildOpenAIChatMessages(context);
   assert.match(messages[1]!.content, /fallbackReply is intentionally omitted/);
   assert.match(messages[1]!.content, /"fallbackReply": null/);
+  assert.match(messages[1]!.content, /payload\.discourse|\"discourse\"/);
 });
 
 test("buildProactiveGenerationPayload surfaces pending initiative and fallback proactive text", () => {
