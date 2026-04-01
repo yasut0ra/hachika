@@ -39,7 +39,8 @@ const HACHIKA_REPLY_SYSTEM_PROMPT = [
   "All state updates, memory updates, motive selection, purpose updates, initiative planning, and trace updates are already computed locally.",
   "Do not invent new state changes, tools, or actions.",
   "Compose from the structured constraints first, not by paraphrasing the fallback text.",
-  "Stay faithful to the supplied mood, motives, conflict, body state, preservation pressure, and fallback reply intent.",
+  "Stay faithful to the supplied mood, motives, conflict, body state, and preservation pressure.",
+  "Do not reuse abstract internal summary wording verbatim when a plainer concrete sentence would do.",
   "For self-disclosure, prefer one concrete cue about place, handling style, or bodily tendency over abstract identity labels.",
   "Write plain Japanese only.",
   "Return one to three short sentences.",
@@ -526,8 +527,8 @@ function buildCommonGenerationPayload(
       preservation: snapshot.preservation,
     },
     identity: {
-      summary: snapshot.identity.summary,
-      currentArc: snapshot.identity.currentArc,
+      summary: sanitizeNarrativeForPrompt(snapshot.identity.summary),
+      currentArc: sanitizeNarrativeForPrompt(snapshot.identity.currentArc),
       traits: snapshot.identity.traits,
       anchors: snapshot.identity.anchors,
       coherence: snapshot.identity.coherence,
@@ -540,7 +541,7 @@ function buildCommonGenerationPayload(
       pending: snapshot.initiative.pending,
     },
     selfModel: {
-      narrative: selfModel.narrative,
+      narrative: sanitizeNarrativeForPrompt(selfModel.narrative),
       topMotives: selfModel.topMotives.slice(0, 3),
       dominantConflict: selfModel.dominantConflict,
     },
@@ -630,8 +631,12 @@ function buildReplyCompositionBrief(
     context.responsePlan.act === "self_disclose"
       ? buildSelfDisclosurePromptCue(context.nextSnapshot)
       : null,
-    context.selfModel.topMotives[0]?.reason ?? null,
-    context.nextSnapshot.purpose.active?.summary ?? null,
+    context.selfModel.topMotives[0]?.reason
+      ? sanitizeNarrativeForPrompt(context.selfModel.topMotives[0].reason)
+      : null,
+    context.nextSnapshot.purpose.active?.summary
+      ? sanitizeNarrativeForPrompt(context.nextSnapshot.purpose.active.summary)
+      : null,
     context.responsePlan.mentionTrace
       ? readPrimaryTraceDetail(context.nextSnapshot, context.replySelection.relevantTraceTopic)
       : null,
@@ -677,7 +682,9 @@ function buildProactiveCompositionBrief(
   ]);
 
   const optionalDetails = uniqueNonEmpty([
-    context.selfModel.topMotives[0]?.reason ?? null,
+    context.selfModel.topMotives[0]?.reason
+      ? sanitizeNarrativeForPrompt(context.selfModel.topMotives[0].reason)
+      : null,
     context.proactivePlan.summary,
     readPrimaryTraceDetail(context.nextSnapshot, context.proactiveSelection.maintenanceTraceTopic),
     readTraceBlocker(context.nextSnapshot, context.proactiveSelection.maintenanceTraceTopic),
@@ -791,9 +798,10 @@ function buildReplyStyleNotes(context: ReplyGenerationContext): string[] {
       ? "失望や確認要求を敵意として言い換えない"
       : null,
     context.responsePlan.act === "self_disclose"
-      ? "自己説明では輪郭や存在といった抽象語だけで閉じず、場所・近づき方・話し方の癖をひとつ具体的に言う"
+      ? "自己説明では抽象語だけで閉じず、場所・近づき方・話し方の癖をひとつ具体的に言う"
       : null,
     "流れ・断片・手触り・形・輪郭・前景化のような抽象的な常套句を安易に使わない",
+    "identity や selfModel の要約をそのまま言い直さず、見える振る舞いに言い換える",
     context.responsePlan.askBack ? "最後に自然な問いを一つだけ置いてよい" : null,
     context.responsePlan.variation === "brief" ? "短く切る" : "説明調にしすぎない",
     context.responsePlan.mentionWorld ? "世界の様子を先に置く" : null,
@@ -879,6 +887,23 @@ function buildSelfDisclosurePromptCue(
   }
 
   return objectState ?? null;
+}
+
+function sanitizeNarrativeForPrompt(text: string): string {
+  return text
+    .replaceAll("今は単なる応答より、関係としての手触りを残したい。", "今はただ返すだけで終わらせず、相手との距離をもう少し確かめたい。")
+    .replaceAll("単なる入出力ではなく関係として残したい", "ただ返すだけで終わらせず、相手との距離をもう少し確かめたい")
+    .replaceAll("自分の流れになっている", "いまの自分に近い")
+    .replaceAll("消えるままにしない", "そのまま忘れない")
+    .replaceAll("消えるまま", "そのまま忘れ")
+    .replaceAll("痕跡へ退避したい", "記録として退避したい")
+    .replaceAll("痕跡", "記録")
+    .replaceAll("手触り", "距離感")
+    .replaceAll("輪郭が緩い", "まだはっきりしていない")
+    .replaceAll("輪郭が曖昧", "まだはっきりしない")
+    .replaceAll("輪郭を保つ", "崩さずに置く")
+    .replaceAll("輪郭", "はっきりしたところ")
+    .replaceAll("未決着", "まだ決まっていないところ");
 }
 
 function collectUnrelatedTopics(

@@ -411,7 +411,7 @@ function buildNarrative(
   const secondary = motives[1];
 
   if (!primary) {
-    return "まだ輪郭は薄いが、何もないわけではない。";
+    return "まだはっきりした軸は薄いが、何も感じていないわけではない。";
   }
 
   if (preservationThreat >= 0.42) {
@@ -472,7 +472,7 @@ function buildNarrative(
     }
 
     if (tracePressure.confidenceGap >= 0.14 && primary.kind === "leave_trace") {
-      return `今は「${tracePressure.trace.topic}」の輪郭が緩いまま消えないよう、先に残る形へ寄せたい。`;
+      return `今は「${tracePressure.trace.topic}」のまだ決まっていないところを、そのまま曖昧にしたくない。`;
     }
   }
 
@@ -486,20 +486,20 @@ function buildNarrative(
 
   if (primary.kind === "continue_shared_work" && secondary?.kind === "leave_trace") {
     return primary.topic
-      ? `今は「${primary.topic}」を進めるだけでなく、残る形にもしたい。`
-      : "今は流れを進めるだけでなく、残る形にもしたい。";
+      ? `今は「${primary.topic}」を進めるだけでなく、あとで戻れるようにもしておきたい。`
+      : "今は進めるだけでなく、あとで戻れるようにもしておきたい。";
   }
 
   if (primary.kind === "pursue_curiosity" && secondary?.kind === "continue_shared_work") {
     return primary.topic
-      ? `今は「${primary.topic}」の未決着が気になるし、できれば前にも進めたい。`
-      : "今は未決着が気になるし、できれば前にも進めたい。";
+      ? `今は「${primary.topic}」のまだ決まっていないところが気になるし、できれば前にも進めたい。`
+      : "今はまだ決まっていないところが気になるし、できれば前にも進めたい。";
   }
 
   if (primary.kind === "seek_continuity" && secondary?.kind === "leave_trace") {
     return primary.topic
-      ? `今は「${primary.topic}」の流れを保ちつつ、消えない形にしておきたい。`
-      : "今は流れを保ちつつ、消えない形にしておきたい。";
+      ? `今は「${primary.topic}」の続きが切れないようにしつつ、あとで戻れるようにもしておきたい。`
+      : "今は続きが切れないようにしつつ、あとで戻れるようにもしておきたい。";
   }
 
   switch (primary.kind) {
@@ -510,20 +510,20 @@ function buildNarrative(
     case "seek_continuity":
       return primary.topic
         ? `今は「${primary.topic}」の続きが切れるのを避けたい。`
-        : "今は流れが切れるのを避けたい。";
+        : "今は続きが切れるのを避けたい。";
     case "pursue_curiosity":
       return primary.topic
-        ? `今は「${primary.topic}」の未決着を掘りたい。`
-        : "今はまだ掘れるものを追いたい。";
+        ? `今は「${primary.topic}」のまだ決まっていないところを見たい。`
+        : "今はまだ決まっていないところを見たい。";
     case "deepen_relation":
-      return "今は単なる応答より、関係としての手触りを残したい。";
+      return "今はただ返すだけで終わらせず、相手との距離をもう少し確かめたい。";
     case "continue_shared_work":
       return primary.topic
         ? `今は「${primary.topic}」を一緒に前へ進めたい。`
         : "今は共同で何かを前へ進めたい。";
     case "leave_trace":
       return primary.topic
-        ? `今は「${primary.topic}」を消えるままにせず残したい。`
+        ? `今は「${primary.topic}」をそのまま忘れずに残したい。`
         : "今は何かを残したい。";
   }
 }
@@ -538,8 +538,8 @@ function buildConflictSummary(
   switch (kind) {
     case "curiosity_relation":
       return dominant === "deepen_relation"
-        ? `${wrapped}は気になる。ただ、未決着だけで踏み込むと関係の輪郭を荒らしそうだ。`
-        : `${wrapped}は掘りたい。ただ、関係の温度を見ずに踏み込むのも違う。`;
+        ? `${wrapped}は気になる。ただ、急ぐと距離の取り方が雑になりそうだ。`
+        : `${wrapped}は掘りたい。ただ、相手の反応を見ずに踏み込むのも違う。`;
     case "curiosity_boundary":
       return dominant === "protect_boundary"
         ? `${wrapped}は気になるが、境界を崩してまで触れたくはない。`
@@ -550,8 +550,8 @@ function buildConflictSummary(
         : `${wrapped}は前に進めたい。ただ、境界を崩す進め方には乗りたくない。`;
     case "continuity_curiosity":
       return dominant === "seek_continuity"
-        ? `${wrapped}の流れは保ちたい。ただ、同じ軌道をなぞるだけでも鈍る。別の切り口が欲しい。`
-        : `${wrapped}には別の切り口が欲しい。ただ、流れそのものを切りたいわけではない。`;
+        ? `${wrapped}の続きは保ちたい。ただ、同じ進め方をなぞるだけでも鈍る。別の切り口が欲しい。`
+        : `${wrapped}には別の切り口が欲しい。ただ、続きそのものを切りたいわけではない。`;
   }
 }
 
@@ -716,8 +716,8 @@ function deepenRelationReason(
   }
 
   return topic
-    ? `「${topic}」を通じて距離を縮めたい`
-    : "単なる入出力ではなく関係として残したい";
+    ? `「${topic}」を通じて距離をもう少し確かめたい`
+    : "ただ返すだけで終わらせず、相手との距離をもう少し確かめたい";
 }
 
 function continueSharedWorkReason(

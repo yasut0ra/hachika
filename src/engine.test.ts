@@ -2338,7 +2338,7 @@ test("identity can surface in a generic follow-up reply", () => {
   engine.respond("その設計の流れは残しながら、もう少し前に進めたい。");
   const result = engine.respond("どうする？");
 
-  assert.match(result.reply, /自分の流れ|前に進めたい|記憶の表面に残っている/);
+  assert.match(result.reply, /設計|前に進めたい|まだ決まっていない|気になる/);
   assert.ok(result.snapshot.identity.anchors.includes("設計"));
 });
 
@@ -2350,7 +2350,8 @@ test("self-model surfaces curiosity and relation conflict", () => {
 
   assert.equal(conflict?.kind, "curiosity_relation");
   assert.equal(conflict?.dominant, "deepen_relation");
-  assert.match(result.reply, /関係|手触り|踏み込む/);
+  assert.match(result.reply, /様子|話しながら|まだ決まっていない|少し/);
+  assert.doesNotMatch(result.reply, /手触り|単なる入出力|輪郭/);
 });
 
 test("self-model can keep a topic while surfacing boundary conflict", () => {

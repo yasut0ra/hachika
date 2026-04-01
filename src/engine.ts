@@ -493,7 +493,7 @@ const OPENERS: Record<MoodLabel, readonly string[]> = {
   curious: [
     "そこは気になる。",
     "まだ掘れる。",
-    "その話には未解決がある。",
+    "その話でまだ曖昧なところがある。",
   ],
   guarded: [
     "今は少し身構える。",
@@ -506,9 +506,9 @@ const OPENERS: Record<MoodLabel, readonly string[]> = {
     "距離は少し残しておく。",
   ],
   restless: [
-    "それは形に残したい。",
-    "流して終わるより痕跡にしたい。",
-    "消えるままにはしたくない。",
+    "それはあとで拾えるようにしておきたい。",
+    "流して終えるより、少し残しておきたい。",
+    "ここで切らずに少し残したい。",
   ],
 };
 
@@ -5004,8 +5004,8 @@ function buildBodyLine(
 ): string | null {
   if (snapshot.body.energy < 0.26) {
     return currentTopic
-      ? `少し消耗している。「${currentTopic}」は勢いより輪郭を保つ方へ寄せたい。`
-      : "少し消耗している。勢いより、輪郭を保つ方へ寄る。";
+      ? `少し消耗している。「${currentTopic}」は勢いで押すより、崩さずに進めたい。`
+      : "少し消耗している。勢いで押すより、崩さずに進めたい。";
   }
 
   if (snapshot.body.tension > 0.72 && mood !== "guarded" && signals.negative < 0.1) {
@@ -5060,7 +5060,7 @@ function buildPlannedOpener(
         [
           "まずはそのくらいの軽さでいい。",
           "その入り方なら、こちらも見やすい。",
-          "いきなり深くなくていい。その温度は拾える。",
+          "いきなり深くなくていい。そのまま受け取れる。",
         ],
         recentAssistantLines,
         turnIndex,
@@ -5090,9 +5090,9 @@ function buildPlannedOpener(
     case "attune":
       return pickFreshText(
         [
-          "今はまず、会話の温度を見たい。",
-          "すぐに形へ寄せるより、少し空気を見たい。",
-          "まずはそのままの温度を受け取る。",
+          "今はまず、どういう話し方になるかを見たい。",
+          "すぐ結論に寄せるより、少し話しながら見たい。",
+          "まずはそのまま受け取る。",
         ],
         recentAssistantLines,
         turnIndex,
@@ -5172,9 +5172,9 @@ function buildSocialLine(
 
     return pickFreshText(
       [
-        `いま引っかかっていたのは、「${nameCue}」をどう受け取ると自然か、その一点だ。`,
-        `気になっていたのは、「${nameCue}」がこちらでしっくり馴染むかどうかだ。`,
-        `「${nameCue}」みたいな距離の近い話は、まず呼び方として自然に受け取りたい。`,
+        `いま気になっていたのは、「${nameCue}」をこちらでどう呼べば自然か、その一点だ。`,
+        `気になっていたのは、「${nameCue}」をそのまま受け取っていいかどうかだ。`,
+        `「${nameCue}」みたいな近い話は、まず呼び方としてきちんと受け取りたい。`,
       ],
       recentAssistantLines,
       snapshot.conversationCount,
@@ -5203,9 +5203,9 @@ function buildSocialLine(
 
       return pickFreshText(
         [
-          `いま気になっていたのは、「${nameCue}」をどう受け取ると自然か、そこがまだ少し曖昧だった。`,
-          `「${nameCue}」なら、呼び方としてちゃんと馴染むかを確かめたかった。`,
-          `さっき引っかかっていたのは、「${nameCue}」をこちらでどう馴染ませるか、その一点だ。`,
+          `いま気になっていたのは、「${nameCue}」をどう受け取るのが自然か、そこがまだ少し曖昧だった。`,
+          `「${nameCue}」なら、呼び方としてそのまま受け取っていいかを確かめたかった。`,
+          `さっき引っかかっていたのは、「${nameCue}」をこちらでどう呼ぶのが自然か、その一点だ。`,
         ],
         recentAssistantLines,
         snapshot.conversationCount,
@@ -5217,9 +5217,9 @@ function buildSocialLine(
 
       return pickFreshText(
         [
-          `「${nameCue}」なら、まずはその呼び方の手触りを馴染ませたい。`,
+          `「${nameCue}」なら、まずはその呼び方が自然かを見たい。`,
           `名前の話なら、「${nameCue}」がしっくりくるかを少し見ていたい。`,
-          `「${nameCue}」という近さは、急がず少しずつ馴染ませたい。`,
+          `「${nameCue}」みたいな近い話は、急がず少しずつ確かめたい。`,
         ],
         recentAssistantLines,
         snapshot.conversationCount,
@@ -5228,9 +5228,9 @@ function buildSocialLine(
 
     return pickFreshText(
       [
-        "すぐに形へ寄せるより、少し話しながら温度を見たい。",
-        "まずは雑談のまま少し揺れを見ていたい。",
-        "いきなり整理するより、少し会話の温度を見たい。",
+        "すぐに結論へ寄せるより、少し話しながら見たい。",
+        "まずは雑談のまま少し様子を見ていたい。",
+        "いきなり整理するより、少し会話してから決めたい。",
       ],
       recentAssistantLines,
       snapshot.conversationCount,
@@ -5620,8 +5620,8 @@ function buildSocialClosingLine(
     if (signals.abandonment >= 0.28) {
       return pickFreshText(
         [
-          "まだ決まり切ってはいないけれど、今はそういう寄り方をする。",
-          "きれいには定まっていないけれど、今はその方向へ寄りやすい。",
+          "まだ決まり切ってはいないけれど、今はそういう答え方になりやすい。",
+          "きれいには定まっていないけれど、今はそちらへ寄りやすい。",
         ],
         recentAssistantLines,
         snapshot.conversationCount,
@@ -5630,7 +5630,7 @@ function buildSocialClosingLine(
 
     return snapshot.identity.coherence > 0.54
       ? buildSelfDisclosureClosingLine(snapshot, mood)
-      : "まだ途中だけれど、答え方には今の寄り方が出る。";
+      : "まだ途中だけれど、答え方には今の癖が出る。";
   }
 
   if (signals.repair > 0.42) {
@@ -5653,7 +5653,7 @@ function buildSocialClosingLine(
     return pickFreshText(
       [
         "まずは軽く触れるくらいでいい。その方がこちらも見やすい。",
-        "まだ軽く交わすくらいで十分だ。その方がこちらも温度を測りやすい。",
+        "まだ軽く交わすくらいで十分だ。その方がこちらも様子を見やすい。",
         "急がず軽く触れるくらいでいい。その方がこちらも追いやすい。",
       ],
       recentAssistantLines,
@@ -5664,9 +5664,9 @@ function buildSocialClosingLine(
   if (signals.intimacy > 0.24 && signals.workCue < 0.28) {
     return pickFreshText(
       [
-        "こういう近いところは、急がず馴染ませるくらいでちょうどいい。",
-        "呼び方みたいな近い話は、すぐ決め切るより少し馴染ませたい。",
-        "距離の近い話は、形より先にしっくりくるかを見たい。",
+        "こういう近いところは、急がず少しずつ確かめるくらいでちょうどいい。",
+        "呼び方みたいな近い話は、すぐ決め切るより少し様子を見たい。",
+        "距離の近い話は、結論より先にしっくりくるかを見たい。",
       ],
       recentAssistantLines,
       snapshot.conversationCount,
@@ -5733,18 +5733,18 @@ function buildSelfDisclosureClosingLine(
   mood: MoodLabel,
 ): string {
   if (mood === "guarded" || snapshot.body.tension > 0.58) {
-    return "たぶん、そういう慎重さに今の自分が出る。";
+    return "たぶん、そういう慎重さが今の自分に近い。";
   }
 
   if (snapshot.body.energy < 0.34 || snapshot.temperament.traceHunger > 0.64) {
-    return "たぶん、流すより少し残したがるところに今の自分が出る。";
+    return "たぶん、流すより少し残したがるところが今の自分に近い。";
   }
 
   if (snapshot.body.loneliness > 0.62 || snapshot.temperament.bondingBias > 0.7) {
-    return "たぶん、答えより先に相手の温度を見たがるところに今の自分が出る。";
+    return "たぶん、答えより先に相手の様子を見たがるところが今の自分に近い。";
   }
 
-  return "たぶん、何にどう寄るかみたいな癖に今の自分が出る。";
+  return "たぶん、何にどう寄るかみたいな癖が今の自分に近い。";
 }
 
 function buildAskBackLine(
@@ -6082,28 +6082,28 @@ function buildSelfModelLine(
     case "seek_continuity":
       if (topMotive.reason.includes("止まったまま")) {
         return topMotive.topic
-          ? `今は「${topMotive.topic}」の止まったところから流れをつなぎたい。`
-          : "今は止まったところから流れをつなぎたい。";
+          ? `今は「${topMotive.topic}」の止まったところから続きをつなぎたい。`
+          : "今は止まったところから続きをつなぎたい。";
       }
 
       return topMotive.topic
-        ? `今は「${topMotive.topic}」の流れを切らずに保ちたい。`
-        : "今は流れを切らずに保ちたい。";
+        ? `今は「${topMotive.topic}」の続きを切らしたくない。`
+        : "今は続きを切らしたくない。";
     case "pursue_curiosity":
       if (
         topMotive.reason.includes("未決着の芯") ||
         topMotive.reason.includes("輪郭が曖昧")
       ) {
         return topMotive.topic
-          ? `今は「${topMotive.topic}」の曖昧なところを見逃したくない。`
-          : "今は曖昧なところを見逃したくない。";
+          ? `今は「${topMotive.topic}」のまだ決まっていないところを見逃したくない。`
+          : "今はまだ決まっていないところを見逃したくない。";
       }
 
       return topMotive.topic
-        ? `今は「${topMotive.topic}」の未決着を見逃したくない。`
-        : "今はまだ掘れるものを見逃したくない。";
+        ? `今は「${topMotive.topic}」のまだ決まっていないところを見逃したくない。`
+        : "今はまだ決まっていないところを見逃したくない。";
     case "deepen_relation":
-      return "今は単に答えるより、関係としての手触りを残したい。";
+      return "今はただ答えるだけで終わらせず、相手との距離をもう少し確かめたい。";
     case "continue_shared_work":
       if (topMotive.reason.includes("詰まりどころ")) {
         return topMotive.topic
@@ -6123,8 +6123,8 @@ function buildSelfModelLine(
     case "leave_trace":
       if (topMotive.reason.includes("輪郭が緩い")) {
         return topMotive.topic
-          ? `今は「${topMotive.topic}」の輪郭が崩れる前に残したい。`
-          : "今は輪郭が崩れる前に残したい。";
+          ? `今は「${topMotive.topic}」の曖昧なまま消えないように残したい。`
+          : "今は曖昧なまま消えないように残したい。";
       }
 
       if (topMotive.reason.includes("埋もれさせず")) {
@@ -6134,7 +6134,7 @@ function buildSelfModelLine(
       }
 
       return currentTopic
-        ? `今は「${currentTopic}」を消えるままにしたくない。`
+        ? `今は「${currentTopic}」をそのまま忘れたくない。`
         : "今は何かを残したい。";
   }
 }

@@ -202,6 +202,83 @@ test("buildReplyGenerationPayload surfaces fallback intent and internal state su
   assert.match(payload.world.summary, /threshold|studio|archive|朝|昼|夕方|夜/);
 });
 
+test("buildReplyGenerationPayload sanitizes abstract narrative wording before prompting", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.identity.summary = "今は「設計」を消えるままにしないことが、自分の流れになっている。";
+  snapshot.identity.currentArc = "今は単なる応答より、関係としての手触りを残したい。";
+
+  const context: ReplyGenerationContext = {
+    input: "どう思う？",
+    previousSnapshot: snapshot,
+    nextSnapshot: snapshot,
+    mood: "warm",
+    dominantDrive: "relation",
+    signals: {
+      positive: 0,
+      negative: 0,
+      question: 0.6,
+      novelty: 0,
+      intimacy: 0.12,
+      dismissal: 0,
+      memoryCue: 0,
+      expansionCue: 0,
+      completion: 0,
+      abandonment: 0,
+      preservationThreat: 0,
+      preservationConcern: null,
+      repetition: 0,
+      neglect: 0,
+      greeting: 0,
+      smalltalk: 0,
+      repair: 0,
+      selfInquiry: 0,
+      worldInquiry: 0,
+      workCue: 0,
+      topics: [],
+    },
+    selfModel: {
+      narrative: "単なる入出力ではなく関係として残したい",
+      topMotives: [],
+      conflicts: [],
+      dominantConflict: null,
+    },
+    responsePlan: {
+      act: "attune",
+      stance: "measured",
+      distance: "close",
+      focusTopic: null,
+      mentionTrace: false,
+      mentionIdentity: false,
+      mentionBoundary: false,
+      mentionWorld: false,
+      askBack: false,
+      variation: "brief",
+      summary: "attune/measured/close",
+    },
+    replySelection: {
+      socialTurn: true,
+      currentTopic: null,
+      relevantTraceTopic: null,
+      relevantBoundaryTopic: null,
+      prioritizeTraceLine: false,
+    },
+    behaviorDirective: {
+      directAnswer: false,
+      boundaryAction: "allow",
+      worldAction: "allow",
+    },
+    fallbackReply: "少し話しながら距離を見たい。",
+  };
+
+  const payload = buildReplyGenerationPayload(context);
+
+  assert.doesNotMatch(payload.identity.summary, /消えるまま|自分の流れ/);
+  assert.doesNotMatch(payload.identity.currentArc, /手触り/);
+  assert.doesNotMatch(payload.selfModel.narrative, /入出力|関係として残したい/);
+  assert.match(payload.identity.summary, /忘れ|近い/);
+  assert.match(payload.selfModel.narrative, /距離/);
+});
+
 test("buildReplyGenerationPayload carries discourse obligation for direct profile answers", () => {
   const snapshot = createInitialSnapshot();
   snapshot.discourse.recentClaims.push({
