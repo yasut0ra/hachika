@@ -10,4 +10,6 @@ test("createInitialSnapshot starts on the current snapshot version", () => {
   assert.ok(snapshot.dynamics);
   assert.equal(snapshot.discourse.userName, null);
   assert.equal(snapshot.discourse.hachikaName?.value, "ハチカ");
+  assert.deepEqual(snapshot.discourse.openQuestions, []);
+  assert.equal(snapshot.discourse.lastCorrection, null);
 });

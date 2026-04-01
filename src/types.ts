@@ -73,9 +73,30 @@ export interface DiscourseFact {
   updatedAt: string;
 }
 
+export type DiscourseQuestionStatus = "open" | "resolved";
+
+export interface DiscourseOpenQuestion {
+  target: TurnTarget;
+  text: string;
+  askedAt: string;
+  status: DiscourseQuestionStatus;
+  resolvedAt: string | null;
+}
+
+export type DiscourseCorrectionKind = "referent" | "directness" | "relation";
+
+export interface DiscourseCorrection {
+  target: TurnTarget | "none";
+  kind: DiscourseCorrectionKind;
+  text: string;
+  updatedAt: string;
+}
+
 export interface DiscourseState {
   userName: DiscourseFact | null;
   hachikaName: DiscourseFact | null;
+  openQuestions: DiscourseOpenQuestion[];
+  lastCorrection: DiscourseCorrection | null;
 }
 
 export interface PreferenceImprint {

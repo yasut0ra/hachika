@@ -21,10 +21,14 @@ import type {
   AutonomousFeedEntry,
   BoundaryImprint,
     BodyState,
+    DiscourseCorrection,
+    DiscourseCorrectionKind,
     DiscourseFact,
     DiscourseState,
     DiscourseFactKind,
     DiscourseFactSource,
+    DiscourseOpenQuestion,
+    DiscourseQuestionStatus,
     DynamicsState,
     GenerationHistoryEntry,
     DriveState,
@@ -364,6 +368,8 @@ function hydrateDiscourse(raw: unknown): DiscourseState {
     userName: hydrateDiscourseFact(raw.userName, "user_name"),
     hachikaName:
       hydrateDiscourseFact(raw.hachikaName, "hachika_name") ?? initial.hachikaName,
+    openQuestions: hydrateDiscourseOpenQuestions(raw.openQuestions),
+    lastCorrection: hydrateDiscourseCorrection(raw.lastCorrection),
   };
 }
 
@@ -424,6 +430,8 @@ function sanitizeDiscourse(discourse: DiscourseState): DiscourseState {
     hachikaName:
       sanitizeDiscourseFact(discourse.hachikaName, "hachika_name") ??
       createInitialSnapshot().discourse.hachikaName,
+    openQuestions: sanitizeDiscourseOpenQuestions(discourse.openQuestions),
+    lastCorrection: sanitizeDiscourseCorrection(discourse.lastCorrection),
   };
 }
 
@@ -483,6 +491,148 @@ function isDiscourseFactSource(value: unknown): value is DiscourseFactSource {
     value === "relation_assignment" ||
     value === "self_assertion" ||
     value === "seed"
+  );
+}
+
+function hydrateDiscourseOpenQuestions(raw: unknown): DiscourseOpenQuestion[] {
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+
+  return raw
+    .map((entry) => hydrateDiscourseOpenQuestion(entry))
+    .filter((entry): entry is DiscourseOpenQuestion => entry !== null)
+    .slice(-8);
+}
+
+function hydrateDiscourseOpenQuestion(raw: unknown): DiscourseOpenQuestion | null {
+  if (!isRecord(raw)) {
+    return null;
+  }
+
+  const text = sanitizeDiscourseQuestionText(raw.text);
+  if (!text) {
+    return null;
+  }
+
+  return {
+    target: isTurnTarget(raw.target) ? raw.target : "none",
+    text,
+    askedAt:
+      typeof raw.askedAt === "string" && raw.askedAt.trim().length > 0
+        ? raw.askedAt
+        : new Date(0).toISOString(),
+    status: isDiscourseQuestionStatus(raw.status) ? raw.status : "open",
+    resolvedAt:
+      typeof raw.resolvedAt === "string" && raw.resolvedAt.trim().length > 0
+        ? raw.resolvedAt
+        : null,
+  };
+}
+
+function sanitizeDiscourseOpenQuestions(
+  questions: readonly DiscourseOpenQuestion[],
+): DiscourseOpenQuestion[] {
+  return questions
+    .map((question) => {
+      const text = sanitizeDiscourseQuestionText(question.text);
+      if (!text) {
+        return null;
+      }
+
+      return {
+        target: isTurnTarget(question.target) ? question.target : "none",
+        text,
+        askedAt:
+          typeof question.askedAt === "string" && question.askedAt.trim().length > 0
+            ? question.askedAt
+            : new Date(0).toISOString(),
+        status: isDiscourseQuestionStatus(question.status) ? question.status : "open",
+        resolvedAt:
+          typeof question.resolvedAt === "string" && question.resolvedAt.trim().length > 0
+            ? question.resolvedAt
+            : null,
+      };
+    })
+    .filter((question): question is DiscourseOpenQuestion => question !== null)
+    .slice(-8);
+}
+
+function hydrateDiscourseCorrection(raw: unknown): DiscourseCorrection | null {
+  if (!isRecord(raw)) {
+    return null;
+  }
+
+  const text = sanitizeDiscourseQuestionText(raw.text);
+  if (!text) {
+    return null;
+  }
+
+  return {
+    target: isTurnTarget(raw.target) ? raw.target : "none",
+    kind: isDiscourseCorrectionKind(raw.kind) ? raw.kind : "referent",
+    text,
+    updatedAt:
+      typeof raw.updatedAt === "string" && raw.updatedAt.trim().length > 0
+        ? raw.updatedAt
+        : new Date(0).toISOString(),
+  };
+}
+
+function sanitizeDiscourseCorrection(
+  correction: DiscourseCorrection | null,
+): DiscourseCorrection | null {
+  if (!correction) {
+    return null;
+  }
+
+  const text = sanitizeDiscourseQuestionText(correction.text);
+  if (!text) {
+    return null;
+  }
+
+  return {
+    target: isTurnTarget(correction.target) ? correction.target : "none",
+    kind: isDiscourseCorrectionKind(correction.kind) ? correction.kind : "referent",
+    text,
+    updatedAt:
+      typeof correction.updatedAt === "string" && correction.updatedAt.trim().length > 0
+        ? correction.updatedAt
+        : new Date(0).toISOString(),
+  };
+}
+
+function sanitizeDiscourseQuestionText(value: unknown): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const normalized = value.normalize("NFKC").trim();
+  if (normalized.length < 2 || normalized.length > 120) {
+    return null;
+  }
+
+  return normalized;
+}
+
+function isDiscourseQuestionStatus(value: unknown): value is DiscourseQuestionStatus {
+  return value === "open" || value === "resolved";
+}
+
+function isDiscourseCorrectionKind(value: unknown): value is DiscourseCorrectionKind {
+  return value === "referent" || value === "directness" || value === "relation";
+}
+
+function isTurnTarget(value: unknown): value is HachikaSnapshot["discourse"]["openQuestions"][number]["target"] {
+  return (
+    value === "user_name" ||
+    value === "hachika_name" ||
+    value === "user_profile" ||
+    value === "hachika_profile" ||
+    value === "relation" ||
+    value === "world_state" ||
+    value === "work_topic" ||
+    value === "none"
   );
 }
 

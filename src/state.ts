@@ -112,6 +112,8 @@ export function createInitialSnapshot(): HachikaSnapshot {
         source: "seed",
         updatedAt: new Date(0).toISOString(),
       },
+      openQuestions: [],
+      lastCorrection: null,
     },
     preferences: {},
     topicCounts: {},

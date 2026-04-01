@@ -1170,7 +1170,7 @@ export class HachikaEngine {
 
     remember(prepared.nextSnapshot, "user", input, prepared.signals.topics, sentiment);
     remember(prepared.nextSnapshot, "hachika", reply, prepared.signals.topics, "neutral");
-    updateDiscourseFacts(prepared.nextSnapshot, input, prepared.turnDebug);
+    updateDiscourseState(prepared.nextSnapshot, input, prepared.signals, prepared.turnDebug);
     recordGeneratedQuality(
       prepared.nextSnapshot,
       replyDebug,
@@ -5000,9 +5000,10 @@ function extractAssignedHachikaName(text: string): string | null {
   return candidate;
 }
 
-function updateDiscourseFacts(
+function updateDiscourseState(
   snapshot: HachikaSnapshot,
   input: string,
+  signals: InteractionSignals,
   turnDebug: TurnDirectiveDebug | null,
 ): void {
   const timestamp = snapshot.lastInteractionAt ?? new Date().toISOString();
@@ -5028,6 +5029,69 @@ function updateDiscourseFacts(
       updatedAt: timestamp,
     };
   }
+
+  if (turnDebug && turnDebug.target !== "none" && signals.question >= 0.22) {
+    snapshot.discourse.openQuestions.push({
+      target: turnDebug.target,
+      text: input.normalize("NFKC").trim(),
+      askedAt: timestamp,
+      status: turnDebug.answerMode === "clarify" ? "open" : "resolved",
+      resolvedAt: turnDebug.answerMode === "clarify" ? null : timestamp,
+    });
+    snapshot.discourse.openQuestions = snapshot.discourse.openQuestions.slice(-8);
+  }
+
+  const correction = detectDiscourseCorrection(input, turnDebug, timestamp);
+  if (correction) {
+    snapshot.discourse.lastCorrection = correction;
+  }
+}
+
+function detectDiscourseCorrection(
+  input: string,
+  turnDebug: TurnDirectiveDebug | null,
+  timestamp: string,
+): HachikaSnapshot["discourse"]["lastCorrection"] {
+  if (!turnDebug) {
+    return null;
+  }
+
+  const normalized = input.normalize("NFKC").trim();
+  const referentCorrection = /じゃなくて|ではなくて|違う|そうじゃなくて/u.test(normalized);
+  const directnessCorrection = /具体的|直接/u.test(normalized);
+  const relationCorrection = /落ち着いて|言い方|急ぎすぎ/u.test(normalized);
+
+  if (!referentCorrection && !directnessCorrection && !relationCorrection) {
+    return null;
+  }
+
+  const inferredTarget = inferCorrectionTarget(normalized, turnDebug.target);
+
+  return {
+    target: inferredTarget,
+    kind: directnessCorrection
+      ? "directness"
+      : relationCorrection
+        ? "relation"
+        : "referent",
+    text: normalized,
+    updatedAt: timestamp,
+  };
+}
+
+function inferCorrectionTarget(
+  input: string,
+  fallback: TurnDirectiveDebug["target"],
+): TurnDirectiveDebug["target"] | "none" {
+  if (/ハチカ自身|あなた自身/u.test(input)) {
+    return /名前/u.test(input) ? "hachika_name" : "hachika_profile";
+  }
+
+  if (/私のこと/u.test(input)) {
+    return /名前/u.test(input) ? "user_name" : "user_profile";
+  }
+
+  return fallback ?? "none";
 }
 
 function buildDirectReferentAnswerLine(

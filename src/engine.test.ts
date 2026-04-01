@@ -1668,6 +1668,119 @@ test("local fallback remembers assigned hachika naming as a discourse fact", () 
   assert.equal(result.snapshot.traces["名前"], undefined);
 });
 
+test("respondAsync records a resolved direct referent question in discourse state", async () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+
+  const turnDirector: TurnDirector = {
+    name: "test-turn",
+    async directTurn() {
+      return {
+        provider: "test-turn",
+        model: "stub",
+        directive: {
+          subject: "hachika",
+          target: "hachika_name",
+          answerMode: "direct",
+          relationMove: "none",
+          worldMention: "none",
+          topics: [],
+          stateTopics: [],
+          behavior: {
+            topicAction: "clear",
+            traceAction: "suppress",
+            purposeAction: "suppress",
+            initiativeAction: "suppress",
+            boundaryAction: "suppress",
+            worldAction: "suppress",
+            coolCurrentContext: false,
+            directAnswer: true,
+            summary: "turn/direct_referent_without_trace_hardening",
+          },
+          responsePlan: {
+            act: "self_disclose",
+            stance: "open",
+            distance: "close",
+            focusTopic: null,
+            mentionTrace: false,
+            mentionIdentity: false,
+            mentionBoundary: false,
+            mentionWorld: false,
+            askBack: false,
+            variation: "brief",
+            summary: "self_disclose/open/close",
+          },
+          traceExtraction: null,
+          summary: "subject:hachika/target:hachika_name/mode:direct",
+        },
+      };
+    },
+  };
+
+  const result = await engine.respondAsync("あなたの名前は？", { turnDirector });
+  const lastQuestion = result.snapshot.discourse.openQuestions.at(-1);
+
+  assert.equal(lastQuestion?.target, "hachika_name");
+  assert.equal(lastQuestion?.status, "resolved");
+  assert.equal(lastQuestion?.resolvedAt !== null, true);
+});
+
+test("respondAsync records directness and referent corrections in discourse state", async () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+
+  const turnDirector: TurnDirector = {
+    name: "test-turn",
+    async directTurn() {
+      return {
+        provider: "test-turn",
+        model: "stub",
+        directive: {
+          subject: "hachika",
+          target: "hachika_name",
+          answerMode: "direct",
+          relationMove: "none",
+          worldMention: "none",
+          topics: [],
+          stateTopics: [],
+          behavior: {
+            topicAction: "clear",
+            traceAction: "suppress",
+            purposeAction: "suppress",
+            initiativeAction: "suppress",
+            boundaryAction: "suppress",
+            worldAction: "suppress",
+            coolCurrentContext: false,
+            directAnswer: true,
+            summary: "turn/direct_referent_without_trace_hardening",
+          },
+          responsePlan: {
+            act: "self_disclose",
+            stance: "open",
+            distance: "close",
+            focusTopic: null,
+            mentionTrace: false,
+            mentionIdentity: false,
+            mentionBoundary: false,
+            mentionWorld: false,
+            askBack: false,
+            variation: "brief",
+            summary: "self_disclose/open/close",
+          },
+          traceExtraction: null,
+          summary: "subject:hachika/target:hachika_name/mode:direct",
+        },
+      };
+    },
+  };
+
+  const result = await engine.respondAsync(
+    "私のことじゃなくて、ハチカ自身の名前を具体的に答えて。",
+    { turnDirector },
+  );
+
+  assert.equal(result.snapshot.discourse.lastCorrection?.target, "hachika_name");
+  assert.equal(result.snapshot.discourse.lastCorrection?.kind, "directness");
+});
+
 test("relation clarification answers directly without turning the naming exchange into work", () => {
   const engine = new HachikaEngine(createInitialSnapshot());
 
