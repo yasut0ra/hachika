@@ -5,6 +5,7 @@ import {
 } from "./memory.js";
 import { clamp01 } from "./state.js";
 import { sortedTraces } from "./traces.js";
+import { describeWorldPlaceJa } from "./world.js";
 import type { HachikaSnapshot, PreservationConcern } from "./types.js";
 
 const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1";
@@ -105,7 +106,27 @@ export interface InputInterpretationPayload {
     kind: string | null;
     topic: string | null;
   };
-  identitySummary: string;
+  actorCue: string;
+  discourse: {
+    userName: string | null;
+    hachikaName: string | null;
+    openQuestions: Array<{
+      target: string;
+      text: string;
+      status: string;
+    }>;
+    openRequests: Array<{
+      target: string;
+      kind: string;
+      text: string;
+      status: string;
+    }>;
+    lastCorrection: {
+      target: string;
+      kind: string;
+      text: string;
+    } | null;
+  };
 }
 
 export interface InputInterpretationResult {
@@ -240,7 +261,33 @@ export function buildInputInterpretationPayload(
       kind: context.snapshot.purpose.active?.kind ?? null,
       topic: context.snapshot.purpose.active?.topic ?? null,
     },
-    identitySummary: context.snapshot.identity.summary,
+    actorCue: buildInterpreterActorCue(context),
+    discourse: {
+      userName: context.snapshot.discourse.userName?.value ?? null,
+      hachikaName: context.snapshot.discourse.hachikaName?.value ?? null,
+      openQuestions: context.snapshot.discourse.openQuestions
+        .slice(-4)
+        .map((question) => ({
+          target: question.target,
+          text: question.text,
+          status: question.status,
+        })),
+      openRequests: context.snapshot.discourse.openRequests
+        .slice(-4)
+        .map((request) => ({
+          target: request.target,
+          kind: request.kind,
+          text: request.text,
+          status: request.status,
+        })),
+      lastCorrection: context.snapshot.discourse.lastCorrection
+        ? {
+            target: context.snapshot.discourse.lastCorrection.target,
+            kind: context.snapshot.discourse.lastCorrection.kind,
+            text: context.snapshot.discourse.lastCorrection.text,
+          }
+        : null,
+    },
   };
 }
 
@@ -330,6 +377,38 @@ function normalizeInputInterpretation(rawText: string | null): InputInterpretati
   }
 
   return interpretation;
+}
+
+function buildInterpreterActorCue(
+  context: InputInterpretationContext,
+): string {
+  const snapshot = context.snapshot;
+  const place = describeWorldPlaceJa(snapshot.world.currentPlace);
+  const focusTopic =
+    snapshot.purpose.active?.topic ??
+    snapshot.purpose.lastResolved?.topic ??
+    snapshot.identity.anchors[0] ??
+    context.localTopics[0] ??
+    null;
+
+  if (
+    snapshot.discourse.openRequests.some(
+      (request) => request.status === "open" && request.kind !== "task",
+    ) ||
+    snapshot.discourse.openQuestions.some((question) => question.status === "open")
+  ) {
+    return `いまは${place}で、聞かれていることを取り違えずに受け取りたい。`;
+  }
+
+  if (snapshot.body.tension > 0.58 || snapshot.temperament.guardedness > 0.62) {
+    return `いまは${place}で、近づき方を少し慎重に見ている。`;
+  }
+
+  if (focusTopic) {
+    return `いまは${place}で、「${focusTopic}」へ目が戻りやすい。`;
+  }
+
+  return `いまは${place}で、前に来た言葉へ素直に反応しやすい。`;
 }
 
 function normalizeTopics(raw: unknown): string[] {

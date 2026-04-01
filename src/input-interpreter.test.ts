@@ -8,10 +8,11 @@ import {
 } from "./input-interpreter.js";
 import { createInitialSnapshot } from "./state.js";
 
-test("buildInputInterpretationPayload includes local and known topics", () => {
+test("buildInputInterpretationPayload uses a concrete actor cue and includes discourse context", () => {
   const snapshot = createInitialSnapshot();
   snapshot.identity.summary = "まだ輪郭は薄いが、消えていない。";
   snapshot.identity.anchors = ["設計"];
+  snapshot.world.currentPlace = "studio";
   snapshot.purpose.active = {
     kind: "continue_shared_work",
     topic: "仕様",
@@ -23,6 +24,21 @@ test("buildInputInterpretationPayload includes local and known topics", () => {
     turnsActive: 1,
   };
   snapshot.preferences.設計 = 0.42;
+  snapshot.discourse.hachikaName = {
+    kind: "hachika_name",
+    value: "ハチカ",
+    confidence: 0.82,
+    source: "relation_assignment",
+    updatedAt: "2026-03-20T00:00:00.000Z",
+  };
+  snapshot.discourse.openRequests.push({
+    target: "hachika_name",
+    kind: "style",
+    text: "ハチカ自身の名前を具体的に答えて。",
+    askedAt: "2026-03-20T00:00:00.000Z",
+    status: "open",
+    resolvedAt: null,
+  });
   snapshot.traces.設計 = {
     topic: "設計",
     kind: "continuity_marker",
@@ -55,7 +71,11 @@ test("buildInputInterpretationPayload includes local and known topics", () => {
   });
 
   assert.equal(payload.input, "こんにちは");
-  assert.equal(payload.identitySummary, snapshot.identity.summary);
+  assert.notEqual(payload.actorCue, snapshot.identity.summary);
+  assert.match(payload.actorCue, /いまは/);
+  assert.match(payload.actorCue, /studio|机/);
+  assert.equal(payload.discourse.hachikaName, "ハチカ");
+  assert.equal(payload.discourse.openRequests[0]?.target, "hachika_name");
   assert.ok(payload.knownTopics.includes("設計"));
   assert.ok(payload.knownTopics.includes("仕様"));
 });

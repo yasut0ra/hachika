@@ -309,6 +309,7 @@ Hachika は、単に有用なだけでなく、
 - 直近の generated text quality は snapshot に rolling history として保持される
   - `fallback overlap / opener echo / abstract ratio / concrete detail / focus mention` を live metrics として CLI / UI から確認できる
 - async reply では optional な `input interpreter` を通せるため、挨拶・雑談・関係修復・自己質問が stale trace や弱い topic に吸われにくい
+  - `input interpreter` にも raw な `identity.summary` ではなく concrete な actor cue と discourse context を渡すので、入口の意味解釈から abstract narrative に引っ張られにくい
 - OpenAI 互換の `reply generator` を env から有効化でき、local engine が決めた state / motive / purpose / traces を保ったまま通常応答と能動発話の wording だけを LLM に委譲できる
   - 初回生成では local rule fallback 文を prompt に見せず、structured brief だけで書かせる。fallback は retry と最終退避用にだけ使うので、LLM が local 定型文をなぞりにくい
   - async reply path では LLM に見せる fallback も full な rule 返答ではなく、短い semantic checksum を使う。従来の `composeReply()` は generator が落ちた時の最終退避へ下がっている
