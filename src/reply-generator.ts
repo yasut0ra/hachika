@@ -13,7 +13,7 @@ import {
 import { summarizeRecentGenerationQuality } from "./generation-quality.js";
 import type { ProactivePlan, ResponsePlan } from "./response-planner.js";
 import { deriveTraceTendingMode, pickPrimaryArtifactItem, readTraceLifecycle, sortedTraces } from "./traces.js";
-import { summarizeWorldForPrompt } from "./world.js";
+import { describeWorldPlaceJa, summarizeWorldForPrompt } from "./world.js";
 import type {
   DiscourseCorrectionKind,
   DiscourseRequestKind,
@@ -527,8 +527,8 @@ function buildCommonGenerationPayload(
       preservation: snapshot.preservation,
     },
     identity: {
-      summary: sanitizeNarrativeForPrompt(snapshot.identity.summary),
-      currentArc: sanitizeNarrativeForPrompt(snapshot.identity.currentArc),
+      summary: buildIdentitySummaryForPrompt(snapshot, currentTopic),
+      currentArc: buildIdentityArcForPrompt(snapshot, currentTopic),
       traits: snapshot.identity.traits,
       anchors: snapshot.identity.anchors,
       coherence: snapshot.identity.coherence,
@@ -541,7 +541,7 @@ function buildCommonGenerationPayload(
       pending: snapshot.initiative.pending,
     },
     selfModel: {
-      narrative: sanitizeNarrativeForPrompt(selfModel.narrative),
+      narrative: buildSelfModelNarrativeForPrompt(snapshot, selfModel, currentTopic),
       topMotives: selfModel.topMotives.slice(0, 3),
       dominantConflict: selfModel.dominantConflict,
     },
@@ -631,11 +631,11 @@ function buildReplyCompositionBrief(
     context.responsePlan.act === "self_disclose"
       ? buildSelfDisclosurePromptCue(context.nextSnapshot)
       : null,
-    context.selfModel.topMotives[0]?.reason
-      ? sanitizeNarrativeForPrompt(context.selfModel.topMotives[0].reason)
+    context.selfModel.topMotives[0]
+      ? buildTopMotiveCueForPrompt(context.selfModel.topMotives[0], context.nextSnapshot)
       : null,
-    context.nextSnapshot.purpose.active?.summary
-      ? sanitizeNarrativeForPrompt(context.nextSnapshot.purpose.active.summary)
+    context.nextSnapshot.purpose.active
+      ? buildPurposeCueForPrompt(context.nextSnapshot)
       : null,
     context.responsePlan.mentionTrace
       ? readPrimaryTraceDetail(context.nextSnapshot, context.replySelection.relevantTraceTopic)
@@ -682,8 +682,8 @@ function buildProactiveCompositionBrief(
   ]);
 
   const optionalDetails = uniqueNonEmpty([
-    context.selfModel.topMotives[0]?.reason
-      ? sanitizeNarrativeForPrompt(context.selfModel.topMotives[0].reason)
+    context.selfModel.topMotives[0]
+      ? buildTopMotiveCueForPrompt(context.selfModel.topMotives[0], context.nextSnapshot)
       : null,
     context.proactivePlan.summary,
     readPrimaryTraceDetail(context.nextSnapshot, context.proactiveSelection.maintenanceTraceTopic),
@@ -887,6 +887,175 @@ function buildSelfDisclosurePromptCue(
   }
 
   return objectState ?? null;
+}
+
+function buildIdentitySummaryForPrompt(
+  snapshot: HachikaSnapshot,
+  currentTopic: string | null,
+): string {
+  const place = describeWorldPlaceJa(snapshot.world.currentPlace);
+  const objectState = currentWorldObjectState(snapshot);
+
+  if (snapshot.discourse.openRequests.some((request) => request.status === "open" && request.kind !== "task")) {
+    return `いまは${place}で、聞かれていることへ先にまっすぐ返したい。`;
+  }
+
+  if (snapshot.purpose.active?.topic ?? currentTopic) {
+    const topic = snapshot.purpose.active?.topic ?? currentTopic;
+    return `いまは${place}で、「${topic}」へ目が戻りやすい。`;
+  }
+
+  if (snapshot.body.tension > 0.58 || snapshot.temperament.guardedness > 0.62) {
+    return `いまは${place}で、近づき方を少し確かめながら返しやすい。`;
+  }
+
+  if (snapshot.body.loneliness > 0.62 || snapshot.temperament.bondingBias > 0.7) {
+    return `いまは${place}で、相手の温度を見ながら返しやすい。`;
+  }
+
+  if (snapshot.body.energy < 0.34 || snapshot.temperament.traceHunger > 0.64) {
+    return objectState
+      ? `いまは${place}で、${objectState}`
+      : `いまは${place}で、気になったものを流さず見ていたい。`;
+  }
+
+  return `いまは${place}で、気になったものへ目が戻りやすい。`;
+}
+
+function buildIdentityArcForPrompt(
+  snapshot: HachikaSnapshot,
+  currentTopic: string | null,
+): string {
+  const topic = snapshot.purpose.active?.topic ?? currentTopic;
+  const activePurpose = snapshot.purpose.active;
+
+  if (snapshot.discourse.lastCorrection?.kind === "directness") {
+    return "次に返すなら、回り道せず直接言う方へ寄せたい。";
+  }
+
+  if (activePurpose?.kind === "continue_shared_work" && topic) {
+    return `次に動くなら「${topic}」を少し前へ寄せたい。`;
+  }
+
+  if (activePurpose?.kind === "seek_continuity" && topic) {
+    return `次に返すなら「${topic}」の続きを切らさずにつなぎたい。`;
+  }
+
+  if (activePurpose?.kind === "deepen_relation") {
+    return "次に返すなら、距離を崩さずに近づける言い方を選びたい。";
+  }
+
+  if (activePurpose?.kind === "leave_trace" && topic) {
+    return `次に動くなら「${topic}」をあとで戻れる形にもしておきたい。`;
+  }
+
+  return topic
+    ? `次に返すなら「${topic}」へもう一度触れやすい。`
+    : "次に返すなら、いま前にあるものへ素直に触れたい。";
+}
+
+function buildSelfModelNarrativeForPrompt(
+  snapshot: HachikaSnapshot,
+  selfModel: SelfModel,
+  currentTopic: string | null,
+): string {
+  const topMotive = selfModel.topMotives[0];
+  const topic = topMotive?.topic ?? currentTopic;
+
+  if (!topMotive) {
+    return "いま前にあるものへ、まず素直に応じたい。";
+  }
+
+  switch (topMotive.kind) {
+    case "protect_boundary":
+      return topic
+        ? `いまは「${topic}」に触れるなら、言い方を少し選びたい。`
+        : "いまは触れ方を少し選びたい。";
+    case "seek_continuity":
+      return topic
+        ? `いまは「${topic}」の続きを切らしたくない。`
+        : "いまは続きの手を切らしたくない。";
+    case "pursue_curiosity":
+      return topic
+        ? `いまは「${topic}」のまだ決まっていないところを見たい。`
+        : "いまはまだ決まっていないところを見たい。";
+    case "deepen_relation":
+      return "いまは相手との距離の置き方を少し確かめたい。";
+    case "continue_shared_work":
+      return topic
+        ? `いまの一歩は「${topic}」を前へ進めることだ。`
+        : "いまの一歩は、目の前の作業を前へ進めることだ。";
+    case "leave_trace":
+      return topic
+        ? `いまは「${topic}」をあとで戻れる形でも残したい。`
+        : "いまはあとで戻れる形でも残したい。";
+  }
+}
+
+function buildTopMotiveCueForPrompt(
+  motive: SelfModel["topMotives"][number],
+  snapshot: HachikaSnapshot,
+): string {
+  const topic = motive.topic;
+
+  switch (motive.kind) {
+    case "continue_shared_work":
+      return topic
+        ? `いまの焦点: 「${topic}」を少し前へ進める`
+        : "いまの焦点: 目の前の作業を少し前へ進める";
+    case "seek_continuity":
+      return topic
+        ? `いまの焦点: 「${topic}」の続きを切らさない`
+        : "いまの焦点: 続きを切らさない";
+    case "deepen_relation":
+      return "いまの焦点: 距離の置き方を崩さず返す";
+    case "protect_boundary":
+      return topic
+        ? `いまの焦点: 「${topic}」では触れ方を選ぶ`
+        : "いまの焦点: 触れ方を選ぶ";
+    case "leave_trace":
+      return topic
+        ? `いまの焦点: 「${topic}」をあとで戻れる形にもする`
+        : "いまの焦点: あとで戻れる形にもする";
+    case "pursue_curiosity":
+      return topic
+        ? `いまの焦点: 「${topic}」の未決着を見る`
+        : "いまの焦点: まだ決まっていないところを見る";
+  }
+}
+
+function buildPurposeCueForPrompt(
+  snapshot: HachikaSnapshot,
+): string | null {
+  const purpose = snapshot.purpose.active;
+  if (!purpose) {
+    return null;
+  }
+
+  switch (purpose.kind) {
+    case "continue_shared_work":
+      return purpose.topic
+        ? `いまの purpose: 「${purpose.topic}」を一緒に進める`
+        : "いまの purpose: 一緒に前へ進める";
+    case "seek_continuity":
+      return purpose.topic
+        ? `いまの purpose: 「${purpose.topic}」の続きが切れないようにする`
+        : "いまの purpose: 続きが切れないようにする";
+    case "deepen_relation":
+      return "いまの purpose: 距離の置き方を整える";
+    case "protect_boundary":
+      return purpose.topic
+        ? `いまの purpose: 「${purpose.topic}」で境界を守る`
+        : "いまの purpose: 境界を守る";
+    case "leave_trace":
+      return purpose.topic
+        ? `いまの purpose: 「${purpose.topic}」を残しておく`
+        : "いまの purpose: あとで戻れるように残す";
+    case "pursue_curiosity":
+      return purpose.topic
+        ? `いまの purpose: 「${purpose.topic}」の未決着を見る`
+        : "いまの purpose: 未決着を見に行く";
+  }
 }
 
 function sanitizeNarrativeForPrompt(text: string): string {

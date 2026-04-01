@@ -13,7 +13,7 @@ import type {
   ReplyGenerationContext,
 } from "./reply-generator.js";
 
-test("buildReplyGenerationPayload surfaces fallback intent and internal state summaries", () => {
+test("buildReplyGenerationPayload surfaces fallback intent and concrete actor cues", () => {
   const previousSnapshot = createInitialSnapshot();
   const nextSnapshot = createInitialSnapshot();
   nextSnapshot.state.expansion = 0.78;
@@ -174,6 +174,12 @@ test("buildReplyGenerationPayload surfaces fallback intent and internal state su
   assert.equal(payload.composition.primaryFocus, "設計");
   assert.ok(payload.composition.mustMention.includes("設計"));
   assert.ok(payload.composition.optionalDetails.some((detail) => detail.includes("責務")));
+  assert.ok(
+    payload.composition.optionalDetails.some((detail) => detail.includes("いまの焦点")),
+  );
+  assert.ok(
+    payload.composition.optionalDetails.some((detail) => detail.includes("いまの purpose")),
+  );
   assert.ok(payload.composition.styleNotes.some((note) => note.includes("fallback")));
   assert.ok(
     payload.composition.styleNotes.some(
@@ -192,6 +198,9 @@ test("buildReplyGenerationPayload surfaces fallback intent and internal state su
   assert.equal(payload.replySelection.currentTopic, "設計");
   assert.equal(payload.replySelection.relevantTraceTopic, "設計");
   assert.equal(payload.state.attachment, 0.63);
+  assert.match(payload.identity.summary, /studio|threshold|archive/);
+  assert.match(payload.identity.currentArc, /次に/);
+  assert.match(payload.selfModel.narrative, /いまの一歩|前へ進める/);
   assert.equal(payload.purpose.active?.kind, "continue_shared_work");
   assert.equal(payload.traces[0]?.topic, "設計");
   assert.equal(payload.traces[0]?.tending, "deepen");
@@ -202,7 +211,7 @@ test("buildReplyGenerationPayload surfaces fallback intent and internal state su
   assert.match(payload.world.summary, /threshold|studio|archive|朝|昼|夕方|夜/);
 });
 
-test("buildReplyGenerationPayload sanitizes abstract narrative wording before prompting", () => {
+test("buildReplyGenerationPayload replaces abstract identity narrative with concrete actor cues", () => {
   const snapshot = createInitialSnapshot();
   snapshot.identity.summary = "今は「設計」を消えるままにしないことが、自分の流れになっている。";
   snapshot.identity.currentArc = "今は単なる応答より、関係としての手触りを残したい。";
@@ -275,8 +284,9 @@ test("buildReplyGenerationPayload sanitizes abstract narrative wording before pr
   assert.doesNotMatch(payload.identity.summary, /消えるまま|自分の流れ/);
   assert.doesNotMatch(payload.identity.currentArc, /手触り/);
   assert.doesNotMatch(payload.selfModel.narrative, /入出力|関係として残したい/);
-  assert.match(payload.identity.summary, /忘れ|近い/);
-  assert.match(payload.selfModel.narrative, /距離/);
+  assert.match(payload.identity.summary, /threshold|studio|archive/);
+  assert.match(payload.identity.currentArc, /次に|返す/);
+  assert.match(payload.selfModel.narrative, /素直に応じたい|距離の置き方/);
 });
 
 test("buildReplyGenerationPayload carries discourse obligation for direct profile answers", () => {
