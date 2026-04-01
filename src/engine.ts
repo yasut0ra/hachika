@@ -1606,9 +1606,13 @@ function applyTurnDirectedPlan(
   },
 ): PreparedTurn {
   const resolvedDirective = resolveTurnDirective(directed.directive);
-  const directedPlan = applyBehaviorDirectiveToPlan(
-    resolvedDirective.responsePlan!,
-    prepared.behaviorDirective,
+  const directedPlan = applyDiscourseObligationToPlan(
+    prepared.nextSnapshot,
+    prepared.responseSignals,
+    applyBehaviorDirectiveToPlan(
+      resolvedDirective.responsePlan!,
+      prepared.behaviorDirective,
+    ),
   );
 
   return {
@@ -1746,7 +1750,16 @@ function prepareTurnFromSignals(
     ),
     behaviorDirective,
   );
-  const replySelection = resolveReplySelection(nextSnapshot, responseSignals, responsePlan);
+  const obligationAwareResponsePlan = applyDiscourseObligationToPlan(
+    nextSnapshot,
+    responseSignals,
+    responsePlan,
+  );
+  const replySelection = resolveReplySelection(
+    nextSnapshot,
+    responseSignals,
+    obligationAwareResponsePlan,
+  );
 
   return {
     previousSnapshot,
@@ -1766,14 +1779,14 @@ function prepareTurnFromSignals(
       model: null,
       fallbackUsed: false,
       error: null,
-      rulePlan: responsePlan.summary,
+      rulePlan: obligationAwareResponsePlan.summary,
       diff: null,
     },
     replySelection,
     mood,
     dominant,
     selfModel,
-    responsePlan,
+    responsePlan: obligationAwareResponsePlan,
     sentimentScore,
   };
 }
@@ -1783,6 +1796,11 @@ async function applyResponsePlanner(
   input: string,
   responsePlanner: ResponsePlanner,
 ): Promise<PreparedTurn> {
+  const discourseObligation = resolveDiscourseReplyObligation(
+    prepared.nextSnapshot,
+    prepared.responseSignals,
+    prepared.responsePlan,
+  );
   const context: ResponsePlannerContext = {
     input,
     previousSnapshot: prepared.previousSnapshot,
@@ -1796,6 +1814,12 @@ async function applyResponsePlanner(
       directAnswer: prepared.behaviorDirective.directAnswer,
       boundaryAction: prepared.behaviorDirective.boundaryAction,
       worldAction: prepared.behaviorDirective.worldAction,
+    },
+    discourse: {
+      target: discourseObligation.target,
+      source: discourseObligation.source,
+      requestKind: discourseObligation.requestKind,
+      correctionKind: discourseObligation.correctionKind,
     },
   };
 
@@ -1817,9 +1841,13 @@ async function applyResponsePlanner(
       };
     }
 
-    const responsePlan = applyBehaviorDirectiveToPlan(
-      planned.plan,
-      prepared.behaviorDirective,
+    const responsePlan = applyDiscourseObligationToPlan(
+      prepared.nextSnapshot,
+      prepared.responseSignals,
+      applyBehaviorDirectiveToPlan(
+        planned.plan,
+        prepared.behaviorDirective,
+      ),
     );
     return {
       ...prepared,
@@ -2193,31 +2221,105 @@ function resolveReplySelection(
   };
 }
 
-function resolveDiscourseReplyTarget(
+function applyDiscourseObligationToPlan(
   snapshot: HachikaSnapshot,
   signals: InteractionSignals,
   responsePlan: ResponsePlan,
-): TurnTarget | "none" | null {
-  if (responsePlan.act === "continue_work" || signals.workCue >= 0.34) {
-    return null;
+): ResponsePlan {
+  const obligation = resolveDiscourseReplyObligation(snapshot, signals, responsePlan);
+
+  if (
+    obligation.target === null ||
+    obligation.target === "none" ||
+    obligation.target === "work_topic"
+  ) {
+    return responsePlan;
   }
 
-  if (responsePlan.mentionWorld || signals.worldInquiry >= 0.45) {
-    return "world_state";
+  let act = responsePlan.act;
+  let mentionWorld = responsePlan.mentionWorld;
+  let mentionIdentity = responsePlan.mentionIdentity;
+  let variation = responsePlan.variation;
+
+  switch (obligation.target) {
+    case "world_state":
+      act = "self_disclose";
+      mentionWorld = true;
+      mentionIdentity = false;
+      variation = variation === "questioning" ? "textured" : variation;
+      break;
+    case "hachika_name":
+    case "hachika_profile":
+      act = "self_disclose";
+      mentionWorld = false;
+      mentionIdentity = obligation.target === "hachika_profile";
+      variation = "brief";
+      break;
+    case "user_name":
+    case "user_profile":
+    case "relation":
+      act = responsePlan.act === "repair" ? "repair" : "attune";
+      mentionWorld = false;
+      mentionIdentity = false;
+      variation = "brief";
+      break;
   }
 
+  return summarizeAppliedResponsePlan({
+    ...responsePlan,
+    act,
+    focusTopic: null,
+    mentionTrace: false,
+    mentionIdentity,
+    mentionBoundary: false,
+    mentionWorld,
+    askBack: false,
+    variation,
+  });
+}
+
+function summarizeAppliedResponsePlan(
+  responsePlan: ResponsePlan,
+): ResponsePlan {
+  const topic = responsePlan.focusTopic ? ` on ${responsePlan.focusTopic}` : "";
+  return {
+    ...responsePlan,
+    summary: `${responsePlan.act}/${responsePlan.stance}/${responsePlan.distance}${topic}`,
+  };
+}
+
+function resolveDiscourseReplyObligation(
+  snapshot: HachikaSnapshot,
+  signals: InteractionSignals,
+  responsePlan: ResponsePlan,
+): {
+  target: TurnTarget | "none" | null;
+  source: "request" | "question" | "correction" | "world" | "none";
+  requestKind: "direct_answer" | "style" | "task" | null;
+  correctionKind: "referent" | "directness" | "relation" | null;
+} {
   const unresolvedRequest = [...snapshot.discourse.openRequests]
     .reverse()
     .find((request) => request.status === "open");
   if (unresolvedRequest && unresolvedRequest.kind !== "task") {
-    return unresolvedRequest.target;
+    return {
+      target: unresolvedRequest.target,
+      source: "request",
+      requestKind: unresolvedRequest.kind,
+      correctionKind: null,
+    };
   }
 
   const unresolvedQuestion = [...snapshot.discourse.openQuestions]
     .reverse()
     .find((question) => question.status === "open");
   if (unresolvedQuestion) {
-    return unresolvedQuestion.target;
+    return {
+      target: unresolvedQuestion.target,
+      source: "question",
+      requestKind: null,
+      correctionKind: null,
+    };
   }
 
   if (
@@ -2225,10 +2327,46 @@ function resolveDiscourseReplyTarget(
     (snapshot.discourse.lastCorrection.kind === "directness" ||
       snapshot.discourse.lastCorrection.kind === "referent")
   ) {
-    return snapshot.discourse.lastCorrection.target;
+    return {
+      target: snapshot.discourse.lastCorrection.target,
+      source: "correction",
+      requestKind: null,
+      correctionKind: snapshot.discourse.lastCorrection.kind,
+    };
   }
 
-  return null;
+  if (responsePlan.mentionWorld || signals.worldInquiry >= 0.45) {
+    return {
+      target: "world_state",
+      source: "world",
+      requestKind: null,
+      correctionKind: null,
+    };
+  }
+
+  if (signals.workCue >= 0.34 && signals.topics.length > 0) {
+    return {
+      target: null,
+      source: "none",
+      requestKind: null,
+      correctionKind: null,
+    };
+  }
+
+  return {
+    target: null,
+    source: "none",
+    requestKind: null,
+    correctionKind: null,
+  };
+}
+
+function resolveDiscourseReplyTarget(
+  snapshot: HachikaSnapshot,
+  signals: InteractionSignals,
+  responsePlan: ResponsePlan,
+): TurnTarget | "none" | null {
+  return resolveDiscourseReplyObligation(snapshot, signals, responsePlan).target;
 }
 
 async function analyzeInteractionAsync(

@@ -237,6 +237,7 @@ Hachika は、単に有用なだけでなく、
   - `今どこにいるの` や `周りはどんな感じ` のような world inquiry では `mentionWorld` を立て、stale work より current place / phase / object state を返答に出しやすくしている
   - `askBack / variation` も rule-based reply に反映され、雑談や explore では問い返しや文面の揺れ方が planner に従う
   - OpenAI 互換の `response planner` を使えば、rule plan を土台にしつつ `act / stance / distance / focus / mentionWorld / askBack` を LLM が structured に補正できる
+  - いまは `response planner` 自体にも unresolved な `openRequests / openQuestions / lastCorrection` を渡していて、名前や directness の follow-up が残っている間は stale work focus より `direct answer obligation` を優先する
   - planner が空応答や不正 JSON を返した場合は rule plan に fallback し、`/llm` と `/debug` から planner の source / fallback に加えて `rule -> final` の plan 差分も追える
   - 能動発話でも `proactive plan` が `act / stance / distance / emphasis` を決め、rule-based proactive と LLM wording が同じ切り出し方を共有する
   - さらに optional な `proactive director` を使うと、local engine が合成した proactive 候補を `emit するか / suppress するか / plan を軽く組み替えるか` まで LLM が裁ける

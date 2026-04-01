@@ -1,10 +1,13 @@
 import type {
+  DiscourseCorrectionKind,
+  DiscourseRequestKind,
   DriveName,
   HachikaSnapshot,
   InteractionSignals,
   MoodLabel,
   PendingInitiative,
   SelfModel,
+  TurnTarget,
 } from "./types.js";
 import { isRelationalTopic } from "./memory.js";
 import { readTraceLifecycle, sortedTraces } from "./traces.js";
@@ -24,6 +27,9 @@ const HACHIKA_RESPONSE_PLANNER_SYSTEM_PROMPT = [
   "For explicit questions about where Hachika is, what surrounds it, or what the current place feels like, prefer mentionWorld true and keep focusTopic null unless a concrete work topic is also named.",
   "For vague open questions without a concrete topic, prefer focusTopic null and askBack true.",
   "When behaviorDirective.directAnswer is true, prefer answering directly before asking back.",
+  "When discourse.target is a non-work obligation, treat it as the source of truth for what must be answered before drifting into stale topics.",
+  "For user_name, hachika_name, user_profile, hachika_profile, relation, or world_state obligations, keep focusTopic null unless explicit concrete work is also named.",
+  "For non-work discourse obligations, prefer mentionTrace false and askBack false unless the user is explicitly inviting broader exploration after the answer.",
   "When behaviorDirective.boundaryAction is suppress, do not over-read disappointment or clarification as a boundary-forward turn.",
   "When behaviorDirective.worldAction is suppress, avoid mentionWorld unless the user is explicitly asking about the current place or surroundings.",
   "focusTopic must be null or one of candidateTopics.",
@@ -86,6 +92,12 @@ export interface ResponsePlannerContext {
     boundaryAction: "allow" | "suppress";
     worldAction: "allow" | "suppress";
   };
+  discourse?: {
+    target: TurnTarget | "none" | null;
+    source: "request" | "question" | "correction" | "world" | "none";
+    requestKind: DiscourseRequestKind | null;
+    correctionKind: DiscourseCorrectionKind | null;
+  };
 }
 
 export interface ResponsePlannerPayload {
@@ -111,6 +123,12 @@ export interface ResponsePlannerPayload {
     directAnswer: boolean;
     boundaryAction: "allow" | "suppress";
     worldAction: "allow" | "suppress";
+  };
+  discourse?: {
+    target: TurnTarget | "none" | null;
+    source: "request" | "question" | "correction" | "world" | "none";
+    requestKind: DiscourseRequestKind | null;
+    correctionKind: DiscourseCorrectionKind | null;
   };
   rulePlan: Omit<ResponsePlan, "summary">;
   candidateTopics: string[];
@@ -303,6 +321,16 @@ export function buildResponsePlannerPayload(
       boundaryAction: context.behaviorDirective.boundaryAction,
       worldAction: context.behaviorDirective.worldAction,
     },
+    ...(context.discourse
+      ? {
+          discourse: {
+            target: context.discourse.target,
+            source: context.discourse.source,
+            requestKind: context.discourse.requestKind,
+            correctionKind: context.discourse.correctionKind,
+          },
+        }
+      : {}),
     rulePlan: {
       act: context.rulePlan.act,
       stance: context.rulePlan.stance,
@@ -378,6 +406,7 @@ export function buildOpenAIResponsePlannerMessages(
         "Allowed variation: brief, textured, questioning.",
         "Set mentionWorld true only when the utterance is explicitly about current place, surroundings, or world atmosphere.",
         "If behaviorDirective.directAnswer is true, prefer askBack false and let the reply answer the user's obligation first.",
+        "If discourse.target is non-work, answer that obligation first and do not reintroduce stale work focus.",
         "If behaviorDirective.boundaryAction is suppress, do not turn clarification or disappointment into a boundary-forward reply shape unless the negative cue is clearly hostile.",
         "If behaviorDirective.worldAction is suppress, keep mentionWorld false unless the turn is explicitly about the current place or surroundings.",
         "Keep focusTopic null unless the user clearly names or reuses a concrete topic.",
@@ -838,6 +867,19 @@ const RESPONSE_VARIATION_VALUES = [
 function collectResponsePlanCandidateTopics(
   context: ResponsePlannerContext,
 ): string[] {
+  if (
+    context.discourse &&
+    context.discourse.target !== null &&
+    context.discourse.target !== "none" &&
+    context.discourse.target !== "work_topic"
+  ) {
+    return unique(
+      [...context.signals.topics, context.rulePlan.focusTopic ?? ""].filter(
+        (topic) => topic.length > 0,
+      ),
+    ).slice(0, 4);
+  }
+
   return unique(
     [
       ...context.signals.topics,

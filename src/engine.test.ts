@@ -1909,6 +1909,118 @@ test("local fallback prioritizes unresolved direct-answer requests over stale tr
   assert.match(result.reply, /名前|ハチカ/);
 });
 
+test("response planner keeps unresolved direct-answer obligations ahead of stale work focus", async () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.discourse.openRequests.push({
+    target: "hachika_name",
+    kind: "style",
+    text: "ハチカ自身の名前を具体的に答えて。",
+    askedAt: "2026-04-01T00:00:00.000Z",
+    status: "open",
+    resolvedAt: null,
+  });
+  snapshot.traces["仕様"] = {
+    topic: "仕様",
+    kind: "spec_fragment",
+    status: "active",
+    lastAction: "expanded",
+    summary: "「仕様」は断片として残っている。",
+    sourceMotive: "continue_shared_work",
+    artifact: {
+      memo: ["仕様の断片"],
+      fragments: ["仕様を詰める"],
+      decisions: [],
+      nextSteps: ["仕様を詰める"],
+    },
+    work: {
+      focus: "仕様を詰める",
+      confidence: 0.74,
+      blockers: [],
+      staleAt: null,
+    },
+    lifecycle: {
+      phase: "live",
+      archivedAt: null,
+      reopenedAt: null,
+      reopenCount: 0,
+    },
+    salience: 0.86,
+    mentions: 4,
+    createdAt: "2026-04-01T00:00:00.000Z",
+    lastUpdatedAt: "2026-04-01T00:00:00.000Z",
+  };
+  const engine = new HachikaEngine(snapshot);
+  let plannerDiscourseTarget: string | null = null;
+  let plannerRuleFocusTopic: string | null | undefined = undefined;
+  let replyPlanAct: string | null = null;
+  let replyPlanFocusTopic: string | null | undefined = undefined;
+  let replyPlanAskBack: boolean | null = null;
+  let replyPlanMentionTrace: boolean | null = null;
+  let replyPlanMentionBoundary: boolean | null = null;
+
+  const responsePlanner: ResponsePlanner = {
+    name: "test-planner",
+    async planResponse(context) {
+      plannerDiscourseTarget = context.discourse?.target ?? null;
+      plannerRuleFocusTopic = context.rulePlan.focusTopic;
+      return {
+        provider: "test-planner",
+        model: "stub",
+        plan: {
+          act: "continue_work",
+          stance: "measured",
+          distance: "measured",
+          focusTopic: "仕様",
+          mentionTrace: true,
+          mentionIdentity: false,
+          mentionBoundary: true,
+          mentionWorld: false,
+          askBack: true,
+          variation: "questioning",
+          summary: "continue_work/measured/measured on 仕様",
+        },
+      };
+    },
+  };
+
+  const replyGenerator: ReplyGenerator = {
+    name: "test-llm",
+    async generateReply(context) {
+      replyPlanAct = context.responsePlan.act;
+      replyPlanFocusTopic = context.responsePlan.focusTopic;
+      replyPlanAskBack = context.responsePlan.askBack;
+      replyPlanMentionTrace = context.responsePlan.mentionTrace;
+      replyPlanMentionBoundary = context.responsePlan.mentionBoundary;
+      return {
+        reply: "名前なら、ハチカでいい。",
+        provider: "test-llm",
+        model: "stub",
+      };
+    },
+  };
+
+  const result = await engine.respondAsync("具体的に答えて。", {
+    responsePlanner,
+    replyGenerator,
+  });
+
+  if (replyPlanAct === null) {
+    throw new Error("planner or reply context was not captured");
+  }
+
+  assert.equal(plannerDiscourseTarget, "hachika_name");
+  assert.equal(plannerRuleFocusTopic, null);
+  assert.equal(replyPlanAct, "self_disclose");
+  assert.equal(replyPlanFocusTopic, null);
+  assert.equal(replyPlanAskBack, false);
+  assert.equal(replyPlanMentionTrace, false);
+  assert.equal(replyPlanMentionBoundary, false);
+  assert.equal(result.debug.reply.plan, "self_disclose/measured/measured");
+  assert.equal(result.debug.reply.selection?.discourseTarget, "hachika_name");
+  assert.equal(result.debug.reply.selection?.relevantTraceTopic, null);
+  assert.equal(result.debug.reply.selection?.currentTopic, null);
+});
+
 test("relation clarification answers directly without turning the naming exchange into work", () => {
   const engine = new HachikaEngine(createInitialSnapshot());
 

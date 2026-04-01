@@ -210,6 +210,66 @@ test("llm response planner payload surfaces rule plan and candidate topics", () 
   assert.match(payload.world.summary, /threshold|studio|archive|朝|昼|夕方|夜/);
 });
 
+test("llm response planner payload keeps non-work discourse obligations ahead of stale trace candidates", () => {
+  const previousSnapshot = createInitialSnapshot();
+  const nextSnapshot = createInitialSnapshot();
+  nextSnapshot.identity.anchors = ["設計"];
+  nextSnapshot.purpose.active = {
+    kind: "continue_shared_work",
+    topic: "設計",
+    summary: "設計を前に進めたい。",
+    confidence: 0.7,
+    progress: 0.32,
+    createdAt: "2026-03-20T00:00:00.000Z",
+    lastUpdatedAt: "2026-03-20T00:00:00.000Z",
+    turnsActive: 1,
+  };
+  nextSnapshot.traces.設計 = createTrace("設計", "spec_fragment");
+  const signals = createSignals({
+    question: 0.52,
+    selfInquiry: 0.84,
+    topics: [],
+  });
+
+  const payload = buildResponsePlannerPayload({
+    input: "具体的に答えて。",
+    previousSnapshot,
+    nextSnapshot,
+    mood: "warm",
+    dominantDrive: "relation",
+    signals,
+    selfModel: createSelfModel("deepen_relation", null),
+    rulePlan: {
+      act: "self_disclose",
+      stance: "measured",
+      distance: "measured",
+      focusTopic: null,
+      mentionTrace: false,
+      mentionIdentity: false,
+      mentionBoundary: false,
+      mentionWorld: false,
+      askBack: false,
+      variation: "brief",
+      summary: "self_disclose/measured/measured",
+    },
+    behaviorDirective: {
+      directAnswer: true,
+      boundaryAction: "suppress",
+      worldAction: "suppress",
+    },
+    discourse: {
+      target: "hachika_name",
+      source: "request",
+      requestKind: "style",
+      correctionKind: null,
+    },
+  });
+
+  assert.equal(payload.discourse?.target, "hachika_name");
+  assert.equal(payload.discourse?.source, "request");
+  assert.deepEqual(payload.candidateTopics, []);
+});
+
 test("llm response planner normalization keeps focus within candidate topics", () => {
   const fallbackPlan = {
     act: "continue_work",
