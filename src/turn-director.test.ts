@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  buildTurnDirectorPayload,
   buildRuleTurnDirective,
   normalizeTurnDirective,
 } from "./turn-director.js";
@@ -172,6 +173,35 @@ test("rule turn directive can infer relation clarification from discourse naming
   assert.equal(directive.answerMode, "direct");
   assert.equal(directive.relationMove, "naming");
   assert.equal(directive.behavior.traceAction, "suppress");
+});
+
+test("llm turn director payload uses a concrete actor cue instead of the raw identity summary", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.identity.summary = "今は単なる応答より、関係としての手触りを残したい。";
+  snapshot.world.currentPlace = "studio";
+
+  const fallback = buildRuleTurnDirective(
+    snapshot,
+    "あなたの名前は？",
+    createSignals({
+      question: 0.8,
+      topics: ["名前"],
+    }),
+  );
+
+  const payload = buildTurnDirectorPayload({
+    input: "あなたの名前は？",
+    snapshot,
+    localSignals: createSignals({
+      question: 0.8,
+      topics: ["名前"],
+    }),
+    fallbackDirective: fallback,
+  });
+
+  assert.notEqual(payload.identitySummary, snapshot.identity.summary);
+  assert.match(payload.identitySummary, /いまは|呼び方|直接/);
+  assert.match(payload.identitySummary, /studio|机|threshold|archive/);
 });
 
 test("normalizeTurnDirective keeps fallback shape and parses turn semantics", () => {

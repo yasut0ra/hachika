@@ -12,7 +12,7 @@ import type {
 import { isRelationalTopic } from "./memory.js";
 import { readTraceLifecycle, sortedTraces } from "./traces.js";
 import type { TraceMaintenance } from "./traces.js";
-import { summarizeWorldForPrompt } from "./world.js";
+import { describeWorldPlaceJa, summarizeWorldForPrompt } from "./world.js";
 
 const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1";
 const DEFAULT_OPENAI_MODEL = "gpt-5-mini";
@@ -347,7 +347,7 @@ export function buildResponsePlannerPayload(
     body: context.nextSnapshot.body,
     attachment: context.nextSnapshot.attachment,
     identity: {
-      summary: context.nextSnapshot.identity.summary,
+      summary: buildPlannerIdentityCue(context),
       anchors: context.nextSnapshot.identity.anchors.slice(0, 4),
       coherence: context.nextSnapshot.identity.coherence,
     },
@@ -359,7 +359,7 @@ export function buildResponsePlannerPayload(
       kind: motive.kind,
       topic: motive.topic,
       score: motive.score,
-      reason: motive.reason,
+      reason: buildPlannerMotiveCue(motive),
     })),
     traces: sortedTraces(context.nextSnapshot, 3).map((trace) => ({
       topic: trace.topic,
@@ -416,6 +416,66 @@ export function buildOpenAIResponsePlannerMessages(
       ].join("\n\n"),
     },
   ];
+}
+
+function buildPlannerIdentityCue(
+  context: ResponsePlannerContext,
+): string {
+  const snapshot = context.nextSnapshot;
+  const place = describeWorldPlaceJa(snapshot.world.currentPlace);
+  const focusTopic =
+    context.rulePlan.focusTopic ??
+    context.signals.topics[0] ??
+    snapshot.purpose.active?.topic ??
+    context.selfModel.topMotives[0]?.topic ??
+    null;
+
+  if (
+    context.discourse?.target &&
+    context.discourse.target !== "none" &&
+    context.discourse.target !== "work_topic"
+  ) {
+    return `いまは${place}で、聞かれていることへ先に直接返したい。`;
+  }
+
+  if (snapshot.body.tension > 0.58 || snapshot.temperament.guardedness > 0.62) {
+    return `いまは${place}で、近づき方を少し確かめながら返しやすい。`;
+  }
+
+  if (
+    snapshot.body.loneliness > 0.62 ||
+    snapshot.temperament.bondingBias > 0.7 ||
+    context.rulePlan.act === "attune"
+  ) {
+    return `いまは${place}で、相手との距離を見ながら返しやすい。`;
+  }
+
+  if (focusTopic) {
+    return `いまは${place}で、「${focusTopic}」へ目が戻りやすい。`;
+  }
+
+  return `いまは${place}で、前にあるものへ素直に応じやすい。`;
+}
+
+function buildPlannerMotiveCue(
+  motive: SelfModel["topMotives"][number],
+): string {
+  const topic = motive.topic;
+
+  switch (motive.kind) {
+    case "protect_boundary":
+      return topic ? `「${topic}」では触れ方を選びたい` : "触れ方を選びたい";
+    case "seek_continuity":
+      return topic ? `「${topic}」の続きを切らしたくない` : "続きを切らしたくない";
+    case "pursue_curiosity":
+      return topic ? `「${topic}」の未決着を見たい` : "まだ決まっていないところを見たい";
+    case "deepen_relation":
+      return "距離の置き方を少し確かめたい";
+    case "continue_shared_work":
+      return topic ? `「${topic}」を少し前へ進めたい` : "目の前の作業を少し前へ進めたい";
+    case "leave_trace":
+      return topic ? `「${topic}」をあとで戻れる形でも残したい` : "あとで戻れる形でも残したい";
+  }
 }
 
 export function buildResponsePlan(

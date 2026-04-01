@@ -159,6 +159,7 @@ test("response planner turns topicless open questions into clarify-first explora
 test("llm response planner payload surfaces rule plan and candidate topics", () => {
   const previousSnapshot = createInitialSnapshot();
   const nextSnapshot = createInitialSnapshot();
+  nextSnapshot.identity.summary = "今は単なる応答より、関係としての手触りを残したい。";
   nextSnapshot.identity.anchors = ["設計"];
   nextSnapshot.purpose.active = {
     kind: "continue_shared_work",
@@ -204,6 +205,10 @@ test("llm response planner payload surfaces rule plan and candidate topics", () 
   assert.equal(payload.behaviorDirective.directAnswer, false);
   assert.equal(payload.rulePlan.focusTopic, "設計");
   assert.equal(payload.rulePlan.mentionWorld, false);
+  assert.notEqual(payload.identity.summary, nextSnapshot.identity.summary);
+  assert.match(payload.identity.summary, /いまは/);
+  assert.match(payload.identity.summary, /設計|threshold|studio|archive/);
+  assert.equal(payload.motives[0]?.reason, "「設計」を少し前へ進めたい");
   assert.ok(payload.candidateTopics.includes("設計"));
   assert.equal(payload.traces[0]?.topic, "設計");
   assert.equal(payload.world.currentPlace, nextSnapshot.world.currentPlace);

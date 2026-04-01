@@ -31,7 +31,11 @@ import type {
 } from "./response-planner.js";
 import { clamp01 } from "./state.js";
 import { sortedTraces } from "./traces.js";
-import { hasExplicitWorldObjectReference, summarizeWorldForPrompt } from "./world.js";
+import {
+  describeWorldPlaceJa,
+  hasExplicitWorldObjectReference,
+  summarizeWorldForPrompt,
+} from "./world.js";
 import type {
   AttentionRationale,
   HachikaSnapshot,
@@ -335,7 +339,7 @@ export function buildTurnDirectorPayload(
       kind: context.snapshot.initiative.pending?.kind ?? null,
       topic: context.snapshot.initiative.pending?.topic ?? null,
     },
-    identitySummary: context.snapshot.identity.summary,
+    identitySummary: buildTurnActorCue(context.snapshot, context.fallbackDirective.target),
     knownTopics,
     discourse: {
       userName: context.snapshot.discourse.userName?.value ?? null,
@@ -1467,6 +1471,57 @@ function normalizeStateTopics(
 
 function unique(items: string[]): string[] {
   return Array.from(new Set(items));
+}
+
+function buildTurnActorCue(
+  snapshot: HachikaSnapshot,
+  target: TurnTarget,
+): string {
+  const place = describeWorldPlaceJa(snapshot.world.currentPlace);
+  const activeTopic =
+    snapshot.purpose.active?.topic ??
+    snapshot.initiative.pending?.topic ??
+    snapshot.identity.anchors[0] ??
+    null;
+
+  if (
+    snapshot.discourse.openRequests.some(
+      (request) => request.status === "open" && request.kind !== "task",
+    ) ||
+    snapshot.discourse.openQuestions.some((question) => question.status === "open")
+  ) {
+    return `いまは${place}で、聞かれていることへ先にまっすぐ返したい。`;
+  }
+
+  switch (target) {
+    case "hachika_name":
+    case "user_name":
+      return `いまは${place}で、呼び方を取り違えずに返したい。`;
+    case "hachika_profile":
+      return `いまは${place}で、自分の話なら抽象より具体で返しやすい。`;
+    case "user_profile":
+      return `いまは${place}で、相手についての見立てを先に返しやすい。`;
+    case "relation":
+      return `いまは${place}で、距離の置き方を崩さず返したい。`;
+    case "world_state":
+      return `いまは${place}の様子をそのまま返しやすい。`;
+    case "work_topic":
+      return activeTopic
+        ? `いまは${place}で、「${activeTopic}」へ目が戻りやすい。`
+        : `いまは${place}で、目の前の作業へ目が戻りやすい。`;
+    case "none":
+      break;
+  }
+
+  if (snapshot.body.tension > 0.58 || snapshot.temperament.guardedness > 0.62) {
+    return `いまは${place}で、近づき方を少し確かめながら返しやすい。`;
+  }
+
+  if (activeTopic) {
+    return `いまは${place}で、「${activeTopic}」へ目が戻りやすい。`;
+  }
+
+  return `いまは${place}で、前にあるものへ素直に応じやすい。`;
 }
 
 function summarizeResponsePlan(
