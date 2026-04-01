@@ -1,4 +1,5 @@
 import {
+  extractTopics,
   isMeaningfulTopic,
   isRelationalTopic,
   requiresConcreteTopicSupport,
@@ -122,6 +123,10 @@ export function prepareScheduledInitiative(
   nowIso: string = new Date().toISOString(),
 ): ScheduledInitiativeDecision {
   const discourseDemandReasons = deriveDiscourseDemandAttentionReasons(snapshot);
+  const candidateTopics = uniqueTopics([
+    ...signals.topics,
+    ...collectInitiativeDiscourseTopics(snapshot, signals),
+  ]);
 
   if (shouldCoolInitiativeInertia(signals)) {
     return { shouldClear: true, candidate: null, attentionReasons: [] };
@@ -161,7 +166,7 @@ export function prepareScheduledInitiative(
   const pending = synthesizePendingInitiative(
     snapshot,
     selfModel,
-    signals.topics,
+    candidateTopics,
     nowIso,
   );
 
@@ -2623,6 +2628,37 @@ function hasConcreteInitiativeWorkIntent(
   return hasConcreteCandidateTopic || activeWorkPurpose || recentWorkClaim || openTaskRequest;
 }
 
+function collectInitiativeDiscourseTopics(
+  snapshot: HachikaSnapshot,
+  signals: InteractionSignals,
+): string[] {
+  const sourceTexts: string[] = [];
+  const recentWorkClaim = [...snapshot.discourse.recentClaims]
+    .reverse()
+    .find((claim) => claim.kind === "work");
+  const openTaskRequest = [...snapshot.discourse.openRequests]
+    .reverse()
+    .find((request) => request.status === "open" && request.kind === "task");
+
+  if (
+    recentWorkClaim &&
+    (signals.workCue > 0.16 || signals.memoryCue > 0.08 || signals.expansionCue > 0.08)
+  ) {
+    sourceTexts.push(recentWorkClaim.text);
+  }
+
+  if (
+    openTaskRequest &&
+    (signals.workCue > 0.12 || signals.question > 0.12 || signals.expansionCue > 0.08)
+  ) {
+    sourceTexts.push(openTaskRequest.text);
+  }
+
+  return uniqueTopics(
+    sourceTexts.flatMap((text) => extractTopics(text)).filter((topic) => isMeaningfulTopic(topic)),
+  );
+}
+
 function synthesizeSnapshotPreservationInitiative(
   snapshot: HachikaSnapshot,
   createdAt: string,
@@ -2666,6 +2702,16 @@ function selectInitiativeMotive(
     return null;
   }
 
+  const discoursePreferred = selectDiscoursePreferredInitiativeMotive(
+    snapshot,
+    actionableMotives,
+    primary,
+  );
+
+  if (discoursePreferred) {
+    return discoursePreferred;
+  }
+
   const bodyPreferred = selectBodyPreferredMotive(snapshot, actionableMotives, primary);
   if (bodyPreferred) {
     return bodyPreferred;
@@ -2687,6 +2733,51 @@ function selectInitiativeMotive(
   }
 
   return primary;
+}
+
+function selectDiscoursePreferredInitiativeMotive(
+  snapshot: HachikaSnapshot,
+  motives: readonly SelfMotive[],
+  primary: SelfMotive,
+): SelfMotive | null {
+  const openTaskRequest = snapshot.discourse.openRequests.some(
+    (request) => request.status === "open" && request.kind === "task",
+  );
+  const recentWorkClaim = [...snapshot.discourse.recentClaims]
+    .reverse()
+    .find((claim) => claim.kind === "work");
+  const relationCorrection = snapshot.discourse.lastCorrection?.kind === "relation";
+  const recentRelationClaim = [...snapshot.discourse.recentClaims]
+    .reverse()
+    .find((claim) => claim.kind === "relation" || claim.kind === "state");
+
+  if (openTaskRequest || recentWorkClaim) {
+    const workPreferred = motives.find(
+      (motive) =>
+        (motive.kind === "continue_shared_work" ||
+          motive.kind === "leave_trace" ||
+          motive.kind === "seek_continuity") &&
+        primary.score - motive.score <= 0.14,
+    );
+
+    if (workPreferred) {
+      return workPreferred;
+    }
+  }
+
+  if (relationCorrection || recentRelationClaim) {
+    const relationPreferred = motives.find(
+      (motive) =>
+        motive.kind === "deepen_relation" &&
+        primary.score - motive.score <= 0.12,
+    );
+
+    if (relationPreferred) {
+      return relationPreferred;
+    }
+  }
+
+  return null;
 }
 
 function selectBodyPreferredMotive(

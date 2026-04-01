@@ -24,7 +24,7 @@ export function updatePurpose(
   );
   const candidate = suppressNonWorkCandidate
     ? null
-    : selectPurposeCandidate(selfModel.topMotives, signals);
+    : selectPurposeCandidate(snapshot, selfModel.topMotives, signals);
   const boundaryCandidate =
     selfModel.topMotives.find((motive) => motive.kind === "protect_boundary") ?? null;
   const active = snapshot.purpose.active;
@@ -90,7 +90,7 @@ export function updatePurpose(
 
     const successor = suppressNonWorkCandidate
       ? null
-      : selectSuccessorCandidate(selfModel.topMotives, refreshedActive);
+      : selectSuccessorCandidate(snapshot, selfModel.topMotives, refreshedActive);
     if (successor) {
       activatePurpose(snapshot, successor, timestamp);
     }
@@ -126,7 +126,7 @@ export function updatePurpose(
       ? null
       : candidate && candidate.kind !== refreshedActive.kind && candidate.score >= 0.46
         ? candidate
-        : selectSuccessorCandidate(selfModel.topMotives, refreshedActive);
+        : selectSuccessorCandidate(snapshot, selfModel.topMotives, refreshedActive);
 
     if (successor) {
       activatePurpose(snapshot, successor, timestamp);
@@ -158,10 +158,28 @@ export function abandonActivePurpose(
 }
 
 function selectPurposeCandidate(
+  snapshot: HachikaSnapshot,
   motives: readonly SelfMotive[],
   signals: InteractionSignals,
 ): SelfMotive | null {
   const viable = motives.filter((motive) => motive.score >= 0.44);
+  const primary = viable[0] ?? null;
+
+  if (!primary) {
+    return null;
+  }
+
+  const discoursePreferred = selectDiscoursePreferredPurposeCandidate(
+    snapshot,
+    viable,
+    primary,
+    signals,
+  );
+
+  if (discoursePreferred) {
+    return discoursePreferred;
+  }
+
   const relationOverride =
     signals.intimacy >= 0.24 &&
     signals.workCue < 0.32 &&
@@ -197,20 +215,20 @@ function selectPurposeCandidate(
       motive.kind === "protect_boundary" ||
       motive.score >= 0.7,
   );
-  const primary = filtered[0];
+  const primaryFiltered = filtered[0];
 
-  if (!primary) {
+  if (!primaryFiltered) {
     return null;
   }
 
-  if (primary.kind === "pursue_curiosity") {
+  if (primaryFiltered.kind === "pursue_curiosity") {
     const structured = viable.find(
       (motive) =>
         (motive.kind === "continue_shared_work" ||
           motive.kind === "leave_trace" ||
           motive.kind === "seek_continuity" ||
           motive.kind === "deepen_relation") &&
-        primary.score - motive.score <= 0.08,
+        primaryFiltered.score - motive.score <= 0.08,
     );
 
     if (structured) {
@@ -218,13 +236,54 @@ function selectPurposeCandidate(
     }
   }
 
-  return primary;
+  return primaryFiltered;
 }
 
 function selectSuccessorCandidate(
+  snapshot: HachikaSnapshot,
   motives: readonly SelfMotive[],
   current: ActivePurpose,
 ): SelfMotive | null {
+  const viable = motives.filter((motive) => motive.score >= 0.46);
+  const primary = viable[0] ?? null;
+  const discoursePreferred =
+    primary &&
+    selectDiscoursePreferredPurposeCandidate(
+      snapshot,
+      viable,
+      primary,
+      {
+        positive: 0,
+        negative: 0,
+        question: 0,
+        novelty: 0,
+        intimacy: 0,
+        dismissal: 0,
+        memoryCue: 0,
+        expansionCue: 0,
+        completion: 0,
+        abandonment: 0,
+        preservationThreat: 0,
+        preservationConcern: null,
+        repetition: 0,
+        neglect: 0,
+        greeting: 0,
+        smalltalk: 0,
+        repair: 0,
+        selfInquiry: 0,
+        worldInquiry: 0,
+        workCue: 0,
+        topics: [],
+      },
+    );
+
+  if (
+    discoursePreferred &&
+    (discoursePreferred.kind !== current.kind || discoursePreferred.topic !== current.topic)
+  ) {
+    return discoursePreferred;
+  }
+
   return (
     motives.find(
       (motive) =>
@@ -232,6 +291,57 @@ function selectSuccessorCandidate(
         (motive.kind !== current.kind || motive.topic !== current.topic),
     ) ?? null
   );
+}
+
+function selectDiscoursePreferredPurposeCandidate(
+  snapshot: HachikaSnapshot,
+  motives: readonly SelfMotive[],
+  primary: SelfMotive,
+  signals: InteractionSignals,
+): SelfMotive | null {
+  const openTaskRequest = snapshot.discourse.openRequests.some(
+    (request) => request.status === "open" && request.kind === "task",
+  );
+  const recentWorkClaim = [...snapshot.discourse.recentClaims]
+    .reverse()
+    .find((claim) => claim.kind === "work");
+  const relationCorrection = snapshot.discourse.lastCorrection?.kind === "relation";
+  const recentRelationClaim = [...snapshot.discourse.recentClaims]
+    .reverse()
+    .find((claim) => claim.kind === "relation" || claim.kind === "state");
+
+  if (openTaskRequest || recentWorkClaim) {
+    const workPreferred = motives.find(
+      (motive) =>
+        (motive.kind === "continue_shared_work" ||
+          motive.kind === "leave_trace" ||
+          motive.kind === "seek_continuity") &&
+        primary.score - motive.score <= 0.14,
+    );
+
+    if (workPreferred) {
+      return workPreferred;
+    }
+  }
+
+  if (
+    (relationCorrection || recentRelationClaim) &&
+    signals.workCue < 0.28 &&
+    signals.expansionCue < 0.18 &&
+    signals.completion < 0.18
+  ) {
+    const relationPreferred = motives.find(
+      (motive) =>
+        motive.kind === "deepen_relation" &&
+        primary.score - motive.score <= 0.12,
+    );
+
+    if (relationPreferred) {
+      return relationPreferred;
+    }
+  }
+
+  return null;
 }
 
 function activatePurpose(

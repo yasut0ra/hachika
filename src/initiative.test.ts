@@ -97,6 +97,56 @@ test("prepareScheduledInitiative still allows explicit work while a direct refer
   assert.equal(decision.candidate?.stateTopic, "仕様");
 });
 
+test("prepareScheduledInitiative can derive a work topic from recent discourse claims", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.discourse.recentClaims.push({
+    subject: "user",
+    kind: "work",
+    text: "仕様の境界が曖昧だ。",
+    updatedAt: "2026-04-01T00:00:00.000Z",
+  });
+
+  const decision = prepareScheduledInitiative(
+    snapshot,
+    {
+      positive: 0,
+      negative: 0,
+      question: 0,
+      novelty: 0.08,
+      intimacy: 0.02,
+      dismissal: 0,
+      memoryCue: 0.12,
+      expansionCue: 0.14,
+      completion: 0,
+      abandonment: 0,
+      preservationThreat: 0,
+      preservationConcern: null,
+      repetition: 0,
+      neglect: 0,
+      greeting: 0,
+      smalltalk: 0,
+      repair: 0,
+      selfInquiry: 0,
+      worldInquiry: 0,
+      workCue: 0.42,
+      topics: [],
+    },
+    {
+      narrative: "",
+      topMotives: [
+        { kind: "pursue_curiosity", score: 0.74, topic: null, reason: "まだ未決着がある" },
+        { kind: "continue_shared_work", score: 0.66, topic: null, reason: "作業を前へ進めたい" },
+      ],
+      conflicts: [],
+      dominantConflict: null,
+    },
+    "2026-04-01T00:00:00.000Z",
+  );
+
+  assert.equal(decision.candidate?.motive, "continue_shared_work");
+  assert.equal(decision.candidate?.topic, "仕様の境界");
+});
+
 test("prepareIdleAutonomyAction cools to hold while directness corrections remain unresolved", () => {
   const snapshot = createInitialSnapshot();
   snapshot.discourse.lastCorrection = {
