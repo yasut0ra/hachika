@@ -35,6 +35,7 @@ const HACHIKA_INITIATIVE_DIRECTOR_SYSTEM_PROMPT = [
   "topic is the semantic topic that may be recalled later. stateTopic is the subset worth durable hardening.",
   "Only keep stateTopic when it is concrete and already present in candidateTopics.",
   "attentionReasons explains why the local engine thinks something still matters. Cool direct_referent, relation_uncertain, self_definition, and world_pull unless there is grounded continuity.",
+  "Use discourse.openQuestions and discourse.lastCorrection as additional context. Unresolved direct referent or directness demands should usually suppress weak pending carry-over.",
   "Keep kind/reason/motive close to the local candidate unless there is a strong semantic reason to cool or redirect it.",
   "Keep world action close to the local candidate unless there is a strong reason to suppress it.",
   "Return a single JSON object.",
@@ -118,6 +119,20 @@ export interface InitiativeDirectorPayload {
   } | null;
   candidateTopics: string[];
   attentionReasons: AttentionRationale[];
+  discourse: {
+    userName: string | null;
+    hachikaName: string | null;
+    openQuestions: Array<{
+      target: string;
+      text: string;
+      status: "open" | "resolved";
+    }>;
+    lastCorrection: {
+      target: string;
+      kind: "referent" | "directness" | "relation";
+      text: string;
+    } | null;
+  };
   purpose: {
     kind: string | null;
     topic: string | null;
@@ -302,6 +317,24 @@ export function buildInitiativeDirectorPayload(
       : null,
     candidateTopics,
     attentionReasons: [...(context.attentionReasons ?? [])],
+    discourse: {
+      userName: context.snapshot.discourse.userName?.value ?? null,
+      hachikaName: context.snapshot.discourse.hachikaName?.value ?? null,
+      openQuestions: context.snapshot.discourse.openQuestions
+        .slice(-4)
+        .map((question) => ({
+          target: question.target,
+          text: question.text,
+          status: question.status,
+        })),
+      lastCorrection: context.snapshot.discourse.lastCorrection
+        ? {
+            target: context.snapshot.discourse.lastCorrection.target,
+            kind: context.snapshot.discourse.lastCorrection.kind,
+            text: context.snapshot.discourse.lastCorrection.text,
+          }
+        : null,
+    },
     purpose: {
       kind: context.snapshot.purpose.active?.kind ?? null,
       topic: context.snapshot.purpose.active?.topic ?? null,

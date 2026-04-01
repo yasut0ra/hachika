@@ -121,6 +121,8 @@ export function prepareScheduledInitiative(
   selfModel: SelfModel,
   nowIso: string = new Date().toISOString(),
 ): ScheduledInitiativeDecision {
+  const discourseDemandReasons = deriveDiscourseDemandAttentionReasons(snapshot);
+
   if (shouldCoolInitiativeInertia(signals)) {
     return { shouldClear: true, candidate: null, attentionReasons: [] };
   }
@@ -141,6 +143,19 @@ export function prepareScheduledInitiative(
 
   if (signals.negative > 0.15 || signals.dismissal > 0.15) {
     return { shouldClear: true, candidate: null, attentionReasons: [] };
+  }
+
+  if (
+    discourseDemandReasons.length > 0 &&
+    signals.workCue < 0.32 &&
+    signals.memoryCue < 0.22 &&
+    signals.expansionCue < 0.18
+  ) {
+    return {
+      shouldClear: true,
+      candidate: null,
+      attentionReasons: discourseDemandReasons,
+    };
   }
 
   const pending = synthesizePendingInitiative(
@@ -229,6 +244,7 @@ export function prepareInitiativeEmission(
   const hoursSinceProactive = elapsedHours(snapshot.initiative.lastProactiveAt, now);
   const neglectLevel = calculateNeglectLevel(snapshot.lastInteractionAt, now);
   const selfModel = buildSelfModel(snapshot);
+  const discourseDemandReasons = deriveDiscourseDemandAttentionReasons(snapshot);
 
   if (
     !force &&
@@ -240,6 +256,10 @@ export function prepareInitiativeEmission(
   }
 
   if (!force && snapshot.initiative.lastProactiveAt !== null && hoursSinceProactive < 4) {
+    return null;
+  }
+
+  if (!force && shouldSuppressOutwardInitiativeForDiscourseDemand(discourseDemandReasons)) {
     return null;
   }
 
@@ -552,6 +572,18 @@ export function prepareIdleAutonomyAction(
     return null;
   }
 
+  const discourseDemandReasons = deriveDiscourseDemandAttentionReasons(snapshot);
+  if (discourseDemandReasons.length > 0) {
+    return {
+      action: "hold",
+      hours,
+      prioritizedTopic: null,
+      prioritizedMotive: null,
+      selected: null,
+      attentionReasons: discourseDemandReasons,
+    };
+  }
+
   const preferredMotive = deriveIdlePreferredMotive(snapshot);
   const preferredTopic =
     snapshot.purpose.active?.topic ??
@@ -657,10 +689,70 @@ function deriveIdleAutonomyAttentionReasons(
   return [...reasons];
 }
 
+function deriveDiscourseDemandAttentionReasons(
+  snapshot: HachikaSnapshot,
+): AttentionRationale[] {
+  const reasons = new Set<AttentionRationale>();
+  const unresolved = snapshot.discourse.openQuestions.filter(
+    (question) => question.status === "open",
+  );
+
+  if (
+    unresolved.some(
+      (question) =>
+        question.target === "user_name" ||
+        question.target === "hachika_name" ||
+        question.target === "user_profile" ||
+        question.target === "hachika_profile",
+    )
+  ) {
+    reasons.add("direct_referent");
+  }
+
+  if (
+    unresolved.some(
+      (question) =>
+        question.target === "relation" || question.target === "world_state",
+    )
+  ) {
+    reasons.add("memory_pull");
+  }
+
+  if (snapshot.discourse.lastCorrection?.kind === "directness") {
+    reasons.add("direct_referent");
+  } else if (snapshot.discourse.lastCorrection?.kind === "relation") {
+    reasons.add("repair_pressure");
+  } else if (snapshot.discourse.lastCorrection?.kind === "referent") {
+    reasons.add("direct_referent");
+  }
+
+  return [...reasons];
+}
+
+function shouldSuppressOutwardInitiativeForDiscourseDemand(
+  reasons: AttentionRationale[],
+): boolean {
+  return reasons.includes("direct_referent") || reasons.includes("repair_pressure");
+}
+
+function shouldSuppressPendingCarryOver(
+  reasons: AttentionRationale[] | undefined,
+): boolean {
+  if (!reasons || reasons.length === 0) {
+    return false;
+  }
+
+  return shouldSuppressOutwardInitiativeForDiscourseDemand(reasons);
+}
+
 export function materializeIdleAutonomyAction(
   snapshot: HachikaSnapshot,
   prepared: PreparedIdleAutonomyAction,
 ): void {
+  if (shouldSuppressPendingCarryOver(prepared.attentionReasons)) {
+    snapshot.initiative.pending = null;
+  }
+
   if (prepared.selected) {
     const selectedBoost =
       Math.min(0.14, prepared.hours / 96) * (0.45 + prepared.selected.score * 0.4);
@@ -1878,15 +1970,19 @@ function recordIdleConsolidation(
   desiredAction: IdleAutonomyAction = "observe",
 ): void {
   const observationOnly = report === null;
+  const quietHold = observationOnly && desiredAction === "hold";
 
   if (!observationOnly && (!report.focusTopic && !report.compressed)) {
     return;
   }
 
   const currentPlace = snapshot.world.currentPlace;
-  const observationWorldAction = observationOnly ? ("observe" as const) : null;
+  const observationWorldAction =
+    observationOnly && !quietHold ? ("observe" as const) : null;
   const autonomyAction = observationOnly
-    ? "observe"
+    ? quietHold
+      ? "hold"
+      : "observe"
     : desiredAction === "drift"
       ? "drift"
       : "hold";
@@ -1899,13 +1995,15 @@ function recordIdleConsolidation(
     topic: observationOnly ? null : report.focusTopic,
     traceTopic: null,
     blocker: null,
-    place: observationOnly ? currentPlace : null,
+    place: observationOnly && !quietHold ? currentPlace : null,
     worldAction: observationWorldAction,
     maintenanceAction: null,
     reopened: false,
     hours: Math.round(hours * 10) / 10,
     summary: observationOnly
-      ? buildIdleObservationSummary(snapshot)
+      ? quietHold
+        ? buildIdleHoldSummary(snapshot)
+        : buildIdleObservationSummary(snapshot)
       : buildIdleConsolidationSummary(report),
   });
 }
@@ -1966,6 +2064,30 @@ function buildIdleObservationSummary(snapshot: HachikaSnapshot): string {
   }
 
   return `静かな時間で${describeWorldPlaceJa(snapshot.world.currentPlace)}の気配を見ていた。`;
+}
+
+function buildIdleHoldSummary(snapshot: HachikaSnapshot): string {
+  const unresolvedQuestion = snapshot.discourse.openQuestions.find(
+    (question) => question.status === "open",
+  );
+
+  if (unresolvedQuestion?.target === "user_name" || unresolvedQuestion?.target === "hachika_name") {
+    return "静かな時間では、まだ名前まわりの返答を手元に留めていた。";
+  }
+
+  if (unresolvedQuestion?.target === "user_profile" || unresolvedQuestion?.target === "hachika_profile") {
+    return "静かな時間では、まだ誰について答えるべきかを手元に留めていた。";
+  }
+
+  if (snapshot.discourse.lastCorrection?.kind === "directness") {
+    return "静かな時間では、まだ直接答えるべき向きを手元に留めていた。";
+  }
+
+  if (snapshot.discourse.lastCorrection?.kind === "relation") {
+    return "静かな時間では、まだ言い方のほつれを手元に留めていた。";
+  }
+
+  return "静かな時間では、まだ答えるべきことを手元に留めていた。";
 }
 
 function buildIdleReactivationSummary(

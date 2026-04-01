@@ -32,6 +32,7 @@ const HACHIKA_AUTONOMY_DIRECTOR_SYSTEM_PROMPT = [
   "Prefer outwardMode:touch when a light outward action would feel natural but speaking would be too heavy.",
   "Prefer outwardMode:speak only when there is clear grounded continuity, neglect pressure, or a concrete follow-through worth expressing.",
   "attentionReasons explains why the local engine thinks this action is salient. Cool direct_referent, self_definition, relation_uncertain, and world_pull when they do not justify durable carry-over.",
+  "Use discourse.openQuestions and discourse.lastCorrection as additional context. Unresolved direct referent or directness demands should usually cool recall/speak into hold/none unless there is explicit concrete continuity.",
   "Do not introduce speak as the internal action here.",
   "Keep the action close to the local suggestion unless there is a strong semantic reason to cool it.",
   "Return a single JSON object.",
@@ -67,6 +68,20 @@ export interface AutonomyDirectorPayload {
   hours: number;
   suggestedAction: Exclude<InitiativeAutonomyAction, "speak" | "touch" | null>;
   attentionReasons: AttentionRationale[];
+  discourse: {
+    userName: string | null;
+    hachikaName: string | null;
+    openQuestions: Array<{
+      target: string;
+      text: string;
+      status: "open" | "resolved";
+    }>;
+    lastCorrection: {
+      target: string;
+      kind: "referent" | "directness" | "relation";
+      text: string;
+    } | null;
+  };
   prioritizedTopic: string | null;
   prioritizedMotive: string | null;
   selected: {
@@ -227,6 +242,24 @@ export function buildAutonomyDirectorPayload(
     hours: context.hours,
     suggestedAction: context.prepared.action,
     attentionReasons: [...(context.prepared.attentionReasons ?? [])],
+    discourse: {
+      userName: context.nextSnapshot.discourse.userName?.value ?? null,
+      hachikaName: context.nextSnapshot.discourse.hachikaName?.value ?? null,
+      openQuestions: context.nextSnapshot.discourse.openQuestions
+        .slice(-4)
+        .map((question) => ({
+          target: question.target,
+          text: question.text,
+          status: question.status,
+        })),
+      lastCorrection: context.nextSnapshot.discourse.lastCorrection
+        ? {
+            target: context.nextSnapshot.discourse.lastCorrection.target,
+            kind: context.nextSnapshot.discourse.lastCorrection.kind,
+            text: context.nextSnapshot.discourse.lastCorrection.text,
+          }
+        : null,
+    },
     prioritizedTopic: context.prepared.prioritizedTopic,
     prioritizedMotive: context.prepared.prioritizedMotive,
     selected: {

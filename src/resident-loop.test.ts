@@ -221,6 +221,45 @@ test("resident loop can record a quiet observe action without speaking", async (
   assert.equal(observation?.place, observedPlace);
 });
 
+test("resident loop clears stale pending and stays quiet while a direct referent question is unresolved", async () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.lastInteractionAt = "2026-04-01T00:00:00.000Z";
+  snapshot.body.energy = 0.66;
+  snapshot.body.loneliness = 0.44;
+  snapshot.preservation.threat = 0.52;
+  snapshot.initiative.pending = {
+    kind: "resume_topic",
+    reason: "relation",
+    motive: "deepen_relation",
+    topic: "名前",
+    stateTopic: null,
+    blocker: null,
+    concern: null,
+    createdAt: "2026-04-01T00:00:00.000Z",
+    readyAfterHours: 0,
+  };
+  snapshot.discourse.openQuestions.push({
+    target: "hachika_name",
+    text: "あなたの名前は？",
+    askedAt: "2026-04-01T00:00:00.000Z",
+    status: "open",
+    resolvedAt: null,
+  });
+
+  const result = await runResidentLoopTick(snapshot, { idleHours: 8 });
+
+  assert.equal(result.proactiveMessage, null);
+  assert.equal(result.snapshot.initiative.pending, null);
+  assert.ok(
+    result.internalActivities.some(
+      (activity) =>
+        activity.kind === "idle_consolidation" &&
+        activity.autonomyAction === "hold",
+    ),
+  );
+  assert.equal(result.outwardActivities.length, 0);
+});
+
 test("resident loop can suppress proactive emission through a proactive director", async () => {
   const snapshot = createInitialSnapshot();
   snapshot.lastInteractionAt = "2026-03-20T10:00:00.000Z";
