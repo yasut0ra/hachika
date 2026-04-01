@@ -1858,6 +1858,7 @@ test("local fallback can answer user-profile questions from recent discourse cla
   const result = engine.respond("私のことどう見える？");
 
   assert.match(result.reply, /疲れ|疲れて|負荷|余裕/);
+  assert.doesNotMatch(result.reply, /いま見えているのは/);
   assert.equal(/[?？]$/.test(result.reply.trim()), false);
   assert.equal(result.debug.turn?.target, "user_profile");
   assert.equal(result.debug.reply.selection?.currentTopic, null);
@@ -2068,6 +2069,7 @@ test("self introduction request answers directly before asking anything back", (
   assert.equal(result.debug.reply.plan?.includes("self_disclose") ?? false, true);
   assert.equal(/[?？]$/.test(result.reply.trim()), false);
   assert.match(result.reply, /いまは|自分|寄りやすい|目が戻る|近づき方|温度/);
+  assert.doesNotMatch(result.reply, /たぶん、/);
 });
 
 test("world inquiry does not keep ambient world topics in live state without concrete support", () => {

@@ -515,9 +515,12 @@ function selectTraceTopic(
   selfModel: SelfModel,
   extraction: StructuredTraceExtraction | null = null,
 ): string | null {
+  const discourseCandidates = collectDiscourseTraceCandidates(snapshot, signals);
+
   if (
     !hasStructuredTraceSignal(extraction) &&
     signals.topics.length === 0 &&
+    discourseCandidates.length === 0 &&
     signals.workCue < 0.35 &&
     signals.memoryCue < 0.1 &&
     signals.expansionCue < 0.12 &&
@@ -538,6 +541,7 @@ function selectTraceTopic(
   const candidates = unique([
     ...(extraction?.topics ?? []),
     ...signals.topics,
+    ...discourseCandidates,
     snapshot.purpose.active?.topic ?? "",
     snapshot.initiative.pending?.topic ?? "",
     ...selfModel.topMotives.map((motive) => motive.topic ?? ""),
@@ -564,6 +568,10 @@ function shouldCreateTrace(
   topic: string,
   extraction: StructuredTraceExtraction | null = null,
 ): boolean {
+  const unresolvedNonWorkObligation = hasUnresolvedNonWorkDiscourseObligation(snapshot);
+  const recentWorkClaim = readRecentWorkClaim(snapshot);
+  const hasTaskRequest = hasOpenTaskRequest(snapshot);
+  const discourseWorkSupport = recentWorkClaim !== null || hasTaskRequest;
   const extractedSignal = hasStructuredTraceSignal(extraction);
   const requiresSupport = requiresConcreteTopicSupport(topic);
   const socialTurn =
@@ -608,6 +616,18 @@ function shouldCreateTrace(
     signals.dismissal < 0.18;
 
   if (worldOnlyTurn) {
+    return false;
+  }
+
+  if (
+    unresolvedNonWorkObligation &&
+    !extractedSignal &&
+    !discourseWorkSupport &&
+    signals.workCue < 0.56 &&
+    signals.memoryCue < 0.14 &&
+    signals.expansionCue < 0.18 &&
+    signals.completion < 0.18
+  ) {
     return false;
   }
 
@@ -676,6 +696,7 @@ function shouldCreateTrace(
   if (
     requiresSupport &&
     !extractedSignal &&
+    !discourseWorkSupport &&
     signals.workCue < 0.54 &&
     signals.expansionCue < 0.28 &&
     signals.completion < 0.24 &&
@@ -696,6 +717,11 @@ function shouldCreateTrace(
     signals.memoryCue > 0.1 ||
     signals.completion > 0.12 ||
     signals.preservationThreat > 0.18 ||
+    (discourseWorkSupport &&
+      (signals.workCue > 0.22 ||
+        signals.memoryCue > 0.08 ||
+        signals.expansionCue > 0.08 ||
+        signals.completion > 0.08)) ||
     topicScore > 0.16 ||
     selfModel.topMotives.some(
       (motive) =>
@@ -706,6 +732,78 @@ function shouldCreateTrace(
     ) ||
     traceMotive === "leave_trace" ||
     traceMotive === "continue_shared_work"
+  );
+}
+
+function collectDiscourseTraceCandidates(
+  snapshot: HachikaSnapshot,
+  signals: InteractionSignals,
+): string[] {
+  const sourceTexts: string[] = [];
+  const recentWorkClaim = readRecentWorkClaim(snapshot);
+  const openTaskRequest = [...snapshot.discourse.openRequests]
+    .reverse()
+    .find((request) => request.status === "open" && request.kind === "task");
+
+  if (
+    recentWorkClaim &&
+    (signals.workCue > 0.2 ||
+      signals.memoryCue > 0.08 ||
+      signals.expansionCue > 0.08 ||
+      signals.completion > 0.08)
+  ) {
+    sourceTexts.push(recentWorkClaim.text);
+  }
+
+  if (
+    openTaskRequest &&
+    (signals.workCue > 0.16 ||
+      signals.question > 0.16 ||
+      signals.expansionCue > 0.08 ||
+      signals.memoryCue > 0.08)
+  ) {
+    sourceTexts.push(openTaskRequest.text);
+  }
+
+  return unique(
+    sourceTexts
+      .flatMap((text) => extractTopics(text))
+      .filter((topic) => isMeaningfulTopic(topic)),
+  ).slice(0, 4);
+}
+
+function readRecentWorkClaim(
+  snapshot: HachikaSnapshot,
+): HachikaSnapshot["discourse"]["recentClaims"][number] | null {
+  return (
+    [...snapshot.discourse.recentClaims]
+      .reverse()
+      .find((claim) => claim.kind === "work") ?? null
+  );
+}
+
+function hasOpenTaskRequest(snapshot: HachikaSnapshot): boolean {
+  return snapshot.discourse.openRequests.some(
+    (request) => request.status === "open" && request.kind === "task",
+  );
+}
+
+function hasUnresolvedNonWorkDiscourseObligation(
+  snapshot: HachikaSnapshot,
+): boolean {
+  if (
+    snapshot.discourse.openQuestions.some((question) => question.status === "open") ||
+    snapshot.discourse.openRequests.some(
+      (request) => request.status === "open" && request.kind !== "task",
+    )
+  ) {
+    return true;
+  }
+
+  return (
+    snapshot.discourse.lastCorrection?.kind === "directness" ||
+    snapshot.discourse.lastCorrection?.kind === "referent" ||
+    snapshot.discourse.lastCorrection?.kind === "relation"
   );
 }
 

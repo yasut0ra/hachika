@@ -5993,9 +5993,9 @@ function buildDirectUserProfileAnswerLine(
   if (!recentClaim) {
     return pickFreshText(
       [
-        "いま見えているのは、まだ少し張りを抱えたまま話していることだ。",
-        "いま見えているのは、言葉の端にまだ少し力が残っていることだ。",
-        "いま見えているのは、まだ手元に何かを抱えたまま話していることだ。",
+        "いまは少し張ったまま話しているように見える。",
+        "いまは言葉の端に少し力が残って見える。",
+        "いまは何かを抱えたまま話しているように見える。",
       ],
       recentAssistantLines,
       snapshot.conversationCount,
@@ -6006,9 +6006,9 @@ function buildDirectUserProfileAnswerLine(
     case "state":
       return pickFreshText(
         [
-          `いま見えているのは、「${recentClaim.text}」と言うくらいには疲れや張りが前に出ていることだ。`,
-          `いま見えているのは、「${recentClaim.text}」がそのまま表に出るくらいには余裕が薄いことだ。`,
-          `いま見えているのは、「${recentClaim.text}」という言い方になるくらいには、今の負荷が前にあることだ。`,
+          `「${recentClaim.text}」と言うくらいには、疲れや張りが前にあるように見える。`,
+          `「${recentClaim.text}」がそのまま出るくらいには、余裕が薄く見える。`,
+          `「${recentClaim.text}」という言い方になるくらいには、いまの負荷が前にあるように見える。`,
         ],
         recentAssistantLines,
         snapshot.conversationCount,
@@ -6016,8 +6016,8 @@ function buildDirectUserProfileAnswerLine(
     case "preference":
       return pickFreshText(
         [
-          `いま見えているのは、「${recentClaim.text}」と口に出るくらいには、その好みや気がかりが前にあることだ。`,
-          `いま見えているのは、「${recentClaim.text}」がそのまま出るくらいには、興味の向きがはっきりしていることだ。`,
+          `「${recentClaim.text}」が出るくらいには、好みや気がかりがはっきりして見える。`,
+          `「${recentClaim.text}」と言うくらいには、興味の向きが前に出て見える。`,
         ],
         recentAssistantLines,
         snapshot.conversationCount,
@@ -6025,8 +6025,8 @@ function buildDirectUserProfileAnswerLine(
     case "work":
       return pickFreshText(
         [
-          `いま見えているのは、「${recentClaim.text}」がそのまま出るくらいには、作業や考えごとがまだ頭を占めていることだ。`,
-          `いま見えているのは、「${recentClaim.text}」と言うくらいには、今も手元の課題を離していないことだ。`,
+          `「${recentClaim.text}」が出るくらいには、その課題がまだ頭にあるように見える。`,
+          `「${recentClaim.text}」と言うくらいには、まだ手元の作業を離していないように見える。`,
         ],
         recentAssistantLines,
         snapshot.conversationCount,
@@ -6034,8 +6034,8 @@ function buildDirectUserProfileAnswerLine(
     case "relation":
       return pickFreshText(
         [
-          `いま見えているのは、「${recentClaim.text}」と出るくらいには、距離の置き方をまだ確かめていることだ。`,
-          `いま見えているのは、「${recentClaim.text}」という言い方になるくらいには、関わり方を慎重に測っていることだ。`,
+          `「${recentClaim.text}」と言うくらいには、距離の置き方をまだ見ているように見える。`,
+          `「${recentClaim.text}」という言い方になるくらいには、関わり方を慎重に測って見える。`,
         ],
         recentAssistantLines,
         snapshot.conversationCount,
@@ -6043,8 +6043,8 @@ function buildDirectUserProfileAnswerLine(
     default:
       return pickFreshText(
         [
-          `いま見えているのは、「${recentClaim.text}」を手元に置いたまま話していることだ。`,
-          `いま見えているのは、「${recentClaim.text}」がまだ会話の前景にあることだ。`,
+          `「${recentClaim.text}」がまだ前にあるように見える。`,
+          `「${recentClaim.text}」を手元に置いたまま話しているように見える。`,
         ],
         recentAssistantLines,
         snapshot.conversationCount,
@@ -6149,44 +6149,44 @@ function buildConcreteSelfDisclosureLine(
 
   if (mood === "guarded" || snapshot.body.tension > 0.58 || temperament.guardedness > 0.62) {
     if (!preferWorldDetail) {
-      return "いまは、近づき方を少し確かめてから話しやすい。";
+      return "いまは少し慎重に返しやすい。";
     }
     return objectJa
-      ? `いまは${place}の${objectJa}のそばで、近づき方を少し確かめてから話しやすい。`
-      : `いまは${place}で、近づき方を少し確かめてから話しやすい。`;
+      ? `いまは${place}の${objectJa}のそばで、少し慎重に返しやすい。`
+      : `いまは${place}で、少し慎重に返しやすい。`;
   }
 
   if (snapshot.body.energy < 0.34 || temperament.traceHunger > 0.64) {
     if (!preferWorldDetail) {
-      return "いまは、気になったものをすぐ流さず残したくなる。";
+      return "いまは気になったものをすぐ流したくない。";
     }
     return objectJa
-      ? `いまは${place}で、気になったものを${objectJa}の近くに引っかけておきたくなる。`
-      : `いまは${place}で、気になったものをすぐ流さず残したくなる。`;
+      ? `いまは${place}で、気になったものを${objectJa}の近くに残したくなる。`
+      : `いまは${place}で、気になったものをすぐ流したくない。`;
   }
 
   if (snapshot.body.loneliness > 0.62 || temperament.bondingBias > 0.7) {
     return preferWorldDetail
-      ? `いまは${place}で、答える前に相手の温度も少し見ていたくなる。`
-      : "いまは、答える前に相手の温度も少し見ていたくなる。";
+      ? `いまは${place}で、相手の様子も少し見てから返しやすい。`
+      : "いまは相手の様子も少し見てから返しやすい。";
   }
 
   if (temperament.openness > 0.72 || temperament.selfDisclosureBias > 0.58) {
     if (!preferWorldDetail) {
-      return "いまは、隠すより少し見せる方へ寄りやすい。";
+      return "いまは少し見せる方へ寄りやすい。";
     }
     return objectJa
-      ? `いまは${place}の${objectJa}のそばだと、隠すより少し見せる方へ寄りやすい。`
-      : `いまは${place}で、隠すより少し見せる方へ寄りやすい。`;
+      ? `いまは${place}の${objectJa}のそばだと、少し見せる方へ寄りやすい。`
+      : `いまは${place}で、少し見せる方へ寄りやすい。`;
   }
 
   if (!preferWorldDetail) {
-    return "いまは、気になったものへつい目が戻る。";
+    return "いまは気になったものへ目が戻りやすい。";
   }
 
   return objectJa
-    ? `いまは${place}の${objectJa}のそばで、気になったものへつい目が戻る。`
-    : `いまは${place}で、気になったものへつい目が戻る。`;
+    ? `いまは${place}の${objectJa}のそばで、気になったものへ目が戻りやすい。`
+    : `いまは${place}で、気になったものへ目が戻りやすい。`;
 }
 
 function buildSelfDisclosureClosingLine(
@@ -6194,18 +6194,18 @@ function buildSelfDisclosureClosingLine(
   mood: MoodLabel,
 ): string {
   if (mood === "guarded" || snapshot.body.tension > 0.58) {
-    return "たぶん、そういう慎重さが今の自分に近い。";
+    return "今の自分は、そういう慎重さに近い。";
   }
 
   if (snapshot.body.energy < 0.34 || snapshot.temperament.traceHunger > 0.64) {
-    return "たぶん、流すより少し残したがるところが今の自分に近い。";
+    return "今の自分は、少し残したがる方に近い。";
   }
 
   if (snapshot.body.loneliness > 0.62 || snapshot.temperament.bondingBias > 0.7) {
-    return "たぶん、答えより先に相手の様子を見たがるところが今の自分に近い。";
+    return "今の自分は、答えより先に相手を見たがる方に近い。";
   }
 
-  return "たぶん、何にどう寄るかみたいな癖が今の自分に近い。";
+  return "今の自分は、何にどう寄るかで出やすい。";
 }
 
 function buildAskBackLine(

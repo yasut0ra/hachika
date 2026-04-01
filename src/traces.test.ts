@@ -188,6 +188,64 @@ test("structured trace extraction can supply blockers and next steps to updateTr
   assert.ok(trace?.artifact.nextSteps.includes("API の責務を分ける"));
 });
 
+test("recent work claims can seed a concrete trace topic when the current turn stays work-like", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.lastInteractionAt = "2026-03-19T12:00:00.000Z";
+  snapshot.discourse.recentClaims.push({
+    subject: "user",
+    kind: "work",
+    text: "仕様の境界が曖昧だ。",
+    updatedAt: "2026-03-19T11:58:00.000Z",
+  });
+
+  const trace = updateTraces(
+    snapshot,
+    "そこを整理したい。",
+    createSignals({
+      workCue: 0.44,
+      memoryCue: 0.12,
+      topics: [],
+    }),
+    createSelfModel([
+      { kind: "continue_shared_work", score: 0.7, topic: "仕様の境界", reason: "境界を前へ進めたい" },
+    ]),
+    "2026-03-19T12:00:00.000Z",
+  );
+
+  assert.equal(trace?.topic, "仕様の境界");
+  assert.equal(trace?.kind, "spec_fragment");
+});
+
+test("unresolved non-work discourse obligations suppress weak trace hardening", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.lastInteractionAt = "2026-03-19T12:00:00.000Z";
+  snapshot.discourse.openRequests.push({
+    target: "hachika_name",
+    kind: "style",
+    text: "ハチカ自身の名前を具体的に答えて。",
+    askedAt: "2026-03-19T11:58:00.000Z",
+    status: "open",
+    resolvedAt: null,
+  });
+
+  const trace = updateTraces(
+    snapshot,
+    "そういう近い話は急がなくていい。",
+    createSignals({
+      repair: 0.36,
+      intimacy: 0.3,
+      topics: ["呼び方"],
+    }),
+    createSelfModel([
+      { kind: "deepen_relation", score: 0.66, topic: "呼び方", reason: "呼び方を確かめたい" },
+    ]),
+    "2026-03-19T12:00:00.000Z",
+  );
+
+  assert.equal(trace, null);
+  assert.equal(snapshot.traces["呼び方"], undefined);
+});
+
 test("self inquiry alone does not turn a self-referential topic into a trace", () => {
   const snapshot = createInitialSnapshot();
   snapshot.lastInteractionAt = "2026-03-19T12:00:00.000Z";
