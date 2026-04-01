@@ -1058,7 +1058,7 @@ export class HachikaEngine {
       options.responsePlanner ?? null,
       options.traceExtractor ?? null,
     );
-    const fallbackReply = composeReply(
+    const ruleFallbackReply = composeReply(
       input,
       prepared.previousSnapshot,
       prepared.nextSnapshot,
@@ -1070,10 +1070,11 @@ export class HachikaEngine {
       prepared.replySelection,
       prepared.turnDebug,
     );
+    const semanticChecksumReply = buildActorReplyChecksum(input, prepared);
     const replyGenerator = options.replyGenerator ?? null;
 
     if (!replyGenerator) {
-      return this.#finalizeTurn(input, prepared, fallbackReply, {
+      return this.#finalizeTurn(input, prepared, ruleFallbackReply, {
         mode: "reply",
         source: "rule",
         provider: null,
@@ -1092,8 +1093,8 @@ export class HachikaEngine {
         selection: prepared.replySelection.debug,
         proactiveSelection: null,
         quality: evaluateGeneratedTextQuality({
-          text: fallbackReply,
-          fallbackText: fallbackReply,
+          text: ruleFallbackReply,
+          fallbackText: ruleFallbackReply,
           previousSnapshot: prepared.previousSnapshot,
           primaryFocus: prepared.replySelection.debug.currentTopic,
         }),
@@ -1104,9 +1105,9 @@ export class HachikaEngine {
       const generated = await generateTextWithQualityGate({
         generate: (retry) =>
           replyGenerator.generateReply(
-            buildReplyGenerationContext(input, prepared, fallbackReply, retry),
+            buildReplyGenerationContext(input, prepared, semanticChecksumReply, retry),
           ),
-        fallbackText: fallbackReply,
+        fallbackText: semanticChecksumReply,
         previousSnapshot: prepared.previousSnapshot,
         primaryFocus: prepared.replySelection.debug.currentTopic ?? null,
         mode: "reply",
@@ -1117,7 +1118,7 @@ export class HachikaEngine {
 
       return this.#finalizeTurn(input, prepared, reply, {
         mode: "reply",
-        source: reply === fallbackReply ? "rule" : "llm",
+        source: generated.fallbackUsed ? "rule" : "llm",
         provider: generated.provider,
         model: generated.model,
         retryAttempts: generated.retryAttempts,
@@ -1136,7 +1137,7 @@ export class HachikaEngine {
         quality: generated.quality,
       });
     } catch (error) {
-      return this.#finalizeTurn(input, prepared, fallbackReply, {
+      return this.#finalizeTurn(input, prepared, ruleFallbackReply, {
         mode: "reply",
         source: "rule",
         provider: replyGenerator.name,
@@ -1155,8 +1156,8 @@ export class HachikaEngine {
         selection: prepared.replySelection.debug,
         proactiveSelection: null,
         quality: evaluateGeneratedTextQuality({
-          text: fallbackReply,
-          fallbackText: fallbackReply,
+          text: ruleFallbackReply,
+          fallbackText: ruleFallbackReply,
           previousSnapshot: prepared.previousSnapshot,
           primaryFocus: prepared.replySelection.debug.currentTopic,
         }),
@@ -1943,6 +1944,101 @@ function buildReplyGenerationContext(
   };
 }
 
+function buildActorReplyChecksum(
+  input: string,
+  prepared: PreparedTurn,
+): string {
+  const discourse = resolveDiscourseReplyObligation(
+    prepared.nextSnapshot,
+    prepared.responseSignals,
+    prepared.responsePlan,
+  );
+  const directLine = buildDirectReferentAnswerLine(
+    input,
+    prepared.previousSnapshot,
+    prepared.nextSnapshot,
+    prepared.mood,
+    prepared.turnDebug,
+  );
+
+  if (directLine) {
+    return directLine;
+  }
+
+  if (
+    discourse.target === "world_state" ||
+    prepared.responsePlan.mentionWorld ||
+    prepared.responseSignals.worldInquiry >= 0.45
+  ) {
+    return buildWorldChecksumLine(prepared.nextSnapshot);
+  }
+
+  if (
+    prepared.replySelection.debug.socialTurn ||
+    prepared.responsePlan.act === "greet" ||
+    prepared.responsePlan.act === "attune" ||
+    prepared.responsePlan.act === "repair" ||
+    prepared.turnDebug?.target === "relation"
+  ) {
+    return (
+      buildSocialLine(
+        input,
+        prepared.previousSnapshot,
+        prepared.nextSnapshot,
+        prepared.mood,
+        prepared.responseSignals,
+        prepared.responsePlan,
+        prepared.turnDebug,
+      ) ?? "ここにいる。"
+    );
+  }
+
+  if (
+    prepared.turnDebug?.target === "hachika_profile" ||
+    prepared.responsePlan.act === "self_disclose"
+  ) {
+    return buildConcreteSelfDisclosureLine(prepared.nextSnapshot, prepared.mood, false);
+  }
+
+  const currentTopic = prepared.replySelection.debug.currentTopic;
+  const relevantTrace = prepared.replySelection.relevantTrace;
+  if (currentTopic) {
+    if (
+      relevantTrace?.work.blockers[0] &&
+      (prepared.responsePlan.act === "continue_work" || prepared.responseSignals.workCue >= 0.34)
+    ) {
+      return `「${currentTopic}」は「${abbreviateReplyChecksumText(relevantTrace.work.blockers[0], 20)}」が詰まりどころだ。`;
+    }
+
+    if (
+      prepared.responsePlan.act === "preserve" ||
+      prepared.responsePlan.act === "explore"
+    ) {
+      return `「${currentTopic}」にはまだ触れる余地がある。`;
+    }
+
+    if (
+      discourse.target === "work_topic" ||
+      prepared.responsePlan.act === "continue_work" ||
+      prepared.responseSignals.workCue >= 0.34
+    ) {
+      return `「${currentTopic}」を前へ進めたい。`;
+    }
+
+    return `「${currentTopic}」に応じたい。`;
+  }
+
+  return "ここに応じる。";
+}
+
+function abbreviateReplyChecksumText(text: string, limit: number): string {
+  if (text.length <= limit) {
+    return text;
+  }
+
+  return `${text.slice(0, Math.max(1, limit - 1))}…`;
+}
+
 function summarizeResponsePlanDiff(
   rulePlan: ResponsePlan,
   finalPlan: ResponsePlan,
@@ -2088,8 +2184,9 @@ async function generateTextWithQualityGate(options: {
   providerName: string;
 }): Promise<GeneratedTextAttempt> {
   const first = await options.generate();
-  const firstText = normalizeReplyCandidate(first?.reply) ?? options.fallbackText;
-  const firstFallbackUsed = firstText === options.fallbackText;
+  const normalizedFirstText = normalizeReplyCandidate(first?.reply);
+  const firstText = normalizedFirstText ?? options.fallbackText;
+  const firstFallbackUsed = normalizedFirstText === null;
   const firstQuality = evaluateGeneratedTextQuality({
     text: firstText,
     fallbackText: options.fallbackText,
@@ -5317,6 +5414,19 @@ function buildWorldLine(
       : null;
 
   return `今は${describeWorldPlaceJa(world.currentPlace)}にいる。${describeWorldPhaseJa(world.phase)}で、${warmth}。${quiet}。${currentObject?.state ?? "周りはまだ大きくは動いていない。"}${linkedLine ? `。${linkedLine}` : ""}`;
+}
+
+function buildWorldChecksumLine(
+  snapshot: HachikaSnapshot,
+): string {
+  const world = snapshot.world;
+  const currentObject = Object.values(world.objects).find(
+    (object) => object.place === world.currentPlace,
+  );
+
+  return currentObject?.state
+    ? `今は${describeWorldPlaceJa(world.currentPlace)}にいる。${currentObject.state}`
+    : `今は${describeWorldPlaceJa(world.currentPlace)}にいる。`;
 }
 
 function buildWorldClosingLine(snapshot: HachikaSnapshot): string | null {
