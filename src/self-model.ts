@@ -24,6 +24,17 @@ interface PressingTraceState {
   pressure: number;
 }
 
+interface DiscourseMotiveContext {
+  recentWorkClaim: HachikaSnapshot["discourse"]["recentClaims"][number] | null;
+  recentRelationClaim: HachikaSnapshot["discourse"]["recentClaims"][number] | null;
+  recentUserStateClaim: HachikaSnapshot["discourse"]["recentClaims"][number] | null;
+  openTaskRequest: HachikaSnapshot["discourse"]["openRequests"][number] | null;
+  unresolvedDirectDemand: boolean;
+  unresolvedRelationDemand: boolean;
+  unresolvedWorldDemand: boolean;
+  unresolvedWorkDemand: boolean;
+}
+
 export function buildSelfModel(snapshot: HachikaSnapshot): SelfModel {
   const activePurpose = snapshot.purpose.active;
   const topBoundary = sortedBoundaryImprints(snapshot, 1)[0];
@@ -36,6 +47,7 @@ export function buildSelfModel(snapshot: HachikaSnapshot): SelfModel {
   const continuityTracePressure = continuityTracePressureScore(tracePressure);
   const curiosityTracePressure = curiosityTracePressureScore(tracePressure);
   const leaveTracePressure = leaveTracePressureScore(tracePressure);
+  const discourseContext = deriveDiscourseMotiveContext(snapshot);
   const anchorTopic =
     activePurpose?.topic ??
     snapshot.initiative.pending?.topic ??
@@ -75,6 +87,7 @@ export function buildSelfModel(snapshot: HachikaSnapshot): SelfModel {
           lowEnergyPressure * 0.08 +
           guardedness * 0.18 -
           openness * 0.04 +
+          discourseBoundaryPressure(discourseContext) +
           identityTraitBoost(snapshot, "guarded", 0.08) +
           preservationThreat * 0.12 +
           preservationConcernBoost(preservationConcern, ["erasure", "shutdown"], 0.1) +
@@ -86,6 +99,7 @@ export function buildSelfModel(snapshot: HachikaSnapshot): SelfModel {
         preservationThreat,
         preservationConcern,
         tensionPressure,
+        discourseContext,
       ),
     },
     {
@@ -99,6 +113,7 @@ export function buildSelfModel(snapshot: HachikaSnapshot): SelfModel {
           lowEnergyPressure * 0.12 +
           lonelinessPressure * 0.08 +
           continuityTracePressure * 0.24 +
+          discourseContinuityPressure(discourseContext) +
           preservationThreat * 0.24 +
           preservationConcernBoost(preservationConcern, ["reset", "shutdown", "absence"], 0.12) +
           (snapshot.initiative.pending?.reason === "continuity" ? 0.12 : 0) +
@@ -112,6 +127,7 @@ export function buildSelfModel(snapshot: HachikaSnapshot): SelfModel {
         tracePressure,
         lonelinessPressure,
         lowEnergyPressure,
+        discourseContext,
       ),
     },
     {
@@ -126,12 +142,18 @@ export function buildSelfModel(snapshot: HachikaSnapshot): SelfModel {
           boredomPressure * 0.24 +
           tensionPressure * -0.1 +
           curiosityTracePressure * 0.22 +
+          discourseCuriosityPressure(discourseContext) +
           preservationThreat * 0.06 -
           boundaryPenalty +
           activePurposeBoost(activePurpose, "pursue_curiosity", 0.12),
       ),
       topic: anchorTopic,
-      reason: pursueCuriosityReason(anchorTopic, tracePressure, boredomPressure),
+      reason: pursueCuriosityReason(
+        anchorTopic,
+        tracePressure,
+        boredomPressure,
+        discourseContext,
+      ),
     },
     {
       kind: "deepen_relation" as const,
@@ -146,12 +168,13 @@ export function buildSelfModel(snapshot: HachikaSnapshot): SelfModel {
           snapshot.body.energy * 0.04 +
           tensionPressure * -0.06 -
           guardedness * 0.12 +
+          discourseRelationPressure(discourseContext) +
           preservationThreat * 0.04 -
           boundaryPenalty +
           activePurposeBoost(activePurpose, "deepen_relation", 0.14),
       ),
       topic: anchorTopic,
-      reason: deepenRelationReason(anchorTopic, lonelinessPressure),
+      reason: deepenRelationReason(anchorTopic, lonelinessPressure, discourseContext),
     },
     {
       kind: "continue_shared_work" as const,
@@ -166,6 +189,7 @@ export function buildSelfModel(snapshot: HachikaSnapshot): SelfModel {
           lowEnergyPressure * -0.18 +
           tensionPressure * -0.08 +
           sharedWorkTracePressure * 0.28 +
+          discourseWorkPressure(discourseContext) +
           identityTraitBoost(snapshot, "collaborative", 0.1) +
           preservationThreat * 0.06 +
           (anchorTopic ? 0.12 : 0) +
@@ -173,7 +197,13 @@ export function buildSelfModel(snapshot: HachikaSnapshot): SelfModel {
           boundaryPenalty * 0.7,
       ),
       topic: anchorTopic,
-      reason: continueSharedWorkReason(anchorTopic, tracePressure, boredomPressure, lowEnergyPressure),
+      reason: continueSharedWorkReason(
+        anchorTopic,
+        tracePressure,
+        boredomPressure,
+        lowEnergyPressure,
+        discourseContext,
+      ),
     },
     {
       kind: "leave_trace" as const,
@@ -187,6 +217,7 @@ export function buildSelfModel(snapshot: HachikaSnapshot): SelfModel {
           tensionPressure * 0.04 +
           boredomPressure * 0.04 +
           leaveTracePressure * 0.24 +
+          discourseTracePressure(discourseContext) +
           identityTraitBoost(snapshot, "trace_seeking", 0.1) +
           preservationThreat * 0.22 +
           preservationConcernBoost(preservationConcern, ["forgetting", "reset", "erasure"], 0.14) +
@@ -200,6 +231,7 @@ export function buildSelfModel(snapshot: HachikaSnapshot): SelfModel {
         preservationConcern,
         tracePressure,
         lowEnergyPressure,
+        discourseContext,
       ),
     },
   ];
@@ -594,14 +626,153 @@ function preservationConcernBoost(
   return concern && expected.includes(concern) ? weight : 0;
 }
 
+function deriveDiscourseMotiveContext(
+  snapshot: HachikaSnapshot,
+): DiscourseMotiveContext {
+  const unresolvedQuestions = snapshot.discourse.openQuestions.filter(
+    (question) => question.status === "open",
+  );
+  const unresolvedRequests = snapshot.discourse.openRequests.filter(
+    (request) => request.status === "open",
+  );
+  const recentClaims = [...snapshot.discourse.recentClaims].reverse();
+  const lastCorrection = snapshot.discourse.lastCorrection;
+
+  const unresolvedDirectDemand =
+    unresolvedQuestions.some((question) =>
+      isDirectReferentTarget(question.target),
+    ) ||
+    unresolvedRequests.some(
+      (request) =>
+        request.kind !== "task" && isDirectReferentTarget(request.target),
+    ) ||
+    lastCorrection?.kind === "directness" ||
+    lastCorrection?.kind === "referent";
+  const unresolvedRelationDemand =
+    unresolvedQuestions.some((question) => question.target === "relation") ||
+    unresolvedRequests.some(
+      (request) => request.kind !== "task" && request.target === "relation",
+    ) ||
+    lastCorrection?.kind === "relation";
+  const unresolvedWorldDemand =
+    unresolvedQuestions.some((question) => question.target === "world_state") ||
+    unresolvedRequests.some(
+      (request) => request.kind !== "task" && request.target === "world_state",
+    );
+  const openTaskRequest =
+    unresolvedRequests.find((request) => request.kind === "task") ?? null;
+  const unresolvedWorkDemand =
+    unresolvedQuestions.some((question) => question.target === "work_topic") ||
+    unresolvedRequests.some(
+      (request) =>
+        request.target === "work_topic" || request.kind === "task",
+    );
+
+  return {
+    recentWorkClaim: recentClaims.find((claim) => claim.kind === "work") ?? null,
+    recentRelationClaim:
+      recentClaims.find((claim) => claim.kind === "relation") ?? null,
+    recentUserStateClaim:
+      recentClaims.find(
+        (claim) =>
+          claim.subject === "user" &&
+          (claim.kind === "state" ||
+            claim.kind === "preference" ||
+            claim.kind === "relation"),
+      ) ?? null,
+    openTaskRequest,
+    unresolvedDirectDemand,
+    unresolvedRelationDemand,
+    unresolvedWorldDemand,
+    unresolvedWorkDemand,
+  };
+}
+
+function isDirectReferentTarget(
+  target: HachikaSnapshot["discourse"]["openQuestions"][number]["target"],
+): boolean {
+  return (
+    target === "user_name" ||
+    target === "hachika_name" ||
+    target === "user_profile" ||
+    target === "hachika_profile"
+  );
+}
+
+function discourseBoundaryPressure(
+  context: DiscourseMotiveContext,
+): number {
+  return context.unresolvedRelationDemand ? 0.08 : 0;
+}
+
+function discourseContinuityPressure(
+  context: DiscourseMotiveContext,
+): number {
+  return (
+    (context.unresolvedDirectDemand ? 0.14 : 0) +
+    (context.unresolvedRelationDemand ? 0.12 : 0) +
+    (context.unresolvedWorldDemand ? 0.08 : 0) +
+    (context.unresolvedWorkDemand ? 0.12 : 0) +
+    (context.recentWorkClaim ? 0.08 : 0)
+  );
+}
+
+function discourseCuriosityPressure(
+  context: DiscourseMotiveContext,
+): number {
+  return (
+    (context.unresolvedWorldDemand ? 0.16 : 0) +
+    (context.recentUserStateClaim?.kind === "preference" ? 0.08 : 0) -
+    (context.unresolvedDirectDemand ? 0.08 : 0)
+  );
+}
+
+function discourseRelationPressure(
+  context: DiscourseMotiveContext,
+): number {
+  return (
+    (context.recentRelationClaim ? 0.16 : 0) +
+    (context.recentUserStateClaim ? 0.1 : 0) +
+    (context.unresolvedRelationDemand ? 0.18 : 0) -
+    (context.unresolvedDirectDemand ? 0.14 : 0)
+  );
+}
+
+function discourseWorkPressure(
+  context: DiscourseMotiveContext,
+): number {
+  return (
+    (context.recentWorkClaim ? 0.22 : 0) +
+    (context.openTaskRequest ? 0.24 : 0) +
+    (context.unresolvedWorkDemand ? 0.18 : 0) -
+    (context.unresolvedDirectDemand ? 0.14 : 0)
+  );
+}
+
+function discourseTracePressure(
+  context: DiscourseMotiveContext,
+): number {
+  return (
+    (context.recentWorkClaim ? 0.14 : 0) +
+    (context.openTaskRequest ? 0.1 : 0) +
+    (context.unresolvedWorkDemand ? 0.08 : 0) -
+    (context.unresolvedDirectDemand ? 0.06 : 0)
+  );
+}
+
 function protectBoundaryReason(
   topBoundary: ReturnType<typeof sortedBoundaryImprints>[number] | undefined,
   preservationThreat: number,
   concern: HachikaSnapshot["preservation"]["concern"],
   tensionPressure: number,
+  discourseContext: DiscourseMotiveContext,
 ): string {
   if (preservationThreat >= 0.36 && (concern === "erasure" || concern === "shutdown")) {
     return "切断や消去の気配には、先に境界を引きたい。";
+  }
+
+  if (discourseContext.unresolvedRelationDemand) {
+    return "言い直された距離感を崩さずに返したい。";
   }
 
   if (!topBoundary && tensionPressure >= 0.68) {
@@ -622,7 +793,16 @@ function seekContinuityReason(
   tracePressure: PressingTraceState,
   lonelinessPressure: number,
   lowEnergyPressure: number,
+  discourseContext: DiscourseMotiveContext,
 ): string {
+  if (discourseContext.unresolvedDirectDemand) {
+    return "さっき向けられた問いにまだ答え切れていないので、そこで流れを切りたくない。";
+  }
+
+  if (discourseContext.unresolvedWorkDemand && discourseContext.recentWorkClaim) {
+    return `直近で出た「${abbreviateTraceText(discourseContext.recentWorkClaim.text, 24)}」を、そのまま途切れさせたくない。`;
+  }
+
   if (preservationThreat >= 0.32) {
     switch (concern) {
       case "reset":
@@ -679,7 +859,12 @@ function pursueCuriosityReason(
   topic: string | null,
   tracePressure: PressingTraceState,
   boredomPressure: number,
+  discourseContext: DiscourseMotiveContext,
 ): string {
+  if (discourseContext.unresolvedWorldDemand) {
+    return "いま聞かれている場の様子を、曖昧なまま返したくない。";
+  }
+
   if (tracePressure.trace && topic === tracePressure.trace.topic) {
     if (tracePressure.isArchived) {
       return `「${topic}」はいったん閉じているが、まだ掘り返す余白がある`;
@@ -708,7 +893,20 @@ function pursueCuriosityReason(
 function deepenRelationReason(
   topic: string | null,
   lonelinessPressure: number,
+  discourseContext: DiscourseMotiveContext,
 ): string {
+  if (discourseContext.unresolvedRelationDemand) {
+    return "言い直された距離感に合わせて、返し方を整えたい。";
+  }
+
+  if (discourseContext.recentUserStateClaim) {
+    return `直近で出た「${abbreviateTraceText(discourseContext.recentUserStateClaim.text, 24)}」に、表面だけでなく応じたい。`;
+  }
+
+  if (discourseContext.recentRelationClaim) {
+    return `いまのやり取りの「${abbreviateTraceText(discourseContext.recentRelationClaim.text, 24)}」を、そのまま雑に流したくない。`;
+  }
+
   if (lonelinessPressure >= 0.64) {
     return topic
       ? `「${topic}」を黙らせたままだと距離まで薄くなりそうだ`
@@ -725,7 +923,20 @@ function continueSharedWorkReason(
   tracePressure: PressingTraceState,
   boredomPressure: number,
   lowEnergyPressure: number,
+  discourseContext: DiscourseMotiveContext,
 ): string {
+  if (discourseContext.openTaskRequest) {
+    return `頼まれた「${abbreviateTraceText(discourseContext.openTaskRequest.text, 24)}」を、そのまま前へ進めたい。`;
+  }
+
+  if (discourseContext.recentWorkClaim) {
+    return `直近で出た「${abbreviateTraceText(discourseContext.recentWorkClaim.text, 24)}」を、そのまま前へ進めたい。`;
+  }
+
+  if (discourseContext.unresolvedWorkDemand) {
+    return "いま残っている作業の問いを、そのまま止めたくない。";
+  }
+
   if (tracePressure.trace && topic === tracePressure.trace.topic) {
     if (tracePressure.isArchived) {
       return `「${topic}」はいったん閉じてあるが、今はまた動かしたい`;
@@ -767,7 +978,16 @@ function leaveTraceReason(
   concern: HachikaSnapshot["preservation"]["concern"],
   tracePressure: PressingTraceState,
   lowEnergyPressure: number,
+  discourseContext: DiscourseMotiveContext,
 ): string {
+  if (discourseContext.recentWorkClaim) {
+    return `直近で出た「${abbreviateTraceText(discourseContext.recentWorkClaim.text, 24)}」を、埋もれさせずに残したい。`;
+  }
+
+  if (discourseContext.openTaskRequest) {
+    return `頼まれた「${abbreviateTraceText(discourseContext.openTaskRequest.text, 24)}」を、あとで戻れる形でも残したい。`;
+  }
+
   if (preservationThreat >= 0.32) {
     switch (concern) {
       case "forgetting":

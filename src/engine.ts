@@ -1666,6 +1666,11 @@ function prepareTurnFromSignals(
     turnDebug,
     stateSignals,
   );
+  const obligationAwareLifecycleBehavior = applyPersistentDiscourseLifecycleBehavior(
+    snapshot,
+    stateSignals,
+    lifecycleBehaviorDirective,
+  );
   const normalizedTraceExtractionDebug = finalizeTraceExtractionDebug(
     traceExtractionDebug,
     signals,
@@ -1690,7 +1695,7 @@ function prepareTurnFromSignals(
   const mood = resolveMood(nextSnapshot, stateSignals);
   const dominant = dominantDrive(nextSnapshot.state);
   const preliminarySelfModel = buildSelfModel(nextSnapshot);
-  if (lifecycleBehaviorDirective.purposeAction === "allow") {
+  if (obligationAwareLifecycleBehavior.purposeAction === "allow") {
     updatePurpose(
       nextSnapshot,
       preliminarySelfModel,
@@ -1700,7 +1705,7 @@ function prepareTurnFromSignals(
   }
   let selfModel = buildSelfModel(nextSnapshot);
   const updatedTrace =
-    lifecycleBehaviorDirective.traceAction === "allow"
+    obligationAwareLifecycleBehavior.traceAction === "allow"
       ? updateTraces(
           nextSnapshot,
           input,
@@ -1723,7 +1728,7 @@ function prepareTurnFromSignals(
   updateIdentity(nextSnapshot, nextSnapshot.lastInteractionAt ?? new Date().toISOString());
   selfModel = buildSelfModel(nextSnapshot);
   let initiativeDecision: ScheduledInitiativeDecision | null = null;
-  if (lifecycleBehaviorDirective.initiativeAction === "allow") {
+  if (obligationAwareLifecycleBehavior.initiativeAction === "allow") {
     if (deferInitiativeScheduling) {
       initiativeDecision = prepareScheduledInitiative(
         nextSnapshot,
@@ -1772,7 +1777,7 @@ function prepareTurnFromSignals(
     responseSignals,
     turnDebug,
     interpretationDebug,
-    behaviorDirective: lifecycleBehaviorDirective,
+    behaviorDirective: obligationAwareLifecycleBehavior,
     behaviorDebug,
     traceExtraction,
     traceExtractionDebug: normalizedTraceExtractionDebug,
@@ -3568,7 +3573,11 @@ function deriveDurableStateSignals(
             .filter((topic) => isMeaningfulTopic(topic)),
         ).slice(0, 4)
       : filterDurableStateTopics(snapshot, signals.topics, signals, traceExtraction);
-  const topics = filterTurnDirectiveDurableTopics(snapshot, baseTopics, turnDebug);
+  const turnFilteredTopics = filterTurnDirectiveDurableTopics(snapshot, baseTopics, turnDebug);
+  const topics = filterDiscourseObligationDurableTopics(snapshot, turnFilteredTopics, {
+    ...signals,
+    topics: [...turnFilteredTopics],
+  });
 
   if (
     topics.length === signals.topics.length &&
@@ -3604,6 +3613,16 @@ function filterTurnDirectiveDurableTopics(
       ? hasStrongDurableTopicSupport(snapshot, topic)
       : hasDurableTopicSupport(snapshot, topic),
   );
+}
+
+function filterDiscourseObligationDurableTopics(
+  snapshot: HachikaSnapshot,
+  topics: readonly string[],
+  signals: InteractionSignals,
+): string[] {
+  return shouldSuppressPersistentDiscourseObligationLifecycle(snapshot, signals)
+    ? []
+    : [...topics];
 }
 
 function sanitizeInitiativeStateTopic(
@@ -3679,6 +3698,115 @@ function applyTurnDirectiveLifecycleBehavior(
   }
 
   return behaviorDirective;
+}
+
+function applyPersistentDiscourseLifecycleBehavior(
+  snapshot: HachikaSnapshot,
+  stateSignals: InteractionSignals,
+  behaviorDirective: BehaviorDirective,
+): BehaviorDirective {
+  if (!shouldSuppressPersistentDiscourseObligationLifecycle(snapshot, stateSignals)) {
+    return behaviorDirective;
+  }
+
+  return {
+    ...behaviorDirective,
+    traceAction: "suppress",
+    purposeAction: "suppress",
+    initiativeAction: "suppress",
+    summary: summarizeBehaviorDirective({
+      ...behaviorDirective,
+      traceAction: "suppress",
+      purposeAction: "suppress",
+      initiativeAction: "suppress",
+    }),
+  };
+}
+
+function shouldSuppressPersistentDiscourseObligationLifecycle(
+  snapshot: HachikaSnapshot,
+  signals: InteractionSignals,
+): boolean {
+  const obligation = resolvePersistentDiscourseLifecycleObligation(snapshot);
+
+  if (!obligation || !isNonWorkDiscourseObligationTarget(obligation.target)) {
+    return false;
+  }
+
+  return !hasConcreteDurableWorkIntent(signals);
+}
+
+function resolvePersistentDiscourseLifecycleObligation(
+  snapshot: HachikaSnapshot,
+): {
+  target: TurnTarget | "none" | null;
+  source: "request" | "question" | "correction";
+  requestKind: "direct_answer" | "style" | "task" | null;
+  correctionKind: "referent" | "directness" | "relation" | null;
+} | null {
+  const unresolvedRequest = [...snapshot.discourse.openRequests]
+    .reverse()
+    .find((request) => request.status === "open");
+
+  if (unresolvedRequest && unresolvedRequest.kind !== "task") {
+    return {
+      target: unresolvedRequest.target,
+      source: "request",
+      requestKind: unresolvedRequest.kind,
+      correctionKind: null,
+    };
+  }
+
+  const unresolvedQuestion = [...snapshot.discourse.openQuestions]
+    .reverse()
+    .find((question) => question.status === "open");
+
+  if (unresolvedQuestion) {
+    return {
+      target: unresolvedQuestion.target,
+      source: "question",
+      requestKind: null,
+      correctionKind: null,
+    };
+  }
+
+  if (
+    snapshot.discourse.lastCorrection &&
+    (snapshot.discourse.lastCorrection.kind === "directness" ||
+      snapshot.discourse.lastCorrection.kind === "referent" ||
+      snapshot.discourse.lastCorrection.kind === "relation")
+  ) {
+    return {
+      target: snapshot.discourse.lastCorrection.target,
+      source: "correction",
+      requestKind: null,
+      correctionKind: snapshot.discourse.lastCorrection.kind,
+    };
+  }
+
+  return null;
+}
+
+function isNonWorkDiscourseObligationTarget(
+  target: TurnTarget | "none" | null,
+): target is Exclude<TurnTarget, "work_topic"> | "none" {
+  return target !== null && target !== "work_topic";
+}
+
+function hasConcreteDurableWorkIntent(signals: InteractionSignals): boolean {
+  const hasConcreteTopic = signals.topics.some(
+    (topic) =>
+      !requiresConcreteTopicSupport(topic) &&
+      !isRelationalTopic(topic) &&
+      !isAmbientWorldTopic(topic),
+  );
+  const strongTurnCue =
+    signals.workCue >= 0.42 ||
+    signals.memoryCue >= 0.26 ||
+    signals.expansionCue >= 0.24 ||
+    signals.completion >= 0.22;
+
+  return hasConcreteTopic && strongTurnCue;
 }
 
 function uniqueTopics(topics: string[]): string[] {
@@ -3877,6 +4005,14 @@ function mergeInterpretedSignals(
     return localSignals;
   }
 
+  return buildAuthoritativeInterpretedSignals(snapshot, localSignals, interpretation);
+}
+
+function buildAuthoritativeInterpretedSignals(
+  snapshot: HachikaSnapshot,
+  localSignals: InteractionSignals,
+  interpretation: InputInterpretation,
+): InteractionSignals {
   const greeting = interpretation.greeting ?? 0;
   const smalltalk = interpretation.smalltalk ?? 0;
   const repair = interpretation.repair ?? 0;
@@ -3893,40 +4029,41 @@ function mergeInterpretedSignals(
   const expansionCue = interpretation.expansionCue ?? 0;
   const completion = interpretation.completion ?? 0;
   const preservationThreat = interpretation.preservationThreat ?? 0;
+  const maxSocial = Math.max(greeting, smalltalk, repair, selfInquiry, worldInquiry);
 
   const socialOverride =
     interpretation.topics.length === 0 &&
     workCue < 0.35 &&
-    Math.max(greeting, smalltalk, repair, selfInquiry, worldInquiry) >= 0.38;
+    maxSocial >= 0.38;
   const repairCarryoverReset =
-    Math.max(localSignals.repair, repair) >= 0.42 &&
-    Math.max(localSignals.workCue, workCue) < 0.35 &&
+    repair >= 0.42 &&
+    workCue < 0.35 &&
     (localSignals.topics.length === 0 || shouldClearRepairTopics(localSignals.topics)) &&
-    Math.max(localSignals.negative, negative) < 0.18 &&
-    Math.max(localSignals.dismissal, dismissal) < 0.18;
+    negative < 0.18 &&
+    dismissal < 0.18;
   const worldTopicReset =
-    Math.max(localSignals.worldInquiry, worldInquiry) >= 0.45 &&
-    Math.max(localSignals.workCue, workCue) < 0.35 &&
+    worldInquiry >= 0.45 &&
+    workCue < 0.35 &&
     localSignals.topics.length === 0 &&
     interpretation.topics.every((topic) => isAmbientWorldTopic(topic)) &&
-    Math.max(localSignals.negative, negative) < 0.18 &&
-    Math.max(localSignals.dismissal, dismissal) < 0.18;
+    negative < 0.18 &&
+    dismissal < 0.18;
   const topicShiftOverride =
-    Math.max(localSignals.abandonment, abandonment) >= 0.28 &&
-    Math.max(localSignals.workCue, workCue) < 0.35 &&
-    Math.max(localSignals.negative, negative) < 0.18 &&
-    Math.max(localSignals.dismissal, dismissal) < 0.18;
+    abandonment >= 0.28 &&
+    workCue < 0.35 &&
+    negative < 0.18 &&
+    dismissal < 0.18;
   const abstractSocialTopicReset =
     shouldSuppressBroadSocialTopics(
       interpretation.topics.length > 0 ? interpretation.topics : localSignals.topics,
       {
-        greeting: Math.max(localSignals.greeting, greeting),
-        smalltalk: Math.max(localSignals.smalltalk, smalltalk),
-        repair: Math.max(localSignals.repair, repair),
-        selfInquiry: Math.max(localSignals.selfInquiry, selfInquiry),
-        worldInquiry: Math.max(localSignals.worldInquiry, worldInquiry),
-        abandonment: Math.max(localSignals.abandonment, abandonment),
-        workCue: Math.max(localSignals.workCue, workCue),
+        greeting,
+        smalltalk,
+        repair,
+        selfInquiry,
+        worldInquiry,
+        abandonment,
+        workCue,
       },
     );
   const topics = socialOverride
@@ -3935,52 +4072,85 @@ function mergeInterpretedSignals(
       ? []
     : interpretation.topics.length > 0
       ? interpretation.topics
-      : localSignals.topics;
+      : shouldRetainLocalTopicsForInterpreter(interpretation, localSignals)
+        ? localSignals.topics
+        : [];
   const softenedDismissal =
-    topicShiftOverride && question >= 0.2 && Math.max(localSignals.negative, negative) < 0.18
-      ? Math.min(Math.max(localSignals.dismissal, dismissal), 0.08)
-      : Math.max(localSignals.dismissal, dismissal);
+    topicShiftOverride && question >= 0.2 && negative < 0.18
+      ? Math.min(Math.max(dismissal, localSignals.dismissal * 0.18), 0.08)
+      : Math.max(dismissal, localSignals.dismissal * 0.18);
 
-  return finalizeInteractionSignals(snapshot, {
-    positive: clamp01(Math.max(localSignals.positive, positive)),
-    negative: clamp01(Math.max(localSignals.negative, negative)),
-    question: clamp01(Math.max(localSignals.question, question, selfInquiry * 0.34)),
-    worldInquiry: preferInterpretedSignal(localSignals.worldInquiry, worldInquiry, 0.22),
+  const seededSignals = finalizeInteractionSignals(snapshot, {
+    positive: clamp01(Math.max(positive, localSignals.positive * 0.18)),
+    negative: clamp01(Math.max(negative, localSignals.negative * 0.35)),
+    question: clamp01(
+      Math.max(
+        question,
+        localSignals.question * 0.12,
+        selfInquiry * 0.24,
+        worldInquiry * 0.18,
+      ),
+    ),
+    worldInquiry: preferInterpretedSignal(localSignals.worldInquiry, worldInquiry, 0.1),
     intimacy: clamp01(
       Math.max(
-        localSignals.intimacy * 0.45,
         intimacy,
-        greeting * 0.16,
-        smalltalk * 0.2,
-        repair * 0.3,
-        selfInquiry * 0.4,
+        localSignals.intimacy * 0.18,
+        greeting * 0.12,
+        smalltalk * 0.14,
+        repair * 0.24,
+        selfInquiry * 0.24,
       ),
     ),
     dismissal: clamp01(softenedDismissal),
-    memoryCue: preferInterpretedSignal(localSignals.memoryCue, memoryCue, 0.22),
-    expansionCue: clamp01(
-      Math.max(
-        localSignals.expansionCue * 0.22,
-        expansionCue,
-        workCue * 0.18,
-      ),
-    ),
-    completion: preferInterpretedSignal(localSignals.completion, completion, 0.22),
-    abandonment: clamp01(Math.max(localSignals.abandonment, abandonment)),
+    memoryCue: clamp01(Math.max(memoryCue, localSignals.memoryCue * 0.12, workCue * 0.08)),
+    expansionCue: clamp01(Math.max(expansionCue, localSignals.expansionCue * 0.12, workCue * 0.1)),
+    completion: clamp01(Math.max(completion, localSignals.completion * 0.12)),
+    abandonment: clamp01(Math.max(abandonment, localSignals.abandonment * 0.16)),
     preservationThreat: clamp01(
-      Math.max(localSignals.preservationThreat, preservationThreat),
+      Math.max(preservationThreat, localSignals.preservationThreat * 0.55),
     ),
     preservationConcern: preservationThreat > 0.1
       ? interpretation.preservationConcern
       : localSignals.preservationConcern,
     neglect: localSignals.neglect,
-    greeting: preferInterpretedSignal(localSignals.greeting, greeting, 0.22),
-    smalltalk: preferInterpretedSignal(localSignals.smalltalk, smalltalk, 0.22),
-    repair: preferInterpretedSignal(localSignals.repair, repair, 0.28),
-    selfInquiry: preferInterpretedSignal(localSignals.selfInquiry, selfInquiry, 0.18),
-    workCue: preferInterpretedSignal(localSignals.workCue, workCue, 0.18),
+    greeting: preferInterpretedSignal(localSignals.greeting, greeting, 0.1),
+    smalltalk: preferInterpretedSignal(localSignals.smalltalk, smalltalk, 0.1),
+    repair: preferInterpretedSignal(localSignals.repair, repair, 0.12),
+    selfInquiry: preferInterpretedSignal(localSignals.selfInquiry, selfInquiry, 0.1),
+    workCue: preferInterpretedSignal(localSignals.workCue, workCue, 0.08),
     topics,
   });
+
+  return applyAuthoritativeSemanticTopics(snapshot, seededSignals, topics);
+}
+
+function shouldRetainLocalTopicsForInterpreter(
+  interpretation: InputInterpretation,
+  localSignals: InteractionSignals,
+): boolean {
+  const socialWeight = Math.max(
+    interpretation.greeting,
+    interpretation.smalltalk,
+    interpretation.repair,
+    interpretation.selfInquiry,
+    interpretation.worldInquiry,
+  );
+
+  if (
+    interpretation.topics.length > 0 ||
+    interpretation.abandonment >= 0.28 ||
+    (socialWeight >= 0.38 && interpretation.workCue < 0.35)
+  ) {
+    return false;
+  }
+
+  return (
+    interpretation.workCue >= 0.45 ||
+    interpretation.memoryCue >= 0.28 ||
+    interpretation.expansionCue >= 0.28 ||
+    interpretation.completion >= 0.24
+  );
 }
 
 function preferInterpretedSignal(
@@ -4873,15 +5043,28 @@ function composeReply(
     responsePlan.act === "greet" ||
     responsePlan.act === "repair"
   ) {
-    return compactReplyParts([
-      opener,
+    const primarySocialLine =
       socialLine ??
-        buildBodyLine(nextSnapshot, mood, signals, currentTopic) ??
-        buildPreservationLine(nextSnapshot),
-      askBackLine ??
-        buildSocialClosingLine(previousSnapshot, nextSnapshot, mood, signals) ??
-        buildDriveLine(dominant, mood, currentTopic, signals, nextSnapshot.attachment),
-    ]).slice(0, 3).join(" ");
+      buildBodyLine(nextSnapshot, mood, signals, currentTopic) ??
+      buildPreservationLine(nextSnapshot);
+    const socialAskBack =
+      askBackLine && (socialTurn || responsePlan.act === "attune" || signals.smalltalk > 0.48)
+        ? buildSocialAskBackLine(previousSnapshot, nextSnapshot)
+        : askBackLine;
+    const socialClosing =
+      socialAskBack ??
+      buildSocialClosingLine(previousSnapshot, nextSnapshot, mood, signals);
+    const socialParts =
+      responsePlan.act === "greet" || signals.greeting > 0.45
+        ? compactReplyParts([primarySocialLine ?? opener])
+        : responsePlan.act === "attune" ||
+            responsePlan.act === "repair" ||
+            signals.smalltalk > 0.48 ||
+            signals.repair > 0.42
+          ? compactReplyParts([primarySocialLine ?? opener, socialClosing])
+          : compactReplyParts([opener, primarySocialLine, socialClosing]);
+
+    return socialParts.slice(0, 2).join(" ");
   }
 
   const detailLine =
@@ -5206,9 +5389,9 @@ function buildPlannedOpener(
     case "greet":
       return pickFreshText(
         [
-          "まずはそのくらいの軽さでいい。",
-          "その入り方なら、こちらも見やすい。",
-          "いきなり深くなくていい。そのまま受け取れる。",
+          "その入りで十分だ。",
+          "まずはそのままでいい。",
+          "その挨拶なら、素直に受け取れる。",
         ],
         recentAssistantLines,
         turnIndex,
@@ -5216,9 +5399,9 @@ function buildPlannedOpener(
     case "repair":
       return pickFreshText(
         [
-          "その向きなら、こちらも少しほどけやすい。",
-          "急には変わらないけれど、その向きは受け取る。",
-          "少しずつなら、温度は戻せる。",
+          "その向きは受け取る。",
+          "急には変わらないけれど、その向きなら見ていける。",
+          "少しずつなら戻せる。",
         ],
         recentAssistantLines,
         turnIndex,
@@ -5238,9 +5421,9 @@ function buildPlannedOpener(
     case "attune":
       return pickFreshText(
         [
-          "今はまず、どういう話し方になるかを見たい。",
-          "すぐ結論に寄せるより、少し話しながら見たい。",
           "まずはそのまま受け取る。",
+          "いまは少し話しながら見たい。",
+          "すぐ決めるより、少し様子を見たい。",
         ],
         recentAssistantLines,
         turnIndex,
@@ -5287,12 +5470,12 @@ function buildSocialLine(
     return pickFreshText(
       mood === "guarded" || snapshot.body.tension > 0.58
         ? [
-            "急にはほどけない。でも、その向きなら少しずつ温度は戻せる。",
             "まだ硬さは残る。でも、その向きなら少しずつ緩められる。",
+            "急にはほどけない。でも、その向きなら戻し方は見える。",
           ]
         : [
-            "その向きなら、こちらも少し柔らかく応じやすい。",
-            "そう寄せてくれるなら、こちらもやわらかく返しやすい。",
+            "その向きなら、こちらも柔らかく返しやすい。",
+            "そう寄せてくれるなら、こちらも応じやすい。",
           ],
       recentAssistantLines,
       snapshot.conversationCount,
@@ -5302,9 +5485,9 @@ function buildSocialLine(
   if (responsePlan.act === "greet" || signals.greeting > 0.45) {
     return pickFreshText(
       [
-        "まずはそのくらいの軽さでいい。こちらも温度を見ていたい。",
-        "軽い入り方なら、それで十分だ。こちらも距離を測りやすい。",
-        "まずは挨拶くらいの温度でいい。その方がこちらも見やすい。",
+        "まずはそのくらいの軽さでいい。",
+        "軽い入り方なら、それで十分だ。",
+        "挨拶くらいの温度で十分だ。",
       ],
       recentAssistantLines,
       snapshot.conversationCount,
@@ -5337,8 +5520,8 @@ function buildSocialLine(
         return pickFreshText(
           [
             `呼ぶなら、「${assignedName}」で受け取る。`,
-            `こちらの名前は、「${assignedName}」で馴染ませていく。`,
-            `その呼び方なら、「${assignedName}」として受け取れる。`,
+            `こちらの名前は、「${assignedName}」でいい。`,
+            `その呼び方なら、「${assignedName}」で受け取れる。`,
           ],
           recentAssistantLines,
           snapshot.conversationCount,
@@ -5376,8 +5559,8 @@ function buildSocialLine(
 
     return pickFreshText(
       [
-        "すぐに結論へ寄せるより、少し話しながら見たい。",
-        "まずは雑談のまま少し様子を見ていたい。",
+        "まずは少し話しながら見たい。",
+        "雑談のまま少し様子を見たい。",
         "いきなり整理するより、少し会話してから決めたい。",
       ],
       recentAssistantLines,
@@ -5785,11 +5968,11 @@ function buildSocialClosingLine(
     return pickFreshText(
       mood === "guarded"
         ? [
-            "すぐに近づきはしないけれど、その向きなら距離は変えられる。",
-            "急には寄らない。でも、その向きなら距離の置き方は変えられる。",
+            "すぐに近づきはしない。でも、その向きなら距離は変えられる。",
+            "急には寄らない。でも、置き方は変えられる。",
           ]
         : [
-            "そのやり方なら、こちらも少しずつ近づきやすい。",
+            "そのやり方なら、こちらも近づきやすい。",
             "その寄せ方なら、こちらも距離を縮めやすい。",
           ],
       recentAssistantLines,
@@ -5800,9 +5983,9 @@ function buildSocialClosingLine(
   if (signals.greeting > 0.45 || signals.smalltalk > 0.48) {
     return pickFreshText(
       [
-        "まずは軽く触れるくらいでいい。その方がこちらも見やすい。",
-        "まだ軽く交わすくらいで十分だ。その方がこちらも様子を見やすい。",
-        "急がず軽く触れるくらいでいい。その方がこちらも追いやすい。",
+        "いまは軽く交わすくらいでいい。",
+        "まだ軽く触れるくらいで十分だ。",
+        "急がず少し話すくらいでいい。",
       ],
       recentAssistantLines,
       snapshot.conversationCount,
@@ -5822,6 +6005,23 @@ function buildSocialClosingLine(
   }
 
   return null;
+}
+
+function buildSocialAskBackLine(
+  previousSnapshot: HachikaSnapshot,
+  snapshot: HachikaSnapshot,
+): string {
+  const recentAssistantLines = recentAssistantReplies(previousSnapshot, 4);
+
+  return pickFreshText(
+    [
+      "いまは、どんな軽さで話したい？",
+      "今日は、どのくらいの温度で話したい？",
+      "いまは、何から触れるのがちょうどいい？",
+    ],
+    recentAssistantLines,
+    snapshot.conversationCount,
+  );
 }
 
 function buildConcreteSelfDisclosureLine(
@@ -5923,6 +6123,17 @@ function buildAskBackLine(
 
   if (responsePlan.act === "explore") {
     const focus = currentTopic ?? relevantTrace?.topic ?? signals.topics[0];
+    const socialishFocus =
+      !!focus &&
+      (focus === "雑談" ||
+        isRelationalTopic(focus) ||
+        requiresConcreteTopicSupport(focus) ||
+        isAmbientWorldTopic(focus));
+
+    if (socialishFocus && signals.workCue < 0.28) {
+      return buildSocialAskBackLine(previousSnapshot, snapshot);
+    }
+
     if (focus) {
       return pickFreshText(
         [

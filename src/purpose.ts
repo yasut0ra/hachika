@@ -18,7 +18,13 @@ export function updatePurpose(
   signals: InteractionSignals,
   timestamp = new Date().toISOString(),
 ): void {
-  const candidate = selectPurposeCandidate(selfModel.topMotives, signals);
+  const suppressNonWorkCandidate = shouldSuppressPurposeCandidateForDiscourseDemand(
+    snapshot,
+    signals,
+  );
+  const candidate = suppressNonWorkCandidate
+    ? null
+    : selectPurposeCandidate(selfModel.topMotives, signals);
   const boundaryCandidate =
     selfModel.topMotives.find((motive) => motive.kind === "protect_boundary") ?? null;
   const active = snapshot.purpose.active;
@@ -82,7 +88,9 @@ export function updatePurpose(
       timestamp,
     );
 
-    const successor = selectSuccessorCandidate(selfModel.topMotives, refreshedActive);
+    const successor = suppressNonWorkCandidate
+      ? null
+      : selectSuccessorCandidate(selfModel.topMotives, refreshedActive);
     if (successor) {
       activatePurpose(snapshot, successor, timestamp);
     }
@@ -114,8 +122,9 @@ export function updatePurpose(
       return;
     }
 
-    const successor =
-      candidate && candidate.kind !== refreshedActive.kind && candidate.score >= 0.46
+    const successor = suppressNonWorkCandidate
+      ? null
+      : candidate && candidate.kind !== refreshedActive.kind && candidate.score >= 0.46
         ? candidate
         : selectSuccessorCandidate(selfModel.topMotives, refreshedActive);
 
@@ -449,6 +458,55 @@ function shouldCoolPurposeInertia(signals: InteractionSignals): boolean {
     signals.negative < 0.18 &&
     signals.dismissal < 0.18
   );
+}
+
+function shouldSuppressPurposeCandidateForDiscourseDemand(
+  snapshot: HachikaSnapshot,
+  signals: InteractionSignals,
+): boolean {
+  const hasOpenDirectQuestion = snapshot.discourse.openQuestions.some(
+    (question) =>
+      question.status === "open" &&
+      question.target !== "work_topic",
+  );
+  const hasOpenDirectRequest = snapshot.discourse.openRequests.some(
+    (request) =>
+      request.status === "open" &&
+      request.kind !== "task" &&
+      request.target !== "work_topic",
+  );
+  const hasOpenCorrection =
+    snapshot.discourse.lastCorrection?.kind === "directness" ||
+    snapshot.discourse.lastCorrection?.kind === "referent" ||
+    snapshot.discourse.lastCorrection?.kind === "relation";
+
+  if (!hasOpenDirectQuestion && !hasOpenDirectRequest && !hasOpenCorrection) {
+    return false;
+  }
+
+  return !hasConcreteDiscourseWorkIntent(snapshot, signals);
+}
+
+function hasConcreteDiscourseWorkIntent(
+  snapshot: HachikaSnapshot,
+  signals: InteractionSignals,
+): boolean {
+  const hasConcreteTopic = signals.topics.some(
+    (topic) => !requiresConcreteTopicSupport(topic) && !isRelationalTopic(topic),
+  );
+  const strongSignal =
+    signals.workCue >= 0.4 ||
+    signals.memoryCue >= 0.24 ||
+    signals.expansionCue >= 0.22 ||
+    signals.completion >= 0.2;
+  const recentWorkClaim = [...snapshot.discourse.recentClaims]
+    .reverse()
+    .some((claim) => claim.kind === "work");
+  const openTaskRequest = snapshot.discourse.openRequests.some(
+    (request) => request.status === "open" && request.kind === "task",
+  );
+
+  return (hasConcreteTopic && strongSignal) || recentWorkClaim || openTaskRequest;
 }
 
 function buildFulfilledResolution(purpose: ActivePurpose): string {

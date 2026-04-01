@@ -648,14 +648,16 @@ test("greeting reply avoids repeating the most recent assistant opening", () => 
   const result = engine.respond("こんにちは");
 
   assert.doesNotMatch(result.reply, /^その入り方なら、こちらも見やすい。/);
-  assert.match(result.reply, /軽さ|温度|見やすい|挨拶/);
+  assert.match(result.reply, /軽い|十分|そのまま|挨拶/);
+  assert.equal((result.reply.match(/[。！？]/g) ?? []).length <= 1, true);
 });
 
-test("smalltalk reply can ask back when the response plan is attuning", () => {
+test("smalltalk reply stays in social mode without turning the topic into work phrasing", () => {
   const engine = new HachikaEngine(createInitialSnapshot());
   const result = engine.respond("なんか雑談しようよ");
 
-  assert.match(result.reply, /？/);
+  assert.doesNotMatch(result.reply, /「雑談」/);
+  assert.doesNotMatch(result.reply, /決まっていない|どこから開く/);
 });
 
 test("explicit topic shift abandons the old purpose and avoids extracting vague new topics", () => {
@@ -3077,6 +3079,120 @@ test("respondAsync lets llm interpretation override local work heuristics on sel
   assert.ok((result.debug.signals.selfInquiry ?? 0) >= 0.8);
   assert.ok((result.debug.signals.workCue ?? 0) <= 0.22);
   assert.equal(result.snapshot.traces["仕様"], undefined);
+});
+
+test("respondAsync can retain local concrete work topics when the interpreter confirms work without naming topics", async () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+
+  const inputInterpreter: InputInterpreter = {
+    name: "work-without-topic",
+    async interpretInput() {
+      return {
+        provider: "work-without-topic",
+        model: "stub",
+        interpretation: {
+          topics: [],
+          positive: 0,
+          negative: 0,
+          question: 0,
+          intimacy: 0,
+          dismissal: 0,
+          memoryCue: 0.34,
+          expansionCue: 0.31,
+          completion: 0,
+          abandonment: 0,
+          preservationThreat: 0,
+          preservationConcern: null,
+          greeting: 0,
+          smalltalk: 0,
+          repair: 0,
+          selfInquiry: 0,
+          worldInquiry: 0,
+          workCue: 0.88,
+        },
+      };
+    },
+  };
+
+  const result = await engine.respondAsync("仕様を記録として残したい。", {
+    inputInterpreter,
+  });
+
+  assert.equal(result.debug.interpretation.source, "llm");
+  assert.ok(result.debug.interpretation.topics.includes("仕様"));
+  assert.ok((result.debug.signals.workCue ?? 0) >= 0.8);
+  assert.ok(result.snapshot.topicCounts["仕様"] !== undefined);
+  assert.ok(result.snapshot.traces["仕様"] !== undefined);
+});
+
+test("respondAsync suppresses weak durable hardening while a non-work discourse request remains open", async () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.discourse.openRequests.push({
+    target: "hachika_profile",
+    kind: "direct_answer",
+    text: "具体的に答えて",
+    askedAt: "2026-04-01T00:00:00.000Z",
+    status: "open",
+    resolvedAt: null,
+  });
+  const engine = new HachikaEngine(snapshot);
+
+  const inputInterpreter: InputInterpreter = {
+    name: "misleading-interpreter",
+    async interpretInput() {
+      return {
+        provider: "misleading-interpreter",
+        model: "stub",
+        interpretation: {
+          topics: ["仕様"],
+          positive: 0,
+          negative: 0,
+          question: 0.28,
+          intimacy: 0,
+          dismissal: 0,
+          memoryCue: 0.08,
+          expansionCue: 0.06,
+          completion: 0,
+          abandonment: 0,
+          preservationThreat: 0,
+          preservationConcern: null,
+          greeting: 0,
+          smalltalk: 0,
+          repair: 0.1,
+          selfInquiry: 0.12,
+          worldInquiry: 0,
+          workCue: 0.14,
+        },
+      };
+    },
+  };
+
+  const result = await engine.respondAsync("具体的に答えて。", { inputInterpreter });
+
+  assert.deepEqual(result.debug.signals.topics, []);
+  assert.equal(result.snapshot.topicCounts["仕様"], undefined);
+  assert.equal(result.snapshot.traces["仕様"], undefined);
+  assert.equal(result.snapshot.purpose.active, null);
+  assert.equal(result.snapshot.initiative.pending, null);
+});
+
+test("respondAsync still allows explicit new work despite an older non-work discourse request", async () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.discourse.openRequests.push({
+    target: "hachika_profile",
+    kind: "direct_answer",
+    text: "具体的に答えて",
+    askedAt: "2026-04-01T00:00:00.000Z",
+    status: "open",
+    resolvedAt: null,
+  });
+  const engine = new HachikaEngine(snapshot);
+
+  const result = await engine.respondAsync("仕様を記録として残したい。");
+
+  assert.ok(result.debug.signals.topics.includes("仕様"));
+  assert.ok(result.snapshot.topicCounts["仕様"] !== undefined);
+  assert.ok(result.snapshot.traces["仕様"] !== undefined);
 });
 
 test("respondAsync suppresses unsupported durable topics when semantic turn target is non-work", async () => {

@@ -2458,6 +2458,18 @@ function synthesizePendingInitiative(
   createdAt: string,
   kind: PendingInitiative["kind"] = "resume_topic",
 ): PendingInitiative | null {
+  const discourseDemandReasons = deriveDiscourseDemandAttentionReasons(snapshot);
+
+  if (
+    shouldSuppressPendingSynthesisForDiscourseDemand(
+      snapshot,
+      candidateTopics,
+      discourseDemandReasons,
+    )
+  ) {
+    return null;
+  }
+
   const activePurpose = snapshot.purpose.active;
 
   if (
@@ -2569,6 +2581,46 @@ function synthesizePreservationInitiative(
     createdAt,
     readyAfterHours: concern === "shutdown" ? 0.5 : concern === "absence" ? 3 : 1.5,
   });
+}
+
+function shouldSuppressPendingSynthesisForDiscourseDemand(
+  snapshot: HachikaSnapshot,
+  candidateTopics: readonly string[],
+  reasons: readonly AttentionRationale[],
+): boolean {
+  if (!shouldSuppressOutwardInitiativeForDiscourseDemand([...reasons])) {
+    return false;
+  }
+
+  return !hasConcreteInitiativeWorkIntent(snapshot, candidateTopics);
+}
+
+function hasConcreteInitiativeWorkIntent(
+  snapshot: HachikaSnapshot,
+  candidateTopics: readonly string[],
+): boolean {
+  const hasConcreteCandidateTopic = candidateTopics.some(
+    (topic) =>
+      !shouldSuppressInitiativeTopic(snapshot, topic) &&
+      !requiresConcreteTopicSupport(topic) &&
+      !isRelationalTopic(topic),
+  );
+  const activeWorkPurpose =
+    snapshot.purpose.active !== null &&
+    snapshot.purpose.active.kind !== "deepen_relation" &&
+    snapshot.purpose.active.kind !== "protect_boundary" &&
+    snapshot.purpose.active.topic !== null &&
+    !shouldSuppressInitiativeTopic(snapshot, snapshot.purpose.active.topic) &&
+    !requiresConcreteTopicSupport(snapshot.purpose.active.topic) &&
+    !isRelationalTopic(snapshot.purpose.active.topic);
+  const recentWorkClaim = [...snapshot.discourse.recentClaims]
+    .reverse()
+    .some((claim) => claim.kind === "work");
+  const openTaskRequest = snapshot.discourse.openRequests.some(
+    (request) => request.status === "open" && request.kind === "task",
+  );
+
+  return hasConcreteCandidateTopic || activeWorkPurpose || recentWorkClaim || openTaskRequest;
 }
 
 function synthesizeSnapshotPreservationInitiative(
