@@ -136,6 +136,7 @@ import type {
   SelfModel,
   StructuredTraceExtraction,
   TurnDirectiveDebug,
+  TurnTarget,
   TraceExtractionDebug,
   TraceEntry,
   TurnResult,
@@ -1479,6 +1480,7 @@ interface ResolvedReplySelection {
   relevantTrace: TraceEntry | undefined;
   relevantBoundary: ReturnType<typeof findRelevantBoundaryImprint>;
   prioritizeTraceLine: boolean;
+  discourseTarget?: TurnTarget | "none" | null;
   debug: ReplySelectionDebug;
 }
 
@@ -2133,27 +2135,36 @@ function resolveReplySelection(
   signals: InteractionSignals,
   responsePlan: ResponsePlan,
 ): ResolvedReplySelection {
-  const socialTurn = isSocialTurnSignals(signals);
+  const discourseTarget = resolveDiscourseReplyTarget(snapshot, signals, responsePlan);
+  const socialTurn = discourseTarget === "relation" ? true : isSocialTurnSignals(signals);
   const worldTurn = responsePlan.mentionWorld || signals.worldInquiry > 0.42;
   const explicitTopics = uniqueTopics(
     [responsePlan.focusTopic ?? "", ...signals.topics].filter((topic) => isMeaningfulTopic(topic)),
   );
-  const allowGlobalFallback = explicitTopics.length === 0 && !socialTurn && !worldTurn;
+  const allowGlobalFallback =
+    explicitTopics.length === 0 &&
+    !socialTurn &&
+    !worldTurn &&
+    (discourseTarget === null || discourseTarget === "none");
   const currentTopic =
     responsePlan.focusTopic !== null
       ? responsePlan.focusTopic
-      : socialTurn || worldTurn
+      : socialTurn || worldTurn || (discourseTarget !== null && discourseTarget !== "work_topic")
         ? undefined
         : explicitTopics[0] ?? topPreferredTopics(snapshot, 1)[0];
   const replyTopics = uniqueTopics(
     [currentTopic ?? "", ...explicitTopics].filter((topic) => isMeaningfulTopic(topic)),
   );
-  const relevantTrace = responsePlan.mentionTrace
+  const suppressDurableFallback =
+    discourseTarget !== null &&
+    discourseTarget !== "none" &&
+    discourseTarget !== "work_topic";
+  const relevantTrace = responsePlan.mentionTrace && !suppressDurableFallback
     ? findRelevantTrace(snapshot, replyTopics, {
         allowFallback: allowGlobalFallback,
       })
     : undefined;
-  const relevantBoundary = responsePlan.mentionBoundary
+  const relevantBoundary = responsePlan.mentionBoundary && !suppressDurableFallback
     ? findRelevantBoundaryImprint(snapshot, replyTopics, {
         allowFallback: allowGlobalFallback,
       })
@@ -2170,14 +2181,54 @@ function resolveReplySelection(
     relevantTrace,
     relevantBoundary,
     prioritizeTraceLine,
+    discourseTarget,
     debug: {
       socialTurn,
       currentTopic: currentTopic ?? null,
       relevantTraceTopic: relevantTrace?.topic ?? null,
       relevantBoundaryTopic: relevantBoundary?.topic ?? null,
       prioritizeTraceLine,
+      discourseTarget: discourseTarget ?? null,
     },
   };
+}
+
+function resolveDiscourseReplyTarget(
+  snapshot: HachikaSnapshot,
+  signals: InteractionSignals,
+  responsePlan: ResponsePlan,
+): TurnTarget | "none" | null {
+  if (responsePlan.act === "continue_work" || signals.workCue >= 0.34) {
+    return null;
+  }
+
+  if (responsePlan.mentionWorld || signals.worldInquiry >= 0.45) {
+    return "world_state";
+  }
+
+  const unresolvedRequest = [...snapshot.discourse.openRequests]
+    .reverse()
+    .find((request) => request.status === "open");
+  if (unresolvedRequest && unresolvedRequest.kind !== "task") {
+    return unresolvedRequest.target;
+  }
+
+  const unresolvedQuestion = [...snapshot.discourse.openQuestions]
+    .reverse()
+    .find((question) => question.status === "open");
+  if (unresolvedQuestion) {
+    return unresolvedQuestion.target;
+  }
+
+  if (
+    snapshot.discourse.lastCorrection &&
+    (snapshot.discourse.lastCorrection.kind === "directness" ||
+      snapshot.discourse.lastCorrection.kind === "referent")
+  ) {
+    return snapshot.discourse.lastCorrection.target;
+  }
+
+  return null;
 }
 
 async function analyzeInteractionAsync(

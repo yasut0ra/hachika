@@ -1858,6 +1858,57 @@ test("local fallback can answer user-profile questions from recent discourse cla
   assert.equal(/[?？]$/.test(result.reply.trim()), false);
 });
 
+test("local fallback prioritizes unresolved direct-answer requests over stale trace fallback", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.discourse.openRequests.push({
+    target: "hachika_name",
+    kind: "style",
+    text: "ハチカ自身の名前を具体的に答えて。",
+    askedAt: "2026-04-01T00:00:00.000Z",
+    status: "open",
+    resolvedAt: null,
+  });
+  snapshot.traces["仕様"] = {
+    topic: "仕様",
+    kind: "spec_fragment",
+    status: "active",
+    lastAction: "expanded",
+    summary: "「仕様」は断片として残っている。",
+    sourceMotive: "continue_shared_work",
+    artifact: {
+      memo: ["仕様の断片"],
+      fragments: ["仕様を詰める"],
+      decisions: [],
+      nextSteps: ["仕様を詰める"],
+    },
+    work: {
+      focus: "仕様を詰める",
+      confidence: 0.74,
+      blockers: [],
+      staleAt: null,
+    },
+    lifecycle: {
+      phase: "live",
+      archivedAt: null,
+      reopenedAt: null,
+      reopenCount: 0,
+    },
+    salience: 0.86,
+    mentions: 4,
+    createdAt: "2026-04-01T00:00:00.000Z",
+    lastUpdatedAt: "2026-04-01T00:00:00.000Z",
+  };
+  const engine = new HachikaEngine(snapshot);
+
+  const result = engine.respond("具体的に答えて。");
+
+  assert.equal(result.debug.reply.selection?.discourseTarget, "hachika_name");
+  assert.equal(result.debug.reply.selection?.relevantTraceTopic, null);
+  assert.equal(result.debug.reply.selection?.currentTopic, null);
+  assert.doesNotMatch(result.reply, /仕様/);
+  assert.match(result.reply, /名前|ハチカ/);
+});
+
 test("relation clarification answers directly without turning the naming exchange into work", () => {
   const engine = new HachikaEngine(createInitialSnapshot());
 

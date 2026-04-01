@@ -634,6 +634,7 @@ export interface ReplySelectionDebug {
   relevantTraceTopic: string | null;
   relevantBoundaryTopic: string | null;
   prioritizeTraceLine: boolean;
+  discourseTarget?: TurnTarget | "none" | null;
 }
 
 export interface ProactiveSelectionDebug {
