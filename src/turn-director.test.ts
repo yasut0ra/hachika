@@ -148,6 +148,32 @@ test("rule turn directive can infer a user-profile follow-up from recent discour
   assert.deepEqual(directive.stateTopics, []);
 });
 
+test("rule turn directive can infer relation clarification from discourse naming context", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.discourse.hachikaName = {
+    kind: "hachika_name",
+    value: "ハチカ",
+    confidence: 0.86,
+    source: "relation_assignment",
+    updatedAt: "2026-04-01T00:00:00.000Z",
+  };
+
+  const directive = buildRuleTurnDirective(
+    snapshot,
+    "何が気になっているのか僕にはわからないよ。具体的に言ってもらわないと。",
+    createSignals({
+      question: 0.44,
+      topics: [],
+    }),
+  );
+
+  assert.equal(directive.subject, "shared");
+  assert.equal(directive.target, "relation");
+  assert.equal(directive.answerMode, "direct");
+  assert.equal(directive.relationMove, "naming");
+  assert.equal(directive.behavior.traceAction, "suppress");
+});
+
 test("normalizeTurnDirective keeps fallback shape and parses turn semantics", () => {
   const fallback = buildRuleTurnDirective(
     createInitialSnapshot(),

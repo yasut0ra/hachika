@@ -19,6 +19,7 @@ import {
 import {
   extractDeclaredUserName,
   isRelationalTopic,
+  requiresConcreteTopicSupport,
   topPreferredTopics,
 } from "./memory.js";
 import type {
@@ -464,6 +465,10 @@ export function buildRuleTurnDirective(
   const normalized = input.normalize("NFKC").toLowerCase();
   const explicitQuestion = signals.question >= 0.24 || normalized.includes("?") || normalized.includes("？");
   const localTopics = signals.topics.filter((topic) => topic.length > 0);
+  const relationalTopics = localTopics.filter((topic) => isRelationalTopic(topic));
+  const concreteTopics = localTopics.filter(
+    (topic) => !isRelationalTopic(topic) && !requiresConcreteTopicSupport(topic),
+  );
 
   let subject: TurnSubject = "none";
   let target: TurnTarget = "none";
@@ -481,6 +486,11 @@ export function buildRuleTurnDirective(
     snapshot,
     normalized,
     explicitQuestion,
+    localTopics,
+  );
+  const relationClarificationTarget = resolveRelationClarificationTarget(
+    snapshot,
+    normalized,
     localTopics,
   );
 
@@ -525,39 +535,43 @@ export function buildRuleTurnDirective(
     answerMode = claimDrivenProfileTarget.answerMode;
     relationMove = claimDrivenProfileTarget.relationMove;
     worldMention = claimDrivenProfileTarget.worldMention;
+  } else if (relationClarificationTarget) {
+    subject = relationClarificationTarget.subject;
+    target = relationClarificationTarget.target;
+    answerMode = relationClarificationTarget.answerMode;
+    relationMove = relationClarificationTarget.relationMove;
+    worldMention = relationClarificationTarget.worldMention;
   } else if (signals.repair >= 0.42) {
     subject = "shared";
     target = "relation";
     answerMode = "direct";
     relationMove = "repair";
-  } else if (
-    snapshot.purpose.active?.kind === "deepen_relation" &&
-    localTopics.length === 0 &&
-    (normalized.includes("具体") ||
-      normalized.includes("何が気にな") ||
-      normalized.includes("わからない"))
-  ) {
-    subject = "shared";
-    target = "relation";
-    answerMode = "direct";
-    relationMove = isRelationalTopic(snapshot.purpose.active.topic ?? "") ? "naming" : "attune";
   } else if (containsAny(normalized, NAMING_PATTERNS) || localTopics.some((topic) => isRelationalTopic(topic))) {
     subject = "shared";
     target = "relation";
     answerMode = explicitQuestion ? "direct" : "reflective";
     relationMove = "naming";
-  } else if (signals.greeting >= 0.45 || signals.smalltalk >= 0.45) {
+  } else if (
+    signals.greeting >= 0.45 ||
+    signals.smalltalk >= 0.45 ||
+    (relationalTopics.length > 0 && signals.workCue < 0.28)
+  ) {
     subject = "shared";
     target = "relation";
     answerMode = "reflective";
     relationMove = "attune";
   } else if (
-    localTopics.length > 0 &&
-    (signals.workCue >= 0.3 || localTopics.some((topic) => !isRelationalTopic(topic)))
+    concreteTopics.length > 0 &&
+    Math.max(
+      signals.workCue,
+      signals.memoryCue * 0.8,
+      signals.expansionCue,
+      signals.completion,
+    ) >= 0.3
   ) {
     subject = "shared";
     target = "work_topic";
-    answerMode = explicitQuestion && localTopics.length === 0 ? "clarify" : "reflective";
+    answerMode = explicitQuestion ? "direct" : "reflective";
   }
 
   const behavior = applyReferentToBehavior(fallbackBehavior, {
@@ -576,7 +590,7 @@ export function buildRuleTurnDirective(
       target === "user_profile" ||
       target === "relation"
         ? []
-        : localTopics;
+        : concreteTopics;
   const stateTopics = target === "work_topic" ? topics : [];
   const traceExtraction =
     target === "work_topic" && topics.length > 0
@@ -749,6 +763,47 @@ function resolveClaimDrivenProfileTarget(
     answerMode: "direct",
     relationMove: "none",
     worldMention: "light",
+  };
+}
+
+function resolveRelationClarificationTarget(
+  snapshot: HachikaSnapshot,
+  normalized: string,
+  localTopics: string[],
+): {
+  subject: TurnSubject;
+  target: TurnTarget;
+  answerMode: TurnAnswerMode;
+  relationMove: TurnRelationMove;
+  worldMention: TurnWorldMention;
+} | null {
+  if (localTopics.some((topic) => !isRelationalTopic(topic))) {
+    return null;
+  }
+
+  const directnessPush =
+    containsAny(normalized, DIRECTNESS_REQUEST_PATTERNS) ||
+    normalized.includes("気になって") ||
+    normalized.includes("わからない");
+
+  if (!directnessPush) {
+    return null;
+  }
+
+  const recentNamingContext =
+    snapshot.discourse.hachikaName !== null ||
+    snapshot.purpose.active?.kind === "deepen_relation";
+
+  if (!recentNamingContext) {
+    return null;
+  }
+
+  return {
+    subject: "shared",
+    target: "relation",
+    answerMode: "direct",
+    relationMove: "naming",
+    worldMention: "none",
   };
 }
 

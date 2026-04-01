@@ -3621,20 +3621,25 @@ function analyzeInteraction(
 ): InteractionSignals {
   const normalized = input.normalize("NFKC").toLowerCase();
   const topics = filterLocalTopicCandidates(extractLocalTopics(input));
+  const concreteTopics = topics.filter(
+    (topic) => !requiresConcreteTopicSupport(topic) && !isRelationalTopic(topic),
+  );
   const preservation = analyzePreservationThreat(normalized);
   const explicitQuestionPunctuation =
-    normalized.includes("?") || normalized.includes("？") ? 0.22 : 0;
-  const questionMarkers = countMatchesWithDivisor(normalized, QUESTION_MARKERS, 3.2);
-  const greeting = countMatchesWithDivisor(normalized, GREETING_MARKERS, 2.6);
-  const smalltalk = countMatchesWithDivisor(normalized, SMALLTALK_MARKERS, 3.1);
-  const selfInquiry = countMatchesWithDivisor(normalized, SELF_INQUIRY_MARKERS, 1.45);
-  const explicitWorldInquiry = countMatchesWithDivisor(normalized, WORLD_INQUIRY_MARKERS, 1.5);
-  const referencedWorldInquiry = countMatchesWithDivisor(normalized, WORLD_REFERENCE_MARKERS, 3.1);
+    normalized.includes("?") || normalized.includes("？") ? 0.14 : 0;
+  const questionMarkers = countMatchesWithDivisor(normalized, QUESTION_MARKERS, 4.1);
+  const greeting = countMatchesWithDivisor(normalized, GREETING_MARKERS, 3.3);
+  const smalltalk = countMatchesWithDivisor(normalized, SMALLTALK_MARKERS, 3.7);
+  const selfInquiry = countMatchesWithDivisor(normalized, SELF_INQUIRY_MARKERS, 1.85);
+  const explicitWorldInquiry = countMatchesWithDivisor(normalized, WORLD_INQUIRY_MARKERS, 1.8);
+  const referencedWorldInquiry = countMatchesWithDivisor(normalized, WORLD_REFERENCE_MARKERS, 3.8);
+  const strongWorkCue = countMatchesWithDivisor(normalized, STRONG_WORK_MARKERS, 2.2);
+  const softWorkCue = countMatchesWithDivisor(normalized, SOFT_WORK_MARKERS, 4.4);
   const workCue = Math.max(
-    countMatchesWithDivisor(normalized, STRONG_WORK_MARKERS, 1.7),
-    countMatchesWithDivisor(normalized, SOFT_WORK_MARKERS, 3.3),
+    concreteTopics.length > 0 ? strongWorkCue : strongWorkCue * 0.72,
+    concreteTopics.length > 0 ? softWorkCue : softWorkCue * 0.48,
   );
-  const intimacy = countMatchesWithDivisor(normalized, INTIMACY_MARKERS, 3.6);
+  const intimacy = countMatchesWithDivisor(normalized, INTIMACY_MARKERS, 4.4);
   const dismissal = countMatchesWithDivisor(normalized, DISMISSAL_MARKERS, 3);
   const repair = Math.max(
     countMatchesWithDivisor(normalized, STRONG_REPAIR_MARKERS, 1.8),
@@ -4580,12 +4585,13 @@ function composeReply(
   const turnIndex = nextSnapshot.conversationCount;
   const socialTurn = replySelection.socialTurn;
   const worldTurn = responsePlan.mentionWorld || signals.worldInquiry > 0.42;
-  const discourseTarget = replySelection.discourseTarget ?? null;
+  const discourseTarget = replySelection.discourseTarget ?? turnDebug?.target ?? null;
   const directReferentTurn =
     discourseTarget === "user_name" ||
     discourseTarget === "hachika_name" ||
     discourseTarget === "user_profile" ||
     discourseTarget === "hachika_profile";
+  const relationObligationTurn = turnDebug?.target === "relation";
   const currentTopic = replySelection.currentTopic;
   const relevantMemory = findRelevantMemory(previousSnapshot, signals.topics);
   const relevantTrace = replySelection.relevantTrace;
@@ -4598,18 +4604,13 @@ function composeReply(
   const traceLine = responsePlan.mentionTrace
     ? buildTraceLine(relevantTrace, nextSnapshot, signals)
     : null;
-  const worldLine = worldTurn
-    ? buildWorldLine(nextSnapshot, hasExplicitWorldObjectReference(input))
-    : null;
   const prioritizeTraceLine = replySelection.prioritizeTraceLine;
   const bodyLine = buildBodyLine(nextSnapshot, mood, signals, currentTopic);
   const prioritizeBodyLine = shouldPrioritizeBodyLine(nextSnapshot, signals);
   const recentAssistantLines = recentAssistantReplies(previousSnapshot, 4);
   const directNameTurn =
     turnDebug?.target === "hachika_name" || turnDebug?.target === "user_name";
-  const parts: string[] = [
-    buildPlannedOpener(previousSnapshot, responsePlan, mood, turnIndex),
-  ];
+  const opener = buildPlannedOpener(previousSnapshot, responsePlan, mood, turnIndex);
   const directReferentLine = buildDirectReferentAnswerLine(
     input,
     previousSnapshot,
@@ -4626,99 +4627,6 @@ function composeReply(
     responsePlan,
     turnDebug,
   );
-
-  if (signals.neglect > 0.45) {
-    parts.push("少し間が空いた。その分、流れは切りたくない。");
-  }
-
-  if (mood === "guarded" && signals.negative > 0.1) {
-    parts.push(pickFreshText(BOUNDARY_LINES, recentAssistantLines, turnIndex));
-  }
-
-  if (!worldTurn && directReferentLine) {
-    parts.push(directReferentLine);
-  }
-
-  if (!worldTurn && directNameTurn && directReferentLine) {
-    return [...new Set(parts)].slice(0, 2).join(" ");
-  }
-
-  if (!worldTurn && directReferentTurn && directReferentLine) {
-    const closing =
-      discourseTarget === "hachika_profile"
-        ? buildSelfDisclosureClosingLine(nextSnapshot, mood)
-        : null;
-    const directParts = closing ? [...new Set([...parts, closing])] : [...new Set(parts)];
-    return directParts.slice(0, closing ? 3 : 2).join(" ");
-  }
-
-  if (!worldTurn && !directNameTurn && (socialTurn || responsePlan.act === "attune") && socialLine) {
-    parts.push(socialLine);
-  }
-
-  if (!worldTurn && relevantMemory) {
-    const topic = pickTopicFromMemory(relevantMemory, signals.topics);
-    if (topic && (dominant === "continuity" || signals.memoryCue > 0.1)) {
-      parts.push(`前に触れた「${topic}」の痕跡は残っている。`);
-    }
-  }
-
-  if (worldLine) {
-    parts.push(worldLine);
-  }
-
-  if (!worldTurn && prioritizeBodyLine && bodyLine) {
-    parts.push(bodyLine);
-  }
-
-  if (!worldTurn && prioritizeTraceLine && traceLine) {
-    parts.push(traceLine);
-  }
-
-  const conflictLine =
-    worldTurn || socialTurn || responsePlan.act === "self_disclose" || responsePlan.act === "repair"
-      ? null
-      : buildConflictLine(selfModel);
-  if (conflictLine) {
-    parts.push(conflictLine);
-  }
-
-  const preservationLine = worldTurn ? null : buildPreservationLine(nextSnapshot);
-  if (preservationLine) {
-    parts.push(preservationLine);
-  }
-
-  if (!worldTurn && !prioritizeBodyLine && bodyLine) {
-    parts.push(bodyLine);
-  }
-
-  if (!worldTurn && !prioritizeTraceLine && traceLine) {
-    parts.push(traceLine);
-  }
-
-  if (!worldTurn && (mood === "guarded" || signals.negative > 0.1) && relevantBoundary) {
-    parts.push(buildBoundaryImprintLine(relevantBoundary));
-  } else if (!worldTurn && relevantRelation && relevantRelation.salience > 0.34) {
-    parts.push(buildRelationImprintLine(relevantRelation));
-  } else if (!worldTurn && relevantPreference && relevantPreference.salience > 0.34) {
-    parts.push(buildPreferenceImprintLine(relevantPreference, dominant));
-  }
-
-  const attachmentLine = worldTurn
-    ? null
-    : buildAttachmentLine(nextSnapshot.attachment, mood, signals);
-  if (attachmentLine) {
-    parts.push(attachmentLine);
-  }
-
-  const purposeResolutionLine =
-    worldTurn || ((socialTurn || responsePlan.act === "attune") && currentTopic == null)
-      ? null
-      : buildPurposeResolutionLine(nextSnapshot);
-  if (purposeResolutionLine) {
-    parts.push(purposeResolutionLine);
-  }
-
   const askBackLine = responsePlan.askBack
     ? buildAskBackLine(
         previousSnapshot,
@@ -4729,43 +4637,113 @@ function composeReply(
         signals,
       )
     : null;
+  const boundaryOrRelationLine =
+    (mood === "guarded" || signals.negative > 0.1) && relevantBoundary
+      ? buildBoundaryImprintLine(relevantBoundary)
+      : relevantRelation && relevantRelation.salience > 0.34
+        ? buildRelationImprintLine(relevantRelation)
+        : relevantPreference && relevantPreference.salience > 0.34
+          ? buildPreferenceImprintLine(relevantPreference, dominant)
+          : null;
 
-  if (askBackLine) {
-    parts.push(askBackLine);
+  if (worldTurn) {
+    return compactReplyParts([
+      opener,
+      buildWorldLine(nextSnapshot, hasExplicitWorldObjectReference(input)),
+      askBackLine ?? buildWorldClosingLine(nextSnapshot),
+    ]).slice(0, askBackLine ? 3 : 2).join(" ");
   }
 
-  const closingLine = worldTurn
-    ? buildWorldClosingLine(nextSnapshot)
-    : directNameTurn
-      ? null
-    : socialTurn || responsePlan.act === "attune"
-      ? buildSocialClosingLine(previousSnapshot, nextSnapshot, mood, signals) ??
-        (currentTopic != null ? buildIdentityLine(nextSnapshot, currentTopic) : null) ??
-        buildDriveLine(dominant, mood, currentTopic, signals, nextSnapshot.attachment)
-      : buildIdentityLine(nextSnapshot, currentTopic) ??
-        buildSelfModelLine(selfModel, currentTopic) ??
-        buildDriveLine(dominant, mood, currentTopic, signals, nextSnapshot.attachment);
+  if (signals.neglect > 0.45) {
+    const neglectReply = compactReplyParts([
+      opener,
+      "少し間が空いた。その分、流れは切りたくない。",
+      askBackLine ?? buildSocialClosingLine(previousSnapshot, nextSnapshot, mood, signals),
+    ]);
 
-  if (closingLine) {
-    parts.push(closingLine);
+    if (socialTurn || responsePlan.act === "attune") {
+      return neglectReply.slice(0, 3).join(" ");
+    }
+  }
+
+  if (directNameTurn && directReferentLine) {
+    return compactReplyParts([opener, directReferentLine]).slice(0, 2).join(" ");
+  }
+
+  if (directReferentTurn && directReferentLine) {
+    const directClosing =
+      discourseTarget === "hachika_profile"
+        ? buildSelfDisclosureClosingLine(nextSnapshot, mood)
+        : askBackLine;
+
+    return compactReplyParts([opener, directReferentLine, directClosing])
+      .slice(0, directClosing ? 3 : 2)
+      .join(" ");
   }
 
   if (
-    !worldTurn &&
+    socialTurn ||
+    relationObligationTurn ||
+    responsePlan.act === "attune" ||
+    responsePlan.act === "greet" ||
+    responsePlan.act === "repair"
+  ) {
+    return compactReplyParts([
+      opener,
+      socialLine ??
+        buildBodyLine(nextSnapshot, mood, signals, currentTopic) ??
+        buildPreservationLine(nextSnapshot),
+      askBackLine ??
+        buildSocialClosingLine(previousSnapshot, nextSnapshot, mood, signals) ??
+        buildDriveLine(dominant, mood, currentTopic, signals, nextSnapshot.attachment),
+    ]).slice(0, 3).join(" ");
+  }
+
+  const detailLine =
+    (mood === "guarded" && signals.negative > 0.1
+      ? pickFreshText(BOUNDARY_LINES, recentAssistantLines, turnIndex)
+      : null) ??
+    (relevantMemory && (dominant === "continuity" || signals.memoryCue > 0.1)
+      ? (() => {
+          const topic = pickTopicFromMemory(relevantMemory, signals.topics);
+          return topic ? `前に触れた「${topic}」の痕跡は残っている。` : null;
+        })()
+      : null) ??
+    (prioritizeBodyLine ? bodyLine : traceLine) ??
+    buildConflictLine(selfModel) ??
+    buildPreservationLine(nextSnapshot) ??
+    (!prioritizeBodyLine ? bodyLine : traceLine) ??
+    boundaryOrRelationLine ??
+    buildAttachmentLine(nextSnapshot.attachment, mood, signals) ??
+    buildPurposeResolutionLine(nextSnapshot);
+
+  const closingLine =
+    askBackLine ??
+    buildIdentityLine(nextSnapshot, currentTopic) ??
+    buildSelfModelLine(selfModel, currentTopic) ??
+    buildDriveLine(dominant, mood, currentTopic, signals, nextSnapshot.attachment);
+  const expansionLine =
     (dominant === "expansion" || nextSnapshot.state.expansion > 0.66) &&
     currentTopic &&
     (!relevantTrace || relevantTrace.lastUpdatedAt !== nextSnapshot.lastInteractionAt)
-  ) {
-    parts.push(`残すなら、「${currentTopic}」は仕様か記録の形にしておきたい。`);
-  }
+      ? `残すなら、「${currentTopic}」は仕様か記録の形にしておきたい。`
+      : null;
 
   const maxParts =
     responsePlan.askBack || responsePlan.variation === "questioning"
       ? 4
       : responsePlan.variation === "brief"
         ? 3
-        : 4;
-  return [...new Set(parts)].slice(0, maxParts).join(" ");
+        : 3;
+  return compactReplyParts([opener, detailLine, closingLine, expansionLine])
+    .slice(0, maxParts)
+    .join(" ");
+}
+
+function compactReplyParts(
+  parts: Array<string | null | undefined>,
+): string[] {
+  return [...new Set(parts.filter((part): part is string => Boolean(part && part.length > 0)))];
 }
 
 function buildDriveLine(
@@ -5142,6 +5120,24 @@ function buildSocialLine(
         "まずはそのくらいの軽さでいい。こちらも温度を見ていたい。",
         "軽い入り方なら、それで十分だ。こちらも距離を測りやすい。",
         "まずは挨拶くらいの温度でいい。その方がこちらも見やすい。",
+      ],
+      recentAssistantLines,
+      snapshot.conversationCount,
+    );
+  }
+
+  if (turnDebug?.target === "relation" && turnDebug.relationMove === "naming") {
+    const nameCue =
+      companionTopic ??
+      relationTopic ??
+      snapshot.discourse.hachikaName?.value ??
+      "呼び方";
+
+    return pickFreshText(
+      [
+        `いま引っかかっていたのは、「${nameCue}」をどう受け取ると自然か、その一点だ。`,
+        `気になっていたのは、「${nameCue}」がこちらでしっくり馴染むかどうかだ。`,
+        `「${nameCue}」みたいな距離の近い話は、まず呼び方として自然に受け取りたい。`,
       ],
       recentAssistantLines,
       snapshot.conversationCount,

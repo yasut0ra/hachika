@@ -348,6 +348,10 @@ function readCompoundHead(
   let topic = base;
   let consumed = 1;
 
+  if (HIRAGANA_ONLY.test(base)) {
+    return { topic, consumed };
+  }
+
   for (let index = start + 1; index < segments.length; index += 1) {
     const next = segments[index];
 
@@ -825,6 +829,14 @@ function normalizeToken(token: string): string | null {
   const normalized = token.normalize("NFKC").trim().toLowerCase();
 
   if (!isMeaningfulTopic(normalized)) {
+    return null;
+  }
+
+  if (
+    /(?:思う|感じる|感じ|見える|見えてる|言う|答える|教える|進める|続ける|やる)$/u.test(
+      normalized,
+    )
+  ) {
     return null;
   }
 

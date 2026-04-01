@@ -54,6 +54,12 @@ test("extractLocalTopics rejects malformed mixed-script fragments from japanese 
   assert.ok(!topics.includes("か気"));
 });
 
+test("extractTopics does not merge hiragana scaffolding into malformed compounds", () => {
+  const topics = extractTopics("何か気になることはある？");
+
+  assert.ok(!topics.includes("か気"));
+});
+
 test("extractDeclaredUserName reads simple japanese self introductions", () => {
   assert.equal(extractDeclaredUserName("私はやすとら"), "やすとら");
   assert.equal(extractDeclaredUserName("僕の名前はやすとらです"), "やすとら");

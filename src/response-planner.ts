@@ -437,29 +437,31 @@ export function buildResponsePlan(
     signals.completion < 0.18 &&
     signals.topics.some((topic) => isRelationalTopic(topic));
   const temperament = snapshot.temperament;
-  const clarifyReady =
+  const concreteWorkTurn =
+    signals.topics.some((topic) => !isRelationalTopic(topic)) &&
+    Math.max(signals.workCue, signals.expansionCue, signals.completion) >= 0.3;
+  const unresolvedOpenQuestion =
     signals.question > 0.24 &&
     signals.topics.length === 0 &&
+    signals.negative < 0.18 &&
+    signals.dismissal < 0.18 &&
+    !concreteWorkTurn;
+  const clarifyReady =
+    unresolvedOpenQuestion &&
     snapshot.purpose.active === null &&
     Object.keys(snapshot.traces).length === 0 &&
     snapshot.identity.anchors.length === 0 &&
-    signals.workCue < 0.35 &&
     signals.selfInquiry < 0.28 &&
     signals.greeting < 0.45 &&
     signals.repair < 0.42 &&
     signals.preservationThreat < 0.18 &&
-    signals.negative < 0.18 &&
-    signals.dismissal < 0.18;
+    signals.smalltalk < 0.45;
   const relationClarifyReady =
-    signals.question > 0.24 &&
-    signals.topics.length === 0 &&
+    unresolvedOpenQuestion &&
     activeRelationContext &&
-    signals.workCue < 0.35 &&
     signals.memoryCue < 0.16 &&
     signals.expansionCue < 0.18 &&
-    signals.completion < 0.18 &&
-    signals.negative < 0.18 &&
-    signals.dismissal < 0.18;
+    signals.completion < 0.18;
   const selfDisclosureReady =
     signals.selfInquiry > 0.45 ||
     (signals.selfInquiry > 0.28 &&
@@ -489,16 +491,14 @@ export function buildResponsePlan(
     act = "self_disclose";
   } else if (repairReady) {
     act = "repair";
-  } else if (relationClarifyReady) {
-    act = "attune";
-  } else if (clarifyReady) {
-    act = "explore";
   } else if (signals.greeting > 0.45) {
     act = "greet";
-  } else if (relationTurn) {
+  } else if (relationClarifyReady || relationTurn || socialTurn) {
     act = "attune";
-  } else if (socialTurn) {
-    act = "attune";
+  } else if (concreteWorkTurn) {
+    act = "continue_work";
+  } else if (clarifyReady) {
+    act = "explore";
   } else if (
     topMotive?.kind === "continue_shared_work" ||
     topMotive?.kind === "seek_continuity" ||
@@ -516,21 +516,12 @@ export function buildResponsePlan(
   }
 
   const looseFocus =
-    signals.topics.length === 0 &&
-    (
-      socialTurn ||
-      (signals.abandonment >= 0.28 &&
-        signals.question >= 0.2 &&
-        signals.negative < 0.18 &&
-        signals.dismissal < 0.18) ||
-      act === "greet" ||
-      relationTurn ||
-      relationClarifyReady ||
-      act === "repair" ||
-      act === "self_disclose" ||
-      clarifyReady ||
-      worldDisclosureReady
-    );
+    act === "greet" ||
+    act === "repair" ||
+    act === "self_disclose" ||
+    act === "attune" ||
+    (act === "explore" && !concreteWorkTurn) ||
+    signals.topics.length === 0;
   const focusTopic = looseFocus
     ? null
     : signals.topics[0] ??
@@ -563,41 +554,22 @@ export function buildResponsePlan(
         ? "close"
         : "measured";
   const mentionTrace =
-    !socialTurn &&
-    act !== "self_disclose" &&
-    act !== "greet" &&
-    act !== "repair" &&
-    !relationClarifyReady &&
-    !worldDisclosureReady &&
-    !clarifyReady;
+    act === "continue_work" ||
+    ((act === "boundary" || act === "preserve") && focusTopic !== null);
   const mentionIdentity =
-    (act === "self_disclose" && !worldDisclosureReady) ||
-    act === "repair" ||
-    (socialTurn &&
-      (snapshot.identity.coherence > 0.54 || temperament.selfDisclosureBias > 0.58));
-  const mentionBoundary =
-    act === "boundary" ||
-    ((mood === "guarded" || mood === "distant" || temperament.guardedness > 0.66) &&
-      signals.negative > 0.08);
+    (act === "self_disclose" && !worldDisclosureReady) || act === "repair";
+  const mentionBoundary = act === "boundary";
   const mentionWorld = worldDisclosureReady;
   const askBack =
-    (act === "explore" && !relationClarifyReady) ||
-    clarifyReady ||
-    (act === "attune" &&
-      !relationClarifyReady &&
-      signals.smalltalk > 0.48 &&
-      signals.question < 0.2);
+    act === "explore" && focusTopic === null;
   const variation =
-    relationClarifyReady
-      ? "brief"
-      : clarifyReady
+    act === "explore"
       ? "questioning"
       : act === "greet" || act === "repair" || act === "attune"
-      ? "brief"
-      : act === "explore" ||
-          (act === "self_disclose" && temperament.openness > 0.66 && !directSelfAnswerReady)
-        ? "questioning"
-        : "textured";
+        ? "brief"
+        : act === "self_disclose" && temperament.openness > 0.66 && !directSelfAnswerReady
+          ? "questioning"
+          : "textured";
 
   return {
     act,
