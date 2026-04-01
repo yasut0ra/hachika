@@ -5007,6 +5007,7 @@ function updateDiscourseState(
   turnDebug: TurnDirectiveDebug | null,
 ): void {
   const timestamp = snapshot.lastInteractionAt ?? new Date().toISOString();
+  const normalized = input.normalize("NFKC").trim();
   const declaredUserName = extractDeclaredUserName(input);
   const assignedHachikaName = extractAssignedHachikaName(input);
 
@@ -5033,7 +5034,7 @@ function updateDiscourseState(
   if (turnDebug && turnDebug.target !== "none" && signals.question >= 0.22) {
     snapshot.discourse.openQuestions.push({
       target: turnDebug.target,
-      text: input.normalize("NFKC").trim(),
+      text: normalized,
       askedAt: timestamp,
       status: turnDebug.answerMode === "clarify" ? "open" : "resolved",
       resolvedAt: turnDebug.answerMode === "clarify" ? null : timestamp,
@@ -5041,10 +5042,108 @@ function updateDiscourseState(
     snapshot.discourse.openQuestions = snapshot.discourse.openQuestions.slice(-8);
   }
 
+  const request = detectDiscourseRequest(normalized, turnDebug, timestamp);
+  if (request) {
+    snapshot.discourse.openRequests.push(request);
+    snapshot.discourse.openRequests = snapshot.discourse.openRequests.slice(-8);
+  }
+
+  if (!declaredUserName && !assignedHachikaName) {
+    const claim = detectDiscourseClaim(normalized, signals, turnDebug, timestamp);
+    if (claim) {
+      snapshot.discourse.recentClaims.push(claim);
+      snapshot.discourse.recentClaims = snapshot.discourse.recentClaims.slice(-8);
+    }
+  }
+
   const correction = detectDiscourseCorrection(input, turnDebug, timestamp);
   if (correction) {
     snapshot.discourse.lastCorrection = correction;
   }
+}
+
+function detectDiscourseRequest(
+  input: string,
+  turnDebug: TurnDirectiveDebug | null,
+  timestamp: string,
+): HachikaSnapshot["discourse"]["openRequests"][number] | null {
+  if (!turnDebug) {
+    return null;
+  }
+
+  const styleRequest = /具体的|直接|短く|3つ|一言で|箇条書き/u.test(input);
+  const taskRequest =
+    /整理して|まとめて|説明して|書いて|出して|決めて|作って|直して|見せて/u.test(input);
+  const directRequest =
+    /答えて|教えて|言って|聞かせて|示して|してほしい/u.test(input);
+
+  if (!styleRequest && !taskRequest && !directRequest) {
+    return null;
+  }
+
+  return {
+    target: inferCorrectionTarget(input, turnDebug.target),
+    kind: styleRequest ? "style" : taskRequest ? "task" : "direct_answer",
+    text: input,
+    askedAt: timestamp,
+    status: turnDebug.answerMode === "clarify" ? "open" : "resolved",
+    resolvedAt: turnDebug.answerMode === "clarify" ? null : timestamp,
+  };
+}
+
+function detectDiscourseClaim(
+  input: string,
+  signals: InteractionSignals,
+  turnDebug: TurnDirectiveDebug | null,
+  timestamp: string,
+): HachikaSnapshot["discourse"]["recentClaims"][number] | null {
+  if (!turnDebug || signals.question >= 0.22 || input.length < 4) {
+    return null;
+  }
+
+  if (
+    /答えて|教えて|言って|聞かせて|示して|具体的|直接|整理して|まとめて|説明して|してほしい/u.test(
+      input,
+    )
+  ) {
+    return null;
+  }
+
+  if (turnDebug.target === "user_name" || turnDebug.target === "hachika_name") {
+    return null;
+  }
+
+  let subject: HachikaSnapshot["discourse"]["recentClaims"][number]["subject"] = "shared";
+  if (turnDebug.target === "user_profile" || /^(私|僕|俺)(?:は|も|って|が)?/u.test(input)) {
+    subject = "user";
+  } else if (
+    turnDebug.target === "hachika_profile" ||
+    /^(あなた|君|きみ|ハチカ)(?:は|も|って|が)?/u.test(input)
+  ) {
+    subject = "hachika";
+  }
+
+  let kind: HachikaSnapshot["discourse"]["recentClaims"][number]["kind"] = "other";
+  if (turnDebug.target === "work_topic" || signals.workCue >= 0.35) {
+    kind = "work";
+  } else if (/好き|嫌い|苦手|気になる|興味/u.test(input)) {
+    kind = "preference";
+  } else if (
+    turnDebug.target === "user_profile" ||
+    turnDebug.target === "hachika_profile" ||
+    /疲れ|眠い|しんどい|元気|不安|落ち着か/u.test(input)
+  ) {
+    kind = "state";
+  } else if (turnDebug.relationMove !== "none" || signals.intimacy >= 0.28) {
+    kind = "relation";
+  }
+
+  return {
+    subject,
+    kind,
+    text: input,
+    updatedAt: timestamp,
+  };
 }
 
 function detectDiscourseCorrection(

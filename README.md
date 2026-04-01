@@ -230,6 +230,7 @@ Hachika は、単に有用なだけでなく、
 - engine / resident loop の initiative/autonomy 適用も `semantic` を優先し始めていて、legacy field と semantic plan が矛盾した時は `semantic.initiativePlan / semantic.autonomyPlan` を authoritative に採る
 - loop / idle / proactive の見直し方針は [docs/autonomy-v2.md](/Users/yasut0ra/dev/hachika/docs/autonomy-v2.md) に整理してあり、`発話を行動の一部へ下げる / idle を batch ではなく静かな生存時間へ寄せる / proactive を outward action の一種として扱う` 方向で再構成していく
 - 現在の `turn-director` と `proactive-director` は、内部的には [src/semantic-director-schema.ts](/Users/yasut0ra/dev/hachika/src/semantic-director-schema.ts) の v2 contract を持ち始めていて、semantic topic と durable topic を分けて扱う下地が入っている
+  - `discourse state` も名前 fact だけでなく `openQuestions / openRequests / recentClaims / lastCorrection` を持ち始めていて、`topic` ではなく「何が言われて、何がまだ未解決か」を semantic core に渡す方向へ寄せている
   - proactive 側は runtime でもその分離を使い始めていて、`proactive-director` が `stateTopics: []` を返した時は「今だけ話すが durable な trace は作らない」という扱いができる
   - その手前には optional な `behavior director` も置けるため、trace / purpose / initiative をこの turn で本当に harden してよいか、topic shift や repair でいったん冷やすべきか、自己開示や world inquiry では先に直接答えるべきか、clarification を hostility に寄せるべきでないか、world 演出を抑えるべきかを LLM が structured に裁ける
   - greeting / repair / self-disclosure のような social turn では stale trace を引っ込め、関係の温度や自己開示を優先しやすくしている

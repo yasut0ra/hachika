@@ -94,7 +94,7 @@ export function applyBoundedPressure(
 
 export function createInitialSnapshot(): HachikaSnapshot {
   return {
-    version: 23,
+    version: 24,
     revision: 0,
     state: { ...INITIAL_STATE },
     body: { ...INITIAL_BODY },
@@ -113,6 +113,8 @@ export function createInitialSnapshot(): HachikaSnapshot {
         updatedAt: new Date(0).toISOString(),
       },
       openQuestions: [],
+      recentClaims: [],
+      openRequests: [],
       lastCorrection: null,
     },
     preferences: {},

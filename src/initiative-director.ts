@@ -35,7 +35,7 @@ const HACHIKA_INITIATIVE_DIRECTOR_SYSTEM_PROMPT = [
   "topic is the semantic topic that may be recalled later. stateTopic is the subset worth durable hardening.",
   "Only keep stateTopic when it is concrete and already present in candidateTopics.",
   "attentionReasons explains why the local engine thinks something still matters. Cool direct_referent, relation_uncertain, self_definition, and world_pull unless there is grounded continuity.",
-  "Use discourse.openQuestions and discourse.lastCorrection as additional context. Unresolved direct referent or directness demands should usually suppress weak pending carry-over.",
+  "Use discourse.openQuestions, discourse.openRequests, discourse.recentClaims, and discourse.lastCorrection as additional context. Unresolved direct referent or directness demands should usually suppress weak pending carry-over.",
   "Keep kind/reason/motive close to the local candidate unless there is a strong semantic reason to cool or redirect it.",
   "Keep world action close to the local candidate unless there is a strong reason to suppress it.",
   "Return a single JSON object.",
@@ -126,6 +126,17 @@ export interface InitiativeDirectorPayload {
       target: string;
       text: string;
       status: "open" | "resolved";
+    }>;
+    openRequests: Array<{
+      target: string;
+      kind: "direct_answer" | "style" | "task";
+      text: string;
+      status: "open" | "resolved";
+    }>;
+    recentClaims: Array<{
+      subject: "user" | "hachika" | "shared";
+      kind: "state" | "preference" | "work" | "relation" | "other";
+      text: string;
     }>;
     lastCorrection: {
       target: string;
@@ -326,6 +337,21 @@ export function buildInitiativeDirectorPayload(
           target: question.target,
           text: question.text,
           status: question.status,
+        })),
+      openRequests: context.snapshot.discourse.openRequests
+        .slice(-4)
+        .map((request) => ({
+          target: request.target,
+          kind: request.kind,
+          text: request.text,
+          status: request.status,
+        })),
+      recentClaims: context.snapshot.discourse.recentClaims
+        .slice(-4)
+        .map((claim) => ({
+          subject: claim.subject,
+          kind: claim.kind,
+          text: claim.text,
         })),
       lastCorrection: context.snapshot.discourse.lastCorrection
         ? {

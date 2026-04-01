@@ -54,7 +54,7 @@ const HACHIKA_TURN_DIRECTOR_SYSTEM_PROMPT = [
   "Decide who the user is referring to, what must be answered directly, whether the turn should harden into durable state, and any concrete trace hints.",
   "Distinguish carefully between user_name, hachika_name, user_profile, hachika_profile, relation, world_state, and work_topic.",
   "For naming, self/profile questions, directness requests, and repair turns, prefer direct answers and suppress durable work hardening unless explicit concrete work is named.",
-  "Use discourse.userName, discourse.hachikaName, openQuestions, and lastCorrection as referential context before inventing new topics.",
+  "Use discourse.userName, discourse.hachikaName, openQuestions, openRequests, recentClaims, and lastCorrection as referential context before inventing new topics.",
   "For pure world questions, prefer world_state with topics: [] and suppress durable work hardening.",
   "For social or relation turns, do not invent work topics or trace content.",
   "For work_topic, keep topics compact and concrete, and only emit trace hints that are explicitly present.",
@@ -148,6 +148,17 @@ export interface TurnDirectorPayload {
       target: TurnTarget;
       text: string;
       status: "open" | "resolved";
+    }>;
+    openRequests: Array<{
+      target: TurnTarget | "none";
+      kind: "direct_answer" | "style" | "task";
+      text: string;
+      status: "open" | "resolved";
+    }>;
+    recentClaims: Array<{
+      subject: "user" | "hachika" | "shared";
+      kind: "state" | "preference" | "work" | "relation" | "other";
+      text: string;
     }>;
     lastCorrection: {
       target: TurnTarget | "none";
@@ -334,6 +345,21 @@ export function buildTurnDirectorPayload(
           target: question.target,
           text: question.text,
           status: question.status,
+        })),
+      openRequests: context.snapshot.discourse.openRequests
+        .slice(-4)
+        .map((request) => ({
+          target: request.target,
+          kind: request.kind,
+          text: request.text,
+          status: request.status,
+        })),
+      recentClaims: context.snapshot.discourse.recentClaims
+        .slice(-4)
+        .map((claim) => ({
+          subject: claim.subject,
+          kind: claim.kind,
+          text: claim.text,
         })),
       lastCorrection: context.snapshot.discourse.lastCorrection
         ? {

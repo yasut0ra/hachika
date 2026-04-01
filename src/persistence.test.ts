@@ -427,11 +427,61 @@ test("sanitizeSnapshot keeps valid discourse facts and falls back on invalid hac
     source: "relation_assignment",
     updatedAt: "2026-03-31T00:00:00.000Z",
   };
+  snapshot.discourse.recentClaims = [
+    {
+      subject: "user",
+      kind: "state",
+      text: "今日は少し疲れている。",
+      updatedAt: "2026-03-31T00:00:00.000Z",
+    },
+    {
+      subject: "shared",
+      kind: "other",
+      text: "x",
+      updatedAt: "2026-03-31T00:00:00.000Z",
+    },
+  ];
+  snapshot.discourse.openRequests = [
+    {
+      target: "hachika_name",
+      kind: "style",
+      text: "ハチカ自身の名前を具体的に答えて。",
+      askedAt: "2026-03-31T00:00:00.000Z",
+      status: "open",
+      resolvedAt: null,
+    },
+    {
+      target: "none",
+      kind: "task",
+      text: "x",
+      askedAt: "2026-03-31T00:00:00.000Z",
+      status: "open",
+      resolvedAt: null,
+    },
+  ];
 
   sanitizeSnapshot(snapshot);
 
   assert.equal(snapshot.discourse.userName?.value, "やすとら");
   assert.equal(snapshot.discourse.hachikaName?.value, "ハチカ");
+  assert.deepEqual(snapshot.discourse.recentClaims, [
+    {
+      subject: "user",
+      kind: "state",
+      text: "今日は少し疲れている。",
+      updatedAt: "2026-03-31T00:00:00.000Z",
+    },
+  ]);
+  assert.deepEqual(snapshot.discourse.openRequests, [
+    {
+      target: "hachika_name",
+      kind: "style",
+      text: "ハチカ自身の名前を具体的に答えて。",
+      askedAt: "2026-03-31T00:00:00.000Z",
+      status: "open",
+      resolvedAt: null,
+    },
+  ]);
 });
 
 test("loadSnapshot seeds latent dynamics from older visible-only snapshots", async () => {
@@ -482,7 +532,7 @@ test("loadSnapshot seeds latent dynamics from older visible-only snapshots", asy
 
     const loaded = await loadSnapshot(filePath);
 
-    assert.equal(loaded.version, 23);
+    assert.equal(loaded.version, 24);
     assert.equal(loaded.revision, 3);
     assert.equal(loaded.discourse.hachikaName?.value, "ハチカ");
     assert.ok(loaded.dynamics.safety < 0.5);

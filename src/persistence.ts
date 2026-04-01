@@ -20,18 +20,23 @@ import type {
   ActivePurpose,
   AutonomousFeedEntry,
   BoundaryImprint,
-    BodyState,
-    DiscourseCorrection,
-    DiscourseCorrectionKind,
-    DiscourseFact,
-    DiscourseState,
-    DiscourseFactKind,
-    DiscourseFactSource,
-    DiscourseOpenQuestion,
-    DiscourseQuestionStatus,
-    DynamicsState,
-    GenerationHistoryEntry,
-    DriveState,
+  BodyState,
+  DiscourseClaim,
+  DiscourseClaimKind,
+  DiscourseClaimSubject,
+  DiscourseCorrection,
+  DiscourseCorrectionKind,
+  DiscourseFact,
+  DiscourseState,
+  DiscourseFactKind,
+  DiscourseFactSource,
+  DiscourseOpenQuestion,
+  DiscourseOpenRequest,
+  DiscourseQuestionStatus,
+  DiscourseRequestKind,
+  DynamicsState,
+  GenerationHistoryEntry,
+  DriveState,
   HachikaSnapshot,
   IdentityState,
   InitiativeActivity,
@@ -129,7 +134,7 @@ function hydrateSnapshot(raw: unknown): HachikaSnapshot {
   }
 
   return {
-    version: 23,
+    version: 24,
     revision:
       typeof raw.revision === "number" && Number.isFinite(raw.revision)
         ? Math.max(0, Math.round(raw.revision))
@@ -369,6 +374,8 @@ function hydrateDiscourse(raw: unknown): DiscourseState {
     hachikaName:
       hydrateDiscourseFact(raw.hachikaName, "hachika_name") ?? initial.hachikaName,
     openQuestions: hydrateDiscourseOpenQuestions(raw.openQuestions),
+    recentClaims: hydrateDiscourseClaims(raw.recentClaims),
+    openRequests: hydrateDiscourseOpenRequests(raw.openRequests),
     lastCorrection: hydrateDiscourseCorrection(raw.lastCorrection),
   };
 }
@@ -431,6 +438,8 @@ function sanitizeDiscourse(discourse: DiscourseState): DiscourseState {
       sanitizeDiscourseFact(discourse.hachikaName, "hachika_name") ??
       createInitialSnapshot().discourse.hachikaName,
     openQuestions: sanitizeDiscourseOpenQuestions(discourse.openQuestions),
+    recentClaims: sanitizeDiscourseClaims(discourse.recentClaims),
+    openRequests: sanitizeDiscourseOpenRequests(discourse.openRequests),
     lastCorrection: sanitizeDiscourseCorrection(discourse.lastCorrection),
   };
 }
@@ -558,6 +567,128 @@ function sanitizeDiscourseOpenQuestions(
     .slice(-8);
 }
 
+function hydrateDiscourseClaims(raw: unknown): DiscourseClaim[] {
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+
+  return raw
+    .map((claim) => hydrateDiscourseClaim(claim))
+    .filter((claim): claim is DiscourseClaim => claim !== null)
+    .slice(-8);
+}
+
+function hydrateDiscourseClaim(raw: unknown): DiscourseClaim | null {
+  if (!isRecord(raw)) {
+    return null;
+  }
+
+  const text = sanitizeDiscourseQuestionText(raw.text);
+  if (!text) {
+    return null;
+  }
+
+  return {
+    subject: isDiscourseClaimSubject(raw.subject) ? raw.subject : "shared",
+    kind: isDiscourseClaimKind(raw.kind) ? raw.kind : "other",
+    text,
+    updatedAt:
+      typeof raw.updatedAt === "string" && raw.updatedAt.trim().length > 0
+        ? raw.updatedAt
+        : new Date(0).toISOString(),
+  };
+}
+
+function sanitizeDiscourseClaims(
+  claims: readonly DiscourseClaim[],
+): DiscourseClaim[] {
+  return claims
+    .map((claim) => {
+      const text = sanitizeDiscourseQuestionText(claim.text);
+      if (!text) {
+        return null;
+      }
+
+      return {
+        subject: isDiscourseClaimSubject(claim.subject) ? claim.subject : "shared",
+        kind: isDiscourseClaimKind(claim.kind) ? claim.kind : "other",
+        text,
+        updatedAt:
+          typeof claim.updatedAt === "string" && claim.updatedAt.trim().length > 0
+            ? claim.updatedAt
+            : new Date(0).toISOString(),
+      };
+    })
+    .filter((claim): claim is DiscourseClaim => claim !== null)
+    .slice(-8);
+}
+
+function hydrateDiscourseOpenRequests(raw: unknown): DiscourseOpenRequest[] {
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+
+  return raw
+    .map((request) => hydrateDiscourseOpenRequest(request))
+    .filter((request): request is DiscourseOpenRequest => request !== null)
+    .slice(-8);
+}
+
+function hydrateDiscourseOpenRequest(raw: unknown): DiscourseOpenRequest | null {
+  if (!isRecord(raw)) {
+    return null;
+  }
+
+  const text = sanitizeDiscourseQuestionText(raw.text);
+  if (!text) {
+    return null;
+  }
+
+  return {
+    target: isTurnTarget(raw.target) ? raw.target : "none",
+    kind: isDiscourseRequestKind(raw.kind) ? raw.kind : "direct_answer",
+    text,
+    askedAt:
+      typeof raw.askedAt === "string" && raw.askedAt.trim().length > 0
+        ? raw.askedAt
+        : new Date(0).toISOString(),
+    status: isDiscourseQuestionStatus(raw.status) ? raw.status : "open",
+    resolvedAt:
+      typeof raw.resolvedAt === "string" && raw.resolvedAt.trim().length > 0
+        ? raw.resolvedAt
+        : null,
+  };
+}
+
+function sanitizeDiscourseOpenRequests(
+  requests: readonly DiscourseOpenRequest[],
+): DiscourseOpenRequest[] {
+  return requests
+    .map((request) => {
+      const text = sanitizeDiscourseQuestionText(request.text);
+      if (!text) {
+        return null;
+      }
+
+      return {
+        target: isTurnTarget(request.target) ? request.target : "none",
+        kind: isDiscourseRequestKind(request.kind) ? request.kind : "direct_answer",
+        text,
+        askedAt:
+          typeof request.askedAt === "string" && request.askedAt.trim().length > 0
+            ? request.askedAt
+            : new Date(0).toISOString(),
+        status: isDiscourseQuestionStatus(request.status) ? request.status : "open",
+        resolvedAt:
+          typeof request.resolvedAt === "string" && request.resolvedAt.trim().length > 0
+            ? request.resolvedAt
+            : null,
+      };
+    })
+    .filter((request): request is DiscourseOpenRequest => request !== null)
+    .slice(-8);
+}
+
 function hydrateDiscourseCorrection(raw: unknown): DiscourseCorrection | null {
   if (!isRecord(raw)) {
     return null;
@@ -619,8 +750,26 @@ function isDiscourseQuestionStatus(value: unknown): value is DiscourseQuestionSt
   return value === "open" || value === "resolved";
 }
 
+function isDiscourseClaimSubject(value: unknown): value is DiscourseClaimSubject {
+  return value === "user" || value === "hachika" || value === "shared";
+}
+
+function isDiscourseClaimKind(value: unknown): value is DiscourseClaimKind {
+  return (
+    value === "state" ||
+    value === "preference" ||
+    value === "work" ||
+    value === "relation" ||
+    value === "other"
+  );
+}
+
 function isDiscourseCorrectionKind(value: unknown): value is DiscourseCorrectionKind {
   return value === "referent" || value === "directness" || value === "relation";
+}
+
+function isDiscourseRequestKind(value: unknown): value is DiscourseRequestKind {
+  return value === "direct_answer" || value === "style" || value === "task";
 }
 
 function isTurnTarget(value: unknown): value is HachikaSnapshot["discourse"]["openQuestions"][number]["target"] {

@@ -696,6 +696,9 @@ function deriveDiscourseDemandAttentionReasons(
   const unresolved = snapshot.discourse.openQuestions.filter(
     (question) => question.status === "open",
   );
+  const unresolvedRequests = snapshot.discourse.openRequests.filter(
+    (request) => request.status === "open",
+  );
 
   if (
     unresolved.some(
@@ -705,6 +708,14 @@ function deriveDiscourseDemandAttentionReasons(
         question.target === "user_profile" ||
         question.target === "hachika_profile",
     )
+    || unresolvedRequests.some(
+      (request) =>
+        request.kind !== "task" &&
+        (request.target === "user_name" ||
+          request.target === "hachika_name" ||
+          request.target === "user_profile" ||
+          request.target === "hachika_profile"),
+    )
   ) {
     reasons.add("direct_referent");
   }
@@ -713,6 +724,11 @@ function deriveDiscourseDemandAttentionReasons(
     unresolved.some(
       (question) =>
         question.target === "relation" || question.target === "world_state",
+    )
+    || unresolvedRequests.some(
+      (request) =>
+        request.kind !== "task" &&
+        (request.target === "relation" || request.target === "world_state"),
     )
   ) {
     reasons.add("memory_pull");

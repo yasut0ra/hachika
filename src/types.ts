@@ -83,6 +83,22 @@ export interface DiscourseOpenQuestion {
   resolvedAt: string | null;
 }
 
+export type DiscourseClaimSubject = "user" | "hachika" | "shared";
+
+export type DiscourseClaimKind =
+  | "state"
+  | "preference"
+  | "work"
+  | "relation"
+  | "other";
+
+export interface DiscourseClaim {
+  subject: DiscourseClaimSubject;
+  kind: DiscourseClaimKind;
+  text: string;
+  updatedAt: string;
+}
+
 export type DiscourseCorrectionKind = "referent" | "directness" | "relation";
 
 export interface DiscourseCorrection {
@@ -92,10 +108,23 @@ export interface DiscourseCorrection {
   updatedAt: string;
 }
 
+export type DiscourseRequestKind = "direct_answer" | "style" | "task";
+
+export interface DiscourseOpenRequest {
+  target: TurnTarget | "none";
+  kind: DiscourseRequestKind;
+  text: string;
+  askedAt: string;
+  status: DiscourseQuestionStatus;
+  resolvedAt: string | null;
+}
+
 export interface DiscourseState {
   userName: DiscourseFact | null;
   hachikaName: DiscourseFact | null;
   openQuestions: DiscourseOpenQuestion[];
+  recentClaims: DiscourseClaim[];
+  openRequests: DiscourseOpenRequest[];
   lastCorrection: DiscourseCorrection | null;
 }
 

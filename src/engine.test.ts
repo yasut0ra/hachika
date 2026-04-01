@@ -1779,6 +1779,67 @@ test("respondAsync records directness and referent corrections in discourse stat
 
   assert.equal(result.snapshot.discourse.lastCorrection?.target, "hachika_name");
   assert.equal(result.snapshot.discourse.lastCorrection?.kind, "directness");
+  assert.equal(result.snapshot.discourse.openRequests.at(-1)?.target, "hachika_name");
+  assert.equal(result.snapshot.discourse.openRequests.at(-1)?.kind, "style");
+  assert.equal(result.snapshot.discourse.openRequests.at(-1)?.status, "resolved");
+});
+
+test("respondAsync records user claims in discourse state without hardening them into work", async () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+
+  const turnDirector: TurnDirector = {
+    name: "test-turn",
+    async directTurn() {
+      return {
+        provider: "test-turn",
+        model: "stub",
+        directive: {
+          subject: "user",
+          target: "user_profile",
+          answerMode: "reflective",
+          relationMove: "attune",
+          worldMention: "none",
+          topics: [],
+          stateTopics: [],
+          behavior: {
+            topicAction: "clear",
+            traceAction: "suppress",
+            purposeAction: "suppress",
+            initiativeAction: "suppress",
+            boundaryAction: "suppress",
+            worldAction: "suppress",
+            coolCurrentContext: false,
+            directAnswer: false,
+            summary: "turn/user_claim_without_trace_hardening",
+          },
+          responsePlan: {
+            act: "attune",
+            stance: "open",
+            distance: "close",
+            focusTopic: null,
+            mentionTrace: false,
+            mentionIdentity: false,
+            mentionBoundary: false,
+            mentionWorld: false,
+            askBack: false,
+            variation: "brief",
+            summary: "attune/open/close",
+          },
+          traceExtraction: null,
+          summary: "subject:user/target:user_profile/mode:reflective",
+        },
+      };
+    },
+  };
+
+  const result = await engine.respondAsync("私は今日は少し疲れてる。", { turnDirector });
+  const lastClaim = result.snapshot.discourse.recentClaims.at(-1);
+
+  assert.equal(lastClaim?.subject, "user");
+  assert.equal(lastClaim?.kind, "state");
+  assert.equal(lastClaim?.text, "私は今日は少し疲れてる。");
+  assert.equal(result.snapshot.purpose.active, null);
+  assert.equal(result.snapshot.initiative.pending, null);
 });
 
 test("relation clarification answers directly without turning the naming exchange into work", () => {
