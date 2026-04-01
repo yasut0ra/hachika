@@ -471,6 +471,12 @@ export function buildRuleTurnDirective(
   let relationMove: TurnRelationMove = "none";
   let worldMention: TurnWorldMention = "none";
   const declaredUserName = extractDeclaredUserName(input);
+  const discourseFollowUp = resolveDiscourseFollowUpTarget(
+    snapshot,
+    normalized,
+    explicitQuestion,
+    localTopics,
+  );
 
   if (signals.worldInquiry >= 0.45 || hasExplicitWorldObjectReference(input)) {
     subject = "world";
@@ -501,6 +507,12 @@ export function buildRuleTurnDirective(
     subject = "user";
     target = "user_profile";
     answerMode = "direct";
+  } else if (discourseFollowUp) {
+    subject = discourseFollowUp.subject;
+    target = discourseFollowUp.target;
+    answerMode = discourseFollowUp.answerMode;
+    relationMove = discourseFollowUp.relationMove;
+    worldMention = discourseFollowUp.worldMention;
   } else if (signals.repair >= 0.42) {
     subject = "shared";
     target = "relation";
@@ -595,6 +607,75 @@ export function buildRuleTurnDirective(
     traceExtraction,
     semantic,
     summary: describeSemanticDirective(semantic),
+  };
+}
+
+function resolveDiscourseFollowUpTarget(
+  snapshot: HachikaSnapshot,
+  normalized: string,
+  explicitQuestion: boolean,
+  localTopics: string[],
+): {
+  subject: TurnSubject;
+  target: TurnTarget;
+  answerMode: TurnAnswerMode;
+  relationMove: TurnRelationMove;
+  worldMention: TurnWorldMention;
+} | null {
+  if (localTopics.length > 0 && !containsAny(normalized, FOLLOW_UP_PATTERNS)) {
+    return null;
+  }
+
+  const followUpRequest =
+    containsAny(normalized, FOLLOW_UP_PATTERNS) ||
+    containsAny(normalized, DIRECTNESS_REQUEST_PATTERNS) ||
+    containsAny(normalized, DIRECT_ANSWER_PATTERNS);
+
+  if (!followUpRequest) {
+    return null;
+  }
+
+  const unresolvedRequest =
+    [...snapshot.discourse.openRequests].reverse().find((request) => request.status === "open") ??
+    null;
+  const unresolvedQuestion =
+    [...snapshot.discourse.openQuestions].reverse().find((question) => question.status === "open") ??
+    null;
+  const correctionTarget = snapshot.discourse.lastCorrection?.target ?? "none";
+  const target =
+    unresolvedRequest?.target && unresolvedRequest.target !== "none"
+      ? unresolvedRequest.target
+      : correctionTarget !== "none"
+        ? correctionTarget
+        : unresolvedQuestion?.target ?? "none";
+
+  if (
+    target === "none" ||
+    target === "work_topic"
+  ) {
+    return null;
+  }
+
+  return {
+    subject:
+      target === "user_name" || target === "user_profile"
+        ? "user"
+        : target === "hachika_name" || target === "hachika_profile"
+          ? "hachika"
+          : target === "world_state"
+            ? "world"
+            : "shared",
+    target,
+    answerMode: target === "relation" && !explicitQuestion ? "reflective" : "direct",
+    relationMove:
+      target === "user_name" || target === "hachika_name"
+        ? "naming"
+        : snapshot.discourse.lastCorrection?.kind === "relation"
+          ? "repair"
+          : target === "relation"
+            ? "attune"
+            : "none",
+    worldMention: target === "world_state" ? "full" : "none",
   };
 }
 
@@ -1395,6 +1476,28 @@ const USER_PROFILE_PATTERNS = [
   "俺のこと",
   "おれのこと",
   "どう思う",
+];
+const FOLLOW_UP_PATTERNS = [
+  "それで",
+  "改めて",
+  "もう一回",
+  "今は",
+  "ちゃんと",
+];
+const DIRECTNESS_REQUEST_PATTERNS = [
+  "具体的",
+  "直接",
+  "一言で",
+  "3つで",
+  "短く",
+  "箇条書き",
+];
+const DIRECT_ANSWER_PATTERNS = [
+  "答えて",
+  "教えて",
+  "言って",
+  "聞かせて",
+  "示して",
 ];
 const NAMING_PATTERNS = [
   "覚えてね",

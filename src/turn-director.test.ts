@@ -71,6 +71,35 @@ test("rule turn directive resolves user naming questions without hardening work 
   assert.equal(directive.behavior.directAnswer, true);
 });
 
+test("rule turn directive can continue an unresolved direct referent request from discourse state", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.discourse.openRequests.push({
+    target: "hachika_name",
+    kind: "style",
+    text: "ハチカ自身の名前を具体的に答えて。",
+    askedAt: "2026-04-01T00:00:00.000Z",
+    status: "open",
+    resolvedAt: null,
+  });
+
+  const directive = buildRuleTurnDirective(
+    snapshot,
+    "具体的に答えて。",
+    createSignals({
+      repair: 0.06,
+      smalltalk: 0.08,
+      topics: [],
+    }),
+  );
+
+  assert.equal(directive.subject, "hachika");
+  assert.equal(directive.target, "hachika_name");
+  assert.equal(directive.answerMode, "direct");
+  assert.equal(directive.relationMove, "naming");
+  assert.equal(directive.behavior.traceAction, "suppress");
+  assert.equal(directive.behavior.directAnswer, true);
+});
+
 test("rule turn directive treats direct self-introduction as a user-name referent turn", () => {
   const snapshot = createInitialSnapshot();
   const directive = buildRuleTurnDirective(

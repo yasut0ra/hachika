@@ -1842,6 +1842,22 @@ test("respondAsync records user claims in discourse state without hardening them
   assert.equal(result.snapshot.initiative.pending, null);
 });
 
+test("local fallback can answer user-profile questions from recent discourse claims", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.discourse.recentClaims.push({
+    subject: "user",
+    kind: "state",
+    text: "私は今日は少し疲れてる。",
+    updatedAt: "2026-04-01T00:00:00.000Z",
+  });
+  const engine = new HachikaEngine(snapshot);
+
+  const result = engine.respond("私のことどう見える？");
+
+  assert.match(result.reply, /疲れ|疲れて|負荷|余裕/);
+  assert.equal(/[?？]$/.test(result.reply.trim()), false);
+});
+
 test("relation clarification answers directly without turning the naming exchange into work", () => {
   const engine = new HachikaEngine(createInitialSnapshot());
 

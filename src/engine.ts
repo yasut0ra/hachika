@@ -5255,6 +5255,8 @@ function buildDirectReferentAnswerLine(
       );
     case "hachika_profile":
       return buildConcreteSelfDisclosureLine(snapshot, mood, false);
+    case "user_profile":
+      return buildDirectUserProfileAnswerLine(previousSnapshot, snapshot);
     default:
       return null;
   }
@@ -5278,6 +5280,78 @@ function findRememberedUserName(snapshot: HachikaSnapshot): string | null {
   }
 
   return null;
+}
+
+function buildDirectUserProfileAnswerLine(
+  previousSnapshot: HachikaSnapshot,
+  snapshot: HachikaSnapshot,
+): string | null {
+  const recentAssistantLines = recentAssistantReplies(previousSnapshot, 4);
+  const recentClaim =
+    [...snapshot.discourse.recentClaims]
+      .reverse()
+      .find((claim) => claim.subject === "user") ?? null;
+
+  if (!recentClaim) {
+    return pickFreshText(
+      [
+        "いま見えているのは、まだ少し張りを抱えたまま話していることだ。",
+        "いま見えているのは、言葉の端にまだ少し力が残っていることだ。",
+        "いま見えているのは、まだ手元に何かを抱えたまま話していることだ。",
+      ],
+      recentAssistantLines,
+      snapshot.conversationCount,
+    );
+  }
+
+  switch (recentClaim.kind) {
+    case "state":
+      return pickFreshText(
+        [
+          `いま見えているのは、「${recentClaim.text}」と言うくらいには疲れや張りが前に出ていることだ。`,
+          `いま見えているのは、「${recentClaim.text}」がそのまま表に出るくらいには余裕が薄いことだ。`,
+          `いま見えているのは、「${recentClaim.text}」という言い方になるくらいには、今の負荷が前にあることだ。`,
+        ],
+        recentAssistantLines,
+        snapshot.conversationCount,
+      );
+    case "preference":
+      return pickFreshText(
+        [
+          `いま見えているのは、「${recentClaim.text}」と口に出るくらいには、その好みや気がかりが前にあることだ。`,
+          `いま見えているのは、「${recentClaim.text}」がそのまま出るくらいには、興味の向きがはっきりしていることだ。`,
+        ],
+        recentAssistantLines,
+        snapshot.conversationCount,
+      );
+    case "work":
+      return pickFreshText(
+        [
+          `いま見えているのは、「${recentClaim.text}」がそのまま出るくらいには、作業や考えごとがまだ頭を占めていることだ。`,
+          `いま見えているのは、「${recentClaim.text}」と言うくらいには、今も手元の課題を離していないことだ。`,
+        ],
+        recentAssistantLines,
+        snapshot.conversationCount,
+      );
+    case "relation":
+      return pickFreshText(
+        [
+          `いま見えているのは、「${recentClaim.text}」と出るくらいには、距離の置き方をまだ確かめていることだ。`,
+          `いま見えているのは、「${recentClaim.text}」という言い方になるくらいには、関わり方を慎重に測っていることだ。`,
+        ],
+        recentAssistantLines,
+        snapshot.conversationCount,
+      );
+    default:
+      return pickFreshText(
+        [
+          `いま見えているのは、「${recentClaim.text}」を手元に置いたまま話していることだ。`,
+          `いま見えているのは、「${recentClaim.text}」がまだ会話の前景にあることだ。`,
+        ],
+        recentAssistantLines,
+        snapshot.conversationCount,
+      );
+  }
 }
 
 function buildSocialClosingLine(
