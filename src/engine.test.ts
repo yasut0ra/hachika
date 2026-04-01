@@ -658,6 +658,7 @@ test("smalltalk reply stays in social mode without turning the topic into work p
 
   assert.doesNotMatch(result.reply, /「雑談」/);
   assert.doesNotMatch(result.reply, /決まっていない|どこから開く/);
+  assert.equal((result.reply.match(/[。！？]/g) ?? []).length <= 1, true);
 });
 
 test("explicit topic shift abandons the old purpose and avoids extracting vague new topics", () => {

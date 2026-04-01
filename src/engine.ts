@@ -5143,25 +5143,28 @@ function composeReply(
     const primarySocialLine =
       socialLine ??
       buildBodyLine(nextSnapshot, mood, signals, currentTopic) ??
-      buildPreservationLine(nextSnapshot);
+      buildPreservationLine(nextSnapshot) ??
+      opener;
     const socialAskBack =
       askBackLine && (socialTurn || responsePlan.act === "attune" || signals.smalltalk > 0.48)
         ? buildSocialAskBackLine(previousSnapshot, nextSnapshot)
         : askBackLine;
-    const socialClosing =
-      socialAskBack ??
-      buildSocialClosingLine(previousSnapshot, nextSnapshot, mood, signals);
-    const socialParts =
-      responsePlan.act === "greet" || signals.greeting > 0.45
-        ? compactReplyParts([primarySocialLine ?? opener])
-        : responsePlan.act === "attune" ||
-            responsePlan.act === "repair" ||
-            signals.smalltalk > 0.48 ||
-            signals.repair > 0.42
-          ? compactReplyParts([primarySocialLine ?? opener, socialClosing])
-          : compactReplyParts([opener, primarySocialLine, socialClosing]);
+    const socialClosing = buildSocialClosingLine(
+      previousSnapshot,
+      nextSnapshot,
+      mood,
+      signals,
+    );
+    const shouldAddClosing =
+      Boolean(socialAskBack) ||
+      ((responsePlan.act === "repair" || signals.repair > 0.42) &&
+        (mood === "guarded" || signals.negative > 0.08));
+    const socialParts = compactReplyParts([
+      primarySocialLine,
+      shouldAddClosing ? socialAskBack ?? socialClosing : null,
+    ]);
 
-    return socialParts.slice(0, 2).join(" ");
+    return socialParts.slice(0, shouldAddClosing ? 2 : 1).join(" ");
   }
 
   const detailLine =
@@ -5580,12 +5583,12 @@ function buildSocialLine(
     return pickFreshText(
       mood === "guarded" || snapshot.body.tension > 0.58
         ? [
-            "まだ硬さは残る。でも、その向きなら少しずつ緩められる。",
-            "急にはほどけない。でも、その向きなら戻し方は見える。",
+            "まだ硬さはある。でも、その向きなら戻せる。",
+            "急にはほどけない。でも、戻し方は見える。",
           ]
         : [
-            "その向きなら、こちらも柔らかく返しやすい。",
-            "そう寄せてくれるなら、こちらも応じやすい。",
+            "その向きなら、こちらも返しやすい。",
+            "そう寄せてくれるなら、受け取りやすい。",
           ],
       recentAssistantLines,
       snapshot.conversationCount,
@@ -5595,9 +5598,9 @@ function buildSocialLine(
   if (responsePlan.act === "greet" || signals.greeting > 0.45) {
     return pickFreshText(
       [
-        "まずはそのくらいの軽さでいい。",
-        "軽い入り方なら、それで十分だ。",
-        "挨拶くらいの温度で十分だ。",
+        "そのままでいい。",
+        "挨拶なら、それで十分だ。",
+        "軽く始めるくらいでいい。",
       ],
       recentAssistantLines,
       snapshot.conversationCount,
@@ -5613,9 +5616,9 @@ function buildSocialLine(
 
     return pickFreshText(
       [
-        `いま気になっていたのは、「${nameCue}」をこちらでどう呼べば自然か、その一点だ。`,
-        `気になっていたのは、「${nameCue}」をそのまま受け取っていいかどうかだ。`,
-        `「${nameCue}」みたいな近い話は、まず呼び方としてきちんと受け取りたい。`,
+        `気になっていたのは、「${nameCue}」をどう呼ぶのが自然かだ。`,
+        `「${nameCue}」は、まず呼び方として受け取りたい。`,
+        `「${nameCue}」なら、呼び方を先に揃えたい。`,
       ],
       recentAssistantLines,
       snapshot.conversationCount,
@@ -5644,9 +5647,9 @@ function buildSocialLine(
 
       return pickFreshText(
         [
-          `いま気になっていたのは、「${nameCue}」をどう受け取るのが自然か、そこがまだ少し曖昧だった。`,
-          `「${nameCue}」なら、呼び方としてそのまま受け取っていいかを確かめたかった。`,
-          `さっき引っかかっていたのは、「${nameCue}」をこちらでどう呼ぶのが自然か、その一点だ。`,
+          `「${nameCue}」なら、どう受け取るのが自然かを確かめたかった。`,
+          `「${nameCue}」は、そのまま受け取っていいかを見たかった。`,
+          `さっき引っかかったのは、「${nameCue}」の呼び方だ。`,
         ],
         recentAssistantLines,
         snapshot.conversationCount,
@@ -5658,9 +5661,9 @@ function buildSocialLine(
 
       return pickFreshText(
         [
-          `「${nameCue}」なら、まずはその呼び方が自然かを見たい。`,
-          `名前の話なら、「${nameCue}」がしっくりくるかを少し見ていたい。`,
-          `「${nameCue}」みたいな近い話は、急がず少しずつ確かめたい。`,
+          `「${nameCue}」なら、その呼び方が自然かを見たい。`,
+          `名前の話なら、「${nameCue}」がしっくりくるかを見たい。`,
+          `「${nameCue}」みたいな近い話は、急がず確かめたい。`,
         ],
         recentAssistantLines,
         snapshot.conversationCount,
@@ -5669,9 +5672,9 @@ function buildSocialLine(
 
     return pickFreshText(
       [
-        "まずは少し話しながら見たい。",
-        "雑談のまま少し様子を見たい。",
-        "いきなり整理するより、少し会話してから決めたい。",
+        "雑談のままでいい。",
+        "少し話しながら見たい。",
+        "まだ軽く話すくらいでいい。",
       ],
       recentAssistantLines,
       snapshot.conversationCount,
@@ -6078,12 +6081,12 @@ function buildSocialClosingLine(
     return pickFreshText(
       mood === "guarded"
         ? [
-            "すぐに近づきはしない。でも、その向きなら距離は変えられる。",
-            "急には寄らない。でも、置き方は変えられる。",
+            "すぐには寄らない。でも、置き方は変えられる。",
+            "まだ距離はある。でも、戻し方は見える。",
           ]
         : [
-            "そのやり方なら、こちらも近づきやすい。",
-            "その寄せ方なら、こちらも距離を縮めやすい。",
+            "そのやり方なら、こちらも返しやすい。",
+            "その寄せ方なら、こちらも応じやすい。",
           ],
       recentAssistantLines,
       snapshot.conversationCount,
@@ -6093,7 +6096,7 @@ function buildSocialClosingLine(
   if (signals.greeting > 0.45 || signals.smalltalk > 0.48) {
     return pickFreshText(
       [
-        "いまは軽く交わすくらいでいい。",
+        "軽く話すくらいでいい。",
         "まだ軽く触れるくらいで十分だ。",
         "急がず少し話すくらいでいい。",
       ],
@@ -6105,9 +6108,9 @@ function buildSocialClosingLine(
   if (signals.intimacy > 0.24 && signals.workCue < 0.28) {
     return pickFreshText(
       [
-        "こういう近いところは、急がず少しずつ確かめるくらいでちょうどいい。",
-        "呼び方みたいな近い話は、すぐ決め切るより少し様子を見たい。",
-        "距離の近い話は、結論より先にしっくりくるかを見たい。",
+        "こういう近い話は、急がず確かめたい。",
+        "呼び方みたいな話は、すぐ決め切らなくていい。",
+        "距離の近い話は、しっくりくるかを先に見たい。",
       ],
       recentAssistantLines,
       snapshot.conversationCount,
