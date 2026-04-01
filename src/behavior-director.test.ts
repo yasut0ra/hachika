@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  buildBehaviorDirectorPayload,
   buildRuleBehaviorDirective,
   normalizeBehaviorDirective,
 } from "./behavior-director.js";
@@ -119,6 +120,47 @@ test("rule behavior directive answers clarification before asking back without h
   assert.equal(directive.boundaryAction, "suppress");
   assert.equal(directive.worldAction, "suppress");
   assert.equal(directive.directAnswer, true);
+});
+
+test("llm behavior director payload uses a concrete actor cue and discourse context", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.identity.summary = "今は単なる応答より、関係としての手触りを残したい。";
+  snapshot.world.currentPlace = "studio";
+  snapshot.discourse.openRequests.push({
+    target: "hachika_name",
+    kind: "style",
+    text: "ハチカ自身の名前を具体的に答えて。",
+    askedAt: "2026-04-01T00:00:00.000Z",
+    status: "open",
+    resolvedAt: null,
+  });
+
+  const payload = buildBehaviorDirectorPayload({
+    input: "具体的に答えて。",
+    snapshot,
+    signals: createSignals({
+      question: 0.6,
+      topics: [],
+    }),
+    interpretation: null,
+    traceExtraction: null,
+    fallbackDirective: {
+      topicAction: "clear",
+      traceAction: "suppress",
+      purposeAction: "suppress",
+      initiativeAction: "suppress",
+      boundaryAction: "suppress",
+      worldAction: "suppress",
+      coolCurrentContext: false,
+      directAnswer: true,
+      summary: "fallback",
+    },
+  });
+
+  assert.notEqual(payload.actorCue, snapshot.identity.summary);
+  assert.match(payload.actorCue, /いまは/);
+  assert.match(payload.actorCue, /studio|机/);
+  assert.equal(payload.discourse.openRequests[0]?.target, "hachika_name");
 });
 
 function createSignals(

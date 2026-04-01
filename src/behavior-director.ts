@@ -5,6 +5,7 @@ import {
 } from "./memory.js";
 import type { InputInterpretation } from "./input-interpreter.js";
 import { sortedTraces } from "./traces.js";
+import { describeWorldPlaceJa } from "./world.js";
 import type {
   HachikaSnapshot,
   InteractionSignals,
@@ -63,8 +64,28 @@ export interface BehaviorDirectorPayload {
     kind: string | null;
     topic: string | null;
   };
-  identitySummary: string;
+  actorCue: string;
   knownTopics: string[];
+  discourse: {
+    userName: string | null;
+    hachikaName: string | null;
+    openQuestions: Array<{
+      target: string;
+      text: string;
+      status: string;
+    }>;
+    openRequests: Array<{
+      target: string;
+      kind: string;
+      text: string;
+      status: string;
+    }>;
+    lastCorrection: {
+      target: string;
+      kind: string;
+      text: string;
+    } | null;
+  };
   signalSummary: {
     greeting: number;
     smalltalk: number;
@@ -230,8 +251,34 @@ export function buildBehaviorDirectorPayload(
       kind: context.snapshot.initiative.pending?.kind ?? null,
       topic: context.snapshot.initiative.pending?.topic ?? null,
     },
-    identitySummary: context.snapshot.identity.summary,
+    actorCue: buildBehaviorActorCue(context),
     knownTopics,
+    discourse: {
+      userName: context.snapshot.discourse.userName?.value ?? null,
+      hachikaName: context.snapshot.discourse.hachikaName?.value ?? null,
+      openQuestions: context.snapshot.discourse.openQuestions
+        .slice(-4)
+        .map((question) => ({
+          target: question.target,
+          text: question.text,
+          status: question.status,
+        })),
+      openRequests: context.snapshot.discourse.openRequests
+        .slice(-4)
+        .map((request) => ({
+          target: request.target,
+          kind: request.kind,
+          text: request.text,
+          status: request.status,
+        })),
+      lastCorrection: context.snapshot.discourse.lastCorrection
+        ? {
+            target: context.snapshot.discourse.lastCorrection.target,
+            kind: context.snapshot.discourse.lastCorrection.kind,
+            text: context.snapshot.discourse.lastCorrection.text,
+          }
+        : null,
+    },
     signalSummary: {
       greeting: context.signals.greeting,
       smalltalk: context.signals.smalltalk,
@@ -298,6 +345,40 @@ export function buildOpenAIBehaviorDirectorMessages(
       ].join("\n\n"),
     },
   ];
+}
+
+function buildBehaviorActorCue(
+  context: BehaviorDirectorContext,
+): string {
+  const snapshot = context.snapshot;
+  const place = describeWorldPlaceJa(snapshot.world.currentPlace);
+  const focusTopic =
+    context.traceExtraction?.topics[0] ??
+    context.interpretation?.topics[0] ??
+    snapshot.purpose.active?.topic ??
+    snapshot.initiative.pending?.topic ??
+    snapshot.identity.anchors[0] ??
+    null;
+
+  if (
+    snapshot.discourse.openRequests.some(
+      (request) => request.status === "open" && request.kind !== "task",
+    ) ||
+    snapshot.discourse.openQuestions.some((question) => question.status === "open") ||
+    snapshot.discourse.lastCorrection
+  ) {
+    return `いまは${place}で、聞かれていることを取り違えずに返したい。`;
+  }
+
+  if (context.signals.repair >= 0.3 || context.signals.abandonment >= 0.4) {
+    return `いまは${place}で、いったん流れを静かに整えたい。`;
+  }
+
+  if (focusTopic) {
+    return `いまは${place}で、「${focusTopic}」へどこまで寄せるかを見ている。`;
+  }
+
+  return `いまは${place}で、目の前のやりとりを崩さず受けたい。`;
 }
 
 export function buildRuleBehaviorDirective(

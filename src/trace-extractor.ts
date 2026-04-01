@@ -1,6 +1,7 @@
 import { topPreferredTopics } from "./memory.js";
 import { clamp01 } from "./state.js";
 import { sortedTraces } from "./traces.js";
+import { describeWorldPlaceJa } from "./world.js";
 import type {
   HachikaSnapshot,
   InteractionSignals,
@@ -46,7 +47,25 @@ export interface TraceExtractionPayload {
     topic: string | null;
   };
   topTraceTopics: string[];
-  identitySummary: string;
+  actorCue: string;
+  discourse: {
+    openQuestions: Array<{
+      target: string;
+      text: string;
+      status: string;
+    }>;
+    openRequests: Array<{
+      target: string;
+      kind: string;
+      text: string;
+      status: string;
+    }>;
+    lastCorrection: {
+      target: string;
+      kind: string;
+      text: string;
+    } | null;
+  };
   signalSummary: {
     question: number;
     workCue: number;
@@ -194,7 +213,31 @@ export function buildTraceExtractionPayload(
       topic: context.snapshot.purpose.active?.topic ?? null,
     },
     topTraceTopics: sortedTraces(context.snapshot, 3).map((trace) => trace.topic),
-    identitySummary: context.snapshot.identity.summary,
+    actorCue: buildTraceActorCue(context),
+    discourse: {
+      openQuestions: context.snapshot.discourse.openQuestions
+        .slice(-4)
+        .map((question) => ({
+          target: question.target,
+          text: question.text,
+          status: question.status,
+        })),
+      openRequests: context.snapshot.discourse.openRequests
+        .slice(-4)
+        .map((request) => ({
+          target: request.target,
+          kind: request.kind,
+          text: request.text,
+          status: request.status,
+        })),
+      lastCorrection: context.snapshot.discourse.lastCorrection
+        ? {
+            target: context.snapshot.discourse.lastCorrection.target,
+            kind: context.snapshot.discourse.lastCorrection.kind,
+            text: context.snapshot.discourse.lastCorrection.text,
+          }
+        : null,
+    },
     signalSummary: {
       question: context.signals.question,
       workCue: context.signals.workCue,
@@ -239,6 +282,34 @@ export function buildOpenAITraceExtractionMessages(
       ].join("\n\n"),
     },
   ];
+}
+
+function buildTraceActorCue(
+  context: TraceExtractionContext,
+): string {
+  const snapshot = context.snapshot;
+  const place = describeWorldPlaceJa(snapshot.world.currentPlace);
+  const focusTopic =
+    context.signals.topics[0] ??
+    snapshot.purpose.active?.topic ??
+    sortedTraces(snapshot, 1)[0]?.topic ??
+    snapshot.identity.anchors[0] ??
+    null;
+
+  if (
+    snapshot.discourse.openRequests.some(
+      (request) => request.status === "open" && request.kind !== "task",
+    ) ||
+    snapshot.discourse.lastCorrection
+  ) {
+    return `いまは${place}で、言い直しや直接の要望を trace に混ぜたくない。`;
+  }
+
+  if (context.signals.workCue >= 0.45 && focusTopic) {
+    return `いまは${place}で、「${focusTopic}」の作業片だけを拾いたい。`;
+  }
+
+  return `いまは${place}で、再利用できる具体だけを拾いたい。`;
 }
 
 export function normalizeTraceExtraction(

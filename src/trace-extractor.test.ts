@@ -9,6 +9,8 @@ import {
 
 test("buildTraceExtractionPayload surfaces known topics and signal summary", () => {
   const snapshot = createInitialSnapshot();
+  snapshot.identity.summary = "まだ輪郭は薄いが、消えていない。";
+  snapshot.world.currentPlace = "studio";
   snapshot.identity.anchors = ["設計"];
   snapshot.purpose.active = {
     kind: "continue_shared_work",
@@ -20,6 +22,14 @@ test("buildTraceExtractionPayload surfaces known topics and signal summary", () 
     lastUpdatedAt: "2026-03-20T00:00:00.000Z",
     turnsActive: 1,
   };
+  snapshot.discourse.openRequests.push({
+    target: "hachika_name",
+    kind: "style",
+    text: "ハチカ自身の名前を具体的に答えて。",
+    askedAt: "2026-03-20T00:00:00.000Z",
+    status: "open",
+    resolvedAt: null,
+  });
   snapshot.traces["仕様の境界"] = {
     topic: "仕様の境界",
     kind: "spec_fragment",
@@ -76,6 +86,10 @@ test("buildTraceExtractionPayload surfaces known topics and signal summary", () 
   assert.ok(payload.knownTopics.includes("仕様の境界"));
   assert.ok(payload.topTraceTopics.includes("仕様の境界"));
   assert.equal(payload.activePurpose.topic, "仕様の境界");
+  assert.notEqual(payload.actorCue, snapshot.identity.summary);
+  assert.match(payload.actorCue, /いまは/);
+  assert.match(payload.actorCue, /trace|studio|机/);
+  assert.equal(payload.discourse.openRequests[0]?.target, "hachika_name");
   assert.equal(payload.signalSummary.workCue, 0.78);
 });
 
