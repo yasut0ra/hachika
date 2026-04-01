@@ -2501,6 +2501,15 @@ function mergeTurnDirectedSignals(
   directive: TurnDirective,
 ): InteractionSignals {
   const resolvedDirective = resolveTurnDirective(directive);
+
+  if (directive.semantic) {
+    return buildAuthoritativeSemanticTurnSignals(
+      snapshot,
+      localSignals,
+      resolvedDirective,
+    );
+  }
+
   const mergedSignals = mergeInterpretedSignals(
     snapshot,
     localSignals,
@@ -2513,6 +2522,142 @@ function mergeTurnDirectedSignals(
     ...baseSignals,
     topics: [...resolvedDirective.stateTopics],
   });
+}
+
+function buildAuthoritativeSemanticTurnSignals(
+  snapshot: HachikaSnapshot,
+  localSignals: InteractionSignals,
+  directive: ReturnType<typeof resolveTurnDirective>,
+): InteractionSignals {
+  const directReferentTarget =
+    directive.target === "hachika_name" ||
+    directive.target === "hachika_profile" ||
+    directive.target === "user_name" ||
+    directive.target === "user_profile";
+  const relationTurn = directive.target === "relation";
+  const worldTurn = directive.target === "world_state";
+  const workTurn = directive.target === "work_topic";
+  const semanticTopics = uniqueTopics(
+    (directive.topics.length > 0 ? directive.topics : directive.stateTopics)
+      .filter((topic) => isMeaningfulTopic(topic)),
+  ).slice(0, 4);
+
+  const seededSignals = finalizeInteractionSignals(snapshot, {
+    positive: localSignals.positive,
+    negative:
+      directive.behavior.boundaryAction === "suppress"
+        ? clamp01(localSignals.negative * 0.55)
+        : localSignals.negative,
+    question:
+      directive.answerMode === "clarify"
+        ? Math.max(localSignals.question, 0.72)
+        : directive.answerMode === "direct"
+          ? Math.max(localSignals.question, 0.52)
+          : clamp01(localSignals.question * 0.72),
+    intimacy: clamp01(
+      Math.max(
+        localSignals.intimacy,
+        directReferentTarget
+          ? 0.32
+          : relationTurn
+            ? 0.28
+            : 0,
+      ),
+    ),
+    dismissal:
+      directive.relationMove === "repair" || directive.behavior.boundaryAction === "suppress"
+        ? clamp01(localSignals.dismissal * 0.45)
+        : localSignals.dismissal,
+    memoryCue: clamp01(
+      workTurn
+        ? Math.min(localSignals.memoryCue, 0.35)
+        : directive.target === "user_name"
+          ? Math.max(Math.min(localSignals.memoryCue, 0.38), 0.22)
+          : Math.min(localSignals.memoryCue, 0.08),
+    ),
+    expansionCue: clamp01(
+      workTurn
+        ? Math.max(Math.min(localSignals.expansionCue, 0.35), 0.12)
+        : Math.min(localSignals.expansionCue, 0.08),
+    ),
+    completion: clamp01(
+      workTurn
+        ? Math.min(localSignals.completion, 0.48)
+        : Math.min(localSignals.completion, 0.08),
+    ),
+    abandonment:
+      directReferentTarget || relationTurn || worldTurn
+        ? clamp01(Math.min(localSignals.abandonment, 0.12))
+        : localSignals.abandonment,
+    preservationThreat: localSignals.preservationThreat,
+    preservationConcern: localSignals.preservationConcern,
+    neglect: localSignals.neglect,
+    greeting:
+      !directReferentTarget &&
+      !relationTurn &&
+      !worldTurn &&
+      !workTurn &&
+      localSignals.greeting >= 0.16
+        ? Math.max(localSignals.greeting, 0.58)
+        : clamp01(Math.min(localSignals.greeting, 0.12)),
+    smalltalk:
+      relationTurn && directive.relationMove === "attune"
+        ? Math.max(localSignals.smalltalk, 0.52)
+        : !directReferentTarget && !worldTurn && !workTurn
+          ? Math.min(Math.max(localSignals.smalltalk, 0.18), 0.42)
+          : Math.min(localSignals.smalltalk, 0.12),
+    repair:
+      directive.relationMove === "repair"
+        ? Math.max(localSignals.repair, 0.82)
+        : Math.min(localSignals.repair, 0.18),
+    selfInquiry:
+      directive.target === "hachika_name" || directive.target === "hachika_profile"
+        ? Math.max(localSignals.selfInquiry, 0.84)
+        : Math.min(localSignals.selfInquiry, worldTurn || workTurn ? 0.12 : 0.18),
+    worldInquiry:
+      worldTurn
+        ? Math.max(localSignals.worldInquiry, directive.worldMention === "full" ? 0.92 : 0.78)
+        : Math.min(localSignals.worldInquiry, 0.12),
+    workCue: clamp01(
+      workTurn
+        ? Math.max(localSignals.workCue, 0.82)
+        : Math.min(localSignals.workCue, 0.08),
+    ),
+    topics: semanticTopics,
+  });
+
+  return applyAuthoritativeSemanticTopics(snapshot, seededSignals, semanticTopics);
+}
+
+function applyAuthoritativeSemanticTopics(
+  snapshot: HachikaSnapshot,
+  signals: InteractionSignals,
+  topics: readonly string[],
+): InteractionSignals {
+  const semanticTopics = uniqueTopics([...topics]).filter((topic) => isMeaningfulTopic(topic)).slice(0, 4);
+
+  if (semanticTopics.length === 0) {
+    return {
+      ...signals,
+      topics: [],
+      novelty: 0.12,
+      repetition: 0,
+    };
+  }
+
+  const newTopics = semanticTopics.filter((topic) => (snapshot.topicCounts[topic] ?? 0) === 0).length;
+  const repeatedTopics = semanticTopics.filter((topic) => (snapshot.topicCounts[topic] ?? 0) > 2).length;
+  const noveltyBase = newTopics / semanticTopics.length;
+  const repetitionBase = repeatedTopics / semanticTopics.length;
+
+  return {
+    ...signals,
+    topics: semanticTopics,
+    novelty: clamp01(
+      noveltyBase + (newTopics > 0 && newTopics === semanticTopics.length ? 0.12 : 0),
+    ),
+    repetition: clamp01(repetitionBase),
+  };
 }
 
 function buildTurnDirectedInterpretation(
@@ -3418,7 +3563,10 @@ function deriveDurableStateSignals(
 ): InteractionSignals {
   const baseTopics =
     turnDebug?.source === "llm"
-      ? uniqueTopics(signals.topics.filter((topic) => isMeaningfulTopic(topic))).slice(0, 4)
+      ? uniqueTopics(
+          (turnDebug.stateTopics.length > 0 ? turnDebug.stateTopics : [])
+            .filter((topic) => isMeaningfulTopic(topic)),
+        ).slice(0, 4)
       : filterDurableStateTopics(snapshot, signals.topics, signals, traceExtraction);
   const topics = filterTurnDirectiveDurableTopics(snapshot, baseTopics, turnDebug);
 

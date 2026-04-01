@@ -2555,6 +2555,8 @@ test("respondAsync can use a turn director to resolve Hachika name questions dir
   assert.equal(result.debug.turn?.plan, "self_disclose/open/close");
   assert.equal(result.debug.behavior.traceAction, "suppress");
   assert.ok(result.debug.signals.selfInquiry >= 0.7);
+  assert.ok(result.debug.signals.workCue <= 0.12);
+  assert.ok(result.debug.signals.worldInquiry <= 0.12);
   assert.equal(result.snapshot.traces["名前"], undefined);
   assert.match(result.reply, /ハチカ/);
 });
@@ -2771,6 +2773,7 @@ test("respondAsync can use semantic turn topics without hardening them into dura
   assert.ok((result.debug.signals.selfInquiry ?? 0) <= 0.18);
   assert.ok((result.debug.signals.worldInquiry ?? 0) <= 0.18);
   assert.deepEqual(result.debug.signals.topics, []);
+  assert.equal(result.debug.reply.selection?.currentTopic, "仕様の境界");
   assert.equal(result.snapshot.topicCounts["仕様の境界"], undefined);
   assert.equal(result.snapshot.traces["仕様の境界"], undefined);
   assert.equal(result.snapshot.purpose.active, null);
