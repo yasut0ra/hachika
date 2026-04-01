@@ -121,6 +121,33 @@ test("rule turn directive treats direct self-introduction as a user-name referen
   assert.deepEqual(directive.stateTopics, []);
 });
 
+test("rule turn directive can infer a user-profile follow-up from recent discourse claims", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.discourse.recentClaims.push({
+    subject: "user",
+    kind: "state",
+    text: "私は今日は少し疲れてる。",
+    updatedAt: "2026-04-01T00:00:00.000Z",
+  });
+
+  const directive = buildRuleTurnDirective(
+    snapshot,
+    "どう見える？",
+    createSignals({
+      question: 0.76,
+      topics: [],
+    }),
+  );
+
+  assert.equal(directive.subject, "user");
+  assert.equal(directive.target, "user_profile");
+  assert.equal(directive.answerMode, "direct");
+  assert.equal(directive.behavior.traceAction, "suppress");
+  assert.equal(directive.behavior.directAnswer, true);
+  assert.deepEqual(directive.topics, []);
+  assert.deepEqual(directive.stateTopics, []);
+});
+
 test("normalizeTurnDirective keeps fallback shape and parses turn semantics", () => {
   const fallback = buildRuleTurnDirective(
     createInitialSnapshot(),

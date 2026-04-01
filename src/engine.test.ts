@@ -1856,6 +1856,25 @@ test("local fallback can answer user-profile questions from recent discourse cla
 
   assert.match(result.reply, /疲れ|疲れて|負荷|余裕/);
   assert.equal(/[?？]$/.test(result.reply.trim()), false);
+  assert.equal(result.debug.turn?.target, "user_profile");
+  assert.equal(result.debug.reply.selection?.currentTopic, null);
+  assert.equal(result.debug.reply.selection?.relevantTraceTopic, null);
+});
+
+test("local fallback can infer omitted user-profile follow-ups from recent discourse claims", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.discourse.recentClaims.push({
+    subject: "user",
+    kind: "state",
+    text: "私は今日は少し疲れてる。",
+    updatedAt: "2026-04-01T00:00:00.000Z",
+  });
+  const engine = new HachikaEngine(snapshot);
+
+  const result = engine.respond("どう見える？");
+
+  assert.equal(result.debug.turn?.target, "user_profile");
+  assert.match(result.reply, /疲れ|疲れて|負荷|余裕/);
   assert.equal(result.debug.reply.selection?.currentTopic, null);
   assert.equal(result.debug.reply.selection?.relevantTraceTopic, null);
 });

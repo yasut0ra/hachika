@@ -477,6 +477,12 @@ export function buildRuleTurnDirective(
     explicitQuestion,
     localTopics,
   );
+  const claimDrivenProfileTarget = resolveClaimDrivenProfileTarget(
+    snapshot,
+    normalized,
+    explicitQuestion,
+    localTopics,
+  );
 
   if (signals.worldInquiry >= 0.45 || hasExplicitWorldObjectReference(input)) {
     subject = "world";
@@ -513,6 +519,12 @@ export function buildRuleTurnDirective(
     answerMode = discourseFollowUp.answerMode;
     relationMove = discourseFollowUp.relationMove;
     worldMention = discourseFollowUp.worldMention;
+  } else if (claimDrivenProfileTarget) {
+    subject = claimDrivenProfileTarget.subject;
+    target = claimDrivenProfileTarget.target;
+    answerMode = claimDrivenProfileTarget.answerMode;
+    relationMove = claimDrivenProfileTarget.relationMove;
+    worldMention = claimDrivenProfileTarget.worldMention;
   } else if (signals.repair >= 0.42) {
     subject = "shared";
     target = "relation";
@@ -676,6 +688,67 @@ function resolveDiscourseFollowUpTarget(
             ? "attune"
             : "none",
     worldMention: target === "world_state" ? "full" : "none",
+  };
+}
+
+function resolveClaimDrivenProfileTarget(
+  snapshot: HachikaSnapshot,
+  normalized: string,
+  explicitQuestion: boolean,
+  localTopics: string[],
+): {
+  subject: TurnSubject;
+  target: TurnTarget;
+  answerMode: TurnAnswerMode;
+  relationMove: TurnRelationMove;
+  worldMention: TurnWorldMention;
+} | null {
+  const concreteLocalTopics = localTopics.filter(
+    (topic) => !PROFILE_FOLLOW_UP_LOCAL_TOPIC_SET.has(topic),
+  );
+
+  if (!explicitQuestion || concreteLocalTopics.length > 0) {
+    return null;
+  }
+
+  if (
+    containsAny(normalized, HACHIKA_NAME_PATTERNS) ||
+    containsAny(normalized, USER_NAME_PATTERNS) ||
+    containsAny(normalized, HACHIKA_PROFILE_PATTERNS) ||
+    containsAny(normalized, USER_PROFILE_PATTERNS)
+  ) {
+    return null;
+  }
+
+  if (!containsAny(normalized, PROFILE_FOLLOW_UP_PATTERNS)) {
+    return null;
+  }
+
+  const latestClaim =
+    [...snapshot.discourse.recentClaims]
+      .reverse()
+      .find((claim) => claim.subject === "user" || claim.subject === "hachika") ?? null;
+
+  if (!latestClaim) {
+    return null;
+  }
+
+  if (latestClaim.subject === "user") {
+    return {
+      subject: "user",
+      target: "user_profile",
+      answerMode: "direct",
+      relationMove: "none",
+      worldMention: "none",
+    };
+  }
+
+  return {
+    subject: "hachika",
+    target: "hachika_profile",
+    answerMode: "direct",
+    relationMove: "none",
+    worldMention: "light",
   };
 }
 
@@ -1477,6 +1550,20 @@ const USER_PROFILE_PATTERNS = [
   "おれのこと",
   "どう思う",
 ];
+const PROFILE_FOLLOW_UP_PATTERNS = [
+  "どう見える",
+  "どう見えてる",
+  "どんな感じ",
+  "どんなふう",
+  "どう思える",
+];
+const PROFILE_FOLLOW_UP_LOCAL_TOPIC_SET = new Set([
+  "見える",
+  "見えてる",
+  "感じ",
+  "思う",
+  "ふう",
+]);
 const FOLLOW_UP_PATTERNS = [
   "それで",
   "改めて",
