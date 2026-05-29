@@ -144,7 +144,58 @@ test("prepareScheduledInitiative can derive a work topic from recent discourse c
   );
 
   assert.equal(decision.candidate?.motive, "continue_shared_work");
+  assert.equal(decision.candidate?.reason, "work_claim");
   assert.equal(decision.candidate?.topic, "仕様の境界");
+});
+
+test("prepareScheduledInitiative can keep a relation motive tied to recent discourse claims", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.discourse.recentClaims.push({
+    subject: "user",
+    kind: "relation",
+    text: "もう少し落ち着いて話したい。",
+    updatedAt: "2026-04-01T00:00:00.000Z",
+  });
+
+  const decision = prepareScheduledInitiative(
+    snapshot,
+    {
+      positive: 0.06,
+      negative: 0,
+      question: 0,
+      novelty: 0.08,
+      intimacy: 0.12,
+      dismissal: 0,
+      memoryCue: 0.02,
+      expansionCue: 0.04,
+      completion: 0,
+      abandonment: 0,
+      preservationThreat: 0,
+      preservationConcern: null,
+      repetition: 0,
+      neglect: 0,
+      greeting: 0,
+      smalltalk: 0.18,
+      repair: 0.04,
+      selfInquiry: 0,
+      worldInquiry: 0,
+      workCue: 0.06,
+      topics: [],
+    },
+    {
+      narrative: "",
+      topMotives: [
+        { kind: "pursue_curiosity", score: 0.71, topic: null, reason: "まだ気になる" },
+        { kind: "deepen_relation", score: 0.63, topic: null, reason: "距離を整えたい" },
+      ],
+      conflicts: [],
+      dominantConflict: null,
+    },
+    "2026-04-01T00:00:00.000Z",
+  );
+
+  assert.equal(decision.candidate?.motive, "deepen_relation");
+  assert.equal(decision.candidate?.reason, "relation_claim");
 });
 
 test("prepareIdleAutonomyAction cools to hold while directness corrections remain unresolved", () => {

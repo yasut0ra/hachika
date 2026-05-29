@@ -1513,7 +1513,11 @@ function hydratePendingInitiative(raw: unknown): PendingInitiative | null {
     raw.reason === "curiosity" ||
     raw.reason === "continuity" ||
     raw.reason === "relation" ||
-    raw.reason === "expansion"
+    raw.reason === "expansion" ||
+    raw.reason === "work_request" ||
+    raw.reason === "work_claim" ||
+    raw.reason === "relation_claim" ||
+    raw.reason === "relation_correction"
       ? raw.reason
       : undefined;
   const motive = isMotiveKind(raw.motive)
@@ -2527,9 +2531,14 @@ function inferLegacyMotive(reason: PendingInitiative["reason"]): MotiveKind {
     case "continuity":
       return "seek_continuity";
     case "relation":
+    case "relation_claim":
+    case "relation_correction":
       return "deepen_relation";
     case "expansion":
       return "leave_trace";
+    case "work_request":
+    case "work_claim":
+      return "continue_shared_work";
     case "curiosity":
       return "pursue_curiosity";
   }

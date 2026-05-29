@@ -116,7 +116,7 @@ export function buildSelfModel(snapshot: HachikaSnapshot): SelfModel {
           discourseContinuityPressure(discourseContext) +
           preservationThreat * 0.24 +
           preservationConcernBoost(preservationConcern, ["reset", "shutdown", "absence"], 0.12) +
-          (snapshot.initiative.pending?.reason === "continuity" ? 0.12 : 0) +
+          (snapshot.initiative.pending?.motive === "seek_continuity" ? 0.12 : 0) +
           activePurposeBoost(activePurpose, "seek_continuity", 0.16),
       ),
       topic: activePurpose?.topic ?? snapshot.initiative.pending?.topic ?? anchorTopic,
@@ -381,7 +381,7 @@ function resolveConflictDominant(
     case "continuity_curiosity":
       if (
         snapshot.purpose.active?.kind === "seek_continuity" ||
-        snapshot.initiative.pending?.reason === "continuity" ||
+        snapshot.initiative.pending?.motive === "seek_continuity" ||
         snapshot.state.continuity >= snapshot.state.curiosity
       ) {
         return "seek_continuity";

@@ -52,6 +52,10 @@ const INITIATIVE_REASON_VALUES = new Set<PendingInitiative["reason"]>([
   "continuity",
   "relation",
   "expansion",
+  "work_request",
+  "work_claim",
+  "relation_claim",
+  "relation_correction",
 ]);
 const MOTIVE_VALUES = new Set<PendingInitiative["motive"]>([
   "protect_boundary",

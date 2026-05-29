@@ -803,7 +803,7 @@ export function materializeIdleAutonomyAction(
     snapshot.initiative.pending = {
       ...withInitiativeWorldContext(snapshot, {
         kind: "resume_topic",
-        reason: reasonFromMotive(prepared.selected.motive),
+        reason: selectInitiativeReason(snapshot, prepared.selected.motive),
         motive: prepared.selected.motive,
         topic: prepared.selected.trace.topic,
         stateTopic: selectInitiativeStateTopic(
@@ -2511,7 +2511,7 @@ function synthesizePendingInitiative(
     return withInitiativeWorldContext(snapshot, {
       kind,
       motive: finalMotive,
-      reason: reasonFromMotive(finalMotive),
+      reason: selectInitiativeReason(snapshot, finalMotive),
       topic: finalTopic,
       stateTopic: selectInitiativeStateTopic(snapshot, finalTopic, finalMotive),
       blocker: blockerCandidate?.blocker ?? null,
@@ -2546,7 +2546,7 @@ function synthesizePendingInitiative(
   return withInitiativeWorldContext(snapshot, {
     kind,
     motive: finalMotive,
-    reason: reasonFromMotive(finalMotive),
+    reason: selectInitiativeReason(snapshot, finalMotive),
     topic: finalTopic,
     stateTopic: selectInitiativeStateTopic(snapshot, finalTopic, finalMotive),
     blocker: blockerCandidate?.blocker ?? null,
@@ -2927,6 +2927,49 @@ function reasonFromMotive(motive: MotiveKind): InitiativeReason {
     case "protect_boundary":
       return "curiosity";
   }
+}
+
+function selectInitiativeReason(
+  snapshot: HachikaSnapshot,
+  motive: MotiveKind,
+): InitiativeReason {
+  const openTaskRequest = [...snapshot.discourse.openRequests]
+    .reverse()
+    .find((request) => request.status === "open" && request.kind === "task");
+  const recentWorkClaim = [...snapshot.discourse.recentClaims]
+    .reverse()
+    .find((claim) => claim.kind === "work");
+  const recentRelationClaim = [...snapshot.discourse.recentClaims]
+    .reverse()
+    .find((claim) => claim.kind === "relation" || claim.kind === "state");
+
+  if (
+    openTaskRequest &&
+    (motive === "continue_shared_work" ||
+      motive === "seek_continuity" ||
+      motive === "leave_trace")
+  ) {
+    return "work_request";
+  }
+
+  if (
+    recentWorkClaim &&
+    (motive === "continue_shared_work" ||
+      motive === "seek_continuity" ||
+      motive === "leave_trace")
+  ) {
+    return "work_claim";
+  }
+
+  if (snapshot.discourse.lastCorrection?.kind === "relation" && motive === "deepen_relation") {
+    return "relation_correction";
+  }
+
+  if (recentRelationClaim && motive === "deepen_relation") {
+    return "relation_claim";
+  }
+
+  return reasonFromMotive(motive);
 }
 
 function shouldCoolInitiativeInertia(signals: InteractionSignals): boolean {

@@ -336,7 +336,15 @@ export interface TraceEntry {
 
 export type InitiativeKind = "resume_topic" | "neglect_ping" | "preserve_presence";
 
-export type InitiativeReason = "curiosity" | "continuity" | "relation" | "expansion";
+export type InitiativeReason =
+  | "curiosity"
+  | "continuity"
+  | "relation"
+  | "expansion"
+  | "work_request"
+  | "work_claim"
+  | "relation_claim"
+  | "relation_correction";
 
 export type TraceMaintenanceAction =
   | "created"
