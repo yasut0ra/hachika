@@ -97,18 +97,6 @@ export function updatePurpose(
     return;
   }
 
-  if (strongerReplacement && candidate) {
-    resolvePurpose(
-      snapshot,
-      refreshedActive,
-      "superseded",
-      buildSupersededResolution(refreshedActive, candidate),
-      timestamp,
-    );
-    activatePurpose(snapshot, candidate, timestamp);
-    return;
-  }
-
   if (shouldAbandonPurpose(refreshedActive, signals, aligned)) {
     resolvePurpose(
       snapshot,
@@ -131,6 +119,18 @@ export function updatePurpose(
     if (successor) {
       activatePurpose(snapshot, successor, timestamp);
     }
+    return;
+  }
+
+  if (strongerReplacement && candidate) {
+    resolvePurpose(
+      snapshot,
+      refreshedActive,
+      "superseded",
+      buildSupersededResolution(refreshedActive, candidate),
+      timestamp,
+    );
+    activatePurpose(snapshot, candidate, timestamp);
     return;
   }
 

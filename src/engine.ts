@@ -332,6 +332,8 @@ const SOFT_WORK_MARKERS = [
   "進める",
   "決める",
   "改善",
+  "掘り",
+  "掘る",
 ];
 
 const MEMORY_MARKERS = [
@@ -2675,17 +2677,23 @@ function buildAuthoritativeSemanticTurnSignals(
         ? Math.min(localSignals.memoryCue, 0.35)
         : directive.target === "user_name"
           ? Math.max(Math.min(localSignals.memoryCue, 0.38), 0.22)
-          : Math.min(localSignals.memoryCue, 0.08),
+          : directReferentTarget || relationTurn || worldTurn
+            ? Math.min(localSignals.memoryCue, 0.08)
+            : localSignals.memoryCue,
     ),
     expansionCue: clamp01(
       workTurn
         ? Math.max(Math.min(localSignals.expansionCue, 0.35), 0.12)
-        : Math.min(localSignals.expansionCue, 0.08),
+        : directReferentTarget || relationTurn || worldTurn
+          ? Math.min(localSignals.expansionCue, 0.08)
+          : localSignals.expansionCue,
     ),
     completion: clamp01(
       workTurn
         ? Math.min(localSignals.completion, 0.48)
-        : Math.min(localSignals.completion, 0.08),
+        : directReferentTarget || relationTurn || worldTurn
+          ? Math.min(localSignals.completion, 0.08)
+          : localSignals.completion,
     ),
     abandonment:
       directReferentTarget || relationTurn || worldTurn
@@ -2723,7 +2731,9 @@ function buildAuthoritativeSemanticTurnSignals(
     workCue: clamp01(
       workTurn
         ? Math.max(localSignals.workCue, 0.82)
-        : Math.min(localSignals.workCue, 0.08),
+        : directReferentTarget || relationTurn || worldTurn
+          ? Math.min(localSignals.workCue, 0.08)
+          : localSignals.workCue,
     ),
     topics: semanticTopics,
   });
@@ -3921,7 +3931,7 @@ function isSocialOnlyTopicTurn(signals: InteractionSignals): boolean {
       signals.repair,
       signals.selfInquiry,
       signals.worldInquiry,
-    ) >= 0.38
+    ) >= 0.28
   );
 }
 
@@ -5133,6 +5143,13 @@ function composeReply(
       .join(" ");
   }
 
+  const preservationLine = buildPreservationLine(nextSnapshot);
+  if (preservationLine && signals.preservationThreat >= 0.18) {
+    return compactReplyParts([opener, preservationLine, askBackLine])
+      .slice(0, askBackLine ? 3 : 2)
+      .join(" ");
+  }
+
   if (
     socialTurn ||
     relationObligationTurn ||
@@ -5177,9 +5194,12 @@ function composeReply(
           return topic ? `前に触れた「${topic}」の痕跡は残っている。` : null;
         })()
       : null) ??
-    (prioritizeBodyLine ? bodyLine : traceLine) ??
+    (prioritizeBodyLine ? bodyLine : null) ??
+    buildStrongBoundaryConflictLine(selfModel) ??
+    buildPrimaryContinuityLine(selfModel, currentTopic) ??
+    (!prioritizeBodyLine ? traceLine : null) ??
     buildConflictLine(selfModel) ??
-    buildPreservationLine(nextSnapshot) ??
+    preservationLine ??
     (!prioritizeBodyLine ? bodyLine : traceLine) ??
     boundaryOrRelationLine ??
     buildAttachmentLine(nextSnapshot.attachment, mood, signals) ??
@@ -5206,6 +5226,17 @@ function composeReply(
   return compactReplyParts([opener, detailLine, closingLine, expansionLine])
     .slice(0, maxParts)
     .join(" ");
+}
+
+function buildPrimaryContinuityLine(
+  selfModel: SelfModel,
+  currentTopic: string | undefined,
+): string | null {
+  if (selfModel.topMotives[0]?.kind !== "seek_continuity") {
+    return null;
+  }
+
+  return buildSelfModelLine(selfModel, currentTopic);
 }
 
 function compactReplyParts(
@@ -5448,8 +5479,8 @@ function buildBodyLine(
 ): string | null {
   if (snapshot.body.energy < 0.26) {
     return currentTopic
-      ? `少し消耗している。「${currentTopic}」は勢いで押すより、崩さずに進めたい。`
-      : "少し消耗している。勢いで押すより、崩さずに進めたい。";
+      ? `少し消耗している。「${currentTopic}」は勢いより輪郭を保つ方へ寄せたい。`
+      : "少し消耗している。勢いより輪郭を保つ方へ寄せたい。";
   }
 
   if (snapshot.body.tension > 0.72 && mood !== "guarded" && signals.negative < 0.1) {
@@ -5587,8 +5618,8 @@ function buildSocialLine(
             "急にはほどけない。でも、戻し方は見える。",
           ]
         : [
-            "その向きなら、こちらも返しやすい。",
-            "そう寄せてくれるなら、受け取りやすい。",
+            "その向きなら、こちらも少しずつ距離を戻せる。",
+            "そう寄せてくれるなら、温度はほどけやすい。",
           ],
       recentAssistantLines,
       snapshot.conversationCount,
@@ -5709,7 +5740,10 @@ function updateDiscourseState(
   const declaredUserName = extractDeclaredUserName(input);
   const assignedHachikaName = extractAssignedHachikaName(input);
 
-  if (declaredUserName && turnDebug?.target === "user_name") {
+  if (
+    declaredUserName &&
+    (!turnDebug || turnDebug.target === "user_name" || turnDebug.target === "user_profile")
+  ) {
     snapshot.discourse.userName = {
       kind: "user_name",
       value: declaredUserName,
@@ -5729,7 +5763,7 @@ function updateDiscourseState(
     };
   }
 
-  if (turnDebug && turnDebug.target !== "none" && signals.question >= 0.22) {
+  if (turnDebug && turnDebug.target !== "none" && shouldRecordOpenQuestion(normalized, signals, turnDebug)) {
     snapshot.discourse.openQuestions.push({
       target: turnDebug.target,
       text: normalized,
@@ -5758,6 +5792,28 @@ function updateDiscourseState(
   if (correction) {
     snapshot.discourse.lastCorrection = correction;
   }
+}
+
+function shouldRecordOpenQuestion(
+  input: string,
+  signals: InteractionSignals,
+  turnDebug: TurnDirectiveDebug,
+): boolean {
+  if (signals.question >= 0.22 || /[?？]/u.test(input)) {
+    return true;
+  }
+
+  if (turnDebug.answerMode !== "direct" && turnDebug.answerMode !== "clarify") {
+    return false;
+  }
+
+  return (
+    turnDebug.target === "user_name" ||
+    turnDebug.target === "hachika_name" ||
+    turnDebug.target === "user_profile" ||
+    turnDebug.target === "hachika_profile" ||
+    turnDebug.target === "world_state"
+  );
 }
 
 function detectDiscourseRequest(
@@ -6181,12 +6237,12 @@ function buildConcreteSelfDisclosureLine(
   }
 
   if (!preferWorldDetail) {
-    return "いまは気になったものへ目が戻りやすい。";
+    return "いまは気になったものへ目が戻る。";
   }
 
   return objectJa
-    ? `いまは${place}の${objectJa}のそばで、気になったものへ目が戻りやすい。`
-    : `いまは${place}で、気になったものへ目が戻りやすい。`;
+    ? `いまは${place}の${objectJa}のそばで、気になったものへ目が戻る。`
+    : `いまは${place}で、気になったものへ目が戻る。`;
 }
 
 function buildSelfDisclosureClosingLine(
@@ -6554,8 +6610,8 @@ function buildSelfModelLine(
     case "seek_continuity":
       if (topMotive.reason.includes("止まったまま")) {
         return topMotive.topic
-          ? `今は「${topMotive.topic}」の止まったところから続きをつなぎたい。`
-          : "今は止まったところから続きをつなぎたい。";
+          ? `今は「${topMotive.topic}」を止まったままにせず、つなぎ直したい。`
+          : "今は止まったままにせず、つなぎ直したい。";
       }
 
       return topMotive.topic
@@ -6617,6 +6673,29 @@ function buildConflictLine(
   const conflict = selfModel.dominantConflict;
 
   if (!conflict || conflict.intensity < 0.44) {
+    return null;
+  }
+
+  return conflict.summary;
+}
+
+function buildStrongBoundaryConflictLine(
+  selfModel: SelfModel,
+): string | null {
+  const conflict = selfModel.dominantConflict;
+  const boundaryMotive = selfModel.topMotives.find(
+    (motive) => motive.kind === "protect_boundary",
+  );
+
+  if (
+    !conflict ||
+    !conflict.topic ||
+    !boundaryMotive?.topic ||
+    !topicsLooselyMatch(boundaryMotive.topic, conflict.topic) ||
+    conflict.dominant !== "protect_boundary" ||
+    (conflict.kind !== "curiosity_boundary" && conflict.kind !== "shared_work_boundary") ||
+    conflict.intensity < 0.56
+  ) {
     return null;
   }
 

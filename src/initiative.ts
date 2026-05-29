@@ -849,7 +849,13 @@ export function materializeIdleAutonomyAction(
   }
 
   if (prepared.action === "observe") {
-    recordIdleConsolidation(snapshot, prepared.hours, null, "observe");
+    const report = consolidateIdleMemoryImprints(
+      snapshot,
+      prepared.hours,
+      prepared.prioritizedTopic,
+      prepared.prioritizedMotive,
+    );
+    recordIdleConsolidation(snapshot, prepared.hours, report, "observe");
     return;
   }
 
@@ -1992,18 +1998,20 @@ function recordIdleConsolidation(
 ): void {
   const observationOnly = report === null;
   const quietHold = observationOnly && desiredAction === "hold";
+  const observing = desiredAction === "observe";
 
   if (!observationOnly && (!report.focusTopic && !report.compressed)) {
     return;
   }
 
   const currentPlace = snapshot.world.currentPlace;
-  const observationWorldAction =
-    observationOnly && !quietHold ? ("observe" as const) : null;
+  const observationWorldAction = observing && !quietHold ? ("observe" as const) : null;
   const autonomyAction = observationOnly
     ? quietHold
       ? "hold"
       : "observe"
+    : observing
+      ? "observe"
     : desiredAction === "drift"
       ? "drift"
       : "hold";
@@ -2016,7 +2024,7 @@ function recordIdleConsolidation(
     topic: observationOnly ? null : report.focusTopic,
     traceTopic: null,
     blocker: null,
-    place: observationOnly && !quietHold ? currentPlace : null,
+    place: observing && !quietHold ? currentPlace : null,
     worldAction: observationWorldAction,
     maintenanceAction: null,
     reopened: false,

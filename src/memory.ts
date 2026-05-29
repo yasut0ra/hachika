@@ -249,7 +249,11 @@ export function extractTopics(text: string): string[] {
 const USER_SELF_NAME_PATTERNS = [
   /^(?:私|わたし|僕|ぼく|俺|おれ)は([^\s。、！？?？]{1,24}?)(?:です|だよ|だ)?$/u,
   /^(?:私|わたし|僕|ぼく|俺|おれ)の名前は([^\s。、！？?？]{1,24}?)(?:です|だよ|だ)?$/u,
+  /(?:^|[\s\n。！？!?])(?:私|わたし|僕|ぼく|俺|おれ)の名前は([^\s。、！？?？]{1,24}?)(?:です|だよ|だ)?(?=$|[\s\n。、！？!?])/u,
 ] as const;
+
+const USER_NAME_MEMORY_CUE_PATTERN =
+  /(?:^|[\s\n。！？!?])([^\s。、！？?？]{2,24}?)(?:です|だよ|だ)?[\s\n]*(?:覚えて|呼んで)(?:ね|ください)?(?=$|[\s\n。、！？!?])/u;
 
 export function extractDeclaredUserName(text: string): string | null {
   const normalized = text.normalize("NFKC").trim();
@@ -274,6 +278,17 @@ export function extractDeclaredUserName(text: string): string | null {
     }
 
     return candidate;
+  }
+
+  const cueMatch = normalized.match(USER_NAME_MEMORY_CUE_PATTERN);
+  const cueCandidate = cueMatch?.[1]?.trim() ?? null;
+  if (
+    cueCandidate &&
+    !/[がをにはへとで]/u.test(cueCandidate) &&
+    !STOPWORDS.has(cueCandidate) &&
+    !/^(?:あなた|君|きみ|私|わたし|僕|ぼく|俺|おれ|ハチカ)$/u.test(cueCandidate)
+  ) {
+    return cueCandidate;
   }
 
   return null;

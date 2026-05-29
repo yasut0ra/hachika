@@ -1698,7 +1698,6 @@ const DIRECT_ANSWER_PATTERNS = [
 ];
 const NAMING_PATTERNS = [
   "覚えてね",
-  "覚えて",
   "呼んで",
   "呼び方",
   "名前は",

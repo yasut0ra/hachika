@@ -484,6 +484,24 @@ test("sanitizeSnapshot keeps valid discourse facts and falls back on invalid hac
   ]);
 });
 
+test("sanitizeSnapshot can recover a declared user name from recent memory", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.memories = [
+    {
+      role: "user",
+      text: "知らないみたいだね 私の名前はやすとらです",
+      timestamp: "2026-04-01T09:00:42.909Z",
+      topics: [],
+      sentiment: "neutral",
+    },
+  ];
+
+  sanitizeSnapshot(snapshot);
+
+  assert.equal(snapshot.discourse.userName?.value, "やすとら");
+  assert.equal(snapshot.discourse.userName?.source, "user_assertion");
+});
+
 test("loadSnapshot seeds latent dynamics from older visible-only snapshots", async () => {
   const tempDir = await mkdtemp(join(tmpdir(), "hachika-dynamics-seed-"));
   const filePath = join(tempDir, "snapshot.json");

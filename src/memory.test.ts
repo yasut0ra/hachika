@@ -63,6 +63,8 @@ test("extractTopics does not merge hiragana scaffolding into malformed compounds
 test("extractDeclaredUserName reads simple japanese self introductions", () => {
   assert.equal(extractDeclaredUserName("私はやすとら"), "やすとら");
   assert.equal(extractDeclaredUserName("僕の名前はやすとらです"), "やすとら");
+  assert.equal(extractDeclaredUserName("知らないみたいだね 私の名前はやすとらです"), "やすとら");
+  assert.equal(extractDeclaredUserName("私は胃が弱いです\nいよわです 覚えてね"), "いよわ");
   assert.equal(extractDeclaredUserName("私はそう思う"), null);
 });
 

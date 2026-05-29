@@ -8,6 +8,7 @@ import {
   seedDynamicsFromVisibleState,
 } from "./dynamics.js";
 import {
+  extractDeclaredUserName,
   extractTopics,
   isMeaningfulTopic,
   requiresConcreteTopicSupport,
@@ -193,6 +194,7 @@ export function sanitizeSnapshot(snapshot: HachikaSnapshot): HachikaSnapshot {
           : 1,
     }))
     .slice(-24);
+  snapshot.discourse.userName ??= inferUserNameFactFromHistory(snapshot);
   snapshot.preferenceImprints = sanitizePreferenceImprints(snapshot.preferenceImprints);
   const supportedTopics = deriveSupportedSnapshotTopics(snapshot);
   snapshot.preferences = filterSupportedTopicRecord(snapshot.preferences, supportedTopics);
@@ -218,6 +220,35 @@ export function sanitizeSnapshot(snapshot: HachikaSnapshot): HachikaSnapshot {
   );
 
   return snapshot;
+}
+
+function inferUserNameFactFromHistory(snapshot: HachikaSnapshot): DiscourseFact | null {
+  const userTexts = [
+    ...snapshot.memories
+      .filter((memory) => memory.role === "user")
+      .map((memory) => ({ text: memory.text, timestamp: memory.timestamp })),
+    ...snapshot.discourse.recentClaims
+      .filter((claim) => claim.subject === "user")
+      .map((claim) => ({ text: claim.text, timestamp: claim.updatedAt })),
+  ];
+
+  for (const item of userTexts.reverse()) {
+    const value = extractDeclaredUserName(item.text);
+
+    if (!value) {
+      continue;
+    }
+
+    return {
+      kind: "user_name",
+      value,
+      confidence: 0.86,
+      source: "user_assertion",
+      updatedAt: item.timestamp,
+    };
+  }
+
+  return null;
 }
 
 function hydrateState(raw: unknown): DriveState {

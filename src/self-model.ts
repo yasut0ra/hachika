@@ -1,6 +1,7 @@
 import {
   sortedBoundaryImprints,
   sortedPreferenceImprints,
+  topicsLooselyMatch,
   topPreferredTopics,
 } from "./memory.js";
 import { readTraceLifecycle } from "./traces.js";
@@ -69,6 +70,22 @@ export function buildSelfModel(snapshot: HachikaSnapshot): SelfModel {
   const boundaryPenalty = topBoundary
     ? topBoundary.salience * 0.24 + topBoundary.intensity * 0.22
     : 0;
+  const sameTopicBoundaryPressure =
+    topBoundary?.topic && anchorTopic && topicsLooselyMatch(topBoundary.topic, anchorTopic)
+      ? clamp01(
+          topBoundary.salience * 0.42 +
+            topBoundary.intensity * 0.32 +
+            Math.min(0.12, topBoundary.violations * 0.04),
+        )
+      : 0;
+  const adversePreferencePressure =
+    topPreference &&
+    topPreference.topic &&
+    anchorTopic &&
+    topPreference.affinity < 0 &&
+    topicsLooselyMatch(topPreference.topic, anchorTopic)
+      ? clamp01(Math.abs(topPreference.affinity) * 0.28 + topPreference.salience * 0.08)
+      : 0;
   const openness = snapshot.temperament.openness;
   const guardedness = snapshot.temperament.guardedness;
   const bondingBias = snapshot.temperament.bondingBias;
@@ -91,6 +108,8 @@ export function buildSelfModel(snapshot: HachikaSnapshot): SelfModel {
           identityTraitBoost(snapshot, "guarded", 0.08) +
           preservationThreat * 0.12 +
           preservationConcernBoost(preservationConcern, ["erasure", "shutdown"], 0.1) +
+          sameTopicBoundaryPressure * 0.4 +
+          adversePreferencePressure * 0.22 +
           activePurposeBoost(activePurpose, "protect_boundary", 0.14),
       ),
       topic: topBoundary?.topic ?? null,
@@ -194,7 +213,9 @@ export function buildSelfModel(snapshot: HachikaSnapshot): SelfModel {
           preservationThreat * 0.06 +
           (anchorTopic ? 0.12 : 0) +
           activePurposeBoost(activePurpose, "continue_shared_work", 0.16) -
-          boundaryPenalty * 0.7,
+          boundaryPenalty * 0.7 -
+          sameTopicBoundaryPressure * 1.05 -
+          adversePreferencePressure * 0.7,
       ),
       topic: anchorTopic,
       reason: continueSharedWorkReason(
@@ -299,7 +320,7 @@ function detectConflicts(
     "shared_work_boundary",
     0.46,
     0.42,
-    0.24,
+    0.34,
   );
   pushConflict(
     conflicts,
@@ -374,7 +395,15 @@ function resolveConflictDominant(
       }
       return left.kind;
     case "shared_work_boundary":
-      if (right.kind === "protect_boundary" && right.score + 0.05 >= left.score) {
+      if (
+        right.kind === "protect_boundary" &&
+        (right.score + 0.05 >= left.score ||
+          ((snapshot.state.pleasure < 0.52 ||
+            Object.values(snapshot.boundaryImprints).some(
+              (imprint) => imprint.salience >= 0.34 && imprint.intensity >= 0.18,
+            )) &&
+            right.score + 0.2 >= left.score))
+      ) {
         return "protect_boundary";
       }
       return left.kind;
@@ -571,7 +600,7 @@ function buildConflictSummary(
     case "curiosity_relation":
       return dominant === "deepen_relation"
         ? `${wrapped}は気になる。ただ、急ぐと距離の取り方が雑になりそうだ。`
-        : `${wrapped}は掘りたい。ただ、相手の反応を見ずに踏み込むのも違う。`;
+        : `${wrapped}には少し別の切り口が欲しい。ただ、相手の反応を見ずに踏み込むのも違う。`;
     case "curiosity_boundary":
       return dominant === "protect_boundary"
         ? `${wrapped}は気になるが、境界を崩してまで触れたくはない。`
