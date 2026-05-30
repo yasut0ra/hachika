@@ -14,6 +14,12 @@ export interface ResolveOpenAICompatibleConfigOptions {
   localModelEnv?: string;
 }
 
+const DISABLED_LOCAL_MODEL_VALUES = new Set(["0", "false", "off", "none", "rule", "disabled"]);
+
+function isDisabledLocalModel(value: string): boolean {
+  return DISABLED_LOCAL_MODEL_VALUES.has(value.trim().toLowerCase());
+}
+
 export function resolveOpenAICompatibleConfig(
   env: NodeJS.ProcessEnv,
   options: ResolveOpenAICompatibleConfigOptions,
@@ -37,6 +43,11 @@ export function resolveOpenAICompatibleConfig(
   const localRoleModel = options.localModelEnv
     ? env[options.localModelEnv]?.trim()
     : "";
+
+  if (local && localRoleModel && isDisabledLocalModel(localRoleModel)) {
+    return null;
+  }
+
   const model = local
     ? localRoleModel ||
       env.HACHIKA_LOCAL_AI_MODEL?.trim() ||

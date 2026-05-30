@@ -69,3 +69,29 @@ test("director factories can use a local endpoint without OPENAI_API_KEY", () =>
     assert.equal(director?.name, "local-ai");
   }
 });
+
+test("local role model can be disabled to keep a director on rule fallback", () => {
+  const config = resolveOpenAICompatibleConfig(
+    {
+      HACHIKA_LOCAL_AI_BASE_URL: "http://127.0.0.1:1234/v1",
+      HACHIKA_LOCAL_AI_MODEL: "local-general",
+      HACHIKA_LOCAL_AI_PLANNER_MODEL: "off",
+    },
+    {
+      defaultBaseUrl: "https://api.openai.com/v1",
+      defaultModel: "gpt-5-mini",
+      openAiModelEnv: "OPENAI_PLANNER_MODEL",
+      localModelEnv: "HACHIKA_LOCAL_AI_PLANNER_MODEL",
+    },
+  );
+
+  assert.equal(config, null);
+  assert.equal(
+    createResponsePlannerFromEnv({
+      HACHIKA_LOCAL_AI_BASE_URL: "http://127.0.0.1:1234/v1",
+      HACHIKA_LOCAL_AI_MODEL: "local-general",
+      HACHIKA_LOCAL_AI_PLANNER_MODEL: "rule",
+    }),
+    null,
+  );
+});

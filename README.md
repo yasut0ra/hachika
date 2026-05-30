@@ -385,6 +385,7 @@ HACHIKA_LOCAL_AI_MODEL=qwen2.5-7b-instruct
 ```
 
 ローカルAIは state を直接変更せず、turn / interpretation / behavior / initiative / planner / trace / proactive / autonomy の structured な提案だけを返します。TypeScript 側の schema validation、sanitation、concrete support、fallback rule は残るため、ローカルAIが曖昧な出力をしても既存の rule engine へ戻ります。役割ごとに軽いモデルを変えたい場合は `HACHIKA_LOCAL_AI_TURN_MODEL`、`HACHIKA_LOCAL_AI_INTERPRETER_MODEL`、`HACHIKA_LOCAL_AI_BEHAVIOR_MODEL`、`HACHIKA_LOCAL_AI_INITIATIVE_MODEL`、`HACHIKA_LOCAL_AI_PLANNER_MODEL`、`HACHIKA_LOCAL_AI_PROACTIVE_MODEL`、`HACHIKA_LOCAL_AI_TRACE_MODEL`、`HACHIKA_LOCAL_AI_AUTONOMY_MODEL`、`HACHIKA_LOCAL_AI_REPLY_MODEL` を使えます。
+速度を優先して一部だけ rule fallback に戻したい場合は、役割別モデルに `off` または `rule` を指定します。例えば `HACHIKA_LOCAL_AI_PLANNER_MODEL=off` にすると planner はローカルAIを呼びません。
 
 主なコマンド:
 
