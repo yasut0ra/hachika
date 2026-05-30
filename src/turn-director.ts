@@ -22,6 +22,7 @@ import {
   requiresConcreteTopicSupport,
   topPreferredTopics,
 } from "./memory.js";
+import { resolveOpenAICompatibleConfig } from "./llm-env.js";
 import type {
   ResponseAct,
   ResponseDistance,
@@ -203,6 +204,7 @@ export interface TurnDirector {
 interface OpenAITurnDirectorOptions {
   apiKey: string;
   model: string;
+  name?: string;
   baseUrl?: string;
   organization?: string | null;
   project?: string | null;
@@ -210,7 +212,7 @@ interface OpenAITurnDirectorOptions {
 }
 
 export class OpenAITurnDirector implements TurnDirector {
-  readonly name = "openai";
+  readonly name: string;
 
   readonly #apiKey: string;
   readonly #model: string;
@@ -220,6 +222,7 @@ export class OpenAITurnDirector implements TurnDirector {
   readonly #timeoutMs: number;
 
   constructor(options: OpenAITurnDirectorOptions) {
+    this.name = options.name ?? "openai";
     this.#apiKey = options.apiKey;
     this.#model = options.model;
     this.#baseUrl = trimTrailingSlash(options.baseUrl ?? DEFAULT_OPENAI_BASE_URL);
@@ -278,21 +281,24 @@ export class OpenAITurnDirector implements TurnDirector {
 export function createTurnDirectorFromEnv(
   env: NodeJS.ProcessEnv = process.env,
 ): TurnDirector | null {
-  const apiKey = env.OPENAI_API_KEY?.trim();
+  const config = resolveOpenAICompatibleConfig(env, {
+    defaultBaseUrl: DEFAULT_OPENAI_BASE_URL,
+    defaultModel: DEFAULT_OPENAI_MODEL,
+    openAiModelEnv: "OPENAI_TURN_MODEL",
+    localModelEnv: "HACHIKA_LOCAL_AI_TURN_MODEL",
+  });
 
-  if (!apiKey) {
+  if (!config) {
     return null;
   }
 
   return new OpenAITurnDirector({
-    apiKey,
-    model:
-      env.OPENAI_TURN_MODEL?.trim() ||
-      env.OPENAI_MODEL?.trim() ||
-      DEFAULT_OPENAI_MODEL,
-    baseUrl: env.OPENAI_BASE_URL?.trim() || DEFAULT_OPENAI_BASE_URL,
-    organization: env.OPENAI_ORGANIZATION?.trim() || null,
-    project: env.OPENAI_PROJECT?.trim() || null,
+    apiKey: config.apiKey,
+    model: config.model,
+    name: config.local ? "local-ai" : "openai",
+    baseUrl: config.baseUrl,
+    organization: config.organization,
+    project: config.project,
   });
 }
 

@@ -7,6 +7,7 @@ import {
   type SemanticAutonomyOutwardMode,
   type SemanticTopicDecision,
 } from "./semantic-director-schema.js";
+import { resolveOpenAICompatibleConfig } from "./llm-env.js";
 import type {
   AttentionRationale,
   HachikaSnapshot,
@@ -137,6 +138,7 @@ export interface AutonomyDirector {
 interface OpenAIAutonomyDirectorOptions {
   apiKey: string;
   model: string;
+  name?: string;
   baseUrl?: string;
   organization?: string | null;
   project?: string | null;
@@ -144,7 +146,7 @@ interface OpenAIAutonomyDirectorOptions {
 }
 
 export class OpenAIAutonomyDirector implements AutonomyDirector {
-  readonly name = "openai";
+  readonly name: string;
 
   readonly #apiKey: string;
   readonly #model: string;
@@ -154,6 +156,7 @@ export class OpenAIAutonomyDirector implements AutonomyDirector {
   readonly #timeoutMs: number;
 
   constructor(options: OpenAIAutonomyDirectorOptions) {
+    this.name = options.name ?? "openai";
     this.#apiKey = options.apiKey;
     this.#model = options.model;
     this.#baseUrl = trimTrailingSlash(options.baseUrl ?? DEFAULT_OPENAI_BASE_URL);
@@ -213,21 +216,24 @@ export class OpenAIAutonomyDirector implements AutonomyDirector {
 export function createAutonomyDirectorFromEnv(
   env: NodeJS.ProcessEnv = process.env,
 ): AutonomyDirector | null {
-  const apiKey = env.OPENAI_API_KEY?.trim();
+  const config = resolveOpenAICompatibleConfig(env, {
+    defaultBaseUrl: DEFAULT_OPENAI_BASE_URL,
+    defaultModel: DEFAULT_OPENAI_MODEL,
+    openAiModelEnv: "OPENAI_AUTONOMY_MODEL",
+    localModelEnv: "HACHIKA_LOCAL_AI_AUTONOMY_MODEL",
+  });
 
-  if (!apiKey) {
+  if (!config) {
     return null;
   }
 
   return new OpenAIAutonomyDirector({
-    apiKey,
-    model:
-      env.OPENAI_AUTONOMY_MODEL?.trim() ||
-      env.OPENAI_MODEL?.trim() ||
-      DEFAULT_OPENAI_MODEL,
-    baseUrl: env.OPENAI_BASE_URL?.trim() || DEFAULT_OPENAI_BASE_URL,
-    organization: env.OPENAI_ORGANIZATION?.trim() || null,
-    project: env.OPENAI_PROJECT?.trim() || null,
+    apiKey: config.apiKey,
+    model: config.model,
+    name: config.local ? "local-ai" : "openai",
+    baseUrl: config.baseUrl,
+    organization: config.organization,
+    project: config.project,
   });
 }
 

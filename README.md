@@ -377,6 +377,15 @@ cp .env.example .env
 `.env` に `OPENAI_API_KEY` を入れると、CLI は OpenAI reply generator / turn director / input interpreter / behavior director / initiative director / response planner / proactive director / trace extractor を使います。resident loop では autonomy director も使えます。  
 返答のモデルは `OPENAI_MODEL`、turn 意味理解だけ別に変えたい場合は `OPENAI_TURN_MODEL`、入力解釈だけ別に変えたい場合は `OPENAI_INTERPRETER_MODEL`、behavior 境界だけ別に変えたい場合は `OPENAI_BEHAVIOR_MODEL`、pending initiative の裁定や弱い新規 synthesis だけ別に変えたい場合は `OPENAI_INITIATIVE_MODEL`、planner だけ別に変えたい場合は `OPENAI_PLANNER_MODEL`、自発行動の裁定だけ別に変えたい場合は `OPENAI_PROACTIVE_MODEL`、trace 抽出だけ別に変えたい場合は `OPENAI_TRACE_MODEL` を使えます。未設定時はどれも `gpt-5-mini` です。
 
+軽量ローカルAIを使う場合は、OpenAI 互換 API を立てて `HACHIKA_LOCAL_AI_BASE_URL` と `HACHIKA_LOCAL_AI_MODEL` を設定します。この場合は `OPENAI_API_KEY` は不要で、未設定なら内部的に `local` を bearer token として送ります。LM Studio なら `http://127.0.0.1:1234/v1`、Ollama の OpenAI 互換 API なら `http://127.0.0.1:11434/v1` を指定できます。
+
+```bash
+HACHIKA_LOCAL_AI_BASE_URL=http://127.0.0.1:1234/v1
+HACHIKA_LOCAL_AI_MODEL=qwen2.5-7b-instruct
+```
+
+ローカルAIは state を直接変更せず、turn / interpretation / behavior / initiative / planner / trace / proactive / autonomy の structured な提案だけを返します。TypeScript 側の schema validation、sanitation、concrete support、fallback rule は残るため、ローカルAIが曖昧な出力をしても既存の rule engine へ戻ります。役割ごとに軽いモデルを変えたい場合は `HACHIKA_LOCAL_AI_TURN_MODEL`、`HACHIKA_LOCAL_AI_INTERPRETER_MODEL`、`HACHIKA_LOCAL_AI_BEHAVIOR_MODEL`、`HACHIKA_LOCAL_AI_INITIATIVE_MODEL`、`HACHIKA_LOCAL_AI_PLANNER_MODEL`、`HACHIKA_LOCAL_AI_PROACTIVE_MODEL`、`HACHIKA_LOCAL_AI_TRACE_MODEL`、`HACHIKA_LOCAL_AI_AUTONOMY_MODEL`、`HACHIKA_LOCAL_AI_REPLY_MODEL` を使えます。
+
 主なコマンド:
 
 - `/help` コマンド一覧を表示

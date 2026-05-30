@@ -11,6 +11,7 @@ import {
   type SemanticTopicDecision,
   type SemanticProactiveDirectiveV2,
 } from "./semantic-director-schema.js";
+import { resolveOpenAICompatibleConfig } from "./llm-env.js";
 import { summarizeWorldForPrompt } from "./world.js";
 import type {
   HachikaSnapshot,
@@ -145,6 +146,7 @@ export interface ProactiveDirector {
 interface OpenAIProactiveDirectorOptions {
   apiKey: string;
   model: string;
+  name?: string;
   baseUrl?: string;
   organization?: string | null;
   project?: string | null;
@@ -152,7 +154,7 @@ interface OpenAIProactiveDirectorOptions {
 }
 
 export class OpenAIProactiveDirector implements ProactiveDirector {
-  readonly name = "openai";
+  readonly name: string;
 
   readonly #apiKey: string;
   readonly #model: string;
@@ -162,6 +164,7 @@ export class OpenAIProactiveDirector implements ProactiveDirector {
   readonly #timeoutMs: number;
 
   constructor(options: OpenAIProactiveDirectorOptions) {
+    this.name = options.name ?? "openai";
     this.#apiKey = options.apiKey;
     this.#model = options.model;
     this.#baseUrl = trimTrailingSlash(options.baseUrl ?? DEFAULT_OPENAI_BASE_URL);
@@ -222,21 +225,24 @@ export class OpenAIProactiveDirector implements ProactiveDirector {
 export function createProactiveDirectorFromEnv(
   env: NodeJS.ProcessEnv = process.env,
 ): ProactiveDirector | null {
-  const apiKey = env.OPENAI_API_KEY?.trim();
+  const config = resolveOpenAICompatibleConfig(env, {
+    defaultBaseUrl: DEFAULT_OPENAI_BASE_URL,
+    defaultModel: DEFAULT_OPENAI_MODEL,
+    openAiModelEnv: "OPENAI_PROACTIVE_MODEL",
+    localModelEnv: "HACHIKA_LOCAL_AI_PROACTIVE_MODEL",
+  });
 
-  if (!apiKey) {
+  if (!config) {
     return null;
   }
 
   return new OpenAIProactiveDirector({
-    apiKey,
-    model:
-      env.OPENAI_PROACTIVE_MODEL?.trim() ||
-      env.OPENAI_MODEL?.trim() ||
-      DEFAULT_OPENAI_MODEL,
-    baseUrl: env.OPENAI_BASE_URL?.trim() || DEFAULT_OPENAI_BASE_URL,
-    organization: env.OPENAI_ORGANIZATION?.trim() || null,
-    project: env.OPENAI_PROJECT?.trim() || null,
+    apiKey: config.apiKey,
+    model: config.model,
+    name: config.local ? "local-ai" : "openai",
+    baseUrl: config.baseUrl,
+    organization: config.organization,
+    project: config.project,
   });
 }
 

@@ -4,6 +4,7 @@ import {
   sortedRelationImprints,
   topicsLooselyMatch,
 } from "./memory.js";
+import { resolveOpenAICompatibleConfig } from "./llm-env.js";
 import {
   buildProactiveExpressionPerspective,
   buildReplyExpressionPerspective,
@@ -228,6 +229,7 @@ export interface ReplyGenerator {
 interface OpenAIReplyGeneratorOptions {
   apiKey: string;
   model: string;
+  name?: string;
   baseUrl?: string;
   organization?: string | null;
   project?: string | null;
@@ -235,7 +237,7 @@ interface OpenAIReplyGeneratorOptions {
 }
 
 export class OpenAIReplyGenerator implements ReplyGenerator {
-  readonly name = "openai";
+  readonly name: string;
 
   readonly #apiKey: string;
   readonly #model: string;
@@ -245,6 +247,7 @@ export class OpenAIReplyGenerator implements ReplyGenerator {
   readonly #timeoutMs: number;
 
   constructor(options: OpenAIReplyGeneratorOptions) {
+    this.name = options.name ?? "openai";
     this.#apiKey = options.apiKey;
     this.#model = options.model;
     this.#baseUrl = trimTrailingSlash(options.baseUrl ?? DEFAULT_OPENAI_BASE_URL);
@@ -312,18 +315,23 @@ export class OpenAIReplyGenerator implements ReplyGenerator {
 export function createReplyGeneratorFromEnv(
   env: NodeJS.ProcessEnv = process.env,
 ): ReplyGenerator | null {
-  const apiKey = env.OPENAI_API_KEY?.trim();
+  const config = resolveOpenAICompatibleConfig(env, {
+    defaultBaseUrl: DEFAULT_OPENAI_BASE_URL,
+    defaultModel: DEFAULT_OPENAI_MODEL,
+    localModelEnv: "HACHIKA_LOCAL_AI_REPLY_MODEL",
+  });
 
-  if (!apiKey) {
+  if (!config) {
     return null;
   }
 
   return new OpenAIReplyGenerator({
-    apiKey,
-    model: env.OPENAI_MODEL?.trim() || DEFAULT_OPENAI_MODEL,
-    baseUrl: env.OPENAI_BASE_URL?.trim() || DEFAULT_OPENAI_BASE_URL,
-    organization: env.OPENAI_ORGANIZATION?.trim() || null,
-    project: env.OPENAI_PROJECT?.trim() || null,
+    apiKey: config.apiKey,
+    model: config.model,
+    name: config.local ? "local-ai" : "openai",
+    baseUrl: config.baseUrl,
+    organization: config.organization,
+    project: config.project,
   });
 }
 
