@@ -3,14 +3,16 @@ import {
   requiresConcreteTopicSupport,
   topPreferredTopics,
 } from "./memory.js";
+import {
+  DEFAULT_OPENAI_BASE_URL,
+  DEFAULT_OPENAI_MODEL,
+  OpenAIChatClient,
+} from "./llm-client.js";
 import { resolveOpenAICompatibleConfig } from "./llm-env.js";
 import { clamp01 } from "./state.js";
 import { sortedTraces } from "./traces.js";
 import { describeWorldPlaceJa } from "./world.js";
 import type { HachikaSnapshot, PreservationConcern } from "./types.js";
-
-const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1";
-const DEFAULT_OPENAI_MODEL = "gpt-5-mini";
 
 const HACHIKA_INPUT_INTERPRETER_SYSTEM_PROMPT = [
   "You classify one user utterance for Hachika's local engine.",
@@ -156,65 +158,37 @@ interface OpenAIInputInterpreterOptions {
 export class OpenAIInputInterpreter implements InputInterpreter {
   readonly name: string;
 
-  readonly #apiKey: string;
-  readonly #model: string;
-  readonly #baseUrl: string;
-  readonly #organization: string | null;
-  readonly #project: string | null;
-  readonly #timeoutMs: number;
+  readonly #client: OpenAIChatClient;
 
   constructor(options: OpenAIInputInterpreterOptions) {
     this.name = options.name ?? "openai";
-    this.#apiKey = options.apiKey;
-    this.#model = options.model;
-    this.#baseUrl = trimTrailingSlash(options.baseUrl ?? DEFAULT_OPENAI_BASE_URL);
-    this.#organization = options.organization ?? null;
-    this.#project = options.project ?? null;
-    this.#timeoutMs = options.timeoutMs ?? 30_000;
+    this.#client = new OpenAIChatClient({
+      apiKey: options.apiKey,
+      model: options.model,
+      baseUrl: options.baseUrl ?? DEFAULT_OPENAI_BASE_URL,
+      organization: options.organization,
+      project: options.project,
+      timeoutMs: options.timeoutMs,
+    });
   }
 
   async interpretInput(
     context: InputInterpretationContext,
   ): Promise<InputInterpretationResult | null> {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), this.#timeoutMs);
+    const rawText = await this.#client.complete(
+      buildOpenAIInputInterpretationMessages(context),
+    );
+    const interpretation = normalizeInputInterpretation(rawText);
 
-    try {
-      const response = await fetch(`${this.#baseUrl}/chat/completions`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${this.#apiKey}`,
-          "Content-Type": "application/json",
-          ...(this.#organization ? { "OpenAI-Organization": this.#organization } : {}),
-          ...(this.#project ? { "OpenAI-Project": this.#project } : {}),
-        },
-        body: JSON.stringify({
-          model: this.#model,
-          messages: buildOpenAIInputInterpretationMessages(context),
-        }),
-        signal: controller.signal,
-      });
-
-      if (!response.ok) {
-        throw new Error(await buildOpenAIHttpError(response));
-      }
-
-      const payload = (await response.json()) as unknown;
-      const rawText = extractOpenAIReplyText(payload);
-      const interpretation = normalizeInputInterpretation(rawText);
-
-      if (!interpretation) {
-        return null;
-      }
-
-      return {
-        interpretation,
-        provider: this.name,
-        model: this.#model,
-      };
-    } finally {
-      clearTimeout(timeout);
+    if (!interpretation) {
+      return null;
     }
+
+    return {
+      interpretation,
+      provider: this.name,
+      model: this.#client.model,
+    };
   }
 }
 
@@ -518,91 +492,6 @@ function extractJsonObject(value: string): string | null {
 
 function readClampedNumber(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? clamp01(value) : 0;
-}
-
-function extractOpenAIReplyText(payload: unknown): string | null {
-  if (!isRecord(payload)) {
-    return null;
-  }
-
-  const choiceContent = extractChatCompletionContent(payload.choices);
-  if (choiceContent) {
-    return choiceContent;
-  }
-
-  return extractResponsesContent(payload.output);
-}
-
-function extractChatCompletionContent(choices: unknown): string | null {
-  if (!Array.isArray(choices)) {
-    return null;
-  }
-
-  const firstChoice = choices[0];
-  if (!isRecord(firstChoice) || !isRecord(firstChoice.message)) {
-    return null;
-  }
-
-  const content = firstChoice.message.content;
-
-  if (typeof content === "string") {
-    return content;
-  }
-
-  if (!Array.isArray(content)) {
-    return null;
-  }
-
-  const parts = content
-    .map((item) => {
-      if (!isRecord(item)) {
-        return null;
-      }
-
-      return typeof item.text === "string" ? item.text : null;
-    })
-    .filter((item): item is string => Boolean(item));
-
-  return parts.length > 0 ? parts.join("\n") : null;
-}
-
-function extractResponsesContent(output: unknown): string | null {
-  if (!Array.isArray(output)) {
-    return null;
-  }
-
-  const parts: string[] = [];
-
-  for (const item of output) {
-    if (!isRecord(item) || !Array.isArray(item.content)) {
-      continue;
-    }
-
-    for (const content of item.content) {
-      if (!isRecord(content) || typeof content.text !== "string") {
-        continue;
-      }
-
-      parts.push(content.text);
-    }
-  }
-
-  return parts.length > 0 ? parts.join("\n") : null;
-}
-
-async function buildOpenAIHttpError(response: Response): Promise<string> {
-  const body = await response.text();
-  const detail = body.trim();
-  const suffix = detail.length > 0 ? ` ${truncate(detail, 240)}` : "";
-  return `openai ${response.status}${suffix}`;
-}
-
-function trimTrailingSlash(value: string): string {
-  return value.endsWith("/") ? value.slice(0, -1) : value;
-}
-
-function truncate(value: string, maxLength: number): string {
-  return value.length <= maxLength ? value : `${value.slice(0, maxLength - 1)}…`;
 }
 
 function unique(values: string[]): string[] {

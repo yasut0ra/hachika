@@ -229,6 +229,8 @@ Hachika は、単に有用なだけでなく、
 - engine の turn/proactive 適用も `semantic` を優先し始めていて、legacy field と semantic plan が矛盾した時は `semantic.replyPlan / semantic.trace / semantic.proactivePlan` を authoritative に採る
 - `initiative-director` と `autonomy-director` も同じ family の v2 contract を受け始めていて、`mode: "initiative" / "autonomy"` の semantic directive を parse し、pending initiative や idle autonomy action をそこから materialize できる
 - engine / resident loop の initiative/autonomy 適用も `semantic` を優先し始めていて、legacy field と semantic plan が矛盾した時は `semantic.initiativePlan / semantic.autonomyPlan` を authoritative に採る
+- visible state の二重計算(dynamics 経路 + legacy 経路)は [src/legacy-visible.ts](/Users/yasut0ra/dev/hachika/src/legacy-visible.ts) に隔離してあり、dynamics 一本化への退役計画は [docs/legacy-visible-retirement.md](/Users/yasut0ra/dev/hachika/docs/legacy-visible-retirement.md) に整理している
+- OpenAI 互換 director / generator の HTTP・JSON 抽出・エラー処理は [src/llm-client.ts](/Users/yasut0ra/dev/hachika/src/llm-client.ts) の共有クライアントに統合されていて、各 director は payload 構築と schema 検証だけを持つ
 - loop / idle / proactive の見直し方針は [docs/autonomy-v2.md](/Users/yasut0ra/dev/hachika/docs/autonomy-v2.md) に整理してあり、`発話を行動の一部へ下げる / idle を batch ではなく静かな生存時間へ寄せる / proactive を outward action の一種として扱う` 方向で再構成していく
 - 現在の `turn-director` と `proactive-director` は、内部的には [src/semantic-director-schema.ts](/Users/yasut0ra/dev/hachika/src/semantic-director-schema.ts) の v2 contract を持ち始めていて、semantic topic と durable topic を分けて扱う下地が入っている
   - `discourse state` も名前 fact だけでなく `openQuestions / openRequests / recentClaims / lastCorrection` を持ち始めていて、`topic` ではなく「何が言われて、何がまだ未解決か」を semantic core に渡す方向へ寄せている

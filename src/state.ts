@@ -76,6 +76,14 @@ export function settleTowardsBaseline(
   return clamp01(value + (baseline - value) * rate);
 }
 
+export function blendVisibleValue(
+  current: number,
+  target: number,
+  targetWeight: number,
+): number {
+  return clamp01(current + (target - current) * targetWeight);
+}
+
 export function applyBoundedPressure(
   value: number,
   increase: number,

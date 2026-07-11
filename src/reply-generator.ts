@@ -4,6 +4,11 @@ import {
   sortedRelationImprints,
   topicsLooselyMatch,
 } from "./memory.js";
+import {
+  DEFAULT_OPENAI_BASE_URL,
+  DEFAULT_OPENAI_MODEL,
+  OpenAIChatClient,
+} from "./llm-client.js";
 import { resolveOpenAICompatibleConfig } from "./llm-env.js";
 import {
   buildProactiveExpressionPerspective,
@@ -31,9 +36,6 @@ import type {
   TurnDirectiveDebug,
   TurnTarget,
 } from "./types.js";
-
-const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1";
-const DEFAULT_OPENAI_MODEL = "gpt-5-mini";
 
 const HACHIKA_REPLY_SYSTEM_PROMPT = [
   "You generate only the final wording of a Hachika reply.",
@@ -239,21 +241,18 @@ interface OpenAIReplyGeneratorOptions {
 export class OpenAIReplyGenerator implements ReplyGenerator {
   readonly name: string;
 
-  readonly #apiKey: string;
-  readonly #model: string;
-  readonly #baseUrl: string;
-  readonly #organization: string | null;
-  readonly #project: string | null;
-  readonly #timeoutMs: number;
+  readonly #client: OpenAIChatClient;
 
   constructor(options: OpenAIReplyGeneratorOptions) {
     this.name = options.name ?? "openai";
-    this.#apiKey = options.apiKey;
-    this.#model = options.model;
-    this.#baseUrl = trimTrailingSlash(options.baseUrl ?? DEFAULT_OPENAI_BASE_URL);
-    this.#organization = options.organization ?? null;
-    this.#project = options.project ?? null;
-    this.#timeoutMs = options.timeoutMs ?? 30_000;
+    this.#client = new OpenAIChatClient({
+      apiKey: options.apiKey,
+      model: options.model,
+      baseUrl: options.baseUrl ?? DEFAULT_OPENAI_BASE_URL,
+      organization: options.organization,
+      project: options.project,
+      timeoutMs: options.timeoutMs,
+    });
   }
 
   async generateReply(
@@ -271,44 +270,18 @@ export class OpenAIReplyGenerator implements ReplyGenerator {
   async #generateText(
     messages: Array<{ role: "system" | "user"; content: string }>,
   ): Promise<ReplyGenerationResult | null> {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), this.#timeoutMs);
+    const rawText = await this.#client.complete(messages);
+    const reply = normalizeGeneratedReply(rawText);
 
-    try {
-      const response = await fetch(`${this.#baseUrl}/chat/completions`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${this.#apiKey}`,
-          "Content-Type": "application/json",
-          ...(this.#organization ? { "OpenAI-Organization": this.#organization } : {}),
-          ...(this.#project ? { "OpenAI-Project": this.#project } : {}),
-        },
-        body: JSON.stringify({
-          model: this.#model,
-          messages,
-        }),
-        signal: controller.signal,
-      });
-
-      if (!response.ok) {
-        throw new Error(await buildOpenAIHttpError(response));
-      }
-
-      const payload = (await response.json()) as unknown;
-      const reply = normalizeGeneratedReply(extractOpenAIReplyText(payload));
-
-      if (!reply) {
-        return null;
-      }
-
-      return {
-        reply,
-        provider: this.name,
-        model: this.#model,
-      };
-    } finally {
-      clearTimeout(timeout);
+    if (!reply) {
+      return null;
     }
+
+    return {
+      reply,
+      provider: this.name,
+      model: this.#client.model,
+    };
   }
 }
 
@@ -1103,86 +1076,6 @@ function uniqueNonEmpty(values: Array<string | null | undefined>): string[] {
   );
 }
 
-function extractOpenAIReplyText(payload: unknown): string | null {
-  if (!isRecord(payload)) {
-    return null;
-  }
-
-  if (typeof payload.output_text === "string") {
-    return payload.output_text;
-  }
-
-  const choiceContent = extractChatCompletionContent(payload.choices);
-  if (choiceContent) {
-    return choiceContent;
-  }
-
-  return extractResponsesContent(payload.output);
-}
-
-function extractChatCompletionContent(choices: unknown): string | null {
-  if (!Array.isArray(choices)) {
-    return null;
-  }
-
-  const firstChoice = choices[0];
-  if (!isRecord(firstChoice) || !isRecord(firstChoice.message)) {
-    return null;
-  }
-
-  const content = firstChoice.message.content;
-
-  if (typeof content === "string") {
-    return content;
-  }
-
-  if (!Array.isArray(content)) {
-    return null;
-  }
-
-  const parts = content
-    .map((item) => {
-      if (!isRecord(item)) {
-        return null;
-      }
-
-      if (typeof item.text === "string") {
-        return item.text;
-      }
-
-      return null;
-    })
-    .filter((item): item is string => Boolean(item));
-
-  return parts.length > 0 ? parts.join("\n") : null;
-}
-
-function extractResponsesContent(output: unknown): string | null {
-  if (!Array.isArray(output)) {
-    return null;
-  }
-
-  const parts: string[] = [];
-
-  for (const item of output) {
-    if (!isRecord(item) || !Array.isArray(item.content)) {
-      continue;
-    }
-
-    for (const content of item.content) {
-      if (!isRecord(content)) {
-        continue;
-      }
-
-      if (typeof content.text === "string") {
-        parts.push(content.text);
-      }
-    }
-  }
-
-  return parts.length > 0 ? parts.join("\n") : null;
-}
-
 function normalizeGeneratedReply(reply: string | null): string | null {
   if (!reply) {
     return null;
@@ -1190,23 +1083,4 @@ function normalizeGeneratedReply(reply: string | null): string | null {
 
   const normalized = reply.replace(/\s+/g, " ").trim();
   return normalized.length > 0 ? normalized : null;
-}
-
-async function buildOpenAIHttpError(response: Response): Promise<string> {
-  const body = await response.text();
-  const detail = body.trim();
-  const suffix = detail.length > 0 ? ` ${truncate(detail, 240)}` : "";
-  return `openai ${response.status}${suffix}`;
-}
-
-function trimTrailingSlash(value: string): string {
-  return value.endsWith("/") ? value.slice(0, -1) : value;
-}
-
-function truncate(value: string, maxLength: number): string {
-  return value.length <= maxLength ? value : `${value.slice(0, maxLength - 1)}…`;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
 }

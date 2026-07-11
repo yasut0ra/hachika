@@ -37,6 +37,11 @@ import {
   hasExplicitWorldObjectReference,
   summarizeWorldForPrompt,
 } from "./world.js";
+import {
+  DEFAULT_OPENAI_BASE_URL,
+  DEFAULT_OPENAI_MODEL,
+  OpenAIChatClient,
+} from "./llm-client.js";
 import type {
   AttentionRationale,
   HachikaSnapshot,
@@ -50,8 +55,6 @@ import type {
   TurnWorldMention,
 } from "./types.js";
 
-const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1";
-const DEFAULT_OPENAI_MODEL = "gpt-5-mini";
 
 const HACHIKA_TURN_DIRECTOR_SYSTEM_PROMPT = [
   "You perform one unified semantic turn analysis for Hachika's local engine.",
@@ -214,67 +217,37 @@ interface OpenAITurnDirectorOptions {
 export class OpenAITurnDirector implements TurnDirector {
   readonly name: string;
 
-  readonly #apiKey: string;
-  readonly #model: string;
-  readonly #baseUrl: string;
-  readonly #organization: string | null;
-  readonly #project: string | null;
-  readonly #timeoutMs: number;
+  readonly #client: OpenAIChatClient;
 
   constructor(options: OpenAITurnDirectorOptions) {
     this.name = options.name ?? "openai";
-    this.#apiKey = options.apiKey;
-    this.#model = options.model;
-    this.#baseUrl = trimTrailingSlash(options.baseUrl ?? DEFAULT_OPENAI_BASE_URL);
-    this.#organization = options.organization ?? null;
-    this.#project = options.project ?? null;
-    this.#timeoutMs = options.timeoutMs ?? 30_000;
+    this.#client = new OpenAIChatClient({
+      apiKey: options.apiKey,
+      model: options.model,
+      baseUrl: options.baseUrl ?? DEFAULT_OPENAI_BASE_URL,
+      organization: options.organization,
+      project: options.project,
+      timeoutMs: options.timeoutMs,
+    });
   }
 
   async directTurn(
     context: TurnDirectorContext,
   ): Promise<TurnDirectorResult | null> {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), this.#timeoutMs);
+    const rawText = await this.#client.complete(
+      buildOpenAITurnDirectorMessages(context),
+    );
+    const directive = normalizeTurnDirective(rawText, context.fallbackDirective);
 
-    try {
-      const response = await fetch(`${this.#baseUrl}/chat/completions`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${this.#apiKey}`,
-          "Content-Type": "application/json",
-          ...(this.#organization ? { "OpenAI-Organization": this.#organization } : {}),
-          ...(this.#project ? { "OpenAI-Project": this.#project } : {}),
-        },
-        body: JSON.stringify({
-          model: this.#model,
-          messages: buildOpenAITurnDirectorMessages(context),
-        }),
-        signal: controller.signal,
-      });
-
-      if (!response.ok) {
-        throw new Error(await buildOpenAIHttpError(response));
-      }
-
-      const payload = (await response.json()) as unknown;
-      const directive = normalizeTurnDirective(
-        extractOpenAIReplyText(payload),
-        context.fallbackDirective,
-      );
-
-      if (!directive) {
-        return null;
-      }
-
-      return {
-        directive,
-        provider: this.name,
-        model: this.#model,
-      };
-    } finally {
-      clearTimeout(timeout);
+    if (!directive) {
+      return null;
     }
+
+    return {
+      directive,
+      provider: this.name,
+      model: this.#client.model,
+    };
   }
 }
 
@@ -1540,10 +1513,6 @@ function summarizeResponsePlan(
   return `${act}/${stance}/${distance}${topic}`;
 }
 
-function trimTrailingSlash(value: string): string {
-  return value.replace(/\/+$/, "");
-}
-
 function parseJsonRecord(value: string | null): Record<string, unknown> | null {
   if (!value) {
     return null;
@@ -1559,29 +1528,6 @@ function parseJsonRecord(value: string | null): Record<string, unknown> | null {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function extractOpenAIReplyText(payload: unknown): string | null {
-  if (!isRecord(payload)) {
-    return null;
-  }
-
-  const choices = payload.choices;
-  if (!Array.isArray(choices) || choices.length === 0) {
-    return null;
-  }
-
-  const choice = choices[0];
-  if (!isRecord(choice)) {
-    return null;
-  }
-
-  const message = choice.message;
-  if (!isRecord(message) || typeof message.content !== "string") {
-    return null;
-  }
-
-  return message.content.trim();
 }
 
 const RESPONSE_ACT_VALUES = new Set<ResponseAct>([
@@ -1612,27 +1558,6 @@ const RESPONSE_VARIATION_VALUES = new Set<ResponseVariation>([
   "textured",
   "questioning",
 ]);
-
-async function buildOpenAIHttpError(response: Response): Promise<string> {
-  const message = await readResponseErrorMessage(response);
-  return `openai_http_${response.status}${message ? `:${message}` : ""}`;
-}
-
-async function readResponseErrorMessage(response: Response): Promise<string> {
-  try {
-    const payload = (await response.json()) as unknown;
-    if (!isRecord(payload)) {
-      return "";
-    }
-    const error = payload.error;
-    if (!isRecord(error) || typeof error.message !== "string") {
-      return "";
-    }
-    return error.message;
-  } catch {
-    return "";
-  }
-}
 
 const HACHIKA_NAME_PATTERNS = [
   "あなたの名前",

@@ -11,6 +11,11 @@ import {
   type SemanticTopicDecision,
   type SemanticProactiveDirectiveV2,
 } from "./semantic-director-schema.js";
+import {
+  DEFAULT_OPENAI_BASE_URL,
+  DEFAULT_OPENAI_MODEL,
+  OpenAIChatClient,
+} from "./llm-client.js";
 import { resolveOpenAICompatibleConfig } from "./llm-env.js";
 import { summarizeWorldForPrompt } from "./world.js";
 import type {
@@ -20,9 +25,6 @@ import type {
   WorldActionKind,
   WorldPlaceId,
 } from "./types.js";
-
-const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1";
-const DEFAULT_OPENAI_MODEL = "gpt-5-mini";
 
 const HACHIKA_PROACTIVE_DIRECTOR_SYSTEM_PROMPT = [
   "You decide whether a locally synthesized proactive action should actually materialize for Hachika.",
@@ -156,69 +158,42 @@ interface OpenAIProactiveDirectorOptions {
 export class OpenAIProactiveDirector implements ProactiveDirector {
   readonly name: string;
 
-  readonly #apiKey: string;
-  readonly #model: string;
-  readonly #baseUrl: string;
-  readonly #organization: string | null;
-  readonly #project: string | null;
-  readonly #timeoutMs: number;
+  readonly #client: OpenAIChatClient;
 
   constructor(options: OpenAIProactiveDirectorOptions) {
     this.name = options.name ?? "openai";
-    this.#apiKey = options.apiKey;
-    this.#model = options.model;
-    this.#baseUrl = trimTrailingSlash(options.baseUrl ?? DEFAULT_OPENAI_BASE_URL);
-    this.#organization = options.organization ?? null;
-    this.#project = options.project ?? null;
-    this.#timeoutMs = options.timeoutMs ?? 30_000;
+    this.#client = new OpenAIChatClient({
+      apiKey: options.apiKey,
+      model: options.model,
+      baseUrl: options.baseUrl ?? DEFAULT_OPENAI_BASE_URL,
+      organization: options.organization,
+      project: options.project,
+      timeoutMs: options.timeoutMs,
+    });
   }
 
   async directProactive(
     context: ProactiveDirectorContext,
   ): Promise<ProactiveDirectorResult | null> {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), this.#timeoutMs);
+    const rawText = await this.#client.complete(
+      buildOpenAIProactiveDirectorMessages(context),
+    );
+    const directive = normalizeProactiveDirective(
+      rawText,
+      context.rulePlan,
+      buildProactiveDirectorPayload(context).candidateTopics,
+      context.pending.stateTopic ? [context.pending.stateTopic] : [],
+    );
 
-    try {
-      const response = await fetch(`${this.#baseUrl}/chat/completions`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${this.#apiKey}`,
-          "Content-Type": "application/json",
-          ...(this.#organization ? { "OpenAI-Organization": this.#organization } : {}),
-          ...(this.#project ? { "OpenAI-Project": this.#project } : {}),
-        },
-        body: JSON.stringify({
-          model: this.#model,
-          messages: buildOpenAIProactiveDirectorMessages(context),
-        }),
-        signal: controller.signal,
-      });
-
-      if (!response.ok) {
-        throw new Error(await buildOpenAIHttpError(response));
-      }
-
-      const payload = (await response.json()) as unknown;
-      const directive = normalizeProactiveDirective(
-        extractOpenAIReplyText(payload),
-        context.rulePlan,
-        buildProactiveDirectorPayload(context).candidateTopics,
-        context.pending.stateTopic ? [context.pending.stateTopic] : [],
-      );
-
-      if (!directive) {
-        return null;
-      }
-
-      return {
-        directive,
-        provider: this.name,
-        model: this.#model,
-      };
-    } finally {
-      clearTimeout(timeout);
+    if (!directive) {
+      return null;
     }
+
+    return {
+      directive,
+      provider: this.name,
+      model: this.#client.model,
+    };
   }
 }
 
@@ -641,10 +616,6 @@ function normalizeSemanticTopicDecisions(
     : buildSemanticTopicDecisions(fallbackTopics, fallbackStateTopics, "trace");
 }
 
-function trimTrailingSlash(value: string): string {
-  return value.replace(/\/+$/, "");
-}
-
 function parseJsonRecord(value: string | null): Record<string, unknown> | null {
   if (!value) {
     return null;
@@ -662,31 +633,3 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function extractOpenAIReplyText(payload: unknown): string | null {
-  if (!isRecord(payload)) {
-    return null;
-  }
-
-  const choices = payload.choices;
-  if (!Array.isArray(choices) || choices.length === 0) {
-    return null;
-  }
-
-  const choice = choices[0];
-  if (!isRecord(choice)) {
-    return null;
-  }
-
-  const message = choice.message;
-  if (!isRecord(message) || typeof message.content !== "string") {
-    return null;
-  }
-
-  return message.content;
-}
-
-async function buildOpenAIHttpError(response: Response): Promise<string> {
-  const text = await response.text();
-  const compact = text.replace(/\s+/g, " ").trim();
-  return compact.length > 0 ? compact : `openai_http_${response.status}`;
-}

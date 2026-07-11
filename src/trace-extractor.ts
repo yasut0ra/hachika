@@ -1,4 +1,10 @@
 import { topPreferredTopics } from "./memory.js";
+import {
+  DEFAULT_OPENAI_BASE_URL,
+  DEFAULT_OPENAI_MODEL,
+  OpenAIChatClient,
+  parseJsonRecordText,
+} from "./llm-client.js";
 import { resolveOpenAICompatibleConfig } from "./llm-env.js";
 import { clamp01 } from "./state.js";
 import { sortedTraces } from "./traces.js";
@@ -9,9 +15,6 @@ import type {
   StructuredTraceExtraction,
   TraceKind,
 } from "./types.js";
-
-const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1";
-const DEFAULT_OPENAI_MODEL = "gpt-5-mini";
 
 const HACHIKA_TRACE_EXTRACTOR_SYSTEM_PROMPT = [
   "You extract structured trace hints for Hachika's local trace engine.",
@@ -110,64 +113,37 @@ interface OpenAITraceExtractorOptions {
 export class OpenAITraceExtractor implements TraceExtractor {
   readonly name: string;
 
-  readonly #apiKey: string;
-  readonly #model: string;
-  readonly #baseUrl: string;
-  readonly #organization: string | null;
-  readonly #project: string | null;
-  readonly #timeoutMs: number;
+  readonly #client: OpenAIChatClient;
 
   constructor(options: OpenAITraceExtractorOptions) {
     this.name = options.name ?? "openai";
-    this.#apiKey = options.apiKey;
-    this.#model = options.model;
-    this.#baseUrl = trimTrailingSlash(options.baseUrl ?? DEFAULT_OPENAI_BASE_URL);
-    this.#organization = options.organization ?? null;
-    this.#project = options.project ?? null;
-    this.#timeoutMs = options.timeoutMs ?? 30_000;
+    this.#client = new OpenAIChatClient({
+      apiKey: options.apiKey,
+      model: options.model,
+      baseUrl: options.baseUrl ?? DEFAULT_OPENAI_BASE_URL,
+      organization: options.organization,
+      project: options.project,
+      timeoutMs: options.timeoutMs,
+    });
   }
 
   async extractTrace(
     context: TraceExtractionContext,
   ): Promise<TraceExtractionResult | null> {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), this.#timeoutMs);
+    const rawText = await this.#client.complete(
+      buildOpenAITraceExtractionMessages(context),
+    );
+    const extraction = normalizeTraceExtraction(rawText);
 
-    try {
-      const response = await fetch(`${this.#baseUrl}/chat/completions`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${this.#apiKey}`,
-          "Content-Type": "application/json",
-          ...(this.#organization ? { "OpenAI-Organization": this.#organization } : {}),
-          ...(this.#project ? { "OpenAI-Project": this.#project } : {}),
-        },
-        body: JSON.stringify({
-          model: this.#model,
-          messages: buildOpenAITraceExtractionMessages(context),
-        }),
-        signal: controller.signal,
-      });
-
-      if (!response.ok) {
-        throw new Error(await buildOpenAIHttpError(response));
-      }
-
-      const payload = (await response.json()) as unknown;
-      const extraction = normalizeTraceExtraction(extractOpenAIReplyText(payload));
-
-      if (!extraction) {
-        return null;
-      }
-
-      return {
-        extraction,
-        provider: this.name,
-        model: this.#model,
-      };
-    } finally {
-      clearTimeout(timeout);
+    if (!extraction) {
+      return null;
     }
+
+    return {
+      extraction,
+      provider: this.name,
+      model: this.#client.model,
+    };
   }
 }
 
@@ -321,7 +297,7 @@ function buildTraceActorCue(
 export function normalizeTraceExtraction(
   rawText: string | null,
 ): StructuredTraceExtraction | null {
-  const parsed = parseJsonRecord(rawText);
+  const parsed = parseJsonRecordText(rawText);
 
   if (!parsed) {
     return null;
@@ -357,86 +333,6 @@ function normalizeStringArray(value: unknown, limit: number): string[] {
   ).slice(0, limit);
 }
 
-function parseJsonRecord(rawText: string | null): Record<string, unknown> | null {
-  if (!rawText) {
-    return null;
-  }
-
-  const trimmed = rawText.trim();
-  const direct = tryParseRecord(trimmed);
-  if (direct) {
-    return direct;
-  }
-
-  const start = trimmed.indexOf("{");
-  const end = trimmed.lastIndexOf("}");
-  if (start === -1 || end === -1 || end <= start) {
-    return null;
-  }
-
-  return tryParseRecord(trimmed.slice(start, end + 1));
-}
-
-function tryParseRecord(value: string): Record<string, unknown> | null {
-  try {
-    const parsed = JSON.parse(value) as unknown;
-    return isRecord(parsed) ? parsed : null;
-  } catch {
-    return null;
-  }
-}
-
-async function buildOpenAIHttpError(response: Response): Promise<string> {
-  const body = await response.text();
-  const detail = body.trim();
-  const suffix = detail.length > 0 ? ` ${truncate(detail, 240)}` : "";
-  return `openai ${response.status}${suffix}`;
-}
-
-function extractOpenAIReplyText(payload: unknown): string | null {
-  if (!isRecord(payload) || !Array.isArray(payload.choices)) {
-    return null;
-  }
-
-  const firstChoice = payload.choices[0];
-  if (!isRecord(firstChoice) || !isRecord(firstChoice.message)) {
-    return null;
-  }
-
-  const content = firstChoice.message.content;
-  if (typeof content === "string") {
-    return content;
-  }
-
-  if (!Array.isArray(content)) {
-    return null;
-  }
-
-  const parts = content
-    .map((item) => {
-      if (!isRecord(item)) {
-        return null;
-      }
-
-      return typeof item.text === "string" ? item.text : null;
-    })
-    .filter((item): item is string => Boolean(item));
-
-  return parts.length > 0 ? parts.join("\n") : null;
-}
-
-function trimTrailingSlash(value: string): string {
-  return value.endsWith("/") ? value.slice(0, -1) : value;
-}
-
-function truncate(value: string, maxLength: number): string {
-  return value.length <= maxLength ? value : `${value.slice(0, maxLength - 1)}…`;
-}
-
 function unique(values: string[]): string[] {
   return Array.from(new Set(values));
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
 }

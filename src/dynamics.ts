@@ -1,4 +1,5 @@
 import {
+  blendVisibleValue,
   clamp01,
   INITIAL_ATTACHMENT,
   INITIAL_BODY,
@@ -335,11 +336,11 @@ export function deriveVisibleStateFromDynamics(snapshot: HachikaSnapshot): void 
   };
 
   snapshot.state = {
-    pleasure: blendVisible(previousState.pleasure, targetState.pleasure, 0.52),
-    relation: blendVisible(previousState.relation, targetState.relation, 0.5),
-    curiosity: blendVisible(previousState.curiosity, targetState.curiosity, 0.5),
-    continuity: blendVisible(previousState.continuity, targetState.continuity, 0.5),
-    expansion: blendVisible(previousState.expansion, targetState.expansion, 0.48),
+    pleasure: blendVisibleValue(previousState.pleasure, targetState.pleasure, 0.52),
+    relation: blendVisibleValue(previousState.relation, targetState.relation, 0.5),
+    curiosity: blendVisibleValue(previousState.curiosity, targetState.curiosity, 0.5),
+    continuity: blendVisibleValue(previousState.continuity, targetState.continuity, 0.5),
+    expansion: blendVisibleValue(previousState.expansion, targetState.expansion, 0.48),
   };
 
   const targetBody = {
@@ -379,10 +380,10 @@ export function deriveVisibleStateFromDynamics(snapshot: HachikaSnapshot): void 
   };
 
   snapshot.body = {
-    energy: blendVisible(previousBody.energy, targetBody.energy, 0.58),
-    tension: blendVisible(previousBody.tension, targetBody.tension, 0.62),
-    boredom: blendVisible(previousBody.boredom, targetBody.boredom, 0.6),
-    loneliness: blendVisible(previousBody.loneliness, targetBody.loneliness, 0.6),
+    energy: blendVisibleValue(previousBody.energy, targetBody.energy, 0.58),
+    tension: blendVisibleValue(previousBody.tension, targetBody.tension, 0.62),
+    boredom: blendVisibleValue(previousBody.boredom, targetBody.boredom, 0.6),
+    loneliness: blendVisibleValue(previousBody.loneliness, targetBody.loneliness, 0.6),
   };
 
   const targetReactivity = {
@@ -434,21 +435,21 @@ export function deriveVisibleStateFromDynamics(snapshot: HachikaSnapshot): void 
   };
 
   snapshot.reactivity = {
-    rewardSaturation: blendVisible(
+    rewardSaturation: blendVisibleValue(
       previousReactivity.rewardSaturation,
       targetReactivity.rewardSaturation,
       0.58,
     ),
-    stressLoad: blendVisible(previousReactivity.stressLoad, targetReactivity.stressLoad, 0.62),
-    noveltyHunger: blendVisible(
+    stressLoad: blendVisibleValue(previousReactivity.stressLoad, targetReactivity.stressLoad, 0.62),
+    noveltyHunger: blendVisibleValue(
       previousReactivity.noveltyHunger,
       targetReactivity.noveltyHunger,
       0.6,
     ),
-    mistrust: blendVisible(previousReactivity.mistrust, targetReactivity.mistrust, 0.5),
+    mistrust: blendVisibleValue(previousReactivity.mistrust, targetReactivity.mistrust, 0.5),
   };
 
-  snapshot.attachment = blendVisible(
+  snapshot.attachment = blendVisibleValue(
     previousAttachment,
     clamp01(
       0.06 +
@@ -528,6 +529,3 @@ export function reseedDynamicsFromVisibleState(snapshot: HachikaSnapshot): void 
   snapshot.dynamics = seedDynamicsFromVisibleState(snapshot);
 }
 
-function blendVisible(current: number, target: number, rate: number): number {
-  return clamp01(current + (target - current) * rate);
-}

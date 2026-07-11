@@ -7,6 +7,7 @@ import {
   topPreferredTopics,
 } from "./memory.js";
 import { rewindBodyHours, settleBodyAfterInitiative } from "./body.js";
+import { applyLegacyIdleVisibleShift } from "./legacy-visible.js";
 import {
   deriveVisibleStateFromDynamics,
   rewindDynamicsHours,
@@ -14,7 +15,7 @@ import {
 } from "./dynamics.js";
 import { pickFreshText, recentAssistantReplies } from "./expression.js";
 import { buildSelfModel } from "./self-model.js";
-import { clamp01, clampSigned, INITIAL_REACTIVITY, settleTowardsBaseline } from "./state.js";
+import { clamp01, clampSigned } from "./state.js";
 import { rewindTemperamentHours } from "./temperament.js";
 import {
   linkTraceToWorld,
@@ -499,75 +500,7 @@ export function rewindSnapshotBaseHours(
   }
 }
 
-function applyLegacyIdleVisibleShift(
-  snapshot: HachikaSnapshot,
-  legacyVisible: HachikaSnapshot,
-  hours: number,
-): void {
-  // 傷の記憶が残っている間は、放置してもストレスが抜けにくい
-  const mistrustLinger = legacyVisible.reactivity.mistrust;
 
-  legacyVisible.reactivity = {
-    rewardSaturation: settleTowardsBaseline(
-      clamp01(legacyVisible.reactivity.rewardSaturation - Math.min(0.24, hours / 36)),
-      INITIAL_REACTIVITY.rewardSaturation,
-      0.12,
-    ),
-    stressLoad: settleTowardsBaseline(
-      clamp01(
-        legacyVisible.reactivity.stressLoad -
-          Math.min(0.14, hours / 72) * Math.max(0.5, 1 - mistrustLinger * 0.45) +
-          (hours >= 20 ? Math.min(0.06, (hours - 20) / 120) : 0),
-      ),
-      INITIAL_REACTIVITY.stressLoad,
-      0.05,
-    ),
-    noveltyHunger: settleTowardsBaseline(
-      clamp01(legacyVisible.reactivity.noveltyHunger + Math.min(0.22, hours / 30)),
-      INITIAL_REACTIVITY.noveltyHunger,
-      0.04,
-    ),
-    mistrust: settleTowardsBaseline(
-      clamp01(mistrustLinger - Math.min(0.05, hours / 200)),
-      INITIAL_REACTIVITY.mistrust,
-      0.02,
-    ),
-  };
-  rewindBodyHours(legacyVisible, hours);
-
-  snapshot.body = {
-    energy: blendVisibleValue(snapshot.body.energy, legacyVisible.body.energy, 0.8),
-    tension: blendVisibleValue(snapshot.body.tension, legacyVisible.body.tension, 0.8),
-    boredom: blendVisibleValue(snapshot.body.boredom, legacyVisible.body.boredom, 0.84),
-    loneliness: blendVisibleValue(snapshot.body.loneliness, legacyVisible.body.loneliness, 0.84),
-  };
-  snapshot.reactivity = {
-    rewardSaturation: blendVisibleValue(
-      snapshot.reactivity.rewardSaturation,
-      legacyVisible.reactivity.rewardSaturation,
-      0.82,
-    ),
-    stressLoad: blendVisibleValue(
-      snapshot.reactivity.stressLoad,
-      legacyVisible.reactivity.stressLoad,
-      0.84,
-    ),
-    noveltyHunger: blendVisibleValue(
-      snapshot.reactivity.noveltyHunger,
-      legacyVisible.reactivity.noveltyHunger,
-      0.88,
-    ),
-    mistrust: blendVisibleValue(
-      snapshot.reactivity.mistrust,
-      legacyVisible.reactivity.mistrust,
-      0.84,
-    ),
-  };
-}
-
-function blendVisibleValue(current: number, legacy: number, legacyWeight: number): number {
-  return clamp01(current * (1 - legacyWeight) + legacy * legacyWeight);
-}
 
 function consolidateIdleSnapshot(
   snapshot: HachikaSnapshot,

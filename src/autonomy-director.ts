@@ -7,6 +7,11 @@ import {
   type SemanticAutonomyOutwardMode,
   type SemanticTopicDecision,
 } from "./semantic-director-schema.js";
+import {
+  DEFAULT_OPENAI_BASE_URL,
+  DEFAULT_OPENAI_MODEL,
+  OpenAIChatClient,
+} from "./llm-client.js";
 import { resolveOpenAICompatibleConfig } from "./llm-env.js";
 import type {
   AttentionRationale,
@@ -15,9 +20,6 @@ import type {
 } from "./types.js";
 import type { PreparedIdleAutonomyAction } from "./initiative.js";
 import { summarizeWorldForPrompt } from "./world.js";
-
-const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1";
-const DEFAULT_OPENAI_MODEL = "gpt-5-mini";
 
 const HACHIKA_AUTONOMY_DIRECTOR_SYSTEM_PROMPT = [
   "You decide whether a locally synthesized internal autonomy action should materialize for Hachika during a resident-loop tick.",
@@ -148,68 +150,41 @@ interface OpenAIAutonomyDirectorOptions {
 export class OpenAIAutonomyDirector implements AutonomyDirector {
   readonly name: string;
 
-  readonly #apiKey: string;
-  readonly #model: string;
-  readonly #baseUrl: string;
-  readonly #organization: string | null;
-  readonly #project: string | null;
-  readonly #timeoutMs: number;
+  readonly #client: OpenAIChatClient;
 
   constructor(options: OpenAIAutonomyDirectorOptions) {
     this.name = options.name ?? "openai";
-    this.#apiKey = options.apiKey;
-    this.#model = options.model;
-    this.#baseUrl = trimTrailingSlash(options.baseUrl ?? DEFAULT_OPENAI_BASE_URL);
-    this.#organization = options.organization ?? null;
-    this.#project = options.project ?? null;
-    this.#timeoutMs = options.timeoutMs ?? 30_000;
+    this.#client = new OpenAIChatClient({
+      apiKey: options.apiKey,
+      model: options.model,
+      baseUrl: options.baseUrl ?? DEFAULT_OPENAI_BASE_URL,
+      organization: options.organization,
+      project: options.project,
+      timeoutMs: options.timeoutMs,
+    });
   }
 
   async directAutonomy(
     context: AutonomyDirectorContext,
   ): Promise<AutonomyDirectorResult | null> {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), this.#timeoutMs);
+    const rawText = await this.#client.complete(
+      buildOpenAIAutonomyDirectorMessages(context),
+    );
+    const directive = normalizeAutonomyDirective(
+      (rawText ?? "").trim(),
+      context.prepared.action,
+      context.prepared.attentionReasons ?? [],
+    );
 
-    try {
-      const response = await fetch(`${this.#baseUrl}/chat/completions`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${this.#apiKey}`,
-          "Content-Type": "application/json",
-          ...(this.#organization ? { "OpenAI-Organization": this.#organization } : {}),
-          ...(this.#project ? { "OpenAI-Project": this.#project } : {}),
-        },
-        body: JSON.stringify({
-          model: this.#model,
-          messages: buildOpenAIAutonomyDirectorMessages(context),
-        }),
-        signal: controller.signal,
-      });
-
-      if (!response.ok) {
-        throw new Error(await buildOpenAIHttpError(response));
-      }
-
-      const payload = (await response.json()) as unknown;
-      const directive = normalizeAutonomyDirective(
-        extractOpenAIReplyText(payload),
-        context.prepared.action,
-        context.prepared.attentionReasons ?? [],
-      );
-
-      if (!directive) {
-        return null;
-      }
-
-      return {
-        directive,
-        provider: this.name,
-        model: this.#model,
-      };
-    } finally {
-      clearTimeout(timeout);
+    if (!directive) {
+      return null;
     }
+
+    return {
+      directive,
+      provider: this.name,
+      model: this.#client.model,
+    };
   }
 }
 
@@ -500,28 +475,3 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-async function buildOpenAIHttpError(response: Response): Promise<string> {
-  const text = await response.text();
-  return `openai_autonomy_director_http_${response.status}:${text.slice(0, 240)}`;
-}
-
-function extractOpenAIReplyText(payload: unknown): string {
-  if (
-    payload &&
-    typeof payload === "object" &&
-    "choices" in payload &&
-    Array.isArray((payload as { choices?: unknown[] }).choices)
-  ) {
-    const choice = (payload as { choices: Array<{ message?: { content?: unknown } }> }).choices[0];
-    const content = choice?.message?.content;
-    if (typeof content === "string") {
-      return content.trim();
-    }
-  }
-
-  return "";
-}
-
-function trimTrailingSlash(value: string): string {
-  return value.endsWith("/") ? value.slice(0, -1) : value;
-}

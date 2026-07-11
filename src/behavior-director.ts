@@ -3,6 +3,12 @@ import {
   requiresConcreteTopicSupport,
   topPreferredTopics,
 } from "./memory.js";
+import {
+  DEFAULT_OPENAI_BASE_URL,
+  DEFAULT_OPENAI_MODEL,
+  OpenAIChatClient,
+  parseJsonRecordText,
+} from "./llm-client.js";
 import { resolveOpenAICompatibleConfig } from "./llm-env.js";
 import type { InputInterpretation } from "./input-interpreter.js";
 import { sortedTraces } from "./traces.js";
@@ -13,8 +19,6 @@ import type {
   StructuredTraceExtraction,
 } from "./types.js";
 
-const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1";
-const DEFAULT_OPENAI_MODEL = "gpt-5-mini";
 
 const HACHIKA_BEHAVIOR_DIRECTOR_SYSTEM_PROMPT = [
   "You steer only ambiguous local behavior boundaries for Hachika's engine.",
@@ -140,67 +144,37 @@ interface OpenAIBehaviorDirectorOptions {
 export class OpenAIBehaviorDirector implements BehaviorDirector {
   readonly name: string;
 
-  readonly #apiKey: string;
-  readonly #model: string;
-  readonly #baseUrl: string;
-  readonly #organization: string | null;
-  readonly #project: string | null;
-  readonly #timeoutMs: number;
+  readonly #client: OpenAIChatClient;
 
   constructor(options: OpenAIBehaviorDirectorOptions) {
     this.name = options.name ?? "openai";
-    this.#apiKey = options.apiKey;
-    this.#model = options.model;
-    this.#baseUrl = trimTrailingSlash(options.baseUrl ?? DEFAULT_OPENAI_BASE_URL);
-    this.#organization = options.organization ?? null;
-    this.#project = options.project ?? null;
-    this.#timeoutMs = options.timeoutMs ?? 30_000;
+    this.#client = new OpenAIChatClient({
+      apiKey: options.apiKey,
+      model: options.model,
+      baseUrl: options.baseUrl ?? DEFAULT_OPENAI_BASE_URL,
+      organization: options.organization,
+      project: options.project,
+      timeoutMs: options.timeoutMs,
+    });
   }
 
   async directBehavior(
     context: BehaviorDirectorContext,
   ): Promise<BehaviorDirectorResult | null> {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), this.#timeoutMs);
+    const rawText = await this.#client.complete(
+      buildOpenAIBehaviorDirectorMessages(context),
+    );
+    const directive = normalizeBehaviorDirective(rawText, context.fallbackDirective);
 
-    try {
-      const response = await fetch(`${this.#baseUrl}/chat/completions`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${this.#apiKey}`,
-          "Content-Type": "application/json",
-          ...(this.#organization ? { "OpenAI-Organization": this.#organization } : {}),
-          ...(this.#project ? { "OpenAI-Project": this.#project } : {}),
-        },
-        body: JSON.stringify({
-          model: this.#model,
-          messages: buildOpenAIBehaviorDirectorMessages(context),
-        }),
-        signal: controller.signal,
-      });
-
-      if (!response.ok) {
-        throw new Error(await buildOpenAIHttpError(response));
-      }
-
-      const payload = (await response.json()) as unknown;
-      const directive = normalizeBehaviorDirective(
-        extractOpenAIReplyText(payload),
-        context.fallbackDirective,
-      );
-
-      if (!directive) {
-        return null;
-      }
-
-      return {
-        directive,
-        provider: this.name,
-        model: this.#model,
-      };
-    } finally {
-      clearTimeout(timeout);
+    if (!directive) {
+      return null;
     }
+
+    return {
+      directive,
+      provider: this.name,
+      model: this.#client.model,
+    };
   }
 }
 
@@ -576,7 +550,7 @@ export function normalizeBehaviorDirective(
   rawText: string | null,
   fallback: BehaviorDirective,
 ): BehaviorDirective | null {
-  const parsed = parseJsonRecord(rawText);
+  const parsed = parseJsonRecordText(rawText);
 
   if (!parsed) {
     return null;
@@ -640,61 +614,6 @@ export function summarizeBehaviorDirective(directive: BehaviorDirective): string
 
 function unique(items: string[]): string[] {
   return Array.from(new Set(items));
-}
-
-function trimTrailingSlash(value: string): string {
-  return value.replace(/\/+$/, "");
-}
-
-async function buildOpenAIHttpError(response: Response): Promise<string> {
-  const bodyText = await response.text();
-  return `openai_${response.status}:${bodyText.slice(0, 200)}`;
-}
-
-function extractOpenAIReplyText(payload: unknown): string | null {
-  if (
-    typeof payload !== "object" ||
-    payload === null ||
-    !("choices" in payload) ||
-    !Array.isArray(payload.choices)
-  ) {
-    return null;
-  }
-
-  const choice = payload.choices[0];
-  if (
-    typeof choice !== "object" ||
-    choice === null ||
-    !("message" in choice) ||
-    typeof choice.message !== "object" ||
-    choice.message === null ||
-    !("content" in choice.message)
-  ) {
-    return null;
-  }
-
-  const content = choice.message.content;
-  return typeof content === "string" ? content : null;
-}
-
-function parseJsonRecord(rawText: string | null): Record<string, unknown> | null {
-  if (!rawText) {
-    return null;
-  }
-
-  const start = rawText.indexOf("{");
-  const end = rawText.lastIndexOf("}");
-
-  if (start < 0 || end <= start) {
-    return null;
-  }
-
-  try {
-    const parsed = JSON.parse(rawText.slice(start, end + 1)) as unknown;
-    return typeof parsed === "object" && parsed !== null ? (parsed as Record<string, unknown>) : null;
-  } catch {
-    return null;
-  }
 }
 
 function readEnum<T extends string>(
