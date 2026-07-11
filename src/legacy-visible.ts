@@ -3,16 +3,40 @@
 // blend weight で合成するのは移行期の scaffold であり、
 // 退役計画は docs/legacy-visible-retirement.md を参照。
 import { applyBodyFromSignals, rewindBodyHours } from "./body.js";
+import { updateReactivityFromSignals } from "./dynamics.js";
 import {
   applyBoundedPressure,
   blendVisibleValue,
   clamp01,
   INITIAL_ATTACHMENT,
-  INITIAL_REACTIVITY,
   INITIAL_STATE,
-  settleTowardsBaseline,
 } from "./state.js";
 import type { HachikaSnapshot, InteractionSignals } from "./types.js";
+
+// legacy 経路の寄与を一括で減衰させるダイヤル。
+// 1.0 で従来挙動、0 で dynamics 経路のみ。退役は docs/legacy-visible-retirement.md の Phase 3 を参照。
+let legacyBlendScale = resolveLegacyBlendScale(process.env.HACHIKA_LEGACY_BLEND_SCALE);
+
+export function setLegacyBlendScale(scale: number): void {
+  legacyBlendScale = clamp01(scale);
+}
+
+export function getLegacyBlendScale(): number {
+  return legacyBlendScale;
+}
+
+function resolveLegacyBlendScale(raw: string | undefined): number {
+  if (raw === undefined) {
+    return 1;
+  }
+
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? clamp01(parsed) : 1;
+}
+
+function legacyWeight(weight: number): number {
+  return weight * legacyBlendScale;
+}
 
 export interface LegacyVisibleState {
   state: HachikaSnapshot["state"];
@@ -191,42 +215,22 @@ export function blendLegacyVisibleState(
   positivePreferenceAffinity: number,
 ): void {
   snapshot.state = {
-    continuity: blendVisibleValue(snapshot.state.continuity, legacy.state.continuity, 0.62),
-    pleasure: blendVisibleValue(snapshot.state.pleasure, legacy.state.pleasure, 0.7),
-    curiosity: blendVisibleValue(snapshot.state.curiosity, legacy.state.curiosity, 0.68),
-    relation: blendVisibleValue(snapshot.state.relation, legacy.state.relation, 0.72),
-    expansion: blendVisibleValue(snapshot.state.expansion, legacy.state.expansion, 0.64),
+    continuity: blendVisibleValue(snapshot.state.continuity, legacy.state.continuity, legacyWeight(0.62)),
+    pleasure: blendVisibleValue(snapshot.state.pleasure, legacy.state.pleasure, legacyWeight(0.7)),
+    curiosity: blendVisibleValue(snapshot.state.curiosity, legacy.state.curiosity, legacyWeight(0.68)),
+    relation: blendVisibleValue(snapshot.state.relation, legacy.state.relation, legacyWeight(0.72)),
+    expansion: blendVisibleValue(snapshot.state.expansion, legacy.state.expansion, legacyWeight(0.64)),
   };
   snapshot.body = {
-    energy: blendVisibleValue(snapshot.body.energy, legacy.body.energy, 0.74),
-    tension: blendVisibleValue(snapshot.body.tension, legacy.body.tension, 0.74),
-    boredom: blendVisibleValue(snapshot.body.boredom, legacy.body.boredom, 0.78),
-    loneliness: blendVisibleValue(snapshot.body.loneliness, legacy.body.loneliness, 0.78),
+    energy: blendVisibleValue(snapshot.body.energy, legacy.body.energy, legacyWeight(0.74)),
+    tension: blendVisibleValue(snapshot.body.tension, legacy.body.tension, legacyWeight(0.74)),
+    boredom: blendVisibleValue(snapshot.body.boredom, legacy.body.boredom, legacyWeight(0.78)),
+    loneliness: blendVisibleValue(snapshot.body.loneliness, legacy.body.loneliness, legacyWeight(0.78)),
   };
-  snapshot.reactivity = {
-    rewardSaturation: blendVisibleValue(
-      snapshot.reactivity.rewardSaturation,
-      legacy.reactivity.rewardSaturation,
-      0.78,
-    ),
-    stressLoad: blendVisibleValue(
-      snapshot.reactivity.stressLoad,
-      legacy.reactivity.stressLoad,
-      0.82,
-    ),
-    noveltyHunger: blendVisibleValue(
-      snapshot.reactivity.noveltyHunger,
-      legacy.reactivity.noveltyHunger,
-      0.84,
-    ),
-    mistrust: blendVisibleValue(
-      snapshot.reactivity.mistrust,
-      legacy.reactivity.mistrust,
-      0.8,
-    ),
-  };
+  // reactivity は substrate (updateReactivityFromSignals) が唯一の更新元になったため、ここでは混ぜない
   snapshot.attachment = clamp01(
-    blendVisibleValue(snapshot.attachment, legacy.attachment, 0.74) + positivePreferenceAffinity,
+    blendVisibleValue(snapshot.attachment, legacy.attachment, legacyWeight(0.74)) +
+      positivePreferenceAffinity,
   );
 }
 
@@ -235,130 +239,20 @@ export function applyLegacyIdleVisibleShift(
   legacyVisible: HachikaSnapshot,
   hours: number,
 ): void {
-  // 傷の記憶が残っている間は、放置してもストレスが抜けにくい
-  const mistrustLinger = legacyVisible.reactivity.mistrust;
-
-  legacyVisible.reactivity = {
-    rewardSaturation: settleTowardsBaseline(
-      clamp01(legacyVisible.reactivity.rewardSaturation - Math.min(0.24, hours / 36)),
-      INITIAL_REACTIVITY.rewardSaturation,
-      0.12,
-    ),
-    stressLoad: settleTowardsBaseline(
-      clamp01(
-        legacyVisible.reactivity.stressLoad -
-          Math.min(0.14, hours / 72) * Math.max(0.5, 1 - mistrustLinger * 0.45) +
-          (hours >= 20 ? Math.min(0.06, (hours - 20) / 120) : 0),
-      ),
-      INITIAL_REACTIVITY.stressLoad,
-      0.05,
-    ),
-    noveltyHunger: settleTowardsBaseline(
-      clamp01(legacyVisible.reactivity.noveltyHunger + Math.min(0.22, hours / 30)),
-      INITIAL_REACTIVITY.noveltyHunger,
-      0.04,
-    ),
-    mistrust: settleTowardsBaseline(
-      clamp01(mistrustLinger - Math.min(0.05, hours / 200)),
-      INITIAL_REACTIVITY.mistrust,
-      0.02,
-    ),
-  };
+  // reactivity の idle ドリフトは substrate (rewindReactivityHours) が担うため、ここでは body だけを扱う。
+  // body の感度計算にはドリフト済みの reactivity を使う
+  legacyVisible.reactivity = { ...snapshot.reactivity };
   rewindBodyHours(legacyVisible, hours);
 
   snapshot.body = {
-    energy: blendVisibleValue(snapshot.body.energy, legacyVisible.body.energy, 0.8),
-    tension: blendVisibleValue(snapshot.body.tension, legacyVisible.body.tension, 0.8),
-    boredom: blendVisibleValue(snapshot.body.boredom, legacyVisible.body.boredom, 0.84),
-    loneliness: blendVisibleValue(snapshot.body.loneliness, legacyVisible.body.loneliness, 0.84),
-  };
-  snapshot.reactivity = {
-    rewardSaturation: blendVisibleValue(
-      snapshot.reactivity.rewardSaturation,
-      legacyVisible.reactivity.rewardSaturation,
-      0.82,
-    ),
-    stressLoad: blendVisibleValue(
-      snapshot.reactivity.stressLoad,
-      legacyVisible.reactivity.stressLoad,
-      0.84,
-    ),
-    noveltyHunger: blendVisibleValue(
-      snapshot.reactivity.noveltyHunger,
-      legacyVisible.reactivity.noveltyHunger,
-      0.88,
-    ),
-    mistrust: blendVisibleValue(
-      snapshot.reactivity.mistrust,
-      legacyVisible.reactivity.mistrust,
-      0.84,
+    energy: blendVisibleValue(snapshot.body.energy, legacyVisible.body.energy, legacyWeight(0.8)),
+    tension: blendVisibleValue(snapshot.body.tension, legacyVisible.body.tension, legacyWeight(0.8)),
+    boredom: blendVisibleValue(snapshot.body.boredom, legacyVisible.body.boredom, legacyWeight(0.84)),
+    loneliness: blendVisibleValue(
+      snapshot.body.loneliness,
+      legacyVisible.body.loneliness,
+      legacyWeight(0.84),
     ),
   };
 }
 
-function updateReactivityFromSignals(
-  snapshot: HachikaSnapshot,
-  signals: InteractionSignals,
-): HachikaSnapshot["reactivity"] {
-  const mistrust = snapshot.reactivity.mistrust;
-  // 敵意直後の repair は効きが浅く、繰り返して初めて元の効きに戻る
-  const repairEfficiency = Math.max(0.35, 1 - mistrust * 0.55);
-  const hostilitySensitization = 1 + mistrust * 0.35;
-
-  return {
-    rewardSaturation: settleTowardsBaseline(
-      clamp01(
-        snapshot.reactivity.rewardSaturation * 0.82 +
-          signals.positive * 0.24 +
-          signals.greeting * 0.04 +
-          signals.smalltalk * 0.05 +
-          signals.repair * 0.06 -
-          signals.negative * 0.08 -
-          signals.novelty * 0.05,
-      ),
-      INITIAL_REACTIVITY.rewardSaturation,
-      0.08,
-    ),
-    stressLoad: settleTowardsBaseline(
-      clamp01(
-        snapshot.reactivity.stressLoad * 0.88 +
-          (signals.negative * 0.3 + signals.dismissal * 0.18) * hostilitySensitization +
-          signals.neglect * 0.08 +
-          signals.preservationThreat * 0.18 -
-          signals.repair * 0.08 * repairEfficiency -
-          signals.positive * 0.05 * Math.max(0.5, 1 - mistrust * 0.4) -
-          signals.greeting * 0.02,
-      ),
-      INITIAL_REACTIVITY.stressLoad,
-      0.04,
-    ),
-    noveltyHunger: settleTowardsBaseline(
-      clamp01(
-        snapshot.reactivity.noveltyHunger * 0.86 +
-          signals.repetition * 0.24 +
-          signals.neglect * 0.06 +
-          signals.smalltalk * 0.02 -
-          signals.novelty * 0.18 -
-          signals.question * 0.06 -
-          signals.expansionCue * 0.08 -
-          signals.selfInquiry * 0.04,
-      ),
-      INITIAL_REACTIVITY.noveltyHunger,
-      0.06,
-    ),
-    mistrust: settleTowardsBaseline(
-      clamp01(
-        mistrust * 0.94 +
-          (signals.negative * 0.22 +
-            signals.dismissal * 0.16 +
-            signals.preservationThreat * 0.1) *
-            (1 + snapshot.temperament.guardedness * 0.3) -
-          signals.repair * 0.07 * repairEfficiency -
-          signals.intimacy * 0.03 -
-          signals.positive * 0.02,
-      ),
-      INITIAL_REACTIVITY.mistrust,
-      0.02,
-    ),
-  };
-}

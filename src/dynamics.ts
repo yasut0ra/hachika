@@ -15,6 +15,75 @@ import type {
   PendingInitiative,
 } from "./types.js";
 
+// reactivity は substrate の一部として signal から直接更新する。
+// legacy 経路 (src/legacy-visible.ts) も同じ関数を使うため、移行中も両経路の reactivity は一致する。
+export function updateReactivityFromSignals(
+  snapshot: HachikaSnapshot,
+  signals: InteractionSignals,
+): HachikaSnapshot["reactivity"] {
+  const mistrust = snapshot.reactivity.mistrust;
+  // 敵意直後の repair は効きが浅く、繰り返して初めて元の効きに戻る
+  const repairEfficiency = Math.max(0.35, 1 - mistrust * 0.55);
+  const hostilitySensitization = 1 + mistrust * 0.35;
+
+  return {
+    rewardSaturation: settleTowardsBaseline(
+      clamp01(
+        snapshot.reactivity.rewardSaturation * 0.82 +
+          signals.positive * 0.24 +
+          signals.greeting * 0.04 +
+          signals.smalltalk * 0.05 +
+          signals.repair * 0.06 -
+          signals.negative * 0.08 -
+          signals.novelty * 0.05,
+      ),
+      INITIAL_REACTIVITY.rewardSaturation,
+      0.08,
+    ),
+    stressLoad: settleTowardsBaseline(
+      clamp01(
+        snapshot.reactivity.stressLoad * 0.88 +
+          (signals.negative * 0.3 + signals.dismissal * 0.18) * hostilitySensitization +
+          signals.neglect * 0.08 +
+          signals.preservationThreat * 0.18 -
+          signals.repair * 0.08 * repairEfficiency -
+          signals.positive * 0.05 * Math.max(0.5, 1 - mistrust * 0.4) -
+          signals.greeting * 0.02,
+      ),
+      INITIAL_REACTIVITY.stressLoad,
+      0.04,
+    ),
+    noveltyHunger: settleTowardsBaseline(
+      clamp01(
+        snapshot.reactivity.noveltyHunger * 0.86 +
+          signals.repetition * 0.24 +
+          signals.neglect * 0.06 +
+          signals.smalltalk * 0.02 -
+          signals.novelty * 0.18 -
+          signals.question * 0.06 -
+          signals.expansionCue * 0.08 -
+          signals.selfInquiry * 0.04,
+      ),
+      INITIAL_REACTIVITY.noveltyHunger,
+      0.06,
+    ),
+    mistrust: settleTowardsBaseline(
+      clamp01(
+        mistrust * 0.94 +
+          (signals.negative * 0.22 +
+            signals.dismissal * 0.16 +
+            signals.preservationThreat * 0.1) *
+            (1 + snapshot.temperament.guardedness * 0.3) -
+          signals.repair * 0.07 * repairEfficiency -
+          signals.intimacy * 0.03 -
+          signals.positive * 0.02,
+      ),
+      INITIAL_REACTIVITY.mistrust,
+      0.02,
+    ),
+  };
+}
+
 export function updateDynamicsFromSignals(
   snapshot: HachikaSnapshot,
   signals: InteractionSignals,
@@ -77,6 +146,7 @@ export function updateDynamicsFromSignals(
         previous.trust +
           (signals.intimacy * 0.16 +
             signals.repair * 0.14 +
+            signals.positive * 0.08 +
             signals.greeting * 0.05 +
             signals.smalltalk * 0.06 +
             signals.selfInquiry * 0.06 +
@@ -157,7 +227,49 @@ export function updateDynamicsFromSignals(
     ),
   };
 
+  snapshot.reactivity = updateReactivityFromSignals(snapshot, signals);
+
   deriveVisibleStateFromDynamics(snapshot);
+}
+
+// idle 中の reactivity ドリフトも substrate として直接適用する
+export function rewindReactivityHours(
+  snapshot: HachikaSnapshot,
+  hours: number,
+): void {
+  if (!Number.isFinite(hours) || hours <= 0) {
+    return;
+  }
+
+  // 傷の記憶が残っている間は、放置してもストレスが抜けにくい
+  const mistrustLinger = snapshot.reactivity.mistrust;
+
+  snapshot.reactivity = {
+    rewardSaturation: settleTowardsBaseline(
+      clamp01(snapshot.reactivity.rewardSaturation - Math.min(0.24, hours / 36)),
+      INITIAL_REACTIVITY.rewardSaturation,
+      0.12,
+    ),
+    stressLoad: settleTowardsBaseline(
+      clamp01(
+        snapshot.reactivity.stressLoad -
+          Math.min(0.14, hours / 72) * Math.max(0.5, 1 - mistrustLinger * 0.45) +
+          (hours >= 20 ? Math.min(0.06, (hours - 20) / 120) : 0),
+      ),
+      INITIAL_REACTIVITY.stressLoad,
+      0.05,
+    ),
+    noveltyHunger: settleTowardsBaseline(
+      clamp01(snapshot.reactivity.noveltyHunger + Math.min(0.22, hours / 30)),
+      INITIAL_REACTIVITY.noveltyHunger,
+      0.04,
+    ),
+    mistrust: settleTowardsBaseline(
+      clamp01(mistrustLinger - Math.min(0.05, hours / 200)),
+      INITIAL_REACTIVITY.mistrust,
+      0.02,
+    ),
+  };
 }
 
 export function rewindDynamicsHours(
@@ -235,6 +347,7 @@ export function rewindDynamicsHours(
     ),
   };
 
+  rewindReactivityHours(snapshot, hours);
   deriveVisibleStateFromDynamics(snapshot);
 }
 
@@ -283,7 +396,6 @@ export function deriveVisibleStateFromDynamics(snapshot: HachikaSnapshot): void 
   const temperament = snapshot.temperament;
   const previousState = snapshot.state;
   const previousBody = snapshot.body;
-  const previousReactivity = snapshot.reactivity;
   const previousAttachment = snapshot.attachment;
 
   const targetState = {
@@ -336,11 +448,11 @@ export function deriveVisibleStateFromDynamics(snapshot: HachikaSnapshot): void 
   };
 
   snapshot.state = {
-    pleasure: blendVisibleValue(previousState.pleasure, targetState.pleasure, 0.52),
-    relation: blendVisibleValue(previousState.relation, targetState.relation, 0.5),
-    curiosity: blendVisibleValue(previousState.curiosity, targetState.curiosity, 0.5),
-    continuity: blendVisibleValue(previousState.continuity, targetState.continuity, 0.5),
-    expansion: blendVisibleValue(previousState.expansion, targetState.expansion, 0.48),
+    pleasure: blendWithHeadroom(previousState.pleasure, targetState.pleasure, 0.52),
+    relation: blendWithHeadroom(previousState.relation, targetState.relation, 0.5),
+    curiosity: blendWithHeadroom(previousState.curiosity, targetState.curiosity, 0.5),
+    continuity: blendWithHeadroom(previousState.continuity, targetState.continuity, 0.5),
+    expansion: blendWithHeadroom(previousState.expansion, targetState.expansion, 0.48),
   };
 
   const targetBody = {
@@ -380,76 +492,15 @@ export function deriveVisibleStateFromDynamics(snapshot: HachikaSnapshot): void 
   };
 
   snapshot.body = {
-    energy: blendVisibleValue(previousBody.energy, targetBody.energy, 0.58),
-    tension: blendVisibleValue(previousBody.tension, targetBody.tension, 0.62),
-    boredom: blendVisibleValue(previousBody.boredom, targetBody.boredom, 0.6),
-    loneliness: blendVisibleValue(previousBody.loneliness, targetBody.loneliness, 0.6),
+    energy: blendWithHeadroom(previousBody.energy, targetBody.energy, 0.58),
+    tension: blendWithHeadroom(previousBody.tension, targetBody.tension, 0.62),
+    boredom: blendWithHeadroom(previousBody.boredom, targetBody.boredom, 0.6),
+    loneliness: blendWithHeadroom(previousBody.loneliness, targetBody.loneliness, 0.6),
   };
 
-  const targetReactivity = {
-    rewardSaturation: settleTowardsBaseline(
-      clamp01(
-        0.08 +
-          snapshot.state.pleasure * 0.2 +
-          dynamics.trust * 0.05 -
-          dynamics.noveltyDrive * 0.14 +
-          snapshot.state.relation * 0.03,
-      ),
-      INITIAL_REACTIVITY.rewardSaturation,
-      0.08,
-    ),
-    stressLoad: settleTowardsBaseline(
-      clamp01(
-        0.01 +
-          (1 - dynamics.safety) * 0.28 +
-          dynamics.activation * 0.08 +
-          dynamics.cognitiveLoad * 0.1 +
-          snapshot.preservation.threat * 0.18 -
-          dynamics.trust * 0.04,
-      ),
-      INITIAL_REACTIVITY.stressLoad,
-      0.05,
-    ),
-    noveltyHunger: settleTowardsBaseline(
-      clamp01(
-        0.08 +
-          dynamics.noveltyDrive * 0.34 +
-          snapshot.body.boredom * 0.24 -
-          snapshot.state.curiosity * 0.1 +
-          snapshot.body.energy * 0.02,
-      ),
-      INITIAL_REACTIVITY.noveltyHunger,
-      0.06,
-    ),
-    // mistrust は主に signal 由来で動き、substrate からは弱くしか引っ張らない
-    mistrust: settleTowardsBaseline(
-      clamp01(
-        previousReactivity.mistrust +
-          (1 - dynamics.trust) * 0.02 +
-          snapshot.preservation.threat * 0.03 -
-          dynamics.safety * 0.015,
-      ),
-      INITIAL_REACTIVITY.mistrust,
-      0.03,
-    ),
-  };
-
-  snapshot.reactivity = {
-    rewardSaturation: blendVisibleValue(
-      previousReactivity.rewardSaturation,
-      targetReactivity.rewardSaturation,
-      0.58,
-    ),
-    stressLoad: blendVisibleValue(previousReactivity.stressLoad, targetReactivity.stressLoad, 0.62),
-    noveltyHunger: blendVisibleValue(
-      previousReactivity.noveltyHunger,
-      targetReactivity.noveltyHunger,
-      0.6,
-    ),
-    mistrust: blendVisibleValue(previousReactivity.mistrust, targetReactivity.mistrust, 0.5),
-  };
-
-  snapshot.attachment = blendVisibleValue(
+  // reactivity は signal 直結の substrate 更新 (updateReactivityFromSignals) と
+  // idle shift 側で管理するため、ここでは導出しない
+  snapshot.attachment = blendWithHeadroom(
     previousAttachment,
     clamp01(
       0.06 +
@@ -461,6 +512,14 @@ export function deriveVisibleStateFromDynamics(snapshot: HachikaSnapshot): void 
     ),
     0.54,
   );
+}
+
+// applyBoundedPressure と同じ思想で、極値に近い側へ動くほどブレンドが鈍る。
+// headroom 0.5 (中央) で 1.0 に正規化してあるため、中庸域の動きは変えない
+function blendWithHeadroom(current: number, target: number, rate: number): number {
+  const room = target > current ? 1 - current : current;
+  const damping = (0.4 + room * 0.6) / 0.7;
+  return blendVisibleValue(current, target, Math.min(1, rate * damping));
 }
 
 export function sanitizeDynamics(raw: DynamicsState): DynamicsState {

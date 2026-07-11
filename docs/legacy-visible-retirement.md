@@ -34,25 +34,55 @@ visible state(`state / body / reactivity / attachment`)は、毎ターン **2つ
 - 新規メカニズムは必ず dynamics 経路を primary として実装し、
   legacy 側は「同じ向きの近似」だけを持つ
 
-### Phase 2: dynamics 経路の表現力を揃える
+### Phase 2: dynamics 経路の表現力を揃える(進行中)
 
-legacy 経路が今も担っている差分を dynamics 側へ移す。
+完了済み:
 
-- signal ごとの細かい非対称性(repair gate / mistrust spike / attachment rebound)は
-  すでに両経路にあるが、`applyBoundedPressure` の headroom 逓減
-  (値が高いほど増分が減る)に相当する飽和特性が dynamics 側の derive には薄い
-- `deriveVisibleStateFromDynamics()` の target 計算に飽和項を足すか、
-  blend 率自体を「baseline からの距離」で減衰させる
+- **reactivity の substrate 化**: `updateReactivityFromSignals`(turn)と
+  `rewindReactivityHours`(idle)を [src/dynamics.ts](../src/dynamics.ts) に移し、
+  reactivity の唯一の更新元にした。legacy 経路は同じ関数を共有するため
+  blend 対象から外れた(mistrust の蓄積は scale=0 でも動く)
+- **headroom 飽和**: `deriveVisibleStateFromDynamics()` の blend に
+  「極値に近い側へ動くほど鈍る」減衰を追加(中央で 1.0 に正規化)
+- trust の増加項に `positive` signal を追加(感謝が trust を動かないバグ相当の欠落)
 
-完了条件: 既存の scenario test(飽和・回復・履歴差)が
-legacy weight を落とした状態でも成立する。
+残作業 — **derive 固定点の再キャリブレーション**:
 
-### Phase 3: blend weight の段階的引き下げ
+`INITIAL_DYNAMICS` を入れたときの derive 平衡値が `INITIAL_STATE / INITIAL_BODY /
+INITIAL_ATTACHMENT` とずれており、legacy blend がこのズレを隠している。
+scale=0 では会話内容に関係なく平衡値へ緩和するドリフトが出る。
+測定したギャップ(平衡値 − 初期定数):
 
-- `blendLegacyVisibleState()` の weight を一括で下げられるよう、
-  グローバル係数 `LEGACY_BLEND_SCALE`(1.0 → 0.5 → 0)を導入する
-- 各段階で `npm test` + growth metrics 比較を回し、
-  逸脱した field だけ Phase 2 に戻して dynamics 側を補強する
+| field | gap |
+| --- | --- |
+| pleasure | −0.04 |
+| relation | −0.03 |
+| curiosity | ≈0 |
+| continuity | −0.09 |
+| expansion | +0.08 |
+| energy | −0.10 |
+| tension | +0.07 |
+| boredom | +0.18 |
+| loneliness | +0.10 |
+| attachment | +0.11 |
+
+対応方針: derive の base 定数を初期定数と揃うよう再調整するか、
+初期定数側を平衡値に寄せる。どちらも scale=1 の挙動が少し動くため、
+growth metrics(saturation / recovery / motive diversity)の比較付きで行う。
+
+完了条件: [src/legacy-scale.test.ts](../src/legacy-scale.test.ts) の
+差分不変条件(`lands warmer than hostile`)を絶対不変条件
+(`positive turn raises relation and pleasure`)へ戻せること。
+
+### Phase 3: blend weight の段階的引き下げ(ダイヤル導入済み)
+
+- `LEGACY_BLEND_SCALE` を導入済み: 環境変数 `HACHIKA_LEGACY_BLEND_SCALE`
+  (default 1.0)または test 用の `setLegacyBlendScale()` で
+  turn の state/body/attachment blend と idle の body blend を一括減衰できる
+- scale=0(dynamics 単独)の中核不変条件は `src/legacy-scale.test.ts` で固定済み:
+  飽和しない / hostile より positive が温かく着地する / mistrust の蓄積と緩release / idle で退屈と孤独が上がる
+- 今後: Phase 2 の固定点調整後、default を 1.0 → 0.5 → 0 へ段階的に下げ、
+  各段階で `npm test` + growth metrics 比較を回す
 
 ### Phase 4: 削除
 
@@ -63,9 +93,5 @@ legacy weight を落とした状態でも成立する。
 
 ## 注意
 
-- `updateReactivityFromSignals()`(reactivity の signal 直結更新)は legacy 経路の中にあるが、
-  reactivity の履歴性(mistrust の蓄積など)は仕様として残したい。
-  Phase 2 で dynamics 経路の `deriveVisibleStateFromDynamics()` 内 reactivity 導出へ
-  signal 由来の項を統合してから消すこと。
 - persistence は visible state をそのまま保存しているため、
   退役しても snapshot 互換性は壊れない(`dynamics` は既に保存されている)。
