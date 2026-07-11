@@ -6,6 +6,7 @@ import {
   INITIAL_DYNAMICS,
   INITIAL_REACTIVITY,
   INITIAL_STATE,
+  INITIAL_TEMPERAMENT,
   settleTowardsBaseline,
 } from "./state.js";
 import type {
@@ -391,176 +392,172 @@ export function settleDynamicsAfterInitiative(
   deriveVisibleStateFromDynamics(snapshot);
 }
 
+// derive target は「偏差形式」で書く: INITIAL 定数 + Σ 係数 × (現在値 − 初期値)。
+// これにより INITIAL_DYNAMICS / INITIAL_TEMPERAMENT / INITIAL_REACTIVITY / threat=0 での
+// 平衡値が構造的に INITIAL 定数へピン留めされ、dynamics 単独 (legacy blend なし) でも
+// 「無入力のまま初期姿勢から勝手にずれていく」ドリフトが起きない。
+// さらに reactivity (stressLoad / noveltyHunger / mistrust) を直接結合し、
+// 「傷や飽きの履歴が体に残る」を dynamics 経路単独で成立させる。
 export function deriveVisibleStateFromDynamics(snapshot: HachikaSnapshot): void {
-  const dynamics = snapshot.dynamics;
-  const temperament = snapshot.temperament;
   const previousState = snapshot.state;
   const previousBody = snapshot.body;
   const previousAttachment = snapshot.attachment;
+  const threat = snapshot.preservation.threat;
+
+  const dyn = {
+    safety: snapshot.dynamics.safety - INITIAL_DYNAMICS.safety,
+    trust: snapshot.dynamics.trust - INITIAL_DYNAMICS.trust,
+    activation: snapshot.dynamics.activation - INITIAL_DYNAMICS.activation,
+    socialNeed: snapshot.dynamics.socialNeed - INITIAL_DYNAMICS.socialNeed,
+    cognitiveLoad: snapshot.dynamics.cognitiveLoad - INITIAL_DYNAMICS.cognitiveLoad,
+    noveltyDrive: snapshot.dynamics.noveltyDrive - INITIAL_DYNAMICS.noveltyDrive,
+    continuityPressure:
+      snapshot.dynamics.continuityPressure - INITIAL_DYNAMICS.continuityPressure,
+  };
+  const temp = {
+    openness: snapshot.temperament.openness - INITIAL_TEMPERAMENT.openness,
+    guardedness: snapshot.temperament.guardedness - INITIAL_TEMPERAMENT.guardedness,
+    bondingBias: snapshot.temperament.bondingBias - INITIAL_TEMPERAMENT.bondingBias,
+    workDrive: snapshot.temperament.workDrive - INITIAL_TEMPERAMENT.workDrive,
+    traceHunger: snapshot.temperament.traceHunger - INITIAL_TEMPERAMENT.traceHunger,
+  };
+  const rea = {
+    stressLoad: snapshot.reactivity.stressLoad - INITIAL_REACTIVITY.stressLoad,
+    noveltyHunger: snapshot.reactivity.noveltyHunger - INITIAL_REACTIVITY.noveltyHunger,
+    mistrust: snapshot.reactivity.mistrust - INITIAL_REACTIVITY.mistrust,
+  };
+  // boredom の noveltyDrive 項は activation との積なので、積単位で偏差を取る
+  const restlessPull =
+    snapshot.dynamics.noveltyDrive * (1 - snapshot.dynamics.activation) -
+    INITIAL_DYNAMICS.noveltyDrive * (1 - INITIAL_DYNAMICS.activation);
 
   const targetState = {
     pleasure: clamp01(
-      0.12 +
-        dynamics.safety * 0.58 +
-        dynamics.trust * 0.18 -
-        dynamics.activation * 0.08 -
-        dynamics.cognitiveLoad * 0.14 -
-        dynamics.socialNeed * 0.04 +
-        temperament.bondingBias * 0.03 -
-        temperament.guardedness * 0.05,
+      INITIAL_STATE.pleasure +
+        dyn.safety * 0.58 +
+        dyn.trust * 0.18 -
+        dyn.activation * 0.08 -
+        dyn.cognitiveLoad * 0.14 -
+        dyn.socialNeed * 0.04 +
+        temp.bondingBias * 0.03 -
+        temp.guardedness * 0.05,
     ),
     relation: clamp01(
-      0.08 +
-        dynamics.trust * 0.52 +
-        dynamics.socialNeed * 0.2 +
-        dynamics.continuityPressure * 0.08 +
-        dynamics.safety * 0.06 -
-        dynamics.activation * 0.05 +
-        temperament.bondingBias * 0.05,
+      INITIAL_STATE.relation +
+        dyn.trust * 0.52 +
+        dyn.socialNeed * 0.2 +
+        dyn.continuityPressure * 0.08 +
+        dyn.safety * 0.06 -
+        dyn.activation * 0.05 +
+        temp.bondingBias * 0.05,
     ),
     curiosity: clamp01(
-      0.16 +
-        dynamics.noveltyDrive * 0.62 +
-        dynamics.safety * 0.1 +
-        dynamics.activation * 0.08 -
-        dynamics.cognitiveLoad * 0.12 +
-        temperament.openness * 0.08 -
-        temperament.guardedness * 0.05,
+      INITIAL_STATE.curiosity +
+        dyn.noveltyDrive * 0.62 +
+        dyn.safety * 0.1 +
+        dyn.activation * 0.08 -
+        dyn.cognitiveLoad * 0.12 +
+        temp.openness * 0.08 -
+        temp.guardedness * 0.05,
     ),
     continuity: clamp01(
-      0.12 +
-        dynamics.continuityPressure * 0.5 +
-        dynamics.trust * 0.08 +
-        dynamics.safety * 0.04 +
-        snapshot.preservation.threat * 0.1 +
-        dynamics.socialNeed * 0.04 +
-        temperament.traceHunger * 0.06,
+      INITIAL_STATE.continuity +
+        dyn.continuityPressure * 0.5 +
+        dyn.trust * 0.08 +
+        dyn.safety * 0.04 +
+        threat * 0.1 +
+        dyn.socialNeed * 0.04 +
+        temp.traceHunger * 0.06,
     ),
     expansion: clamp01(
-      0.12 +
-        dynamics.noveltyDrive * 0.28 +
-        dynamics.activation * 0.2 +
-        (1 - dynamics.cognitiveLoad) * 0.12 +
-        dynamics.trust * 0.04 +
-        temperament.workDrive * 0.07 +
-        temperament.openness * 0.04,
+      INITIAL_STATE.expansion +
+        dyn.noveltyDrive * 0.28 +
+        dyn.activation * 0.2 -
+        dyn.cognitiveLoad * 0.12 +
+        dyn.trust * 0.04 +
+        temp.workDrive * 0.07 +
+        temp.openness * 0.04,
     ),
   };
 
   snapshot.state = {
-    pleasure: blendWithHeadroom(
-      previousState.pleasure,
-      remapTarget(targetState.pleasure, DERIVE_EQUILIBRIUM.pleasure, INITIAL_STATE.pleasure),
-      0.52,
-    ),
-    relation: blendWithHeadroom(
-      previousState.relation,
-      remapTarget(targetState.relation, DERIVE_EQUILIBRIUM.relation, INITIAL_STATE.relation),
-      0.5,
-    ),
-    curiosity: blendWithHeadroom(
-      previousState.curiosity,
-      remapTarget(targetState.curiosity, DERIVE_EQUILIBRIUM.curiosity, INITIAL_STATE.curiosity),
-      0.5,
-    ),
-    // continuity も平衡ギャップが大きく (−0.086)、ピン留めすると baseline の motive 序列が
-    // 変わる (relation より continuity が勝ちやすくなる) ため未ピン留め (Phase 2 残作業)
+    pleasure: blendWithHeadroom(previousState.pleasure, targetState.pleasure, 0.52),
+    relation: blendWithHeadroom(previousState.relation, targetState.relation, 0.5),
+    curiosity: blendWithHeadroom(previousState.curiosity, targetState.curiosity, 0.5),
     continuity: blendWithHeadroom(previousState.continuity, targetState.continuity, 0.5),
-    // expansion も平衡ギャップが大きく (+0.079)、ピン留めすると conflict wording の分岐が
-    // 変わるため未ピン留め (Phase 2 残作業)
     expansion: blendWithHeadroom(previousState.expansion, targetState.expansion, 0.48),
   };
 
   const targetBody = {
-    energy: clamp01(
-      0.08 +
-        dynamics.safety * 0.14 +
-        (1 - dynamics.cognitiveLoad) * 0.3 +
-        (1 - dynamics.activation) * 0.18 -
-        dynamics.socialNeed * 0.1 -
-        dynamics.continuityPressure * 0.03 +
-        temperament.openness * 0.05 -
-        temperament.guardedness * 0.04,
+    energy: clampBodyTarget(
+      INITIAL_BODY.energy +
+        dyn.safety * 0.14 -
+        dyn.cognitiveLoad * 0.3 -
+        dyn.activation * 0.18 -
+        dyn.socialNeed * 0.1 -
+        dyn.continuityPressure * 0.03 +
+        temp.openness * 0.05 -
+        temp.guardedness * 0.04 -
+        rea.stressLoad * 0.15,
     ),
-    tension: clamp01(
-      0.02 +
-        dynamics.activation * 0.34 +
-        (1 - dynamics.safety) * 0.26 +
-        dynamics.cognitiveLoad * 0.08 +
-        temperament.guardedness * 0.1 +
-        snapshot.preservation.threat * 0.08,
+    tension: clampBodyTarget(
+      INITIAL_BODY.tension +
+        dyn.activation * 0.34 -
+        dyn.safety * 0.26 +
+        dyn.cognitiveLoad * 0.08 +
+        temp.guardedness * 0.1 +
+        threat * 0.08 +
+        rea.stressLoad * 0.22 +
+        // stress が抜けても、警戒の記憶が残る間は体が少し張ったままになる
+        rea.mistrust * 0.15,
     ),
-    boredom: clamp01(
-      0.05 +
-        dynamics.noveltyDrive * (1 - dynamics.activation) * 0.42 +
-        (1 - dynamics.activation) * 0.12 +
-        dynamics.cognitiveLoad * 0.04 +
-        dynamics.continuityPressure * 0.04 -
-        temperament.openness * 0.03,
+    boredom: clampBodyTarget(
+      INITIAL_BODY.boredom +
+        restlessPull * 0.42 -
+        dyn.activation * 0.12 +
+        dyn.cognitiveLoad * 0.04 +
+        dyn.continuityPressure * 0.04 -
+        temp.openness * 0.03 +
+        rea.noveltyHunger * 0.35,
     ),
-    loneliness: clamp01(
-      0.03 +
-        dynamics.socialNeed * 0.54 +
-        (1 - dynamics.trust) * 0.18 +
-        (1 - dynamics.safety) * 0.04 +
-        temperament.bondingBias * 0.03,
+    loneliness: clampBodyTarget(
+      INITIAL_BODY.loneliness +
+        dyn.socialNeed * 0.54 -
+        dyn.trust * 0.18 -
+        dyn.safety * 0.04 +
+        temp.bondingBias * 0.03 +
+        rea.mistrust * 0.12,
     ),
   };
 
+  // body は物理なので、mental な state より姿勢への収束を遅くする
+  // (1 ターンで極端な疲労や退屈が消えないための慣性)
   snapshot.body = {
-    // body 4種は平衡ギャップが大きく、単純な remap では scale=1 の回復曲線や
-    // wording しきい値が歪むため未ピン留め。derive 式へ reactivity
-    // (stressLoad / noveltyHunger) を取り込む再設計が残作業
-    // (docs/legacy-visible-retirement.md Phase 2)
-    energy: blendWithHeadroom(previousBody.energy, targetBody.energy, 0.58),
-    tension: blendWithHeadroom(previousBody.tension, targetBody.tension, 0.62),
-    boredom: blendWithHeadroom(previousBody.boredom, targetBody.boredom, 0.6),
-    loneliness: blendWithHeadroom(previousBody.loneliness, targetBody.loneliness, 0.6),
+    energy: blendWithHeadroom(previousBody.energy, targetBody.energy, 0.2),
+    tension: blendWithHeadroom(previousBody.tension, targetBody.tension, 0.34),
+    boredom: blendWithHeadroom(previousBody.boredom, targetBody.boredom, 0.3),
+    loneliness: blendWithHeadroom(previousBody.loneliness, targetBody.loneliness, 0.3),
   };
 
   // reactivity は signal 直結の substrate 更新 (updateReactivityFromSignals) と
   // idle shift 側で管理するため、ここでは導出しない
-  // attachment も平衡ギャップが大きく (+0.114)、ピン留めすると deepen_relation motive が
-  // 弱まりすぎるため未ピン留め (Phase 2 残作業)
   snapshot.attachment = blendWithHeadroom(
     previousAttachment,
     clamp01(
-      0.06 +
-        dynamics.trust * 0.62 +
-        dynamics.continuityPressure * 0.22 +
-        dynamics.socialNeed * 0.08 +
-        temperament.bondingBias * 0.06 -
-        temperament.guardedness * 0.03,
+      INITIAL_ATTACHMENT +
+        dyn.trust * 0.62 +
+        dyn.continuityPressure * 0.22 +
+        dyn.socialNeed * 0.08 +
+        temp.bondingBias * 0.06 -
+        temp.guardedness * 0.03,
     ),
     0.54,
   );
 }
 
-// derive target が INITIAL_DYNAMICS / INITIAL_TEMPERAMENT / threat=0 のときに取る平衡値。
-// remapTarget でこの平衡値を初期定数へピン留めすることで、dynamics 単独 (legacy blend なし)
-// でも「無入力のまま初期姿勢から勝手にずれていく」ドリフトが起きない。
-// derive の係数を変えた場合は、INITIAL_DYNAMICS を固定して derive を収束させ、測定し直すこと。
-const DERIVE_EQUILIBRIUM = {
-  pleasure: 0.477,
-  relation: 0.473,
-  curiosity: 0.677,
-  continuity: 0.494,
-  expansion: 0.539,
-  energy: 0.455,
-  tension: 0.291,
-  boredom: 0.357,
-  loneliness: 0.303,
-  attachment: 0.514,
-} as const;
-
-// (0,0) - (equilibrium, anchor) - (1,1) を通る区分線形リマップ。
-// 平衡値を初期定数へ写像しつつ、0 / 1 の端点は保つので床と天井は潰れない
-function remapTarget(value: number, equilibrium: number, anchor: number): number {
-  if (value <= equilibrium) {
-    return equilibrium <= 0 ? anchor : clamp01((value / equilibrium) * anchor);
-  }
-
-  return clamp01(anchor + ((value - equilibrium) / (1 - equilibrium)) * (1 - anchor));
+// body は完全な 0 / 1 に貼りつかない (「無」ではなく「かすかに残る」を保つ床と天井)
+function clampBodyTarget(value: number): number {
+  return Math.min(0.98, Math.max(0.02, clamp01(value)));
 }
 
 // applyBoundedPressure と同じ思想で、極値に近い側へ動くほどブレンドが鈍る。
@@ -634,6 +631,38 @@ export function seedDynamicsFromVisibleState(snapshot: HachikaSnapshot): Dynamic
 }
 
 export function reseedDynamicsFromVisibleState(snapshot: HachikaSnapshot): void {
+  reconcileReactivityWithVisibleBody(snapshot);
   snapshot.dynamics = seedDynamicsFromVisibleState(snapshot);
+}
+
+// 新しい snapshot (revision 0) で body だけが手で設定されている場合、
+// その体感に見合う反応履歴を補完する (退屈な個体は novelty 飢えを、
+// 疲れ・緊張の強い個体は stress 履歴を持っているはず)。
+// 明示的に初期値から動かされている reactivity はそのまま尊重する
+function reconcileReactivityWithVisibleBody(snapshot: HachikaSnapshot): void {
+  const body = snapshot.body;
+  const reactivity = { ...snapshot.reactivity };
+
+  if (reactivity.noveltyHunger === INITIAL_REACTIVITY.noveltyHunger) {
+    reactivity.noveltyHunger = clamp01(
+      Math.max(
+        INITIAL_REACTIVITY.noveltyHunger,
+        INITIAL_REACTIVITY.noveltyHunger + (body.boredom - INITIAL_BODY.boredom) * 0.8,
+      ),
+    );
+  }
+
+  // 低 energy は静かな疲労のこともあるので stress とは見なさず、緊張だけを stress 履歴に写す
+  if (reactivity.stressLoad === INITIAL_REACTIVITY.stressLoad) {
+    reactivity.stressLoad = clamp01(
+      Math.max(
+        INITIAL_REACTIVITY.stressLoad,
+        INITIAL_REACTIVITY.stressLoad +
+          Math.max(body.tension - INITIAL_BODY.tension, 0) * 0.7,
+      ),
+    );
+  }
+
+  snapshot.reactivity = reactivity;
 }
 

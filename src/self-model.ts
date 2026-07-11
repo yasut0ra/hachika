@@ -385,7 +385,9 @@ function resolveConflictDominant(
 ): SelfMotive["kind"] {
   switch (kind) {
     case "curiosity_relation":
-      if (snapshot.attachment + snapshot.state.relation >= snapshot.state.curiosity + 0.2) {
+      // margin は attachment の derive 固定点を INITIAL_ATTACHMENT (0.4) に
+      // 揃えた際に再調整した (以前は水増しされた attachment 平衡 ~0.51 が前提だった)
+      if (snapshot.attachment + snapshot.state.relation >= snapshot.state.curiosity + 0.17) {
         return "deepen_relation";
       }
       return left.score >= right.score ? left.kind : right.kind;
@@ -423,13 +425,16 @@ function conflictContextBoost(
   snapshot: HachikaSnapshot,
   kind: ConflictKind,
 ): number {
+  // 最近雑に扱われた記憶が残っている間は、境界がらみの葛藤を強く感じる
+  const woundedBoost = Math.max(0, snapshot.reactivity.mistrust - 0.1) * 0.45;
+
   switch (kind) {
     case "curiosity_relation":
       return snapshot.attachment * 0.08;
     case "curiosity_boundary":
-      return (1 - snapshot.state.pleasure) * 0.08;
+      return (1 - snapshot.state.pleasure) * 0.08 + woundedBoost;
     case "shared_work_boundary":
-      return snapshot.state.expansion * 0.05;
+      return snapshot.state.expansion * 0.05 + woundedBoost;
     case "continuity_curiosity":
       return snapshot.state.continuity * 0.06;
   }
