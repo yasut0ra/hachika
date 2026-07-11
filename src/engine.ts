@@ -744,44 +744,56 @@ export class HachikaEngine {
           const resolvedDirective = resolveProactiveDirective(directed.directive);
 
           if (!resolvedDirective.emit) {
-            return null;
-          }
+            const keepSuppressedEmission =
+              options.force === true || isUserAnswerInitiative(prepared.pending);
+            if (!keepSuppressedEmission) {
+              return null;
+            }
 
-          plannerSource = "llm";
-          plannerProvider = directed.provider;
-          plannerModel = directed.model;
-          plannerRulePlan = prepared.plan.summary;
-          finalPlan = resolvedDirective.plan ?? prepared.plan;
-          if (resolvedDirective.topics !== null) {
-            generationTopics = [...resolvedDirective.topics];
-          }
-          if (resolvedDirective.stateTopic !== undefined) {
-            finalStateTopic = sanitizeInitiativeStateTopic(
-              nextSnapshot,
-              resolvedDirective.stateTopic,
-            );
-          }
-          if (
-            resolvedDirective.stateTopic !== undefined ||
-            resolvedDirective.place !== undefined ||
-            resolvedDirective.worldAction !== undefined
-          ) {
-            const nextPending = sanitizePendingInitiativeDurability(nextSnapshot, {
-              ...prepared.pending,
-              ...(resolvedDirective.stateTopic !== undefined
-                ? { stateTopic: resolvedDirective.stateTopic }
-                : {}),
-              ...(resolvedDirective.place !== undefined
-                ? { place: resolvedDirective.place }
-                : {}),
-              ...(resolvedDirective.worldAction !== undefined
-                ? { worldAction: resolvedDirective.worldAction }
-                : {}),
-            });
-            prepared = {
-              ...prepared,
-              pending: nextPending,
-            };
+            plannerProvider = directed.provider;
+            plannerModel = directed.model;
+            plannerRulePlan = prepared.plan.summary;
+            plannerFallbackUsed = true;
+            plannerError = isUserAnswerInitiative(prepared.pending)
+              ? "suppressed_user_answer_probe"
+              : "suppressed_forced_proactive";
+          } else {
+            plannerSource = "llm";
+            plannerProvider = directed.provider;
+            plannerModel = directed.model;
+            plannerRulePlan = prepared.plan.summary;
+            finalPlan = resolvedDirective.plan ?? prepared.plan;
+            if (resolvedDirective.topics !== null) {
+              generationTopics = [...resolvedDirective.topics];
+            }
+            if (resolvedDirective.stateTopic !== undefined) {
+              finalStateTopic = sanitizeInitiativeStateTopic(
+                nextSnapshot,
+                resolvedDirective.stateTopic,
+              );
+            }
+            if (
+              resolvedDirective.stateTopic !== undefined ||
+              resolvedDirective.place !== undefined ||
+              resolvedDirective.worldAction !== undefined
+            ) {
+              const nextPending = sanitizePendingInitiativeDurability(nextSnapshot, {
+                ...prepared.pending,
+                ...(resolvedDirective.stateTopic !== undefined
+                  ? { stateTopic: resolvedDirective.stateTopic }
+                  : {}),
+                ...(resolvedDirective.place !== undefined
+                  ? { place: resolvedDirective.place }
+                  : {}),
+                ...(resolvedDirective.worldAction !== undefined
+                  ? { worldAction: resolvedDirective.worldAction }
+                  : {}),
+              });
+              prepared = {
+                ...prepared,
+                pending: nextPending,
+              };
+            }
           }
         }
       } catch (error) {
@@ -1476,6 +1488,16 @@ function resolveProactiveDirective(
     worldAction: directive.semantic.proactivePlan.worldAction ?? null,
     summary: describeSemanticDirective(directive.semantic),
   };
+}
+
+function isUserAnswerInitiative(pending: PendingInitiative): boolean {
+  return (
+    pending.topic === null &&
+    (pending.stateTopic ?? null) === null &&
+    pending.blocker !== null &&
+    (pending.reason === "continuity" || pending.reason === "relation_claim") &&
+    (pending.motive === "seek_continuity" || pending.motive === "deepen_relation")
+  );
 }
 
 interface ResolvedReplySelection {
@@ -5515,6 +5537,8 @@ function updateDiscourseState(
     };
   }
 
+  resolveUserOwnedOpenQuestion(snapshot, normalized, signals, turnDebug, timestamp);
+
   if (turnDebug && turnDebug.target !== "none" && shouldRecordOpenQuestion(normalized, signals, turnDebug)) {
     snapshot.discourse.openQuestions.push({
       target: turnDebug.target,
@@ -5544,6 +5568,42 @@ function updateDiscourseState(
   if (correction) {
     snapshot.discourse.lastCorrection = correction;
   }
+}
+
+function resolveUserOwnedOpenQuestion(
+  snapshot: HachikaSnapshot,
+  input: string,
+  signals: InteractionSignals,
+  turnDebug: TurnDirectiveDebug | null,
+  timestamp: string,
+): void {
+  if (!input || signals.question >= 0.22 || /[?？]/u.test(input)) {
+    return;
+  }
+
+  const question = [...snapshot.discourse.openQuestions]
+    .reverse()
+    .find((candidate) => candidate.status === "open");
+
+  if (
+    !question ||
+    (question.target !== "user_name" &&
+      question.target !== "user_profile" &&
+      question.target !== "relation")
+  ) {
+    return;
+  }
+
+  if (
+    turnDebug?.target === "hachika_name" ||
+    turnDebug?.target === "hachika_profile" ||
+    turnDebug?.target === "world_state"
+  ) {
+    return;
+  }
+
+  question.status = "resolved";
+  question.resolvedAt = timestamp;
 }
 
 function shouldRecordOpenQuestion(

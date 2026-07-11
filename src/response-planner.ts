@@ -716,18 +716,22 @@ export function buildProactivePlan(
 ): ProactivePlan {
   const reopened = reopenedByMaintenance(maintenance);
   const temperament = snapshot.temperament;
-  const focusTopic =
+  const userAnswerProbe = isUserAnswerInitiative(pending);
+  const rawFocusTopic =
     maintenance?.trace.topic ??
     pending.topic ??
     snapshot.purpose.active?.topic ??
     snapshot.identity.anchors[0] ??
     null;
+  const focusTopic = userAnswerProbe ? null : rawFocusTopic;
 
   let act: ProactiveAct;
   if (pending.kind === "preserve_presence") {
     act = "preserve";
   } else if (reopened) {
     act = "reopen";
+  } else if (userAnswerProbe) {
+    act = "reconnect";
   } else if (pending.blocker) {
     act = "untangle";
   } else {
@@ -769,11 +773,13 @@ export function buildProactivePlan(
         ? "far"
         : "measured";
   const mentionBlocker =
+    !userAnswerProbe &&
     Boolean(pending.blocker) &&
     (act === "untangle" || act === "continue_work" || act === "explore");
   const mentionReopen = reopened;
   const mentionMaintenance = maintenance !== null;
   const mentionIntent =
+    userAnswerProbe ||
     maintenance !== null &&
     (pending.kind === "preserve_presence" ||
       snapshot.body.energy < 0.22 ||
@@ -791,7 +797,9 @@ export function buildProactivePlan(
           ? "relation"
           : "maintenance";
   const variation =
-    act === "reconnect" || act === "preserve"
+    userAnswerProbe
+      ? "questioning"
+      : act === "reconnect" || act === "preserve"
       ? "brief"
       : act === "explore" || (act === "reopen" && temperament.openness > 0.62)
         ? "questioning"
@@ -810,6 +818,16 @@ export function buildProactivePlan(
     variation,
     summary: summarizeProactivePlan(act, stance, distance, emphasis, focusTopic, neglectLevel),
   };
+}
+
+function isUserAnswerInitiative(pending: PendingInitiative): boolean {
+  return (
+    pending.topic === null &&
+    (pending.stateTopic ?? null) === null &&
+    pending.blocker !== null &&
+    (pending.reason === "continuity" || pending.reason === "relation_claim") &&
+    (pending.motive === "seek_continuity" || pending.motive === "deepen_relation")
+  );
 }
 
 function summarizePlan(

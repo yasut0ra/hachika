@@ -3,6 +3,7 @@ import test from "node:test";
 
 import type { AutonomyDirector } from "./autonomy-director.js";
 import type { ProactiveDirector } from "./proactive-director.js";
+import type { ReplyGenerator } from "./reply-generator.js";
 import { createInitialSnapshot } from "./state.js";
 import {
   describeResidentLoopConfig,
@@ -258,6 +259,82 @@ test("resident loop clears stale pending and stays quiet while a direct referent
     ),
   );
   assert.equal(result.outwardActivities.length, 0);
+});
+
+test("resident loop can ask the user to resolve a user-owned open question", async () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.lastInteractionAt = "2026-04-01T00:00:00.000Z";
+  snapshot.body.energy = 0.66;
+  snapshot.body.loneliness = 0.44;
+  snapshot.discourse.openQuestions.push({
+    target: "user_profile",
+    text: "なんて言われたい?",
+    askedAt: "2026-04-01T00:00:00.000Z",
+    status: "open",
+    resolvedAt: null,
+  });
+
+  const result = await runResidentLoopTick(snapshot, {
+    idleHours: 0,
+    now: new Date("2026-04-01T02:00:00.000Z"),
+  });
+
+  assert.match(result.proactiveMessage ?? "", /なんて言われたい/u);
+  assert.equal(result.outwardActivities.length, 1);
+  assert.equal(result.outwardActivities[0]?.blocker, "なんて言われたい?");
+  assert.equal(result.outwardActivities[0]?.topic, null);
+});
+
+test("resident loop keeps a user-owned open question probe when proactive director suppresses it", async () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.lastInteractionAt = "2026-04-01T00:00:00.000Z";
+  snapshot.body.energy = 0.66;
+  snapshot.body.loneliness = 0.44;
+  snapshot.discourse.openQuestions.push({
+    target: "user_profile",
+    text: "なんて言われたい?",
+    askedAt: "2026-04-01T00:00:00.000Z",
+    status: "open",
+    resolvedAt: null,
+  });
+
+  const replyGenerator: ReplyGenerator = {
+    name: "test-reply",
+    async generateReply() {
+      return null;
+    },
+    async generateProactive(context) {
+      return {
+        reply: context.fallbackMessage,
+        provider: "test-reply",
+        model: "stub",
+      };
+    },
+  };
+  const proactiveDirector: ProactiveDirector = {
+    name: "test-director",
+    async directProactive() {
+      return {
+        directive: {
+          emit: false,
+          plan: null,
+          summary: "suppress/quiet",
+        },
+        provider: "test-director",
+        model: "stub",
+      };
+    },
+  };
+
+  const result = await runResidentLoopTick(snapshot, {
+    idleHours: 0,
+    now: new Date("2026-04-01T02:00:00.000Z"),
+    replyGenerator,
+    proactiveDirector,
+  });
+
+  assert.match(result.proactiveMessage ?? "", /なんて言われたい/u);
+  assert.equal(result.outwardActivities[0]?.blocker, "なんて言われたい?");
 });
 
 test("resident loop can suppress proactive emission through a proactive director", async () => {

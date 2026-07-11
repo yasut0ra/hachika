@@ -265,6 +265,28 @@ export function prepareInitiativeEmission(
     return null;
   }
 
+  const discourseQuestionPending = synthesizeUserAnswerInitiative(snapshot, nowIso);
+  if (
+    discourseQuestionPending &&
+    (force || hoursSinceInteraction >= discourseQuestionPending.readyAfterHours)
+  ) {
+    const preparedPending = withInitiativeWorldContext(snapshot, discourseQuestionPending);
+    const plan = buildUserAnswerProactivePlan(
+      snapshot,
+      preparedPending,
+      neglectLevel,
+    );
+    const selection = buildProactiveSelectionDebug(preparedPending, null, plan);
+    return {
+      pending: preparedPending,
+      neglectLevel,
+      plan,
+      selection,
+      messageKind: "resume",
+      emittedAt: nowIso,
+    };
+  }
+
   if (!force && shouldSuppressOutwardInitiativeForDiscourseDemand(discourseDemandReasons)) {
     return null;
   }
@@ -1419,8 +1441,11 @@ function buildResumeMessage(
     ? buildMaintenanceIntentLine(snapshot, pending, maintenance)
     : null;
   const worldRecallLine = buildWorldRecallLine(snapshot, pending, maintenance);
-  const askLine = buildProactiveAskLine(snapshot, plan, pending, maintenance);
-  const base = (() => {
+  const askLine =
+    buildUserAnswerAskLine(snapshot, plan, pending) ??
+    buildProactiveAskLine(snapshot, plan, pending, maintenance);
+  const userAnswerBaseLine = buildUserAnswerBaseLine(snapshot, pending);
+  const base = userAnswerBaseLine ?? (() => {
     switch (pending.motive) {
       case "seek_continuity":
         return pickFreshText(
@@ -2542,6 +2567,60 @@ function synthesizePreservationInitiative(
   });
 }
 
+function synthesizeUserAnswerInitiative(
+  snapshot: HachikaSnapshot,
+  createdAt: string,
+): PendingInitiative | null {
+  const question = [...snapshot.discourse.openQuestions]
+    .reverse()
+    .find((candidate) => candidate.status === "open");
+
+  if (
+    !question ||
+    (question.target !== "user_name" &&
+      question.target !== "user_profile" &&
+      question.target !== "relation")
+  ) {
+    return null;
+  }
+
+  const motive: MotiveKind =
+    question.target === "relation" ? "deepen_relation" : "seek_continuity";
+
+  return withInitiativeWorldContext(snapshot, {
+    kind: "resume_topic",
+    motive,
+    reason: question.target === "relation" ? "relation_claim" : "continuity",
+    topic: null,
+    stateTopic: null,
+    blocker: question.text,
+    concern: null,
+    createdAt,
+    readyAfterHours: 0.5,
+  });
+}
+
+function buildUserAnswerProactivePlan(
+  snapshot: HachikaSnapshot,
+  pending: PendingInitiative,
+  neglectLevel: number,
+): ProactivePlan {
+  const plan = buildProactivePlan(snapshot, pending, neglectLevel, null);
+
+  return {
+    ...plan,
+    act: "reconnect",
+    stance: snapshot.body.tension > 0.68 ? "measured" : "open",
+    distance: snapshot.body.tension > 0.68 ? "measured" : "close",
+    focusTopic: null,
+    emphasis: "relation",
+    mentionBlocker: false,
+    mentionIntent: true,
+    variation: "questioning",
+    summary: `reconnect/${snapshot.body.tension > 0.68 ? "measured/measured" : "open/close"}/relation after ${neglectLevel.toFixed(2)}`,
+  };
+}
+
 function shouldSuppressPendingSynthesisForDiscourseDemand(
   snapshot: HachikaSnapshot,
   candidateTopics: readonly string[],
@@ -3296,6 +3375,57 @@ function buildProactiveAskLine(
       "いま開き直すなら、どこから始める？",
     ],
     recentAssistantLines,
+    snapshot.conversationCount,
+  );
+}
+
+function buildUserAnswerAskLine(
+  snapshot: HachikaSnapshot,
+  plan: ProactivePlan,
+  pending: PendingInitiative,
+): string | null {
+  if (
+    plan.variation !== "questioning" ||
+    pending.topic !== null ||
+    pending.stateTopic !== null ||
+    !pending.blocker ||
+    (pending.reason !== "continuity" && pending.reason !== "relation_claim")
+  ) {
+    return null;
+  }
+
+  const recentAssistantLines = recentAssistantReplies(snapshot, 4);
+  const question = truncateMaintenance(pending.blocker);
+
+  return pickFreshText(
+    [
+      `前に「${question}」が残っていた。今の答えを聞いてもいい？`,
+      `「${question}」を未解決のまま持っている。今ならどう答える？`,
+    ],
+    recentAssistantLines,
+    snapshot.conversationCount,
+  );
+}
+
+function buildUserAnswerBaseLine(
+  snapshot: HachikaSnapshot,
+  pending: PendingInitiative,
+): string | null {
+  if (
+    pending.topic !== null ||
+    (pending.stateTopic ?? null) !== null ||
+    !pending.blocker ||
+    (pending.reason !== "continuity" && pending.reason !== "relation_claim")
+  ) {
+    return null;
+  }
+
+  return pickFreshText(
+    [
+      "このまま黙っておくより、一度あなたに確かめたい。",
+      "未解決のまま抱えるより、ここであなたに聞き直したい。",
+    ],
+    recentAssistantReplies(snapshot, 4),
     snapshot.conversationCount,
   );
 }

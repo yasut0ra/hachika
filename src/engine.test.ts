@@ -1775,6 +1775,24 @@ test("respondAsync records a resolved direct referent question in discourse stat
   assert.equal(lastQuestion?.resolvedAt !== null, true);
 });
 
+test("respond resolves a user-owned open question when the user answers", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.discourse.openQuestions.push({
+    target: "user_profile",
+    text: "なんて言われたい?",
+    askedAt: "2026-04-01T00:00:00.000Z",
+    status: "open",
+    resolvedAt: null,
+  });
+  const engine = new HachikaEngine(snapshot);
+
+  const result = engine.respond("そのままでいいよ");
+  const question = result.snapshot.discourse.openQuestions[0];
+
+  assert.equal(question?.status, "resolved");
+  assert.equal(question?.resolvedAt !== null, true);
+});
+
 test("respondAsync records directness and referent corrections in discourse state", async () => {
   const engine = new HachikaEngine(createInitialSnapshot());
 
@@ -4647,6 +4665,54 @@ test("emitInitiativeAsync can suppress a proactive emission via proactive direct
   assert.equal(message, null);
   assert.equal(engine.getSnapshot().initiative.lastProactiveAt, beforeSnapshot.initiative.lastProactiveAt);
   assert.deepEqual(engine.getSnapshot().initiative.history, beforeSnapshot.initiative.history);
+});
+
+test("emitInitiativeAsync keeps a forced proactive emission when proactive director suppresses it", async () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+
+  engine.respond("仕様の流れを残したい。");
+  engine.rewindIdleHours(8);
+
+  const proactiveDirector: ProactiveDirector = {
+    name: "test-director",
+    async directProactive() {
+      return {
+        directive: {
+          emit: false,
+          plan: null,
+          summary: "suppress/quiet",
+        },
+        provider: "test-director",
+        model: "stub",
+      };
+    },
+  };
+
+  const message = await engine.emitInitiativeAsync({
+    force: true,
+    proactiveDirector,
+    replyGenerator: {
+      name: "test-llm",
+      async generateReply() {
+        return null;
+      },
+      async generateProactive(context) {
+        return {
+          reply: context.fallbackMessage,
+          provider: "test-llm",
+          model: "stub",
+        };
+      },
+    },
+  });
+
+  assert.equal(message !== null, true);
+  assert.equal(engine.getLastReplyDebug()?.plannerFallbackUsed, true);
+  assert.equal(engine.getLastReplyDebug()?.plannerError, "suppressed_forced_proactive");
+  assert.equal(
+    engine.getSnapshot().initiative.history.some((activity) => activity.kind === "proactive_emission"),
+    true,
+  );
 });
 
 test("emitInitiativeAsync lets proactive director keep semantic proactive topics out of durable maintenance", async () => {
