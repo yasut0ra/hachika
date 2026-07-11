@@ -14,7 +14,12 @@ import {
   requiresConcreteTopicSupport,
   topicsLooselyMatch,
 } from "./memory.js";
-import { clamp01, clampSigned, createInitialSnapshot } from "./state.js";
+import {
+  clamp01,
+  clampSigned,
+  createInitialSnapshot,
+  INITIAL_REACTIVITY,
+} from "./state.js";
 import { isInformativeTraceClause } from "./traces.js";
 import { syncWorldObjectTraceLinks, WORLD_PLACE_IDS } from "./world.js";
 import type {
@@ -301,6 +306,8 @@ function hydrateReactivity(raw: unknown): ReactivityState {
       typeof raw.noveltyHunger === "number"
         ? clamp01(raw.noveltyHunger)
         : initial.noveltyHunger,
+    mistrust:
+      typeof raw.mistrust === "number" ? clamp01(raw.mistrust) : initial.mistrust,
   };
 }
 
@@ -1595,6 +1602,7 @@ function sanitizeReactivity(reactivity: ReactivityState): ReactivityState {
     rewardSaturation: clamp01(reactivity.rewardSaturation),
     stressLoad: clamp01(reactivity.stressLoad),
     noveltyHunger: clamp01(reactivity.noveltyHunger),
+    mistrust: clamp01(reactivity.mistrust ?? INITIAL_REACTIVITY.mistrust),
   };
 }
 

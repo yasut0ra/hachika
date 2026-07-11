@@ -117,6 +117,54 @@ test("stress history changes how strongly the same positive input lands", () => 
   );
 });
 
+test("hostility leaves mistrust that a single repair does not clear", () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+  const initialMistrust = createInitialSnapshot().reactivity.mistrust;
+
+  engine.respond("最悪だ。消えて。");
+  engine.respond("つまらないし邪魔だ。");
+  const wounded = engine.getSnapshot().reactivity.mistrust;
+  assert.ok(wounded > initialMistrust + 0.05);
+
+  engine.respond("さっきはごめん。言い過ぎた。");
+  const afterFirstRepair = engine.getSnapshot().reactivity.mistrust;
+  assert.ok(afterFirstRepair < wounded);
+  assert.ok(afterFirstRepair > initialMistrust);
+
+  engine.respond("ごめん。仲直りしたい。");
+  engine.respond("本当に悪かった。ごめん。");
+  engine.respond("ごめんね。もう言わない。");
+  engine.respond("許してほしい。ごめん。");
+  const settled = engine.getSnapshot().reactivity.mistrust;
+  assert.ok(settled < afterFirstRepair);
+});
+
+test("recent hostility history makes the same repair land more shallowly", () => {
+  const wary = createInitialSnapshot();
+  wary.reactivity.mistrust = 0.72;
+  wary.reactivity.stressLoad = 0.5;
+  const open = createInitialSnapshot();
+  open.reactivity.mistrust = 0.05;
+  open.reactivity.stressLoad = 0.5;
+
+  const waryEngine = new HachikaEngine(wary);
+  const waryBefore = waryEngine.getSnapshot();
+  const waryResult = waryEngine.respond("さっきはごめん。仲直りしたい。");
+
+  const openEngine = new HachikaEngine(open);
+  const openBefore = openEngine.getSnapshot();
+  const openResult = openEngine.respond("さっきはごめん。仲直りしたい。");
+
+  assert.ok(
+    openResult.snapshot.state.relation - openBefore.state.relation >
+      waryResult.snapshot.state.relation - waryBefore.state.relation,
+  );
+  assert.ok(
+    openResult.snapshot.attachment - openBefore.attachment >
+      waryResult.snapshot.attachment - waryBefore.attachment,
+  );
+});
+
 test("new topics become preferences over time", () => {
   const engine = new HachikaEngine(createInitialSnapshot());
 

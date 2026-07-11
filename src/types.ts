@@ -26,6 +26,7 @@ export interface ReactivityState {
   rewardSaturation: number;
   stressLoad: number;
   noveltyHunger: number;
+  mistrust: number;
 }
 
 export interface LearnedTemperament {

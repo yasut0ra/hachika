@@ -208,7 +208,8 @@ Hachika は、単に有用なだけでなく、
 
 - `continuity / pleasure / curiosity / relation / expansion` の内部状態を保持する
 - `energy / tension / boredom / loneliness` の身体的な内部状態を保持する
-- `rewardSaturation / stressLoad / noveltyHunger` の反応感度 state を保持する
+- `rewardSaturation / stressLoad / noveltyHunger / mistrust` の反応感度 state を保持する
+  - `mistrust` は敵意・拒絶の直近履歴をゆっくり保持し、repair や intimacy の回復を一時的に浅くする。1 回の謝罪では抜けず、繰り返しの repair で徐々に解ける
 - `attachment` を長期的な関係指標として保持する
 - ユーザー入力を相互作用イベントに変換し、状態を更新する
   - rule-based な signal 抽出に加えて、OpenAI 互換の `input interpreter` を使えば greeting / smalltalk / repair / self-inquiry / world-inquiry / work を LLM で正規化できる
@@ -278,6 +279,9 @@ Hachika は、単に有用なだけでなく、
 - 身体状態は会話と放置で変化し、mood / motive / proactive timing / 通常応答に影響する
 - drive / body / attachment には baseline へ戻る弱い homeostasis を入れてあり、長い会話や同じ種類の相互作用が続いても 0 や 1 に貼りつき続けにくくしている
 - さらに `reactivity` が直近の傷つき・飽き・報酬慣れを保持し、同じ入力でも最近の履歴によって回復量や boredom の上がり方が少し変わる
+  - repair と hostility は非対称で、傷つけるのは速く、修復は `mistrust` が解けるまで浅い。逆に傷が浅いうちの repair は、張り詰めた分だけ attachment が早く戻る(rebound)
+  - drive ごとに報酬慣れの効き方も分かれていて、pleasure は鈍りやすく、relation はそれよりも鈍りにくい
+  - idle 中も履歴が残り、`mistrust` が高い間は放置してもストレスが抜けにくく、trust の冷え方と continuity 圧の上がり方が速い
 - さらに persistent な `temperament` が `openness / guardedness / bondingBias / workDrive / traceHunger / selfDisclosureBias` を保持し、修復・敵意・共同作業・放置の履歴から少しずつ気質を学習する
 - learned temperament は drive/body の効き方をわずかに変え、同じ drive/body でも self-model / purpose / initiative / response planner の向きが少し変わる
 - `idle` 中には deterministic な consolidation pass が走り、temperament と body を見ながら dormant archive の salience を再評価し、必要なら次の `pending initiative` を archived trace 由来で組み直す

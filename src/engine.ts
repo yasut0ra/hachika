@@ -4735,10 +4735,15 @@ function buildLegacyVisibleTurn(
 
   legacy.reactivity = updateReactivityFromSignals(snapshot, signals);
   const rewardScale = Math.max(0.4, 1 - legacy.reactivity.rewardSaturation * 0.55);
+  // relation は pleasure ほど報酬慣れで鈍らない
+  const relationRewardScale = Math.max(0.52, 1 - legacy.reactivity.rewardSaturation * 0.38);
   const stressPenalty = Math.max(0.32, 1 - legacy.reactivity.stressLoad * 0.62);
   const stressAmplifier = 1 + legacy.reactivity.stressLoad * 0.5;
   const noveltyAmplifier = 1 + legacy.reactivity.noveltyHunger * 0.7;
   const repetitionAmplifier = 1 + legacy.reactivity.noveltyHunger * 0.35;
+  // 最近傷ついた履歴が残っている間は、repair / intimacy の回復が浅くなる
+  const repairGate = Math.max(0.42, 1 - legacy.reactivity.mistrust * 0.6);
+  const mistrustSpike = 1 + legacy.reactivity.mistrust * 0.2;
   const socialEase = Math.max(
     0.74,
     1 +
@@ -4767,7 +4772,7 @@ function buildLegacyVisibleTurn(
     legacy.state.pleasure,
     (signals.positive * 0.18 +
       signals.greeting * 0.04 +
-      signals.repair * 0.1 +
+      signals.repair * 0.1 * repairGate +
       signals.smalltalk * 0.03) *
       rewardScale *
       stressPenalty *
@@ -4784,13 +4789,13 @@ function buildLegacyVisibleTurn(
 
   legacy.state.relation = applyBoundedPressure(
     legacy.state.relation,
-    (signals.intimacy * 0.16 +
+    (signals.intimacy * 0.16 * repairGate +
       signals.positive * 0.12 +
       signals.greeting * 0.06 +
       signals.smalltalk * 0.1 +
-      signals.repair * 0.16 +
+      signals.repair * 0.16 * repairGate +
       signals.selfInquiry * 0.14) *
-      rewardScale *
+      relationRewardScale *
       stressPenalty *
       socialEase,
     (signals.negative * 0.18 +
@@ -4798,7 +4803,8 @@ function buildLegacyVisibleTurn(
       signals.neglect * 0.08 +
       signals.preservationThreat * 0.04) *
       stressAmplifier *
-      guardSensitivity,
+      guardSensitivity *
+      mistrustSpike,
     INITIAL_STATE.relation,
     0.05,
   );
@@ -4820,6 +4826,7 @@ function buildLegacyVisibleTurn(
       continuityEase,
     (signals.dismissal * 0.14 + signals.neglect * 0.04 + signals.preservationThreat * 0.08) *
       stressAmplifier *
+      mistrustSpike *
       Math.max(0.84, 1 + temperament.guardedness * 0.1),
     INITIAL_STATE.continuity,
     0.055,
@@ -4841,25 +4848,34 @@ function buildLegacyVisibleTurn(
     ? 0.03
     : 0;
 
+  // 傷が浅い(mistrust が低い)まま repair が来た時だけ、attachment は張力ぶんだけ早く戻る
+  const attachmentRebound =
+    signals.repair *
+    snapshot.reactivity.stressLoad *
+    0.1 *
+    Math.max(0, 1 - legacy.reactivity.mistrust * 1.4);
+
   legacy.attachment = applyBoundedPressure(
     legacy.attachment,
-    (signals.intimacy * 0.08 +
+    (signals.intimacy * 0.08 * repairGate +
       signals.positive * 0.06 +
       signals.memoryCue * 0.05 +
       signals.greeting * 0.03 +
       signals.smalltalk * 0.04 +
-      signals.repair * 0.06 +
+      signals.repair * 0.06 * repairGate +
       signals.selfInquiry * 0.05 +
       positivePreferenceAffinity) *
       rewardScale *
       stressPenalty *
-      socialEase,
+      socialEase +
+      attachmentRebound,
     (signals.negative * 0.1 +
       signals.dismissal * 0.08 +
       signals.neglect * 0.04 +
       signals.preservationThreat * 0.03) *
       stressAmplifier *
-      guardSensitivity,
+      guardSensitivity *
+      mistrustSpike,
     INITIAL_ATTACHMENT,
     0.05,
   );
@@ -4907,6 +4923,11 @@ function blendLegacyVisibleState(
       snapshot.reactivity.noveltyHunger,
       legacy.reactivity.noveltyHunger,
       0.84,
+    ),
+    mistrust: blendVisibleValue(
+      snapshot.reactivity.mistrust,
+      legacy.reactivity.mistrust,
+      0.8,
     ),
   };
   snapshot.attachment = clamp01(
@@ -4987,6 +5008,11 @@ function updateReactivityFromSignals(
   snapshot: HachikaSnapshot,
   signals: InteractionSignals,
 ): HachikaSnapshot["reactivity"] {
+  const mistrust = snapshot.reactivity.mistrust;
+  // 敵意直後の repair は効きが浅く、繰り返して初めて元の効きに戻る
+  const repairEfficiency = Math.max(0.35, 1 - mistrust * 0.55);
+  const hostilitySensitization = 1 + mistrust * 0.35;
+
   return {
     rewardSaturation: settleTowardsBaseline(
       clamp01(
@@ -5004,12 +5030,11 @@ function updateReactivityFromSignals(
     stressLoad: settleTowardsBaseline(
       clamp01(
         snapshot.reactivity.stressLoad * 0.88 +
-          signals.negative * 0.3 +
-          signals.dismissal * 0.18 +
+          (signals.negative * 0.3 + signals.dismissal * 0.18) * hostilitySensitization +
           signals.neglect * 0.08 +
           signals.preservationThreat * 0.18 -
-          signals.repair * 0.08 -
-          signals.positive * 0.05 -
+          signals.repair * 0.08 * repairEfficiency -
+          signals.positive * 0.05 * Math.max(0.5, 1 - mistrust * 0.4) -
           signals.greeting * 0.02,
       ),
       INITIAL_REACTIVITY.stressLoad,
@@ -5028,6 +5053,20 @@ function updateReactivityFromSignals(
       ),
       INITIAL_REACTIVITY.noveltyHunger,
       0.06,
+    ),
+    mistrust: settleTowardsBaseline(
+      clamp01(
+        mistrust * 0.94 +
+          (signals.negative * 0.22 +
+            signals.dismissal * 0.16 +
+            signals.preservationThreat * 0.1) *
+            (1 + snapshot.temperament.guardedness * 0.3) -
+          signals.repair * 0.07 * repairEfficiency -
+          signals.intimacy * 0.03 -
+          signals.positive * 0.02,
+      ),
+      INITIAL_REACTIVITY.mistrust,
+      0.02,
     ),
   };
 }

@@ -12,6 +12,8 @@ export function applyBodyFromSignals(
   const stressAmplifier = 1 + snapshot.reactivity.stressLoad * 0.55;
   const noveltyAmplifier = 1 + snapshot.reactivity.noveltyHunger * 0.7;
   const repetitionAmplifier = 1 + snapshot.reactivity.noveltyHunger * 0.45;
+  // 傷の記憶が残っている間は、repair / intimacy による body のゆるみ方が浅い
+  const repairGate = Math.max(0.45, 1 - snapshot.reactivity.mistrust * 0.55);
   const opennessAmplifier = 1 + temperament.openness * 0.18 + temperament.workDrive * 0.06;
   const guardedAmplifier = 1 + temperament.guardedness * 0.22;
   const socialAmplifier =
@@ -53,8 +55,8 @@ export function applyBodyFromSignals(
         guardedAmplifier,
       (signals.positive * 0.06 +
         signals.greeting * 0.03 +
-        signals.repair * 0.08 +
-        signals.intimacy * 0.04 +
+        signals.repair * 0.08 * repairGate +
+        signals.intimacy * 0.04 * repairGate +
         signals.question * 0.03) *
         stressPenalty *
         Math.max(0.8, 1 + temperament.openness * 0.04 - temperament.guardedness * 0.12),
@@ -79,11 +81,11 @@ export function applyBodyFromSignals(
       previous.loneliness,
       (signals.neglect * 0.18 + signals.dismissal * 0.1) *
         (1 + snapshot.reactivity.stressLoad * 0.35 + temperament.bondingBias * 0.18),
-      (signals.intimacy * 0.18 +
+      (signals.intimacy * 0.18 * repairGate +
         signals.positive * 0.08 +
         signals.greeting * 0.06 +
         signals.smalltalk * 0.08 +
-        signals.repair * 0.1 +
+        signals.repair * 0.1 * repairGate +
         signals.selfInquiry * 0.06 +
         signals.memoryCue * 0.04) *
         rewardScale *

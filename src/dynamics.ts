@@ -55,6 +55,9 @@ export function updateDynamicsFromSignals(
     signals.repetition * 0.18 + signals.neglect * 0.06 + signals.abandonment * 0.08;
   const guardedSensitivity = 1 + temperament.guardedness * 0.18 - temperament.openness * 0.04;
   const socialSensitivity = 1 + temperament.bondingBias * 0.16 + temperament.selfDisclosureBias * 0.08;
+  // 直近の傷の記憶が残っている間、trust は温まりにくく冷えやすい
+  const mistrustGate = Math.max(0.5, 1 - snapshot.reactivity.mistrust * 0.5);
+  const mistrustSpike = 1 + snapshot.reactivity.mistrust * 0.3;
 
   snapshot.dynamics = {
     safety: settleTowardsBaseline(
@@ -77,12 +80,14 @@ export function updateDynamicsFromSignals(
             signals.smalltalk * 0.06 +
             signals.selfInquiry * 0.06 +
             signals.memoryCue * 0.08) *
-            socialSensitivity -
+            socialSensitivity *
+            mistrustGate -
           (signals.dismissal * 0.22 +
             signals.neglect * 0.16 +
             signals.negative * 0.1 +
             signals.abandonment * 0.04) *
-            guardedSensitivity,
+            guardedSensitivity *
+            mistrustSpike,
       ),
       INITIAL_DYNAMICS.trust,
       0.03,
@@ -164,12 +169,15 @@ export function rewindDynamicsHours(
 
   const absenceBias = snapshot.preservation.concern === "absence" ? 0.03 : 0;
   const longAbsence = hours >= 18 ? Math.min(0.08, (hours - 18) / 96) : 0;
+  // 傷ついた直後の放置は安心の回復が浅く、trust の冷え方が速い
+  const mistrustLinger = snapshot.reactivity.mistrust;
+  const stressLinger = snapshot.reactivity.stressLoad;
 
   snapshot.dynamics = {
     safety: settleTowardsBaseline(
       clamp01(
         snapshot.dynamics.safety +
-          Math.min(0.1, hours / 96) -
+          Math.min(0.1, hours / 96) * Math.max(0.5, 1 - mistrustLinger * 0.35) -
           snapshot.preservation.threat * 0.04 -
           longAbsence * 0.03,
       ),
@@ -177,7 +185,11 @@ export function rewindDynamicsHours(
       0.05,
     ),
     trust: settleTowardsBaseline(
-      clamp01(snapshot.dynamics.trust - Math.min(0.06, hours / 180) + absenceBias * 0.2),
+      clamp01(
+        snapshot.dynamics.trust -
+          Math.min(0.06, hours / 180) * (1 + mistrustLinger * 0.5) +
+          absenceBias * 0.2,
+      ),
       INITIAL_DYNAMICS.trust,
       0.03,
     ),
@@ -213,7 +225,8 @@ export function rewindDynamicsHours(
     continuityPressure: settleTowardsBaseline(
       clamp01(
         snapshot.dynamics.continuityPressure +
-          Math.min(0.12, hours / 60) +
+          Math.min(0.12, hours / 60) *
+            (1 + stressLinger * 0.3 + mistrustLinger * 0.25) +
           snapshot.preservation.threat * 0.05,
       ),
       INITIAL_DYNAMICS.continuityPressure,
@@ -407,6 +420,17 @@ export function deriveVisibleStateFromDynamics(snapshot: HachikaSnapshot): void 
       INITIAL_REACTIVITY.noveltyHunger,
       0.06,
     ),
+    // mistrust は主に signal 由来で動き、substrate からは弱くしか引っ張らない
+    mistrust: settleTowardsBaseline(
+      clamp01(
+        previousReactivity.mistrust +
+          (1 - dynamics.trust) * 0.02 +
+          snapshot.preservation.threat * 0.03 -
+          dynamics.safety * 0.015,
+      ),
+      INITIAL_REACTIVITY.mistrust,
+      0.03,
+    ),
   };
 
   snapshot.reactivity = {
@@ -421,6 +445,7 @@ export function deriveVisibleStateFromDynamics(snapshot: HachikaSnapshot): void 
       targetReactivity.noveltyHunger,
       0.6,
     ),
+    mistrust: blendVisible(previousReactivity.mistrust, targetReactivity.mistrust, 0.5),
   };
 
   snapshot.attachment = blendVisible(
@@ -465,7 +490,8 @@ export function seedDynamicsFromVisibleState(snapshot: HachikaSnapshot): Dynamic
       INITIAL_DYNAMICS.trust +
         (snapshot.state.relation - INITIAL_STATE.relation) * 0.7 +
         (snapshot.attachment - INITIAL_ATTACHMENT) * 0.4 -
-        (snapshot.body.loneliness - INITIAL_BODY.loneliness) * 0.3,
+        (snapshot.body.loneliness - INITIAL_BODY.loneliness) * 0.3 -
+        (snapshot.reactivity.mistrust - INITIAL_REACTIVITY.mistrust) * 0.3,
     ),
     activation: clamp01(
       INITIAL_DYNAMICS.activation +

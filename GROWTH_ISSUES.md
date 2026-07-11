@@ -11,7 +11,7 @@
 - snapshot load/save 時の低情報 topic / 汚れた trace artifact の自動正規化も入っている
 
 まだ残っている主課題:
-- 反応そのものの履歴依存カーブはまだ弱い
+- 履歴依存の反応カーブは `mistrust` による repair/hostility 非対称・attachment rebound・idle 中の残留まで入ったが、temperament への橋渡しはまだ
 - learned temperament は archive reopen / idle consolidation まで通ったが、purpose 閾値や growth metrics への反映はまだ薄い
 - idle 中の再編成は archive だけでなく memory / imprint / identity に広がり、弱い stale preference imprint の自然減衰、long-tail memory の圧縮と `consolidated memory` 化、identity anchor の再優先、relation/boundary の再配置まで入ったが、より長い horizon の consolidation はまだ薄い
 - 成長を比較する専用 metrics / doc は `archive reopen / stress recovery / autonomous activity visibility / idle consolidation coverage / proactive maintenance rate` まで入ったが、temperament drift や longer-horizon consolidation quality の指標はまだ薄い
@@ -34,8 +34,10 @@
 ### ステータス
 - 部分完了
 - homeostasis と飽和抑制はすでに入っている
-- `rewardSaturation / stressLoad / noveltyHunger` による軽量な reaction sensitivity も入った
-- 未完了なのは、drive/body ごとの差をさらに細かくすることと、感度 state を learned temperament へ橋渡しすること
+- `rewardSaturation / stressLoad / noveltyHunger / mistrust` による軽量な reaction sensitivity も入った
+- `mistrust` により repair/hostility の非対称性(傷つくのは速く、修復は繰り返しで徐々に)と、attachment の rebound / mistrust 差は入った
+- drive ごとの報酬慣れの分化(pleasure は鈍りやすく relation は鈍りにくい)と、idle 後の continuity / trust / stress 回復への reactivity 反映も入った
+- 未完了なのは、感度 state を learned temperament へ橋渡しすること
 
 ### 背景
 - 現状の snapshot では `state` と `attachment` が高値に張り付きやすく、会話が続くほど差分が出にくくなる。
@@ -52,10 +54,8 @@
 - replay しやすい regression test を追加
 
 ### 次にやる部分
-- drive/body ごとに sensitivity の効き方をもう少し分ける
-- `repair` と `hostility` の非対称性を強める
-- `attachment` に rebound と mistrust の差を持たせる
-- idle 後の continuity 変化にも reactivity をもう少し深く通す
+- 感度 state(特に `mistrust` の蓄積履歴)を learned temperament の guardedness 学習へ橋渡しする
+- growth metrics 側に recovery lag(修復までのターン数)の可視化を足す
 
 ### 実装メモ
 - `DriveState`/`BodyState` とは別に、反応感度を表す軽量 state を導入してよい

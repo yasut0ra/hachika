@@ -553,6 +553,11 @@ test("loadSnapshot seeds latent dynamics from older visible-only snapshots", asy
     assert.equal(loaded.version, 24);
     assert.equal(loaded.revision, 3);
     assert.equal(loaded.discourse.hachikaName?.value, "ハチカ");
+    assert.ok(
+      Math.abs(
+        loaded.reactivity.mistrust - createInitialSnapshot().reactivity.mistrust,
+      ) < 0.05,
+    );
     assert.ok(loaded.dynamics.safety < 0.5);
     assert.ok(loaded.dynamics.trust > 0.5);
     assert.ok(loaded.dynamics.activation > 0.5);

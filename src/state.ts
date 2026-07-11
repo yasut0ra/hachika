@@ -46,6 +46,7 @@ export const INITIAL_REACTIVITY: ReactivityState = {
   rewardSaturation: 0.08,
   stressLoad: 0.12,
   noveltyHunger: 0.22,
+  mistrust: 0.1,
 };
 
 export const INITIAL_TEMPERAMENT: LearnedTemperament = {
@@ -196,6 +197,7 @@ export function formatReactivityState(reactivity: ReactivityState): string {
     `rewardSaturation:${reactivity.rewardSaturation.toFixed(2)}`,
     `stressLoad:${reactivity.stressLoad.toFixed(2)}`,
     `noveltyHunger:${reactivity.noveltyHunger.toFixed(2)}`,
+    `mistrust:${reactivity.mistrust.toFixed(2)}`,
   ].join(" | ");
 }
 

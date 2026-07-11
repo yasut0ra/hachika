@@ -504,6 +504,9 @@ function applyLegacyIdleVisibleShift(
   legacyVisible: HachikaSnapshot,
   hours: number,
 ): void {
+  // 傷の記憶が残っている間は、放置してもストレスが抜けにくい
+  const mistrustLinger = legacyVisible.reactivity.mistrust;
+
   legacyVisible.reactivity = {
     rewardSaturation: settleTowardsBaseline(
       clamp01(legacyVisible.reactivity.rewardSaturation - Math.min(0.24, hours / 36)),
@@ -513,7 +516,7 @@ function applyLegacyIdleVisibleShift(
     stressLoad: settleTowardsBaseline(
       clamp01(
         legacyVisible.reactivity.stressLoad -
-          Math.min(0.14, hours / 72) +
+          Math.min(0.14, hours / 72) * Math.max(0.5, 1 - mistrustLinger * 0.45) +
           (hours >= 20 ? Math.min(0.06, (hours - 20) / 120) : 0),
       ),
       INITIAL_REACTIVITY.stressLoad,
@@ -523,6 +526,11 @@ function applyLegacyIdleVisibleShift(
       clamp01(legacyVisible.reactivity.noveltyHunger + Math.min(0.22, hours / 30)),
       INITIAL_REACTIVITY.noveltyHunger,
       0.04,
+    ),
+    mistrust: settleTowardsBaseline(
+      clamp01(mistrustLinger - Math.min(0.05, hours / 200)),
+      INITIAL_REACTIVITY.mistrust,
+      0.02,
     ),
   };
   rewindBodyHours(legacyVisible, hours);
@@ -548,6 +556,11 @@ function applyLegacyIdleVisibleShift(
       snapshot.reactivity.noveltyHunger,
       legacyVisible.reactivity.noveltyHunger,
       0.88,
+    ),
+    mistrust: blendVisibleValue(
+      snapshot.reactivity.mistrust,
+      legacyVisible.reactivity.mistrust,
+      0.84,
     ),
   };
 }

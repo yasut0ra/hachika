@@ -7,7 +7,26 @@ import {
   emitInitiative,
   prepareIdleAutonomyAction,
   prepareScheduledInitiative,
+  rewindSnapshotBaseHours,
 } from "./initiative.js";
+
+test("idle releases stress more slowly while mistrust lingers", () => {
+  const wounded = createInitialSnapshot();
+  wounded.reactivity.stressLoad = 0.6;
+  wounded.reactivity.mistrust = 0.72;
+  const calm = createInitialSnapshot();
+  calm.reactivity.stressLoad = 0.6;
+  calm.reactivity.mistrust = 0.05;
+
+  rewindSnapshotBaseHours(wounded, 8);
+  rewindSnapshotBaseHours(calm, 8);
+
+  assert.ok(wounded.reactivity.stressLoad > calm.reactivity.stressLoad);
+  assert.ok(wounded.dynamics.continuityPressure > calm.dynamics.continuityPressure);
+  assert.ok(wounded.dynamics.trust < calm.dynamics.trust);
+  // mistrust は idle でも一気には抜けない
+  assert.ok(wounded.reactivity.mistrust > 0.5);
+});
 
 test("prepareScheduledInitiative suppresses weak pending when discourse still needs a direct referent answer", () => {
   const snapshot = createInitialSnapshot();
