@@ -448,10 +448,26 @@ export function deriveVisibleStateFromDynamics(snapshot: HachikaSnapshot): void 
   };
 
   snapshot.state = {
-    pleasure: blendWithHeadroom(previousState.pleasure, targetState.pleasure, 0.52),
-    relation: blendWithHeadroom(previousState.relation, targetState.relation, 0.5),
-    curiosity: blendWithHeadroom(previousState.curiosity, targetState.curiosity, 0.5),
+    pleasure: blendWithHeadroom(
+      previousState.pleasure,
+      remapTarget(targetState.pleasure, DERIVE_EQUILIBRIUM.pleasure, INITIAL_STATE.pleasure),
+      0.52,
+    ),
+    relation: blendWithHeadroom(
+      previousState.relation,
+      remapTarget(targetState.relation, DERIVE_EQUILIBRIUM.relation, INITIAL_STATE.relation),
+      0.5,
+    ),
+    curiosity: blendWithHeadroom(
+      previousState.curiosity,
+      remapTarget(targetState.curiosity, DERIVE_EQUILIBRIUM.curiosity, INITIAL_STATE.curiosity),
+      0.5,
+    ),
+    // continuity も平衡ギャップが大きく (−0.086)、ピン留めすると baseline の motive 序列が
+    // 変わる (relation より continuity が勝ちやすくなる) ため未ピン留め (Phase 2 残作業)
     continuity: blendWithHeadroom(previousState.continuity, targetState.continuity, 0.5),
+    // expansion も平衡ギャップが大きく (+0.079)、ピン留めすると conflict wording の分岐が
+    // 変わるため未ピン留め (Phase 2 残作業)
     expansion: blendWithHeadroom(previousState.expansion, targetState.expansion, 0.48),
   };
 
@@ -492,6 +508,10 @@ export function deriveVisibleStateFromDynamics(snapshot: HachikaSnapshot): void 
   };
 
   snapshot.body = {
+    // body 4種は平衡ギャップが大きく、単純な remap では scale=1 の回復曲線や
+    // wording しきい値が歪むため未ピン留め。derive 式へ reactivity
+    // (stressLoad / noveltyHunger) を取り込む再設計が残作業
+    // (docs/legacy-visible-retirement.md Phase 2)
     energy: blendWithHeadroom(previousBody.energy, targetBody.energy, 0.58),
     tension: blendWithHeadroom(previousBody.tension, targetBody.tension, 0.62),
     boredom: blendWithHeadroom(previousBody.boredom, targetBody.boredom, 0.6),
@@ -500,6 +520,8 @@ export function deriveVisibleStateFromDynamics(snapshot: HachikaSnapshot): void 
 
   // reactivity は signal 直結の substrate 更新 (updateReactivityFromSignals) と
   // idle shift 側で管理するため、ここでは導出しない
+  // attachment も平衡ギャップが大きく (+0.114)、ピン留めすると deepen_relation motive が
+  // 弱まりすぎるため未ピン留め (Phase 2 残作業)
   snapshot.attachment = blendWithHeadroom(
     previousAttachment,
     clamp01(
@@ -512,6 +534,33 @@ export function deriveVisibleStateFromDynamics(snapshot: HachikaSnapshot): void 
     ),
     0.54,
   );
+}
+
+// derive target が INITIAL_DYNAMICS / INITIAL_TEMPERAMENT / threat=0 のときに取る平衡値。
+// remapTarget でこの平衡値を初期定数へピン留めすることで、dynamics 単独 (legacy blend なし)
+// でも「無入力のまま初期姿勢から勝手にずれていく」ドリフトが起きない。
+// derive の係数を変えた場合は、INITIAL_DYNAMICS を固定して derive を収束させ、測定し直すこと。
+const DERIVE_EQUILIBRIUM = {
+  pleasure: 0.477,
+  relation: 0.473,
+  curiosity: 0.677,
+  continuity: 0.494,
+  expansion: 0.539,
+  energy: 0.455,
+  tension: 0.291,
+  boredom: 0.357,
+  loneliness: 0.303,
+  attachment: 0.514,
+} as const;
+
+// (0,0) - (equilibrium, anchor) - (1,1) を通る区分線形リマップ。
+// 平衡値を初期定数へ写像しつつ、0 / 1 の端点は保つので床と天井は潰れない
+function remapTarget(value: number, equilibrium: number, anchor: number): number {
+  if (value <= equilibrium) {
+    return equilibrium <= 0 ? anchor : clamp01((value / equilibrium) * anchor);
+  }
+
+  return clamp01(anchor + ((value - equilibrium) / (1 - equilibrium)) * (1 - anchor));
 }
 
 // applyBoundedPressure と同じ思想で、極値に近い側へ動くほどブレンドが鈍る。

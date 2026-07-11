@@ -17,8 +17,17 @@ function withDynamicsOnly<T>(run: () => T): T {
   }
 }
 
-// NOTE: derive の固定点が INITIAL_STATE と揃うまでは「絶対値が上がる」までは保証せず、
-// hostile との差分不変条件で substrate の応答性を固定する (docs/legacy-visible-retirement.md Phase 2)
+test("dynamics-only: warm turn raises relation and pleasure", () => {
+  withDynamicsOnly(() => {
+    const engine = new HachikaEngine(createInitialSnapshot());
+    const before = engine.getSnapshot();
+    const result = engine.respond("ありがとう。君と話せるのは嬉しい。");
+
+    assert.ok(result.snapshot.state.relation > before.state.relation);
+    assert.ok(result.snapshot.state.pleasure > before.state.pleasure);
+  });
+});
+
 test("dynamics-only: positive turn lands warmer than hostile turn", () => {
   withDynamicsOnly(() => {
     const warmEngine = new HachikaEngine(createInitialSnapshot());

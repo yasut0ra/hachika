@@ -46,33 +46,33 @@ visible state(`state / body / reactivity / attachment`)は、毎ターン **2つ
   「極値に近い側へ動くほど鈍る」減衰を追加(中央で 1.0 に正規化)
 - trust の増加項に `positive` signal を追加(感謝が trust を動かないバグ相当の欠落)
 
-残作業 — **derive 固定点の再キャリブレーション**:
+残作業 — **derive 固定点の再キャリブレーション(部分完了)**:
 
 `INITIAL_DYNAMICS` を入れたときの derive 平衡値が `INITIAL_STATE / INITIAL_BODY /
 INITIAL_ATTACHMENT` とずれており、legacy blend がこのズレを隠している。
-scale=0 では会話内容に関係なく平衡値へ緩和するドリフトが出る。
-測定したギャップ(平衡値 − 初期定数):
+対応として `remapTarget()`((0,0)-(平衡値→初期定数)-(1,1) の区分線形リマップ)を導入し、
+**ギャップの小さい pleasure / relation / curiosity はピン留め済み**。
+これにより scale=0 でも「温かい入力で relation / pleasure が上がる」絶対不変条件が成立する。
 
-| field | gap |
-| --- | --- |
-| pleasure | −0.04 |
-| relation | −0.03 |
-| curiosity | ≈0 |
-| continuity | −0.09 |
-| expansion | +0.08 |
-| energy | −0.10 |
-| tension | +0.07 |
-| boredom | +0.18 |
-| loneliness | +0.10 |
-| attachment | +0.11 |
+未ピン留めの field(平衡値 − 初期定数のギャップ):
 
-対応方針: derive の base 定数を初期定数と揃うよう再調整するか、
-初期定数側を平衡値に寄せる。どちらも scale=1 の挙動が少し動くため、
-growth metrics(saturation / recovery / motive diversity)の比較付きで行う。
+| field | gap | ピン留めを見送った理由 |
+| --- | --- | --- |
+| continuity | −0.09 | baseline の motive 序列が変わる(relation より continuity が勝つ) |
+| expansion | +0.08 | boundary conflict wording の分岐が変わる |
+| energy | −0.10 | preserve 系 wording(低 energy 分岐)が出なくなる |
+| tension | +0.07 | 敵意後の回復曲線が速くなりすぎ、痕跡が 6 turn で消える |
+| boredom | +0.18 | deepen 系 wording(高 boredom 分岐)が出なくなる |
+| loneliness | +0.10 | (単純オフセットでは床が抜ける) |
+| attachment | +0.11 | deepen_relation motive が pursue_curiosity に負ける |
 
-完了条件: [src/legacy-scale.test.ts](../src/legacy-scale.test.ts) の
-差分不変条件(`lands warmer than hostile`)を絶対不変条件
-(`positive turn raises relation and pleasure`)へ戻せること。
+これらは**単純な写像では吸収できない**ことがテストで確認済み。ギャップが大きい field は
+derive の式自体が reactivity(stressLoad / noveltyHunger)や履歴を見ていないことが原因なので、
+写像ではなく式の再設計(tension ← stressLoad、boredom ← noveltyHunger の取り込みと係数再配分)が必要。
+
+**scale=0.5 の検証結果(2026-07-12)**: `HACHIKA_LEGACY_BLEND_SCALE=0.5 npm test` で
+9件失敗。全て上記の未ピン留め field(energy / boredom / loneliness の閾値・wording)由来。
+つまり body 系の式再設計が終わるまで default は 1.0 のまま。
 
 ### Phase 3: blend weight の段階的引き下げ(ダイヤル導入済み)
 
@@ -80,9 +80,10 @@ growth metrics(saturation / recovery / motive diversity)の比較付きで行う
   (default 1.0)または test 用の `setLegacyBlendScale()` で
   turn の state/body/attachment blend と idle の body blend を一括減衰できる
 - scale=0(dynamics 単独)の中核不変条件は `src/legacy-scale.test.ts` で固定済み:
-  飽和しない / hostile より positive が温かく着地する / mistrust の蓄積と緩release / idle で退屈と孤独が上がる
-- 今後: Phase 2 の固定点調整後、default を 1.0 → 0.5 → 0 へ段階的に下げ、
-  各段階で `npm test` + growth metrics 比較を回す
+  温かい入力で relation / pleasure が上がる(絶対) / 飽和しない /
+  hostile より positive が温かく着地する / mistrust の蓄積と緩い解け / idle で退屈と孤独が上がる
+- 今後: Phase 2 の body 系式再設計後、default を 1.0 → 0.5 → 0 へ段階的に下げ、
+  各段階で `npm test` + growth metrics 比較を回す(0.5 の初回検証は上記の通り 9 件 fail)
 
 ### Phase 4: 削除
 
