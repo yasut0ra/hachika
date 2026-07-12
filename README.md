@@ -429,6 +429,10 @@ HACHIKA_LOCAL_AI_MODEL=qwen2.5-7b-instruct
 - `/world` 現在の world state と recent events を表示
 - `/reactivity` 現在の反応感度 state を表示
 - `/temperament` 現在の learned temperament を表示
+- `/constitution` 学習された基準点(v3 体質)と可塑性を表示
+- `/journal` 直近の自己記述(v3 journal)を表示
+- `/aspirations` 長期の向かい先(v3 aspiration)を表示
+- `/urges` 現在の潜在圧(contactUrge / silenceNeed など)を表示
 - `/purpose` 現在の active purpose と直近の解決済み purpose を表示
 - `/self` 現在の self-model、motive、conflict を表示
 - `/identity` 現在の identity summary / arc / traits / anchors を表示

@@ -265,6 +265,26 @@ try {
         continue;
       }
 
+      if (text === "/constitution") {
+        printConstitution(engine);
+        continue;
+      }
+
+      if (text === "/journal") {
+        printJournal(engine);
+        continue;
+      }
+
+      if (text === "/aspirations") {
+        printAspirations(engine);
+        continue;
+      }
+
+      if (text === "/urges") {
+        printUrges(engine);
+        continue;
+      }
+
       if (text === "/self") {
         printSelfModel(engine);
         continue;
@@ -409,6 +429,10 @@ function printHelp(): void {
   console.log(`${accentLabel("/world".padEnd(14, " "))} print current world state`);
   console.log(`${accentLabel("/reactivity".padEnd(14, " "))} print current response sensitivity`);
   console.log(`${accentLabel("/temperament".padEnd(14, " "))} print current learned temperament`);
+  console.log(`${accentLabel("/constitution".padEnd(14, " "))} print learned set points (v3 体質)`);
+  console.log(`${accentLabel("/journal".padEnd(14, " "))} print recent self-authored journal entries`);
+  console.log(`${accentLabel("/aspirations".padEnd(14, " "))} print long-horizon aspirations`);
+  console.log(`${accentLabel("/urges".padEnd(14, " "))} print current autonomy urges`);
   console.log(`${accentLabel("/purpose".padEnd(14, " "))} print active purpose`);
   console.log(`${accentLabel("/self".padEnd(14, " "))} print current self-model`);
   console.log(`${accentLabel("/identity".padEnd(14, " "))} print current identity`);
@@ -475,6 +499,72 @@ function printReactivity(currentEngine: HachikaEngine): void {
 function printTemperament(currentEngine: HachikaEngine): void {
   printSection("TEMPERAMENT");
   console.log(formatTemperamentState(currentEngine.getSnapshot().temperament));
+}
+
+function printConstitution(currentEngine: HachikaEngine): void {
+  const constitution = currentEngine.getSnapshot().constitution;
+  printSection("CONSTITUTION (v3)");
+  console.log(`plasticity: ${constitution.plasticity.toFixed(3)}`);
+  console.log(
+    "drive set points: " +
+      Object.entries(constitution.driveSetPoints)
+        .map(([key, value]) => `${key}:${value.toFixed(3)}`)
+        .join(" | "),
+  );
+  console.log(
+    "body set points:  " +
+      Object.entries(constitution.bodySetPoints)
+        .map(([key, value]) => `${key}:${value.toFixed(3)}`)
+        .join(" | "),
+  );
+  console.log(
+    "urge set points:  " +
+      Object.entries(constitution.urgeSetPoints)
+        .map(([key, value]) => `${key}:${value.toFixed(3)}`)
+        .join(" | "),
+  );
+  console.log(`attachment set point: ${constitution.attachmentSetPoint.toFixed(3)}`);
+}
+
+function printJournal(currentEngine: HachikaEngine): void {
+  const journal = currentEngine.getSnapshot().journal;
+  printSection("JOURNAL (v3)");
+
+  if (journal.length === 0) {
+    console.log("(まだ何も書き残していない)");
+    return;
+  }
+
+  for (const entry of journal.slice(-8)) {
+    console.log(`[${entry.writtenAt}] (${entry.source}) ${entry.text}`);
+  }
+}
+
+function printAspirations(currentEngine: HachikaEngine): void {
+  const aspirations = currentEngine.getSnapshot().aspirations;
+  printSection("ASPIRATIONS (v3)");
+
+  if (aspirations.length === 0) {
+    console.log("(まだ向かい先は立っていない)");
+    return;
+  }
+
+  for (const aspiration of aspirations) {
+    console.log(
+      `「${aspiration.theme}」 strength:${aspiration.strength.toFixed(2)}` +
+        `${aspiration.waning ? " (薄れつつある)" : ""} formed:${aspiration.formedAt}`,
+    );
+  }
+}
+
+function printUrges(currentEngine: HachikaEngine): void {
+  const urges = currentEngine.getSnapshot().urges;
+  printSection("URGES");
+  console.log(
+    Object.entries(urges)
+      .map(([key, value]) => `${key}:${(value as number).toFixed(2)}`)
+      .join(" | "),
+  );
 }
 
 function printReplyGeneratorStatus(): void {
