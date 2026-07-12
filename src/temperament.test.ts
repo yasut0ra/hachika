@@ -161,3 +161,20 @@ function createSignals(
     ...overrides,
   };
 }
+
+test("lingering mistrust hardens guardedness even without new hostile signals", () => {
+  const neutralSignals = createSignals({});
+
+  const wounded = createInitialSnapshot();
+  wounded.reactivity.mistrust = 0.7;
+  const calm = createInitialSnapshot();
+  calm.reactivity.mistrust = 0.05;
+
+  for (let index = 0; index < 8; index += 1) {
+    updateTemperament(wounded, neutralSignals);
+    updateTemperament(calm, neutralSignals);
+  }
+
+  assert.ok(wounded.temperament.guardedness > calm.temperament.guardedness);
+  assert.ok(wounded.temperament.guardedness > createInitialSnapshot().temperament.guardedness);
+});

@@ -54,8 +54,8 @@
 - replay しやすい regression test を追加
 
 ### 次にやる部分
-- 感度 state(特に `mistrust` の蓄積履歴)を learned temperament の guardedness 学習へ橋渡しする
-- growth metrics 側に recovery lag(修復までのターン数)の可視化を足す
+- ~~感度 state(特に `mistrust` の蓄積履歴)を learned temperament の guardedness 学習へ橋渡しする~~ 完了: `updateTemperament` が mistrust の残留を guardedness 学習項として参照する(高いまま過ごすと固くなり、低く保たれると緩む)
+- growth metrics 側に recovery lag(修復までのターン数)の可視化を足す(scenario metrics の `stressRecoveryLag` はあるので live 側への露出のみ)
 
 ### 実装メモ
 - `DriveState`/`BodyState` とは別に、反応感度を表す軽量 state を導入してよい

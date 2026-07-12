@@ -1,5 +1,6 @@
 import {
   clamp01,
+  INITIAL_REACTIVITY,
   INITIAL_TEMPERAMENT,
   settleTowardsBaseline,
 } from "./state.js";
@@ -37,6 +38,9 @@ export function updateTemperament(
     signals.intimacy * 0.1 +
     signals.smalltalk * 0.04;
   const absenceFriction = signals.abandonment * 0.08 + signals.neglect * 0.04;
+  // 反応感度からの橋渡し: 傷の記憶 (mistrust) が高いまま過ごす経験は、
+  // 気質としての警戒を少しずつ固くする。低く保たれている時期はわずかに緩む
+  const woundedResidue = snapshot.reactivity.mistrust - INITIAL_REACTIVITY.mistrust;
 
   snapshot.temperament = {
     openness: settleTowardsBaseline(
@@ -56,7 +60,9 @@ export function updateTemperament(
       clamp01(
         previous.guardedness +
           adverse * 0.08 +
-          snapshot.body.tension * 0.02 -
+          snapshot.body.tension * 0.02 +
+          Math.max(0, woundedResidue) * 0.02 -
+          Math.max(0, -woundedResidue) * 0.01 -
           socialRepair * 0.05 -
           signals.greeting * 0.01,
       ),

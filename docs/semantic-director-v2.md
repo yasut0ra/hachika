@@ -73,6 +73,16 @@ V2 schema の雛形は [src/semantic-director-schema.ts](/Users/yasut0ra/dev/hac
 
 ## Migration
 
+> 進捗 (2026-07-12): 1-4 は実装済み。6 は **orchestration レベルで達成済み** —
+> `prepareTurnAsync` は turn-director が設定されている場合、
+> input-interpreter / behavior-director / trace-extractor / response-planner を呼ばず、
+> turn directive から behavior / traceExtraction / responsePlan を projection する
+> (turn ごとの LLM 呼び出しは interpreter 系を除き実質1回)。
+> 別 director 群は turn-director 非設定の軽量構成向け fallback として残っている。
+> 5 は async 経路で semantic checksum fallback まで実装済み。
+> 残り: 別 director 実装そのものの削減 (fallback 構成を捨てるかの判断) と、
+> engine.ts の reducer 化 (責務分割) の継続。
+
 1. `semantic-director-schema` を追加して、v2 contract を固定する
 2. `turn-director` を v2 互換の出力へ寄せる
 3. `proactive-director` も同じ contract に寄せる
