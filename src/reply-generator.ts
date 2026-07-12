@@ -756,8 +756,18 @@ function summarizeProactiveIntent(
 
 function buildReplyStyleNotes(context: ReplyGenerationContext): string[] {
   const discourseTarget = context.discourse?.target ?? context.replySelection.discourseTarget ?? null;
+  const voice = context.nextSnapshot.voice;
   return uniqueNonEmpty([
     ...(context.retryFeedback ?? []),
+    // v3 Phase 4: 個体の声。身についた入り方と文の長さの癖を wording に伝える
+    voice.preferredOpenings.length > 0
+      ? `この個体は「${voice.preferredOpenings[0]}」のような入り方が身についている (毎回ではなく、自然な時だけ)`
+      : null,
+    voice.brevityBias < -0.3
+      ? "この個体は短く切り上げる癖がある"
+      : voice.brevityBias > 0.3
+        ? "この個体はやや語り寄りの癖がある"
+        : null,
     "fallback の語順をなぞらず、新しく言い直す",
     "抽象ラベルや決まり文句だけで済ませず、具体物・行動・相手の言葉を優先する",
     context.behaviorDirective.directAnswer

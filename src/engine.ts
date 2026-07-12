@@ -26,7 +26,7 @@ import {
   listSemanticAttentionRationales,
   listSemanticTopics,
 } from "./semantic-director-schema.js";
-import { pickFreshText, recentAssistantReplies } from "./expression.js";
+import { pickFreshText, pickVoicedText, recentAssistantReplies } from "./expression.js";
 import {
   buildRuleBehaviorDirective,
   summarizeBehaviorDirective,
@@ -5291,6 +5291,13 @@ function buildPlannedOpener(
   turnIndex: number,
 ): string {
   const recentAssistantLines = recentAssistantReplies(previousSnapshot, 4);
+  // v3 Phase 4: 個体の声 (身についた入り方) が opener の選択に効く
+  const pickFreshText = (
+    candidates: readonly string[],
+    recent: readonly string[],
+    index: number,
+  ): string =>
+    pickVoicedText(candidates, recent, index, previousSnapshot.voice.preferredOpenings);
 
   if (responsePlan.mentionWorld) {
     return pickFreshText(

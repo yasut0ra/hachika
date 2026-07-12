@@ -168,12 +168,18 @@ v2 の境界をそのまま保つ。
 - 残: aspiration の LLM による言語化(identity / 発話への反映)、
   reopen 率・conversion の縦断比較(Phase 5 の harness で)
 
-### Phase 4: voice(声)
+### Phase 4: voice(声)— 実装済み (2026-07-13)
 
-- generation history から voice profile を蒸留し、
-  composition brief / expression perspective に供給
-- 完了条件: 同一状態・同一入力での wording が個体間で計測可能に異なる
-  (n-gram / opener 分布の距離)
+- `VoiceProfile`(preferredOpenings / brevityBias)を snapshot に追加。
+  自分の発話履歴(hachika 側の記憶)から、繰り返された入り方と文の長さの癖を
+  **idle の最初の窓で蒸留**する(声は静かな時間に定着する)
+- rule 経路: opener 選択が `pickVoicedText` を通り、身についた入り方が
+  直近の反復回避(anti-echo)に反しない限り優先される
+- LLM 経路: composition の styleNotes に「この個体は「X」のような入り方が
+  身についている」「短く切り上げる癖がある」を供給
+- 完了条件は達成: 同一状態・同一入力で、身についた声の違う2個体の
+  opener が分かれることをテストで固定(`substrate-invariants.test.ts`)
+- 残: opener 以外の癖(問い返し頻度、角度選好)の蒸留、n-gram 距離の metrics 化(Phase 5)
 
 ### Phase 5: individuality evaluation(個体差の実証)
 

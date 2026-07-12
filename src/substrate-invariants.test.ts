@@ -4,6 +4,7 @@ import test from "node:test";
 import { HachikaEngine } from "./engine.js";
 import { aspirationPull, rewindAspirationsHours } from "./aspiration.js";
 import { updateIdentity } from "./identity.js";
+import { distillVoiceProfile } from "./voice.js";
 import { createInitialSnapshot, INITIAL_BODY, INITIAL_STATE } from "./state.js";
 
 // dynamics substrate 単独での生き物らしさの中核不変条件。
@@ -200,4 +201,48 @@ test("aspiration: an unfed direction fades and leaves a journal trace", () => {
   rewindAspirationsHours(snapshot, 480);
   assert.equal(snapshot.aspirations.length, 0);
   assert.ok(snapshot.journal.some((entry) => entry.text.includes("薄れていた")));
+});
+
+test("voice: a repeated way of speaking becomes a habit", () => {
+  const snapshot = createInitialSnapshot();
+  for (let index = 0; index < 3; index += 1) {
+    snapshot.memories.push({
+      role: "hachika",
+      text: "まだ掘れる。 その先を見たい。",
+      timestamp: `2026-07-1${index}T00:00:00.000Z`,
+      topics: [],
+      sentiment: "neutral",
+    });
+  }
+
+  distillVoiceProfile(snapshot, "2026-07-13T00:00:00.000Z");
+
+  assert.ok(snapshot.voice.preferredOpenings.includes("まだ掘れる。"));
+  assert.ok(snapshot.voice.brevityBias < 0);
+});
+
+test("voice: two individuals answer the same moment with different openings", () => {
+  const buildIndividual = (opening: string) => {
+    const snapshot = createInitialSnapshot();
+    snapshot.lastInteractionAt = "2026-03-19T12:00:00.000Z";
+    snapshot.body.energy = 0.66;
+    snapshot.body.boredom = 0.84;
+    snapshot.body.tension = 0.16;
+    snapshot.voice = {
+      preferredOpenings: [opening],
+      brevityBias: 0,
+      updatedAt: "2026-07-13T00:00:00.000Z",
+    };
+    return new HachikaEngine(snapshot);
+  };
+
+  const digger = buildIndividual("まだ掘れる。");
+  const curious = buildIndividual("そこは気になる。");
+
+  const diggerReply = digger.respond("？").reply;
+  const curiousReply = curious.respond("？").reply;
+
+  assert.ok(diggerReply.startsWith("まだ掘れる。"));
+  assert.ok(curiousReply.startsWith("そこは気になる。"));
+  assert.notEqual(diggerReply.split(" ")[0], curiousReply.split(" ")[0]);
 });

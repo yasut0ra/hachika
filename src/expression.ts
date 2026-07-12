@@ -46,6 +46,27 @@ export function openingSignature(text: string): string {
   return firstClause.trim().slice(0, 18);
 }
 
+// v3 Phase 4: 身についた入り方 (voice) があれば、直近で使っていない限りそれを選ぶ。
+// 個体の癖は anti-echo (直近の反復回避) より弱く、長期の分布としてだけ現れる
+export function pickVoicedText(
+  candidates: readonly string[],
+  recentTexts: readonly string[],
+  index: number,
+  preferredOpenings: readonly string[],
+): string {
+  const recentOpenings = new Set(recentTexts.map(openingSignature).filter(Boolean));
+  const habitual = preferredOpenings.find(
+    (opening) =>
+      candidates.includes(opening) && !recentOpenings.has(openingSignature(opening)),
+  );
+
+  if (habitual) {
+    return habitual;
+  }
+
+  return pickFreshText(candidates, recentTexts, index);
+}
+
 export function pickFreshText(
   candidates: readonly string[],
   recentTexts: readonly string[],

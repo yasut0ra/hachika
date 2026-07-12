@@ -52,6 +52,7 @@ import type {
   InitiativeState,
   Aspiration,
   AutonomyUrges,
+  VoiceProfile,
   Constitution,
   JournalEntry,
   LearnedTemperament,
@@ -160,6 +161,7 @@ function hydrateSnapshot(raw: unknown): HachikaSnapshot {
     constitution: hydrateConstitution(raw.constitution),
     journal: hydrateJournal(raw.journal),
     aspirations: hydrateAspirations(raw.aspirations),
+    voice: hydrateVoice(raw.voice),
     temperament: hydrateTemperament(raw.temperament),
     attachment:
       typeof raw.attachment === "number" ? clamp01(raw.attachment) : initial.attachment,
@@ -201,6 +203,7 @@ export function sanitizeSnapshot(snapshot: HachikaSnapshot): HachikaSnapshot {
   snapshot.constitution = sanitizeConstitution(snapshot.constitution);
   snapshot.journal = sanitizeJournal(snapshot.journal);
   snapshot.aspirations = sanitizeAspirations(snapshot.aspirations);
+  snapshot.voice = sanitizeVoice(snapshot.voice);
   snapshot.world = sanitizeWorld(snapshot.world);
   snapshot.discourse = sanitizeDiscourse(snapshot.discourse);
   snapshot.memories = snapshot.memories
@@ -411,6 +414,35 @@ function sanitizeAspirations(aspirations: Aspiration[] | undefined): Aspiration[
   return aspirations
     .filter((entry) => entry.theme.length > 0 && entry.strength > 0)
     .slice(0, 2);
+}
+
+function hydrateVoice(raw: unknown): VoiceProfile {
+  if (!isRecord(raw)) {
+    return { preferredOpenings: [], brevityBias: 0, updatedAt: null };
+  }
+
+  return {
+    preferredOpenings: Array.isArray(raw.preferredOpenings)
+      ? raw.preferredOpenings.filter((entry): entry is string => typeof entry === "string").slice(0, 2)
+      : [],
+    brevityBias:
+      typeof raw.brevityBias === "number"
+        ? Math.max(-1, Math.min(1, raw.brevityBias))
+        : 0,
+    updatedAt: typeof raw.updatedAt === "string" ? raw.updatedAt : null,
+  };
+}
+
+function sanitizeVoice(voice: VoiceProfile | undefined): VoiceProfile {
+  if (!voice) {
+    return { preferredOpenings: [], brevityBias: 0, updatedAt: null };
+  }
+
+  return {
+    preferredOpenings: voice.preferredOpenings.filter((entry) => entry.length > 0).slice(0, 2),
+    brevityBias: Math.max(-1, Math.min(1, voice.brevityBias)),
+    updatedAt: voice.updatedAt,
+  };
 }
 
 function hydrateConstitution(raw: unknown): Constitution {

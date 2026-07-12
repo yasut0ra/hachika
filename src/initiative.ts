@@ -16,6 +16,7 @@ import { pickFreshText, recentAssistantReplies } from "./expression.js";
 import { buildSelfModel } from "./self-model.js";
 import { aspirationPull, rewindAspirationsHours } from "./aspiration.js";
 import { appendJournalEntry, buildIdleJournalEntry } from "./journal.js";
+import { distillVoiceProfile } from "./voice.js";
 import { clamp01, clampSigned } from "./state.js";
 import { rewindTemperamentHours } from "./temperament.js";
 import {
@@ -504,6 +505,8 @@ export function advanceAutonomyHours(
   const first = prepareIdleAutonomyAction(snapshot, hours);
   if (first) {
     materializeIdleAutonomyAction(snapshot, first);
+    // v3 Phase 4: 声は静かな時間に定着する
+    distillVoiceProfile(snapshot, new Date().toISOString());
     // v3: 静かな時間をどう過ごしたかを、自分の言葉で1行残す
     appendJournalEntry(
       snapshot,

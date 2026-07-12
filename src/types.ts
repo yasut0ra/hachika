@@ -48,6 +48,13 @@ export interface JournalEntry {
   text: string;
 }
 
+// v3 Phase 4: 自分の発話履歴から蒸留される「言い方の癖」
+export interface VoiceProfile {
+  preferredOpenings: string[];
+  brevityBias: number;
+  updatedAt: string | null;
+}
+
 // v3 Phase 3: 数週間スケールの「向かい先」。fulfilled な決着の繰り返しから昇華される
 export interface Aspiration {
   theme: string;
@@ -507,6 +514,7 @@ export interface HachikaSnapshot {
   constitution: Constitution;
   journal: JournalEntry[];
   aspirations: Aspiration[];
+  voice: VoiceProfile;
   temperament: LearnedTemperament;
   attachment: number;
   world: WorldState;
