@@ -907,6 +907,17 @@ function selectIdleInternalAction(
     return "drift";
   }
 
+  // autonomy v2: 明確な引きがない時間は、溜まっている圧の競合でどう過ごすかが決まる
+  const urges = snapshot.urges;
+
+  if (urges.recallUrge >= 0.6 && urges.recallUrge >= urges.worldUrge) {
+    return "drift";
+  }
+
+  if (urges.silenceNeed >= 0.55 && urges.silenceNeed >= urges.worldUrge) {
+    return "hold";
+  }
+
   return "observe";
 }
 

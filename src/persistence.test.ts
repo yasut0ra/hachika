@@ -558,6 +558,7 @@ test("loadSnapshot seeds latent dynamics from older visible-only snapshots", asy
         loaded.reactivity.mistrust - createInitialSnapshot().reactivity.mistrust,
       ) < 0.05,
     );
+    assert.deepEqual(loaded.urges, createInitialSnapshot().urges);
     assert.ok(loaded.dynamics.safety < 0.5);
     assert.ok(loaded.dynamics.trust > 0.5);
     assert.ok(loaded.dynamics.activation > 0.5);

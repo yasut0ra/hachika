@@ -29,6 +29,16 @@ export interface ReactivityState {
   mistrust: number;
 }
 
+// autonomy v2: candidate selection 用の潜在圧。visible state ではなく、
+// 時間と出来事で上下して互いに競合する
+export interface AutonomyUrges {
+  contactUrge: number;
+  closureUrge: number;
+  recallUrge: number;
+  worldUrge: number;
+  silenceNeed: number;
+}
+
 export interface LearnedTemperament {
   openness: number;
   guardedness: number;
@@ -463,6 +473,7 @@ export interface HachikaSnapshot {
   body: BodyState;
   dynamics: DynamicsState;
   reactivity: ReactivityState;
+  urges: AutonomyUrges;
   temperament: LearnedTemperament;
   attachment: number;
   world: WorldState;

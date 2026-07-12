@@ -1,4 +1,5 @@
 import type {
+  AutonomyUrges,
   BodyState,
   DynamicsState,
   DriveName,
@@ -49,6 +50,14 @@ export const INITIAL_REACTIVITY: ReactivityState = {
   mistrust: 0.1,
 };
 
+export const INITIAL_URGES: AutonomyUrges = {
+  contactUrge: 0.24,
+  closureUrge: 0.2,
+  recallUrge: 0.18,
+  worldUrge: 0.26,
+  silenceNeed: 0.2,
+};
+
 export const INITIAL_TEMPERAMENT: LearnedTemperament = {
   openness: 0.52,
   guardedness: 0.36,
@@ -92,6 +101,7 @@ export function createInitialSnapshot(): HachikaSnapshot {
     body: { ...INITIAL_BODY },
     dynamics: { ...INITIAL_DYNAMICS },
     reactivity: { ...INITIAL_REACTIVITY },
+    urges: { ...INITIAL_URGES },
     temperament: { ...INITIAL_TEMPERAMENT },
     attachment: INITIAL_ATTACHMENT,
     world: createInitialWorldState(),

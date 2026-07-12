@@ -7,6 +7,7 @@ import {
   INITIAL_REACTIVITY,
   INITIAL_STATE,
   INITIAL_TEMPERAMENT,
+  INITIAL_URGES,
   settleTowardsBaseline,
 } from "./state.js";
 import type {
@@ -229,8 +230,116 @@ export function updateDynamicsFromSignals(
   };
 
   snapshot.reactivity = updateReactivityFromSignals(snapshot, signals);
+  updateUrgesFromTurn(snapshot, signals);
 
   deriveVisibleStateFromDynamics(snapshot);
+}
+
+// autonomy v2: 潜在圧 (urges) の更新。会話は contact を満たして silence への欲を溜め、
+// 未解決の仕事は closure 圧を、話題の放棄は recall 圧を溜める。
+// visible state ではなく、idle 中の行動選択が参照する
+export function updateUrgesFromTurn(
+  snapshot: HachikaSnapshot,
+  signals: InteractionSignals,
+): void {
+  const previous = snapshot.urges;
+  const openWorkPull = clamp01(
+    snapshot.discourse.openRequests.filter((request) => request.status === "open").length *
+      0.05 +
+      Object.values(snapshot.traces).filter(
+        (trace) => trace.status !== "resolved" && trace.work.blockers.length > 0,
+      ).length *
+        0.04,
+  );
+
+  snapshot.urges = {
+    // 会話そのものが接触なので、話している間は contact 圧が抜けていく
+    contactUrge: settleTowardsBaseline(
+      clamp01(
+        previous.contactUrge -
+          0.1 -
+          signals.intimacy * 0.06 -
+          signals.greeting * 0.04 +
+          signals.neglect * 0.08 +
+          signals.abandonment * 0.05,
+      ),
+      INITIAL_URGES.contactUrge,
+      0.04,
+    ),
+    closureUrge: settleTowardsBaseline(
+      clamp01(
+        previous.closureUrge +
+          openWorkPull +
+          signals.workCue * 0.05 -
+          signals.completion * 0.16,
+      ),
+      INITIAL_URGES.closureUrge,
+      0.04,
+    ),
+    recallUrge: settleTowardsBaseline(
+      clamp01(
+        previous.recallUrge -
+          signals.memoryCue * 0.1 +
+          signals.abandonment * 0.05 +
+          snapshot.reactivity.noveltyHunger * 0.02,
+      ),
+      INITIAL_URGES.recallUrge,
+      0.04,
+    ),
+    worldUrge: settleTowardsBaseline(
+      clamp01(previous.worldUrge - signals.worldInquiry * 0.14 + 0.02),
+      INITIAL_URGES.worldUrge,
+      0.04,
+    ),
+    // 喋り続けると黙っていたい圧が溜まり、傷つけられた turn では強く跳ねる
+    silenceNeed: settleTowardsBaseline(
+      clamp01(
+        previous.silenceNeed +
+          0.04 +
+          signals.negative * 0.1 +
+          signals.dismissal * 0.08 -
+          signals.selfInquiry * 0.04,
+      ),
+      INITIAL_URGES.silenceNeed,
+      0.05,
+    ),
+  };
+}
+
+// 放置中は contact / recall / world への圧が溜まり、silence への欲が抜けていく
+export function rewindUrgesHours(
+  snapshot: HachikaSnapshot,
+  hours: number,
+): void {
+  if (!Number.isFinite(hours) || hours <= 0) {
+    return;
+  }
+
+  const archivedPull = Object.values(snapshot.traces).some(
+    (trace) => trace.lifecycle?.phase === "archived",
+  )
+    ? 0.04
+    : 0;
+
+  snapshot.urges = {
+    contactUrge: clamp01(
+      snapshot.urges.contactUrge +
+        Math.min(0.3, hours / 24) *
+          (1 + snapshot.temperament.bondingBias * 0.2 + snapshot.dynamics.socialNeed * 0.3),
+    ),
+    closureUrge: clamp01(
+      snapshot.urges.closureUrge + Math.min(0.12, hours / 60) * (0.6 + snapshot.dynamics.continuityPressure * 0.5),
+    ),
+    recallUrge: clamp01(
+      snapshot.urges.recallUrge + Math.min(0.2, hours / 36) + archivedPull,
+    ),
+    worldUrge: clamp01(snapshot.urges.worldUrge + Math.min(0.18, hours / 40)),
+    silenceNeed: settleTowardsBaseline(
+      clamp01(snapshot.urges.silenceNeed - Math.min(0.25, hours / 30)),
+      INITIAL_URGES.silenceNeed,
+      0.06,
+    ),
+  };
 }
 
 // idle 中の reactivity ドリフトも substrate として直接適用する
@@ -349,6 +458,7 @@ export function rewindDynamicsHours(
   };
 
   rewindReactivityHours(snapshot, hours);
+  rewindUrgesHours(snapshot, hours);
   deriveVisibleStateFromDynamics(snapshot);
 }
 

@@ -19,6 +19,7 @@ import {
   clampSigned,
   createInitialSnapshot,
   INITIAL_REACTIVITY,
+  INITIAL_URGES,
 } from "./state.js";
 import { isInformativeTraceClause } from "./traces.js";
 import { syncWorldObjectTraceLinks, WORLD_PLACE_IDS } from "./world.js";
@@ -47,6 +48,7 @@ import type {
   IdentityState,
   InitiativeActivity,
   InitiativeState,
+  AutonomyUrges,
   LearnedTemperament,
   MemoryEntry,
   MotiveKind,
@@ -149,6 +151,7 @@ function hydrateSnapshot(raw: unknown): HachikaSnapshot {
     body: hydrateBody(raw.body),
     dynamics: hydrateDynamics(raw.dynamics, raw),
     reactivity: hydrateReactivity(raw.reactivity),
+    urges: hydrateUrges(raw.urges),
     temperament: hydrateTemperament(raw.temperament),
     attachment:
       typeof raw.attachment === "number" ? clamp01(raw.attachment) : initial.attachment,
@@ -186,6 +189,7 @@ export function sanitizeSnapshot(snapshot: HachikaSnapshot): HachikaSnapshot {
   snapshot.temperament = sanitizeTemperament(snapshot.temperament);
   deriveVisibleStateFromDynamics(snapshot);
   snapshot.reactivity = sanitizeReactivity(snapshot.reactivity);
+  snapshot.urges = sanitizeUrges(snapshot.urges);
   snapshot.world = sanitizeWorld(snapshot.world);
   snapshot.discourse = sanitizeDiscourse(snapshot.discourse);
   snapshot.memories = snapshot.memories
@@ -308,6 +312,27 @@ function hydrateReactivity(raw: unknown): ReactivityState {
         : initial.noveltyHunger,
     mistrust:
       typeof raw.mistrust === "number" ? clamp01(raw.mistrust) : initial.mistrust,
+  };
+}
+
+function hydrateUrges(raw: unknown): AutonomyUrges {
+  const initial = createInitialSnapshot().urges;
+
+  if (!isRecord(raw)) {
+    return initial;
+  }
+
+  return {
+    contactUrge:
+      typeof raw.contactUrge === "number" ? clamp01(raw.contactUrge) : initial.contactUrge,
+    closureUrge:
+      typeof raw.closureUrge === "number" ? clamp01(raw.closureUrge) : initial.closureUrge,
+    recallUrge:
+      typeof raw.recallUrge === "number" ? clamp01(raw.recallUrge) : initial.recallUrge,
+    worldUrge:
+      typeof raw.worldUrge === "number" ? clamp01(raw.worldUrge) : initial.worldUrge,
+    silenceNeed:
+      typeof raw.silenceNeed === "number" ? clamp01(raw.silenceNeed) : initial.silenceNeed,
   };
 }
 
@@ -1603,6 +1628,20 @@ function sanitizeReactivity(reactivity: ReactivityState): ReactivityState {
     stressLoad: clamp01(reactivity.stressLoad),
     noveltyHunger: clamp01(reactivity.noveltyHunger),
     mistrust: clamp01(reactivity.mistrust ?? INITIAL_REACTIVITY.mistrust),
+  };
+}
+
+function sanitizeUrges(urges: AutonomyUrges | undefined): AutonomyUrges {
+  if (!urges) {
+    return { ...INITIAL_URGES };
+  }
+
+  return {
+    contactUrge: clamp01(urges.contactUrge ?? INITIAL_URGES.contactUrge),
+    closureUrge: clamp01(urges.closureUrge ?? INITIAL_URGES.closureUrge),
+    recallUrge: clamp01(urges.recallUrge ?? INITIAL_URGES.recallUrge),
+    worldUrge: clamp01(urges.worldUrge ?? INITIAL_URGES.worldUrge),
+    silenceNeed: clamp01(urges.silenceNeed ?? INITIAL_URGES.silenceNeed),
   };
 }
 

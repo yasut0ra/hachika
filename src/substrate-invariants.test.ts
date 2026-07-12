@@ -73,3 +73,22 @@ test("dynamics: idle raises boredom and loneliness", () => {
   assert.ok(after.boredom > before.boredom);
   assert.ok(after.loneliness > before.loneliness);
 });
+
+test("dynamics: conversation relieves contact urge while idle rebuilds it", () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+  const initial = engine.getSnapshot().urges;
+
+  engine.respond("こんにちは。少し話そう。");
+  engine.respond("最近どう？");
+  const afterTalk = engine.getSnapshot().urges;
+
+  assert.ok(afterTalk.contactUrge < initial.contactUrge);
+  assert.ok(afterTalk.silenceNeed > initial.silenceNeed);
+
+  engine.rewindIdleHours(12);
+  const afterIdle = engine.getSnapshot().urges;
+
+  assert.ok(afterIdle.contactUrge > afterTalk.contactUrge);
+  assert.ok(afterIdle.silenceNeed < afterTalk.silenceNeed);
+  assert.ok(afterIdle.recallUrge > afterTalk.recallUrge);
+});
