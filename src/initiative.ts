@@ -14,7 +14,7 @@ import {
 } from "./dynamics.js";
 import { pickFreshText, recentAssistantReplies } from "./expression.js";
 import { buildSelfModel } from "./self-model.js";
-import { clamp01, clampSigned, INITIAL_URGES } from "./state.js";
+import { clamp01, clampSigned } from "./state.js";
 import { rewindTemperamentHours } from "./temperament.js";
 import {
   linkTraceToWorld,
@@ -296,8 +296,8 @@ export function prepareInitiativeEmission(
   // autonomy v2: 向き直りたい圧が高いほど早く、黙っていたい圧が強いほど遅く外へ出る。
   // 相対シフトなので、中立の urges では readyAfterHours どおり (明示の「今すぐ」を遅らせない)
   const urgeReadinessShift =
-    (snapshot.urges.contactUrge - INITIAL_URGES.contactUrge) * 2.5 -
-    (snapshot.urges.silenceNeed - INITIAL_URGES.silenceNeed) * 3;
+    (snapshot.urges.contactUrge - snapshot.constitution.urgeSetPoints.contactUrge) * 2.5 -
+    (snapshot.urges.silenceNeed - snapshot.constitution.urgeSetPoints.silenceNeed) * 3;
 
   if (
     pending &&

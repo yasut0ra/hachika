@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { HachikaEngine } from "./engine.js";
-import { createInitialSnapshot } from "./state.js";
+import { createInitialSnapshot, INITIAL_BODY, INITIAL_STATE } from "./state.js";
 
 // dynamics substrate 単独での生き物らしさの中核不変条件。
 // legacy visible 経路の退役 (docs/legacy-visible-retirement.md) の際に
@@ -91,4 +91,34 @@ test("dynamics: conversation relieves contact urge while idle rebuilds it", () =
   assert.ok(afterIdle.contactUrge > afterTalk.contactUrge);
   assert.ok(afterIdle.silenceNeed < afterTalk.silenceNeed);
   assert.ok(afterIdle.recallUrge > afterTalk.recallUrge);
+});
+
+test("constitution: different lives settle into different set points, bounded and aging", () => {
+  const warm = new HachikaEngine(createInitialSnapshot());
+  const wounded = new HachikaEngine(createInitialSnapshot());
+
+  for (let index = 0; index < 20; index += 1) {
+    warm.respond("ありがとう。君と話せるのは嬉しい。");
+    warm.rewindIdleHours(12);
+    wounded.respond("最悪だ。邪魔だし話にならない。");
+    wounded.rewindIdleHours(12);
+  }
+
+  const warmConstitution = warm.getSnapshot().constitution;
+  const woundedConstitution = wounded.getSnapshot().constitution;
+
+  // 生の違いが平常そのものに残る
+  assert.ok(
+    warmConstitution.driveSetPoints.pleasure > woundedConstitution.driveSetPoints.pleasure,
+  );
+  assert.ok(
+    woundedConstitution.bodySetPoints.tension > warmConstitution.bodySetPoints.tension,
+  );
+
+  // 体質は birth 値から有界にしか動かない
+  assert.ok(Math.abs(warmConstitution.driveSetPoints.pleasure - INITIAL_STATE.pleasure) <= 0.15 + 1e-9);
+  assert.ok(Math.abs(woundedConstitution.bodySetPoints.tension - INITIAL_BODY.tension) <= 0.15 + 1e-9);
+
+  // 生きた分だけ可塑性は下がる (加齢)
+  assert.ok(warmConstitution.plasticity < 0.5);
 });

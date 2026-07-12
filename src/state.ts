@@ -1,5 +1,6 @@
 import type {
   AutonomyUrges,
+  Constitution,
   BodyState,
   DynamicsState,
   DriveName,
@@ -58,6 +59,22 @@ export const INITIAL_URGES: AutonomyUrges = {
   silenceNeed: 0.2,
 };
 
+// v3: INITIAL_STATE / INITIAL_BODY / INITIAL_URGES / INITIAL_ATTACHMENT は
+// 「誕生時の値」であり、生きている個体の基準点は constitution が持つ。
+// 体質は birth 値から最大 ±CONSTITUTION_RANGE までしか動かない
+export const CONSTITUTION_RANGE = 0.15;
+export const INITIAL_PLASTICITY = 0.5;
+
+export function createBirthConstitution(): Constitution {
+  return {
+    driveSetPoints: { ...INITIAL_STATE },
+    bodySetPoints: { ...INITIAL_BODY },
+    urgeSetPoints: { ...INITIAL_URGES },
+    attachmentSetPoint: INITIAL_ATTACHMENT,
+    plasticity: INITIAL_PLASTICITY,
+  };
+}
+
 export const INITIAL_TEMPERAMENT: LearnedTemperament = {
   openness: 0.52,
   guardedness: 0.36,
@@ -102,6 +119,7 @@ export function createInitialSnapshot(): HachikaSnapshot {
     dynamics: { ...INITIAL_DYNAMICS },
     reactivity: { ...INITIAL_REACTIVITY },
     urges: { ...INITIAL_URGES },
+    constitution: createBirthConstitution(),
     temperament: { ...INITIAL_TEMPERAMENT },
     attachment: INITIAL_ATTACHMENT,
     world: createInitialWorldState(),

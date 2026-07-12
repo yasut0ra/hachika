@@ -17,6 +17,8 @@ import {
 import {
   clamp01,
   clampSigned,
+  CONSTITUTION_RANGE,
+  createBirthConstitution,
   createInitialSnapshot,
   INITIAL_REACTIVITY,
   INITIAL_URGES,
@@ -49,6 +51,7 @@ import type {
   InitiativeActivity,
   InitiativeState,
   AutonomyUrges,
+  Constitution,
   LearnedTemperament,
   MemoryEntry,
   MotiveKind,
@@ -152,6 +155,7 @@ function hydrateSnapshot(raw: unknown): HachikaSnapshot {
     dynamics: hydrateDynamics(raw.dynamics, raw),
     reactivity: hydrateReactivity(raw.reactivity),
     urges: hydrateUrges(raw.urges),
+    constitution: hydrateConstitution(raw.constitution),
     temperament: hydrateTemperament(raw.temperament),
     attachment:
       typeof raw.attachment === "number" ? clamp01(raw.attachment) : initial.attachment,
@@ -190,6 +194,7 @@ export function sanitizeSnapshot(snapshot: HachikaSnapshot): HachikaSnapshot {
   deriveVisibleStateFromDynamics(snapshot);
   snapshot.reactivity = sanitizeReactivity(snapshot.reactivity);
   snapshot.urges = sanitizeUrges(snapshot.urges);
+  snapshot.constitution = sanitizeConstitution(snapshot.constitution);
   snapshot.world = sanitizeWorld(snapshot.world);
   snapshot.discourse = sanitizeDiscourse(snapshot.discourse);
   snapshot.memories = snapshot.memories
@@ -333,6 +338,40 @@ function hydrateUrges(raw: unknown): AutonomyUrges {
       typeof raw.worldUrge === "number" ? clamp01(raw.worldUrge) : initial.worldUrge,
     silenceNeed:
       typeof raw.silenceNeed === "number" ? clamp01(raw.silenceNeed) : initial.silenceNeed,
+  };
+}
+
+function hydrateConstitution(raw: unknown): Constitution {
+  const birth = createBirthConstitution();
+
+  if (!isRecord(raw)) {
+    return birth;
+  }
+
+  const readGroup = <T extends object>(value: unknown, fallback: T): T => {
+    if (!isRecord(value)) {
+      return { ...fallback };
+    }
+    const result = { ...fallback } as Record<string, number>;
+    for (const key of Object.keys(fallback)) {
+      const candidate = (value as Record<string, unknown>)[key];
+      if (typeof candidate === "number") {
+        result[key] = clamp01(candidate);
+      }
+    }
+    return result as unknown as T;
+  };
+
+  return {
+    driveSetPoints: readGroup(raw.driveSetPoints, birth.driveSetPoints),
+    bodySetPoints: readGroup(raw.bodySetPoints, birth.bodySetPoints),
+    urgeSetPoints: readGroup(raw.urgeSetPoints, birth.urgeSetPoints),
+    attachmentSetPoint:
+      typeof raw.attachmentSetPoint === "number"
+        ? clamp01(raw.attachmentSetPoint)
+        : birth.attachmentSetPoint,
+    plasticity:
+      typeof raw.plasticity === "number" ? clamp01(raw.plasticity) : birth.plasticity,
   };
 }
 
@@ -1642,6 +1681,38 @@ function sanitizeUrges(urges: AutonomyUrges | undefined): AutonomyUrges {
     recallUrge: clamp01(urges.recallUrge ?? INITIAL_URGES.recallUrge),
     worldUrge: clamp01(urges.worldUrge ?? INITIAL_URGES.worldUrge),
     silenceNeed: clamp01(urges.silenceNeed ?? INITIAL_URGES.silenceNeed),
+  };
+}
+
+// 体質は birth 値から ±CONSTITUTION_RANGE に収める
+function sanitizeConstitution(constitution: Constitution | undefined): Constitution {
+  const birth = createBirthConstitution();
+
+  if (!constitution) {
+    return birth;
+  }
+
+  const bound = (value: number | undefined, birthValue: number): number =>
+    Math.min(
+      birthValue + CONSTITUTION_RANGE,
+      Math.max(birthValue - CONSTITUTION_RANGE, clamp01(value ?? birthValue)),
+    );
+
+  const boundGroup = <T extends object>(group: T | undefined, birthGroup: T): T => {
+    const result = { ...birthGroup } as Record<string, number>;
+    const source = (group ?? {}) as Record<string, number | undefined>;
+    for (const [key, birthValue] of Object.entries(birthGroup as Record<string, number>)) {
+      result[key] = bound(source[key], birthValue);
+    }
+    return result as unknown as T;
+  };
+
+  return {
+    driveSetPoints: boundGroup(constitution.driveSetPoints, birth.driveSetPoints),
+    bodySetPoints: boundGroup(constitution.bodySetPoints, birth.bodySetPoints),
+    urgeSetPoints: boundGroup(constitution.urgeSetPoints, birth.urgeSetPoints),
+    attachmentSetPoint: bound(constitution.attachmentSetPoint, birth.attachmentSetPoint),
+    plasticity: clamp01(constitution.plasticity ?? birth.plasticity),
   };
 }
 

@@ -445,7 +445,7 @@ function conflictContextBoost(
   kind: ConflictKind,
 ): number {
   // 最近雑に扱われた記憶が残っている間は、境界がらみの葛藤を強く感じる
-  const woundedBoost = Math.max(0, snapshot.reactivity.mistrust - 0.1) * 0.62;
+  const woundedBoost = Math.max(0, snapshot.reactivity.mistrust - 0.1) * 0.66;
 
   switch (kind) {
     case "curiosity_relation":

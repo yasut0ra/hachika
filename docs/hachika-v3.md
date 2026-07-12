@@ -122,13 +122,20 @@ v2 の境界をそのまま保つ。
   累積時間ベースに再設計し、substrate 更新も窓ごとに回せるようにする
 - resident loop の 1 tick = 実時間の microstep として一貫させる
 
-### Phase 1: constitution(体質)
+### Phase 1: constitution(体質)— 実装済み (2026-07-12)
 
-- `INITIAL_*` を「birth 値」に改名し、偏差形式の anchor と homeostasis の
-  baseline を `constitution` 経由で読むように差し替える
-- 更新則: 直近の生活平均(rolling)へ、plasticity に比例した極小レートで追従
-- 完了条件: 30 日相当の傷の多い生活の後、「同じ入力への平常応答」が
-  安全な生活を送った個体と分離する(substrate-invariants に個体差テストを追加)
+- `INITIAL_STATE / INITIAL_BODY / INITIAL_URGES / INITIAL_ATTACHMENT` は birth 値となり、
+  偏差形式の anchor・urges の baseline・proactive readiness の中立点は
+  `snapshot.constitution` の set-point を読む(誕生時は birth 値と一致)
+- 更新則: `updateConstitutionFromLife` が turn(weight 1)と idle(weight hours/6)で
+  現在の visible 値へ plasticity 比例の極小レート(0.004×plasticity)で追従。
+  birth ± 0.15 に有界で、plasticity は生きた分だけ低下(0.5 → 下限 0.15)
+- persistence: 旧 snapshot は「まだ体質が動いていない個体」として birth 値で hydrate。
+  sanitize が有界性を保証する
+- 完了条件は達成: 温かい生 / 傷の多い生 ×20 サイクル(turn+idle 12h)で、
+  pleasure set-point と tension set-point が方向どおり分離し、有界性と加齢も成立
+  (`substrate-invariants.test.ts` で恒久固定)
+- 残: `/constitution` CLI・UI 表示、consolidation 中の journal 連携(Phase 2 で)
 
 ### Phase 2: journal(自己記述)
 

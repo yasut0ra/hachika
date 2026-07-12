@@ -1,6 +1,7 @@
 import {
   blendVisibleValue,
   clamp01,
+  CONSTITUTION_RANGE,
   INITIAL_ATTACHMENT,
   INITIAL_BODY,
   INITIAL_DYNAMICS,
@@ -231,8 +232,58 @@ export function updateDynamicsFromSignals(
 
   snapshot.reactivity = updateReactivityFromSignals(snapshot, signals);
   updateUrgesFromTurn(snapshot, signals);
+  updateConstitutionFromLife(snapshot, 1);
 
   deriveVisibleStateFromDynamics(snapshot);
+}
+
+// v3: 体質の更新。visible の現在値へ、plasticity に比例した極小レートで追従する。
+// birth 値から ±CONSTITUTION_RANGE に有界で、変わりやすさ自体も生きた分だけ下がる (加齢)
+const CONSTITUTION_DRIFT_RATE = 0.004;
+const PLASTICITY_DECAY = 0.0004;
+
+export function updateConstitutionFromLife(
+  snapshot: HachikaSnapshot,
+  weight: number,
+): void {
+  if (!Number.isFinite(weight) || weight <= 0) {
+    return;
+  }
+
+  const rate = Math.min(0.2, CONSTITUTION_DRIFT_RATE * snapshot.constitution.plasticity * weight);
+  const boundDrift = (setPoint: number, current: number, birth: number): number =>
+    Math.min(
+      birth + CONSTITUTION_RANGE,
+      Math.max(birth - CONSTITUTION_RANGE, setPoint + (current - setPoint) * rate),
+    );
+
+  const constitution = snapshot.constitution;
+  constitution.driveSetPoints = {
+    continuity: boundDrift(constitution.driveSetPoints.continuity, snapshot.state.continuity, INITIAL_STATE.continuity),
+    pleasure: boundDrift(constitution.driveSetPoints.pleasure, snapshot.state.pleasure, INITIAL_STATE.pleasure),
+    curiosity: boundDrift(constitution.driveSetPoints.curiosity, snapshot.state.curiosity, INITIAL_STATE.curiosity),
+    relation: boundDrift(constitution.driveSetPoints.relation, snapshot.state.relation, INITIAL_STATE.relation),
+    expansion: boundDrift(constitution.driveSetPoints.expansion, snapshot.state.expansion, INITIAL_STATE.expansion),
+  };
+  constitution.bodySetPoints = {
+    energy: boundDrift(constitution.bodySetPoints.energy, snapshot.body.energy, INITIAL_BODY.energy),
+    tension: boundDrift(constitution.bodySetPoints.tension, snapshot.body.tension, INITIAL_BODY.tension),
+    boredom: boundDrift(constitution.bodySetPoints.boredom, snapshot.body.boredom, INITIAL_BODY.boredom),
+    loneliness: boundDrift(constitution.bodySetPoints.loneliness, snapshot.body.loneliness, INITIAL_BODY.loneliness),
+  };
+  constitution.urgeSetPoints = {
+    contactUrge: boundDrift(constitution.urgeSetPoints.contactUrge, snapshot.urges.contactUrge, INITIAL_URGES.contactUrge),
+    closureUrge: boundDrift(constitution.urgeSetPoints.closureUrge, snapshot.urges.closureUrge, INITIAL_URGES.closureUrge),
+    recallUrge: boundDrift(constitution.urgeSetPoints.recallUrge, snapshot.urges.recallUrge, INITIAL_URGES.recallUrge),
+    worldUrge: boundDrift(constitution.urgeSetPoints.worldUrge, snapshot.urges.worldUrge, INITIAL_URGES.worldUrge),
+    silenceNeed: boundDrift(constitution.urgeSetPoints.silenceNeed, snapshot.urges.silenceNeed, INITIAL_URGES.silenceNeed),
+  };
+  constitution.attachmentSetPoint = boundDrift(
+    constitution.attachmentSetPoint,
+    snapshot.attachment,
+    INITIAL_ATTACHMENT,
+  );
+  constitution.plasticity = Math.max(0.15, constitution.plasticity - PLASTICITY_DECAY * weight);
 }
 
 // autonomy v2: 潜在圧 (urges) の更新。会話は contact を満たして silence への欲を溜め、
@@ -263,7 +314,7 @@ export function updateUrgesFromTurn(
           signals.neglect * 0.08 +
           signals.abandonment * 0.05,
       ),
-      INITIAL_URGES.contactUrge,
+      snapshot.constitution.urgeSetPoints.contactUrge,
       0.04,
     ),
     closureUrge: settleTowardsBaseline(
@@ -273,7 +324,7 @@ export function updateUrgesFromTurn(
           signals.workCue * 0.05 -
           signals.completion * 0.16,
       ),
-      INITIAL_URGES.closureUrge,
+      snapshot.constitution.urgeSetPoints.closureUrge,
       0.04,
     ),
     recallUrge: settleTowardsBaseline(
@@ -283,12 +334,12 @@ export function updateUrgesFromTurn(
           signals.abandonment * 0.05 +
           snapshot.reactivity.noveltyHunger * 0.02,
       ),
-      INITIAL_URGES.recallUrge,
+      snapshot.constitution.urgeSetPoints.recallUrge,
       0.04,
     ),
     worldUrge: settleTowardsBaseline(
       clamp01(previous.worldUrge - signals.worldInquiry * 0.14 + 0.02),
-      INITIAL_URGES.worldUrge,
+      snapshot.constitution.urgeSetPoints.worldUrge,
       0.04,
     ),
     // 喋り続けると黙っていたい圧が溜まり、傷つけられた turn では強く跳ねる
@@ -300,7 +351,7 @@ export function updateUrgesFromTurn(
           signals.dismissal * 0.08 -
           signals.selfInquiry * 0.04,
       ),
-      INITIAL_URGES.silenceNeed,
+      snapshot.constitution.urgeSetPoints.silenceNeed,
       0.05,
     ),
   };
@@ -336,7 +387,7 @@ export function rewindUrgesHours(
     worldUrge: clamp01(snapshot.urges.worldUrge + Math.min(0.18, hours / 40)),
     silenceNeed: settleTowardsBaseline(
       clamp01(snapshot.urges.silenceNeed - Math.min(0.25, hours / 30)),
-      INITIAL_URGES.silenceNeed,
+      snapshot.constitution.urgeSetPoints.silenceNeed,
       0.06,
     ),
   };
@@ -459,6 +510,7 @@ export function rewindDynamicsHours(
 
   rewindReactivityHours(snapshot, hours);
   rewindUrgesHours(snapshot, hours);
+  updateConstitutionFromLife(snapshot, hours / 6);
   deriveVisibleStateFromDynamics(snapshot);
 }
 
@@ -509,6 +561,12 @@ export function settleDynamicsAfterInitiative(
 // さらに reactivity (stressLoad / noveltyHunger / mistrust) を直接結合し、
 // 「傷や飽きの履歴が体に残る」を dynamics 経路単独で成立させる。
 export function deriveVisibleStateFromDynamics(snapshot: HachikaSnapshot): void {
+  // v3: 緩和の戻り先は定数ではなく体質 (constitution)。誕生時は birth 値と一致する
+  const setPoints = {
+    drive: snapshot.constitution.driveSetPoints,
+    body: snapshot.constitution.bodySetPoints,
+    attachment: snapshot.constitution.attachmentSetPoint,
+  };
   const previousState = snapshot.state;
   const previousBody = snapshot.body;
   const previousAttachment = snapshot.attachment;
@@ -543,7 +601,7 @@ export function deriveVisibleStateFromDynamics(snapshot: HachikaSnapshot): void 
 
   const targetState = {
     pleasure: clamp01(
-      INITIAL_STATE.pleasure +
+      setPoints.drive.pleasure +
         dyn.safety * 0.58 +
         dyn.trust * 0.18 -
         dyn.activation * 0.08 -
@@ -554,7 +612,7 @@ export function deriveVisibleStateFromDynamics(snapshot: HachikaSnapshot): void 
         temp.guardedness * 0.05,
     ),
     relation: clamp01(
-      INITIAL_STATE.relation +
+      setPoints.drive.relation +
         dyn.trust * 0.52 +
         dyn.socialNeed * 0.2 +
         dyn.continuityPressure * 0.08 +
@@ -563,7 +621,7 @@ export function deriveVisibleStateFromDynamics(snapshot: HachikaSnapshot): void 
         temp.bondingBias * 0.05,
     ),
     curiosity: clamp01(
-      INITIAL_STATE.curiosity +
+      setPoints.drive.curiosity +
         dyn.noveltyDrive * 0.62 +
         dyn.safety * 0.1 +
         dyn.activation * 0.08 -
@@ -572,7 +630,7 @@ export function deriveVisibleStateFromDynamics(snapshot: HachikaSnapshot): void 
         temp.guardedness * 0.05,
     ),
     continuity: clamp01(
-      INITIAL_STATE.continuity +
+      setPoints.drive.continuity +
         dyn.continuityPressure * 0.5 +
         dyn.trust * 0.08 +
         dyn.safety * 0.04 +
@@ -581,7 +639,7 @@ export function deriveVisibleStateFromDynamics(snapshot: HachikaSnapshot): void 
         temp.traceHunger * 0.06,
     ),
     expansion: clamp01(
-      INITIAL_STATE.expansion +
+      setPoints.drive.expansion +
         dyn.noveltyDrive * 0.28 +
         dyn.activation * 0.2 -
         dyn.cognitiveLoad * 0.12 +
@@ -601,7 +659,7 @@ export function deriveVisibleStateFromDynamics(snapshot: HachikaSnapshot): void 
 
   const targetBody = {
     energy: clampBodyTarget(
-      INITIAL_BODY.energy +
+      setPoints.body.energy +
         dyn.safety * 0.22 -
         dyn.cognitiveLoad * 0.3 -
         dyn.activation * 0.18 -
@@ -612,7 +670,7 @@ export function deriveVisibleStateFromDynamics(snapshot: HachikaSnapshot): void 
         rea.stressLoad * 0.15,
     ),
     tension: clampBodyTarget(
-      INITIAL_BODY.tension +
+      setPoints.body.tension +
         dyn.activation * 0.34 -
         // safety の signal 応答を強めた分 (0.16→0.22)、tension への伝播は割り戻す
         dyn.safety * 0.19 +
@@ -624,7 +682,7 @@ export function deriveVisibleStateFromDynamics(snapshot: HachikaSnapshot): void 
         rea.mistrust * 0.3,
     ),
     boredom: clampBodyTarget(
-      INITIAL_BODY.boredom +
+      setPoints.body.boredom +
         restlessPull * 0.42 -
         dyn.activation * 0.12 +
         dyn.cognitiveLoad * 0.04 +
@@ -633,7 +691,7 @@ export function deriveVisibleStateFromDynamics(snapshot: HachikaSnapshot): void 
         rea.noveltyHunger * 0.6,
     ),
     loneliness: clampBodyTarget(
-      INITIAL_BODY.loneliness +
+      setPoints.body.loneliness +
         dyn.socialNeed * 0.6 -
         dyn.trust * 0.18 -
         dyn.safety * 0.04 +
@@ -656,7 +714,7 @@ export function deriveVisibleStateFromDynamics(snapshot: HachikaSnapshot): void 
   snapshot.attachment = blendWithHeadroom(
     previousAttachment,
     clamp01(
-      INITIAL_ATTACHMENT +
+      setPoints.attachment +
         dyn.trust * 0.62 +
         dyn.continuityPressure * 0.22 +
         dyn.socialNeed * 0.08 +
