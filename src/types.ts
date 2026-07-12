@@ -39,6 +39,15 @@ export interface AutonomyUrges {
   silenceNeed: number;
 }
 
+// v3 Phase 2: 自己記述。記憶とは別に「自分はそれをどう置いたか」を積層する
+export interface JournalEntry {
+  writtenAt: string;
+  source: "idle" | "resolution";
+  mood: string | null;
+  focus: string | null;
+  text: string;
+}
+
 // v3: 学習される基準点 (体質)。visible state が緩和して戻る先そのものが、
 // 生活の平均へ極めて遅く追従する。birth 値から有界 (±0.15) で、
 // plasticity (変わりやすさ) は加齢とともに低下する
@@ -486,6 +495,7 @@ export interface HachikaSnapshot {
   reactivity: ReactivityState;
   urges: AutonomyUrges;
   constitution: Constitution;
+  journal: JournalEntry[];
   temperament: LearnedTemperament;
   attachment: number;
   world: WorldState;

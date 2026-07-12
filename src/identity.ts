@@ -7,6 +7,7 @@ import {
 } from "./memory.js";
 import { clamp01 } from "./state.js";
 import { sortedTraces } from "./traces.js";
+import { recurringJournalFocus } from "./journal.js";
 import type {
   HachikaSnapshot,
   IdentityState,
@@ -138,7 +139,11 @@ export function updateIdentity(
       (lastResolved ? 0.015 : 0),
   );
   const currentArc = buildCurrentArc(snapshot, traits, anchors);
-  const summary = buildSummary(snapshot, traits, anchors, currentArc);
+  const journalFocus = recurringJournalFocus(snapshot);
+  // v3: 自分で書き続けている線があるなら、それは identity の一部になる
+  const summary = journalFocus
+    ? `${buildSummary(snapshot, traits, anchors, currentArc)} 書き留めてきた「${journalFocus}」の線は、自分の側から続いている。`
+    : buildSummary(snapshot, traits, anchors, currentArc);
 
   snapshot.identity = {
     summary,

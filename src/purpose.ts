@@ -4,6 +4,7 @@ import {
   requiresConcreteTopicSupport,
 } from "./memory.js";
 import { clamp01 } from "./state.js";
+import { appendJournalEntry, buildResolutionJournalEntry } from "./journal.js";
 import type {
   ActivePurpose,
   HachikaSnapshot,
@@ -406,6 +407,11 @@ function resolvePurpose(
     resolvedAt: timestamp,
   };
   snapshot.purpose.lastShiftAt = timestamp;
+  // v3: 目的の決着は自己記述として残る
+  appendJournalEntry(
+    snapshot,
+    buildResolutionJournalEntry(snapshot.purpose.lastResolved, timestamp),
+  );
 }
 
 function purposeAligned(

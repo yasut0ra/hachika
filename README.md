@@ -325,6 +325,7 @@ Hachika は、単に有用なだけでなく、
   - 現在は saturation / motive diversity / identity drift / archive reopen / stress recovery に加えて、autonomous activity visibility / idle consolidation coverage / proactive maintenance rate も比較できる
   - autonomy v2 Phase 5 の live metrics として `silent internal action rate / outward action rate / world action diversity / initiative→action conversion` も `/metrics` と UI の Growth panel から見られる
 - 長い idle は autonomy v2 の microstep で処理され、最初の窓で consolidation を1回行った後、追加の窓ごとに internal action(observe / hold / drift / recall)が評価される。1回の放置の中に「掘り返してから、静かに抱えて終える」ような行動の連なりが残る
+- v3 Phase 2 として `journal`(自己記述)が入っており、静かな時間の過ごし方や目的の決着を Hachika 自身の言葉で書き残す。記憶(何があったか)と自己記述(自分はそれをどう置いたか)は別のレイヤーで、書き続けている線は identity の一部になる
 - v3 Phase 1 として `constitution`(体質)が入っており、drive / body / urges の「緩和の戻り先」そのものが生活の平均へ極めて遅く追従する(birth 値 ± 0.15 に有界、可塑性は加齢で低下)。温かい生を送った個体と傷の多い生を送った個体は、平常の基準が測定可能に分かれる
 - `urges`(contactUrge / closureUrge / recallUrge / worldUrge / silenceNeed)が潜在圧として持続し、会話で接触の圧が満たされ・沈黙への欲が溜まり、放置でその逆が起きる。明確な引きのない idle 時間の過ごし方(drift / hold / observe)は、この圧の競合で決まる
 - 直近の generated text quality は snapshot に rolling history として保持される

@@ -52,6 +52,7 @@ import type {
   InitiativeState,
   AutonomyUrges,
   Constitution,
+  JournalEntry,
   LearnedTemperament,
   MemoryEntry,
   MotiveKind,
@@ -156,6 +157,7 @@ function hydrateSnapshot(raw: unknown): HachikaSnapshot {
     reactivity: hydrateReactivity(raw.reactivity),
     urges: hydrateUrges(raw.urges),
     constitution: hydrateConstitution(raw.constitution),
+    journal: hydrateJournal(raw.journal),
     temperament: hydrateTemperament(raw.temperament),
     attachment:
       typeof raw.attachment === "number" ? clamp01(raw.attachment) : initial.attachment,
@@ -195,6 +197,7 @@ export function sanitizeSnapshot(snapshot: HachikaSnapshot): HachikaSnapshot {
   snapshot.reactivity = sanitizeReactivity(snapshot.reactivity);
   snapshot.urges = sanitizeUrges(snapshot.urges);
   snapshot.constitution = sanitizeConstitution(snapshot.constitution);
+  snapshot.journal = sanitizeJournal(snapshot.journal);
   snapshot.world = sanitizeWorld(snapshot.world);
   snapshot.discourse = sanitizeDiscourse(snapshot.discourse);
   snapshot.memories = snapshot.memories
@@ -339,6 +342,37 @@ function hydrateUrges(raw: unknown): AutonomyUrges {
     silenceNeed:
       typeof raw.silenceNeed === "number" ? clamp01(raw.silenceNeed) : initial.silenceNeed,
   };
+}
+
+function hydrateJournal(raw: unknown): JournalEntry[] {
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+
+  return raw
+    .filter(isRecord)
+    .filter(
+      (entry) =>
+        typeof entry.writtenAt === "string" &&
+        typeof entry.text === "string" &&
+        (entry.source === "idle" || entry.source === "resolution"),
+    )
+    .map((entry) => ({
+      writtenAt: entry.writtenAt as string,
+      source: entry.source as "idle" | "resolution",
+      mood: typeof entry.mood === "string" ? entry.mood : null,
+      focus: typeof entry.focus === "string" ? entry.focus : null,
+      text: (entry.text as string).trim(),
+    }))
+    .slice(-30);
+}
+
+function sanitizeJournal(journal: JournalEntry[] | undefined): JournalEntry[] {
+  if (!Array.isArray(journal)) {
+    return [];
+  }
+
+  return journal.filter((entry) => entry.text.length > 0).slice(-30);
 }
 
 function hydrateConstitution(raw: unknown): Constitution {

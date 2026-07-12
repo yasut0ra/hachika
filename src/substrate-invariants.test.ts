@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { HachikaEngine } from "./engine.js";
+import { updateIdentity } from "./identity.js";
 import { createInitialSnapshot, INITIAL_BODY, INITIAL_STATE } from "./state.js";
 
 // dynamics substrate 単独での生き物らしさの中核不変条件。
@@ -121,4 +122,40 @@ test("constitution: different lives settle into different set points, bounded an
 
   // 生きた分だけ可塑性は下がる (加齢)
   assert.ok(warmConstitution.plasticity < 0.5);
+});
+
+test("journal: quiet time and purpose resolutions leave self-authored entries", () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+  engine.respond("設計を一緒に進めて、記録として残したい。");
+  engine.rewindIdleHours(12);
+
+  const afterIdle = engine.getSnapshot().journal;
+  assert.ok(afterIdle.length >= 1);
+  assert.ok(afterIdle.some((entry) => entry.source === "idle"));
+
+  engine.respond("その設計の責務を切り分けて、もう少し前に進めよう。");
+  engine.respond("その設計はまとまった。記録として保存した。");
+  const afterResolution = engine.getSnapshot().journal;
+  assert.ok(afterResolution.some((entry) => entry.source === "resolution"));
+});
+
+test("journal: a self-written line becomes part of identity", () => {
+  const withJournal = createInitialSnapshot();
+  const withoutJournal = createInitialSnapshot();
+
+  for (let index = 0; index < 3; index += 1) {
+    withJournal.journal.push({
+      writtenAt: `2026-07-1${index}T00:00:00.000Z`,
+      source: "idle",
+      mood: "settled",
+      focus: "設計",
+      text: "「設計」を抱えたまま、言わずに置いた。",
+    });
+  }
+
+  updateIdentity(withJournal, "2026-07-12T12:00:00.000Z");
+  updateIdentity(withoutJournal, "2026-07-12T12:00:00.000Z");
+
+  assert.notEqual(withJournal.identity.summary, withoutJournal.identity.summary);
+  assert.match(withJournal.identity.summary, /設計/);
 });

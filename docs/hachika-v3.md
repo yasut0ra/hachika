@@ -137,12 +137,20 @@ v2 の境界をそのまま保つ。
   (`substrate-invariants.test.ts` で恒久固定)
 - 残: `/constitution` CLI・UI 表示、consolidation 中の journal 連携(Phase 2 で)
 
-### Phase 2: journal(自己記述)
+### Phase 2: journal(自己記述)— 実装済み (2026-07-12)
 
-- idle consolidation と purpose resolution の時に、構造化 brief から
-  短い自己記述を生成して journal へ追記(LLM なしでは rule テンプレート)
-- self-model / identity が recent journal を一次入力として参照する
-- 完了条件: journal の有無で identity.summary の系列が分岐する
+- idle の最初の窓の consolidation と purpose の resolution で、
+  rule テンプレートから短い自己記述を生成して journal へ追記
+  (「〜を抱えたまま、言わずに置いた」「〜はかたちになった。少し軽くなった気がする」など。
+  LLM による文章化は将来の差し替え点として残る)
+- journal は append-only で直近 30 件を snapshot に保持。
+  旧 snapshot は空の journal として hydrate される
+- identity は直近 journal の recurring focus を読み、
+  「書き留めてきた線」を summary に取り込む
+- 完了条件は達成: journal の有無で identity.summary が分岐する
+  (`substrate-invariants.test.ts` で恒久固定)
+- 残: 30 件を超えた古い entry の artifact 化(会話の外への materialize)、
+  self-model の motive 選好への journal 反映
 
 ### Phase 3: aspiration(長期目的)
 

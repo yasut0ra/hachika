@@ -560,6 +560,7 @@ test("loadSnapshot seeds latent dynamics from older visible-only snapshots", asy
     );
     assert.deepEqual(loaded.urges, createInitialSnapshot().urges);
     assert.deepEqual(loaded.constitution, createInitialSnapshot().constitution);
+    assert.deepEqual(loaded.journal, []);
     assert.ok(loaded.dynamics.safety < 0.5);
     assert.ok(loaded.dynamics.trust > 0.5);
     assert.ok(loaded.dynamics.activation > 0.5);

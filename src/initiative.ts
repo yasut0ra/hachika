@@ -14,6 +14,7 @@ import {
 } from "./dynamics.js";
 import { pickFreshText, recentAssistantReplies } from "./expression.js";
 import { buildSelfModel } from "./self-model.js";
+import { appendJournalEntry, buildIdleJournalEntry } from "./journal.js";
 import { clamp01, clampSigned } from "./state.js";
 import { rewindTemperamentHours } from "./temperament.js";
 import {
@@ -502,6 +503,16 @@ export function advanceAutonomyHours(
   const first = prepareIdleAutonomyAction(snapshot, hours);
   if (first) {
     materializeIdleAutonomyAction(snapshot, first);
+    // v3: 静かな時間をどう過ごしたかを、自分の言葉で1行残す
+    appendJournalEntry(
+      snapshot,
+      buildIdleJournalEntry(
+        snapshot,
+        first.action,
+        first.prioritizedTopic,
+        new Date().toISOString(),
+      ),
+    );
   }
 
   // 追加の窓では行動評価だけを行う。窓ごとに snapshot が変化するので、
