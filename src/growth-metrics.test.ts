@@ -4,6 +4,10 @@ import test from "node:test";
 import {
   calculateArchivedTraceShare,
   calculateArchiveReopenRate,
+  calculateInitiativeToActionConversion,
+  calculateOutwardActionRate,
+  calculateSilentInternalActionRate,
+  calculateWorldActionDiversity,
   calculateAutonomousActivityVisibility,
   calculateIdentityDriftVisibility,
   calculateIdleConsolidationCoverage,
@@ -332,3 +336,48 @@ function createArchivedMetricSnapshot(): HachikaSnapshot {
   };
   return snapshot;
 }
+
+function pushAutonomyActivity(
+  snapshot: HachikaSnapshot,
+  kind: "idle_consolidation" | "idle_reactivation" | "proactive_emission",
+  autonomyAction: "observe" | "hold" | "drift" | "recall" | "speak",
+  worldAction: "observe" | "touch" | "leave" | null = null,
+): void {
+  snapshot.initiative.history.push({
+    kind,
+    autonomyAction,
+    timestamp: "2026-03-19T00:00:00.000Z",
+    motive: null,
+    topic: null,
+    traceTopic: null,
+    blocker: null,
+    place: null,
+    worldAction,
+    maintenanceAction: null,
+    reopened: false,
+    hours: 8,
+    summary: `${kind}/${autonomyAction}`,
+  });
+}
+
+test("autonomy metrics reflect the balance between silent and outward actions", () => {
+  const snapshot = createInitialSnapshot();
+  pushAutonomyActivity(snapshot, "idle_consolidation", "observe", "observe");
+  pushAutonomyActivity(snapshot, "idle_consolidation", "hold");
+  pushAutonomyActivity(snapshot, "idle_reactivation", "recall", "touch");
+  pushAutonomyActivity(snapshot, "proactive_emission", "speak");
+
+  assert.equal(calculateSilentInternalActionRate(snapshot), 0.75);
+  assert.equal(calculateOutwardActionRate(snapshot), 0.25);
+  assert.equal(calculateWorldActionDiversity(snapshot), 0.667);
+  assert.equal(calculateInitiativeToActionConversion(snapshot), 0.5);
+});
+
+test("autonomy metrics stay zero on an empty history", () => {
+  const snapshot = createInitialSnapshot();
+
+  assert.equal(calculateSilentInternalActionRate(snapshot), 0);
+  assert.equal(calculateOutwardActionRate(snapshot), 0);
+  assert.equal(calculateWorldActionDiversity(snapshot), 0);
+  assert.equal(calculateInitiativeToActionConversion(snapshot), 0);
+});

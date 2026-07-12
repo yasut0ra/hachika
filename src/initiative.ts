@@ -469,18 +469,66 @@ export function materializePreparedOutwardAction(
   );
 }
 
+// autonomy v2: 長い idle を「一括の後処理 + 高々1つの action」ではなく、
+// 複数の静かな窓 (microstep) に割って internal action を評価する。
+// substrate の rewind は threshold 挙動 (>=12h の absence など) を保つため一括で行い、
+// autonomy の評価だけを窓ごとに回す。窓ごとに snapshot が変化するので、
+// 「思い出して保留する」「掘り返して pending を組む」のような連なりが1回の idle の中に生まれる。
+const IDLE_AUTONOMY_WINDOW_HOURS = 8;
+const MAX_IDLE_AUTONOMY_WINDOWS = 4;
+
+export function advanceAutonomyHours(
+  snapshot: HachikaSnapshot,
+  hours: number,
+): void {
+  if (!Number.isFinite(hours) || hours <= 0) {
+    return;
+  }
+
+  rewindSnapshotBaseHours(snapshot, hours);
+
+  // 最初の窓は従来どおり全時間で評価し、consolidation (睡眠中の再編成) もここで1回だけ行う
+  const first = prepareIdleAutonomyAction(snapshot, hours);
+  if (first) {
+    materializeIdleAutonomyAction(snapshot, first);
+  }
+
+  // 追加の窓では行動評価だけを行う。窓ごとに snapshot が変化するので、
+  // 「掘り返して pending を組んだあと、別の断片を眺めて終える」ような連なりが生まれる
+  for (const windowHours of extraIdleAutonomyWindows(hours)) {
+    const prepared = prepareIdleAutonomyAction(snapshot, windowHours);
+
+    if (!prepared) {
+      continue;
+    }
+
+    // すでに組んだ pending を同じ topic で組み直すだけなら、静かに抱えて終える
+    const redundantRecall =
+      prepared.action === "recall" &&
+      prepared.selected?.trace.topic === snapshot.initiative.pending?.topic;
+
+    materializeIdleAutonomyAction(
+      snapshot,
+      redundantRecall ? { ...prepared, action: "hold", selected: null } : prepared,
+      { consolidateImprints: false },
+    );
+  }
+}
+
+function extraIdleAutonomyWindows(hours: number): number[] {
+  const extraCount = Math.min(
+    MAX_IDLE_AUTONOMY_WINDOWS - 1,
+    Math.max(0, Math.floor(hours / (IDLE_AUTONOMY_WINDOW_HOURS * 2))),
+  );
+
+  return Array.from({ length: extraCount }, () => IDLE_AUTONOMY_WINDOW_HOURS);
+}
+
 export function rewindSnapshotHours(
   snapshot: HachikaSnapshot,
   hours: number,
 ): void {
-  rewindSnapshotBaseHours(snapshot, hours);
-  const prepared = prepareIdleAutonomyAction(snapshot, hours);
-
-  if (!prepared) {
-    return;
-  }
-
-  materializeIdleAutonomyAction(snapshot, prepared);
+  advanceAutonomyHours(snapshot, hours);
 }
 
 export function rewindSnapshotBaseHours(
@@ -733,7 +781,9 @@ function shouldSuppressPendingCarryOver(
 export function materializeIdleAutonomyAction(
   snapshot: HachikaSnapshot,
   prepared: PreparedIdleAutonomyAction,
+  options: { consolidateImprints?: boolean } = {},
 ): void {
+  const consolidateImprints = options.consolidateImprints ?? true;
   if (shouldSuppressPendingCarryOver(prepared.attentionReasons)) {
     snapshot.initiative.pending = null;
   }
@@ -781,12 +831,14 @@ export function materializeIdleAutonomyAction(
         readyAfterHours: Math.round(readyAfter * 10) / 10,
       }),
     };
-    const report = consolidateIdleMemoryImprints(
-      snapshot,
-      prepared.hours,
-      prepared.selected.trace.topic,
-      prepared.selected.motive,
-    );
+    const report = consolidateImprints
+      ? consolidateIdleMemoryImprints(
+          snapshot,
+          prepared.hours,
+          prepared.selected.trace.topic,
+          prepared.selected.motive,
+        )
+      : null;
     recordInitiativeActivity(snapshot, {
       kind: "idle_reactivation",
       autonomyAction: "recall",
@@ -813,22 +865,26 @@ export function materializeIdleAutonomyAction(
   }
 
   if (prepared.action === "observe") {
-    const report = consolidateIdleMemoryImprints(
-      snapshot,
-      prepared.hours,
-      prepared.prioritizedTopic,
-      prepared.prioritizedMotive,
-    );
+    const report = consolidateImprints
+      ? consolidateIdleMemoryImprints(
+          snapshot,
+          prepared.hours,
+          prepared.prioritizedTopic,
+          prepared.prioritizedMotive,
+        )
+      : null;
     recordIdleConsolidation(snapshot, prepared.hours, report, "observe");
     return;
   }
 
-  const report = consolidateIdleMemoryImprints(
-    snapshot,
-    prepared.hours,
-    prepared.prioritizedTopic,
-    prepared.prioritizedMotive,
-  );
+  const report = consolidateImprints
+    ? consolidateIdleMemoryImprints(
+        snapshot,
+        prepared.hours,
+        prepared.prioritizedTopic,
+        prepared.prioritizedMotive,
+      )
+    : null;
   recordIdleConsolidation(snapshot, prepared.hours, report, prepared.action);
 }
 

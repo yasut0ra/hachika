@@ -29,6 +29,10 @@ export interface LiveGrowthMetrics {
   recentAutonomousActivityCount: number;
   idleConsolidationShare: number;
   proactiveMaintenanceRate: number;
+  silentInternalActionRate: number;
+  outwardActionRate: number;
+  worldActionDiversity: number;
+  initiativeToActionConversion: number;
   recentGeneratedCount: number;
   generationFallbackRate: number;
   generationAverageOverlap: number;
@@ -304,6 +308,62 @@ export function calculateProactiveMaintenanceRateFromSnapshot(
   return round(maintained / proactive.length);
 }
 
+// autonomy v2 (Phase 5): 自律活動の質を initiative.history から測る。
+// 「発話は行動の一部でしかない」を数値で追えるようにする
+
+export function calculateSilentInternalActionRate(snapshot: HachikaSnapshot): number {
+  const history = snapshot.initiative.history ?? [];
+
+  if (history.length === 0) {
+    return 0;
+  }
+
+  const silent = history.filter(
+    (activity) =>
+      activity.kind !== "proactive_emission" && activity.autonomyAction !== "speak",
+  ).length;
+  return round(silent / history.length);
+}
+
+export function calculateOutwardActionRate(snapshot: HachikaSnapshot): number {
+  const history = snapshot.initiative.history ?? [];
+
+  if (history.length === 0) {
+    return 0;
+  }
+
+  const outward = history.filter(
+    (activity) =>
+      activity.kind === "proactive_emission" || activity.autonomyAction === "speak",
+  ).length;
+  return round(outward / history.length);
+}
+
+export function calculateWorldActionDiversity(snapshot: HachikaSnapshot): number {
+  const kinds = new Set(
+    (snapshot.initiative.history ?? [])
+      .map((activity) => activity.worldAction)
+      .filter((action) => action !== null),
+  );
+
+  // observe / touch / leave の3語彙のうち、直近履歴でいくつ使われたか
+  return round(kinds.size / 3);
+}
+
+export function calculateInitiativeToActionConversion(snapshot: HachikaSnapshot): number {
+  const history = snapshot.initiative.history ?? [];
+  const recalls = history.filter((activity) => activity.kind === "idle_reactivation").length;
+  const emissions = history.filter(
+    (activity) => activity.kind === "proactive_emission",
+  ).length;
+
+  if (recalls + emissions === 0) {
+    return 0;
+  }
+
+  return round(emissions / (recalls + emissions));
+}
+
 export function summarizeLiveGrowthMetrics(snapshot: HachikaSnapshot): LiveGrowthMetrics {
   const history = snapshot.initiative.history ?? [];
   const generation = snapshot.generationHistory.slice(-12);
@@ -317,6 +377,10 @@ export function summarizeLiveGrowthMetrics(snapshot: HachikaSnapshot): LiveGrowt
     recentAutonomousActivityCount: history.slice(-12).length,
     idleConsolidationShare: calculateIdleConsolidationShare(snapshot),
     proactiveMaintenanceRate: calculateProactiveMaintenanceRateFromSnapshot(snapshot),
+    silentInternalActionRate: calculateSilentInternalActionRate(snapshot),
+    outwardActionRate: calculateOutwardActionRate(snapshot),
+    worldActionDiversity: calculateWorldActionDiversity(snapshot),
+    initiativeToActionConversion: calculateInitiativeToActionConversion(snapshot),
     recentGeneratedCount: generation.length,
     generationFallbackRate: averageGenerationMetric(
       generation,

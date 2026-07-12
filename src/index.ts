@@ -554,6 +554,10 @@ function printGrowthMetrics(currentEngine: HachikaEngine): void {
   console.log(`recent autonomous activity: ${metrics.recentAutonomousActivityCount}`);
   console.log(`idle consolidation share: ${metrics.idleConsolidationShare.toFixed(3)}`);
   console.log(`proactive maintenance rate: ${metrics.proactiveMaintenanceRate.toFixed(3)}`);
+  console.log(`silent internal action rate: ${metrics.silentInternalActionRate.toFixed(3)}`);
+  console.log(`outward action rate: ${metrics.outwardActionRate.toFixed(3)}`);
+  console.log(`world action diversity: ${metrics.worldActionDiversity.toFixed(3)}`);
+  console.log(`initiative->action conversion: ${metrics.initiativeToActionConversion.toFixed(3)}`);
   console.log(`recent generated count: ${metrics.recentGeneratedCount}`);
   console.log(`generation fallback rate: ${metrics.generationFallbackRate.toFixed(3)}`);
   console.log(`generation overlap: ${metrics.generationAverageOverlap.toFixed(3)}`);

@@ -318,6 +318,8 @@ Hachika は、単に有用なだけでなく、
   - CLI も数秒おきに feed を監視し、入力待ち中でも新しい `hachika*` 行を自動表示する
 - `docs/growth-metrics.md` に growth comparison 用の lightweight metrics と canonical scenario を整理している
   - 現在は saturation / motive diversity / identity drift / archive reopen / stress recovery に加えて、autonomous activity visibility / idle consolidation coverage / proactive maintenance rate も比較できる
+  - autonomy v2 Phase 5 の live metrics として `silent internal action rate / outward action rate / world action diversity / initiative→action conversion` も `/metrics` と UI の Growth panel から見られる
+- 長い idle は autonomy v2 の microstep で処理され、最初の窓で consolidation を1回行った後、追加の窓ごとに internal action(observe / hold / drift / recall)が評価される。1回の放置の中に「掘り返してから、静かに抱えて終える」ような行動の連なりが残る
 - 直近の generated text quality は snapshot に rolling history として保持される
   - `fallback overlap / opener echo / abstract ratio / concrete detail / focus mention` を live metrics として CLI / UI から確認できる
 - async reply では optional な `input interpreter` を通せるため、挨拶・雑談・関係修復・自己質問が stale trace や弱い topic に吸われにくい

@@ -63,6 +63,24 @@
 - 定義: `proactive_emission` のうち、`maintenanceAction` または `reopened` または `traceTopic` を持つものの比率
 - 目的: 能動発話が単なる台詞でなく、trace maintenance を伴っているかを見る
 
+### 10. `silentInternalActionRate` / `outwardActionRate`(autonomy v2 Phase 5)
+
+- 対象: `initiative.history`
+- 定義: 履歴のうち silent な internal action(observe / hold / drift / recall)の比率と、outward(proactive_emission / speak)の比率
+- 目的: 「発話は行動の一部でしかない」— 内的活動の大半が silent であることを見る
+
+### 11. `worldActionDiversity`(autonomy v2 Phase 5)
+
+- 対象: `initiative.history` の `worldAction`
+- 定義: observe / touch / leave の3語彙のうち、直近履歴で使われた種類数 / 3
+- 目的: world への関わり方が単調(常に observe)になっていないかを見る
+
+### 12. `initiativeToActionConversion`(autonomy v2 Phase 5)
+
+- 対象: `initiative.history`
+- 定義: `proactive_emission / (idle_reactivation + proactive_emission)`
+- 目的: 掘り返した継続意図のうち、どれだけが outward action まで届いたかを見る
+
 ## canonical scenario 候補
 
 ### A. aligned work

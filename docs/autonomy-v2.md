@@ -275,6 +275,15 @@ LLM に寄せるもの:
 
 ## Migration Plan
 
+> 進捗 (2026-07-12): Phase 1-3 は実装済み。Phase 4 は `advanceAutonomyHours()` として
+> 一部実装 — 長い idle は複数の窓に割られ、最初の窓で consolidation を1回行った後、
+> 追加の窓ごとに internal action (observe / hold / drift / recall) を評価する。
+> 同じ pending を組み直すだけの窓は静かな hold に落ちるので、
+> 「掘り返したあと、抱えたまま終える」ような連なりが1回の idle の中に生まれる。
+> Phase 5 の metrics は `silent_internal_action_rate / outward_action_rate /
+> world_action_diversity / initiative_to_action_conversion` を live metrics として実装済み。
+> 未実装: 時間割りでの substrate microstep 化 (threshold 挙動の再設計が必要)、urge accumulation。
+
 ### Phase 1
 
 - `docs/autonomy-v2.md` を追加

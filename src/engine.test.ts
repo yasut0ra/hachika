@@ -240,7 +240,11 @@ test("idle consolidation can preselect a dormant archived trace as the next init
   const engine = new HachikaEngine(snapshot);
   engine.rewindIdleHours(18);
   const after = engine.getSnapshot();
-  const lastActivity = after.initiative.history.at(-1);
+  // autonomy v2 の microstep では、reactivation のあとに静かな hold が続くことがあるので
+  // 「最後の activity」ではなく「reactivation が起きたこと」を確認する
+  const reactivation = after.initiative.history.find(
+    (activity) => activity.kind === "idle_reactivation",
+  );
 
   assert.equal(after.initiative.pending?.topic, "設計");
   assert.equal(
@@ -249,8 +253,18 @@ test("idle consolidation can preselect a dormant archived trace as the next init
     true,
   );
   assert.ok((after.traces.設計?.salience ?? 0) > 0.74);
-  assert.equal(lastActivity?.kind, "idle_reactivation");
-  assert.equal(lastActivity?.topic, "設計");
+  assert.equal(reactivation?.topic, "設計");
+});
+
+test("autonomy v2: long idle leaves a trail of internal actions instead of one batch entry", () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+  engine.respond("設計を一緒に進めて、記録として残したい。");
+
+  engine.rewindIdleHours(36);
+  const history = engine.getSnapshot().initiative.history;
+
+  assert.ok(history.length >= 2);
+  assert.ok(new Set(history.map((activity) => activity.autonomyAction)).size >= 2);
 });
 
 test("idle consolidation chooses different archived traces depending on learned temperament", () => {
