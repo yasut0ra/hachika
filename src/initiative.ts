@@ -14,7 +14,7 @@ import {
 } from "./dynamics.js";
 import { pickFreshText, recentAssistantReplies } from "./expression.js";
 import { buildSelfModel } from "./self-model.js";
-import { clamp01, clampSigned } from "./state.js";
+import { clamp01, clampSigned, INITIAL_URGES } from "./state.js";
 import { rewindTemperamentHours } from "./temperament.js";
 import {
   linkTraceToWorld,
@@ -293,7 +293,18 @@ export function prepareInitiativeEmission(
   const pending =
     snapshot.initiative.pending ?? synthesizeSnapshotPreservationInitiative(snapshot, nowIso);
 
-  if (pending && (force || hoursSinceInteraction >= pending.readyAfterHours)) {
+  // autonomy v2: 向き直りたい圧が高いほど早く、黙っていたい圧が強いほど遅く外へ出る。
+  // 相対シフトなので、中立の urges では readyAfterHours どおり (明示の「今すぐ」を遅らせない)
+  const urgeReadinessShift =
+    (snapshot.urges.contactUrge - INITIAL_URGES.contactUrge) * 2.5 -
+    (snapshot.urges.silenceNeed - INITIAL_URGES.silenceNeed) * 3;
+
+  if (
+    pending &&
+    (force ||
+      hoursSinceInteraction >=
+        Math.max(0, pending.readyAfterHours - urgeReadinessShift))
+  ) {
     const preparedPending = withInitiativeWorldContext(snapshot, pending);
     const plan = buildProactivePlan(snapshot, preparedPending, neglectLevel, null);
     const selection = buildProactiveSelectionDebug(preparedPending, null, plan);
@@ -1879,6 +1890,17 @@ function finalizeEmission(
   settleDynamicsAfterInitiative(snapshot, pending);
   settleBodyAfterInitiative(snapshot, pending);
 
+  // 外へ出たことで圧が解放される。話したぶん、黙っていたい欲は少し戻る
+  snapshot.urges = {
+    ...snapshot.urges,
+    contactUrge: clamp01(snapshot.urges.contactUrge - 0.22),
+    closureUrge: clamp01(snapshot.urges.closureUrge - (maintenance ? 0.16 : 0.06)),
+    recallUrge: clamp01(
+      snapshot.urges.recallUrge - (pending.kind === "resume_topic" ? 0.16 : 0.06),
+    ),
+    silenceNeed: clamp01(snapshot.urges.silenceNeed + 0.08),
+  };
+
   if (pending.motive === "continue_shared_work" || pending.motive === "leave_trace") {
     const sharedWork = snapshot.relationImprints.shared_work;
     if (sharedWork) {
@@ -1953,6 +1975,17 @@ function finalizeOutwardAction(
 
   settleDynamicsAfterInitiative(snapshot, pending);
   settleBodyAfterInitiative(snapshot, pending);
+
+  // 外へ出たことで圧が解放される。話したぶん、黙っていたい欲は少し戻る
+  snapshot.urges = {
+    ...snapshot.urges,
+    contactUrge: clamp01(snapshot.urges.contactUrge - 0.22),
+    closureUrge: clamp01(snapshot.urges.closureUrge - (maintenance ? 0.16 : 0.06)),
+    recallUrge: clamp01(
+      snapshot.urges.recallUrge - (pending.kind === "resume_topic" ? 0.16 : 0.06),
+    ),
+    silenceNeed: clamp01(snapshot.urges.silenceNeed + 0.08),
+  };
 
   if (pending.motive === "continue_shared_work" || pending.motive === "leave_trace") {
     const sharedWork = snapshot.relationImprints.shared_work;

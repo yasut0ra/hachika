@@ -6,6 +6,7 @@ import { createInitialSnapshot } from "./state.js";
 import {
   emitInitiative,
   prepareIdleAutonomyAction,
+  prepareInitiativeEmission,
   prepareScheduledInitiative,
   rewindSnapshotBaseHours,
 } from "./initiative.js";
@@ -263,4 +264,63 @@ test("emitInitiative stays silent while a direct referent question is still open
   });
 
   assert.equal(emission, null);
+});
+
+test("urge pressure modulates proactive readiness in both directions", () => {
+  const basePending = {
+    kind: "resume_topic" as const,
+    reason: "relation" as const,
+    motive: "deepen_relation" as const,
+    topic: "設計",
+    stateTopic: null,
+    blocker: null,
+    concern: null,
+    createdAt: new Date(Date.now() - 2 * 3600 * 1000).toISOString(),
+    readyAfterHours: 3,
+  };
+  const twoHoursAgo = new Date(Date.now() - 2 * 3600 * 1000).toISOString();
+
+  const neutral = createInitialSnapshot();
+  neutral.lastInteractionAt = twoHoursAgo;
+  neutral.initiative.pending = { ...basePending };
+
+  const eager = createInitialSnapshot();
+  eager.lastInteractionAt = twoHoursAgo;
+  eager.initiative.pending = { ...basePending };
+  eager.urges.contactUrge = 0.95;
+
+  const reluctant = createInitialSnapshot();
+  reluctant.lastInteractionAt = new Date(Date.now() - 3.5 * 3600 * 1000).toISOString();
+  reluctant.initiative.pending = { ...basePending };
+  reluctant.urges.silenceNeed = 0.9;
+
+  // 中立: 2h < 3h なのでまだ出ない
+  assert.equal(prepareInitiativeEmission(neutral), null);
+  // 接触への圧が高いと、同じ 2h でも前倒しで出る
+  assert.notEqual(prepareInitiativeEmission(eager), null);
+  // 3.5h 経っていても、黙っていたい圧が強い間は出ない
+  assert.equal(prepareInitiativeEmission(reluctant), null);
+});
+
+test("outward emission releases contact pressure and restores silence need", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.urges.contactUrge = 0.8;
+  snapshot.urges.silenceNeed = 0.1;
+  snapshot.initiative.pending = {
+    kind: "resume_topic",
+    reason: "relation",
+    motive: "deepen_relation",
+    topic: "設計",
+    stateTopic: null,
+    blocker: null,
+    concern: null,
+    createdAt: new Date().toISOString(),
+    readyAfterHours: 0,
+  };
+
+  const emission = emitInitiative(snapshot, { force: true });
+
+  assert.notEqual(emission, null);
+  assert.ok(snapshot.urges.contactUrge < 0.8);
+  assert.ok(snapshot.urges.silenceNeed > 0.1);
 });

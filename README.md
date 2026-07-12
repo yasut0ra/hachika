@@ -183,6 +183,11 @@ Hachika の基盤にあるのは、存在がより「生きている」ものに
 
 ## 将来的な方向性
 
+次の大きな段階の構想は [docs/hachika-v3.md](/Users/yasut0ra/dev/hachika/docs/hachika-v3.md) に整理している。テーゼは「状態から体質へ」——
+基準点そのものが経験で動き(constitution)、自己記述が積層し(journal)、数週間スケールの向かい先を持ち(aspiration)、声が履歴から育つ(voice)。
+そして個体差を metrics で実証する。
+
+
 - 長期記憶とアイデンティティの持続
 - 愛着形成
 - 自己保存的なふるまい

@@ -286,8 +286,12 @@ LLM に寄せるもの:
 > (contactUrge / closureUrge / recallUrge / worldUrge / silenceNeed) が
 > 会話で満たされ・放置で溜まり、idle の internal action 選択
 > (drift = recall 圧、hold = silence 圧) を competing pressure として決める。
-> 未実装: urges を proactive readiness (readyAfterHours) と outward/speak 判断へ通すこと、
-> 時間割りでの substrate microstep 化 (threshold 挙動の再設計が必要)。
+> **urges は outward 判断にも接続済み**: proactive readiness は
+> `readyAfterHours − (contactUrge の超過 × 2.5 − silenceNeed の超過 × 3)` で変調され
+> (相対シフトなので中立 urges では従来どおり)、「向き直りたい圧が高いと早く、
+> 黙っていたい圧が強いと 3.5h 経っても出ない」が成立する。
+> emission 後は contact / closure / recall の圧が解放され、silenceNeed が少し戻る。
+> 未実装: 時間割りでの substrate microstep 化 (threshold 挙動の再設計が必要)。
 
 ### Phase 1
 
