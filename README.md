@@ -183,7 +183,7 @@ Hachika の基盤にあるのは、存在がより「生きている」ものに
 
 ## 将来的な方向性
 
-次の大きな段階の構想は [docs/hachika-v3.md](/Users/yasut0ra/dev/hachika/docs/hachika-v3.md) に整理している。テーゼは「状態から体質へ」——
+次の大きな段階の構想は [docs/hachika-v3.md](docs/hachika-v3.md) に整理している。テーゼは「状態から体質へ」——
 基準点そのものが経験で動き(constitution)、自己記述が積層し(journal)、数週間スケールの向かい先を持ち(aspiration)、声が履歴から育つ(voice)。
 そして個体差を metrics で実証する。
 
@@ -228,19 +228,19 @@ Hachika は、単に有用なだけでなく、
 - `turn-director` は `topics` と `stateTopics` を分けて返せるので、「このターンでは答えるために参照するが、durable な memory / trace / purpose にはまだ固めない」という扱いができる
 - local の topic 抽出は最近さらに保守的にしてあり、`存在 / 世界 / 棚の残り` のような broad/self/world 候補は一次候補からも落としやすくしている。trace extractor や turn-director が concrete topic を返した時は、durable state にはそちらを優先し、local 候補を混ぜ戻しにくい
 - local の marker も少しずつ薄くしていて、`?` のような記号、`あなた` のような直呼、`よろしく` のような社交句だけで question / intimacy / repair が強く立ちすぎないようにしている
-- 次段の統合方針は [docs/semantic-director-v2.md](/Users/yasut0ra/dev/hachika/docs/semantic-director-v2.md) に整理してあり、`semantic topic / durable topic / reply plan / proactive plan` を一段の contract に寄せていく
-- 設計全体の判断基準は [docs/design-principles.md](/Users/yasut0ra/dev/hachika/docs/design-principles.md) に整理してあり、`topic-first` ではなく `semantic core / substrate / attention rationale / fact` を中心に考える
+- 次段の統合方針は [docs/semantic-director-v2.md](docs/semantic-director-v2.md) に整理してあり、`semantic topic / durable topic / reply plan / proactive plan` を一段の contract に寄せていく
+- 設計全体の判断基準は [docs/design-principles.md](docs/design-principles.md) に整理してあり、`topic-first` ではなく `semantic core / substrate / attention rationale / fact` を中心に考える
 - `turn-director` と `proactive-director` は runtime でもその v2 contract を受け始めていて、`mode: "turn" / "proactive"` の semantic directive をそのまま parse し、必要な legacy field はそこから projection する
 - engine の turn/proactive 適用も `semantic` を優先し始めていて、legacy field と semantic plan が矛盾した時は `semantic.replyPlan / semantic.trace / semantic.proactivePlan` を authoritative に採る
 - `initiative-director` と `autonomy-director` も同じ family の v2 contract を受け始めていて、`mode: "initiative" / "autonomy"` の semantic directive を parse し、pending initiative や idle autonomy action をそこから materialize できる
 - engine / resident loop の initiative/autonomy 適用も `semantic` を優先し始めていて、legacy field と semantic plan が矛盾した時は `semantic.initiativePlan / semantic.autonomyPlan` を authoritative に採る
-- visible state は **dynamics substrate から一本で導出**される(旧 legacy 二重計算経路は退役済み。経緯は [docs/legacy-visible-retirement.md](/Users/yasut0ra/dev/hachika/docs/legacy-visible-retirement.md))
+- visible state は **dynamics substrate から一本で導出**される(旧 legacy 二重計算経路は退役済み。経緯は [docs/legacy-visible-retirement.md](docs/legacy-visible-retirement.md))
   - reactivity(mistrust の蓄積を含む)は turn / idle とも substrate 側が唯一の更新元
   - derive は全 field「偏差形式」で書かれており、無入力時の平衡が INITIAL 定数と厳密に一致する。body には物理的な慣性(state より遅い収束)と床/天井が入っている
   - substrate 単独での生き物らしさの中核不変条件(飽和しない / 傷の履歴 / idle の退屈と孤独)は `src/substrate-invariants.test.ts` で固定している
-- OpenAI 互換 director / generator の HTTP・JSON 抽出・エラー処理は [src/llm-client.ts](/Users/yasut0ra/dev/hachika/src/llm-client.ts) の共有クライアントに統合されていて、各 director は payload 構築と schema 検証だけを持つ
-- loop / idle / proactive の見直し方針は [docs/autonomy-v2.md](/Users/yasut0ra/dev/hachika/docs/autonomy-v2.md) に整理してあり、`発話を行動の一部へ下げる / idle を batch ではなく静かな生存時間へ寄せる / proactive を outward action の一種として扱う` 方向で再構成していく
-- 現在の `turn-director` と `proactive-director` は、内部的には [src/semantic-director-schema.ts](/Users/yasut0ra/dev/hachika/src/semantic-director-schema.ts) の v2 contract を持ち始めていて、semantic topic と durable topic を分けて扱う下地が入っている
+- OpenAI 互換 director / generator の HTTP・JSON 抽出・エラー処理は [src/llm-client.ts](src/llm-client.ts) の共有クライアントに統合されていて、各 director は payload 構築と schema 検証だけを持つ
+- loop / idle / proactive の見直し方針は [docs/autonomy-v2.md](docs/autonomy-v2.md) に整理してあり、`発話を行動の一部へ下げる / idle を batch ではなく静かな生存時間へ寄せる / proactive を outward action の一種として扱う` 方向で再構成していく
+- 現在の `turn-director` と `proactive-director` は、内部的には [src/semantic-director-schema.ts](src/semantic-director-schema.ts) の v2 contract を持ち始めていて、semantic topic と durable topic を分けて扱う下地が入っている
   - `discourse state` も名前 fact だけでなく `openQuestions / openRequests / recentClaims / lastCorrection` を持ち始めていて、`topic` ではなく「何が言われて、何がまだ未解決か」を semantic core に渡す方向へ寄せている
   - `purpose` と `initiative` の candidate selection も、topic だけでなく `recentClaims / openRequests / lastCorrection` を見て work / relation を優先し直すようになっている
   - `initiative.pending.reason` も `work_request / work_claim / relation_claim / relation_correction` のような discourse source を持てるので、なぜその pending が立っているかを topic 以外でも追える
@@ -449,4 +449,4 @@ npm test
 ```
 
 `npm test` では個別の unit test に加えて、複数ターンの scenario test も実行されます。
-growth comparison の指標は [docs/growth-metrics.md](/Users/yasut0ra/dev/hachika/docs/growth-metrics.md) を参照してください。
+growth comparison の指標は [docs/growth-metrics.md](docs/growth-metrics.md) を参照してください。

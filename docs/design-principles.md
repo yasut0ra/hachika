@@ -221,9 +221,9 @@ rule-based reply や rule-based semantic 判定は、完全には消しません
 いまの大きな移行先は 3 つです。
 
 1. `semantic-director v2`
-   - [docs/semantic-director-v2.md](/Users/yasut0ra/dev/hachika/docs/semantic-director-v2.md)
+   - [docs/semantic-director-v2.md](semantic-director-v2.md)
 2. `autonomy v2`
-   - [docs/autonomy-v2.md](/Users/yasut0ra/dev/hachika/docs/autonomy-v2.md)
+   - [docs/autonomy-v2.md](autonomy-v2.md)
 3. `attention-and-rationale-first`
    - topic-first からの移行
 

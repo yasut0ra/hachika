@@ -57,7 +57,7 @@ V2 では、次の semantic judgment を一段で返すことを狙います。
 
 ## Contract
 
-V2 schema の雛形は [src/semantic-director-schema.ts](/Users/yasut0ra/dev/hachika/src/semantic-director-schema.ts) にあります。
+V2 schema の雛形は [src/semantic-director-schema.ts](../src/semantic-director-schema.ts) にあります。
 
 中心は次の型です。
 

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 
 import { loadDotEnv, parseDotEnvLine } from "./env.js";
 
@@ -30,7 +31,8 @@ test("loadDotEnv does not overwrite existing environment variables", () => {
   process.env.OPENAI_MODEL = "from-process";
 
   try {
-    const loaded = loadDotEnv("/Users/yasut0ra/dev/hachika/.env.example");
+    const envExamplePath = fileURLToPath(new URL("../.env.example", import.meta.url));
+    const loaded = loadDotEnv(envExamplePath);
 
     assert.equal(process.env.OPENAI_MODEL, "from-process");
     assert.equal(loaded.includes("OPENAI_MODEL"), false);
