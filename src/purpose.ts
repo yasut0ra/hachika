@@ -452,7 +452,7 @@ function purposeProgressBoost(
     (aligned ? 0.08 : 0) +
     (active.topic && signals.topics.includes(active.topic) ? 0.05 : 0) +
     (candidate?.kind === active.kind ? candidate.score * 0.06 : 0) +
-    signals.completion * 0.22;
+    signals.completion * 0.25;
 
   switch (active.kind) {
     case "seek_continuity":

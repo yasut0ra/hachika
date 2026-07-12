@@ -1,18 +1,22 @@
 # Legacy Visible 経路の退役計画
 
-## 現状
+> **✅ 退役完了(2026-07-12)**: `src/legacy-visible.ts` と `LEGACY_BLEND_SCALE` は削除済み。
+> visible state は dynamics substrate から一本で導出される。
+> substrate の中核不変条件は `src/substrate-invariants.test.ts` で固定している。
+> 以下は退役の経緯と判断の記録として残す。
 
-visible state(`state / body / reactivity / attachment`)は、毎ターン **2つの経路で二重に計算**されている。
+## 当時の現状
 
-- **dynamics 経路(残す側)**
+visible state(`state / body / reactivity / attachment`)は、毎ターン **2つの経路で二重に計算**されていた。
+
+- **dynamics 経路(残した側)**
   - `updateDynamicsFromSignals()` が latent な `dynamics` を更新し、
     `deriveVisibleStateFromDynamics()` が visible state を導出する
   - [src/dynamics.ts](../src/dynamics.ts)
-- **legacy 経路(退役する側)**
+- **legacy 経路(退役した側)**
   - `buildLegacyVisibleTurn()` が snapshot を clone して visible state を直接更新し、
     `blendLegacyVisibleState()` が field ごとの weight(0.62〜0.84)で dynamics 側へ混ぜ戻す
-  - idle 側は `applyLegacyIdleVisibleShift()` が同じ構造を持つ
-  - [src/legacy-visible.ts](../src/legacy-visible.ts) に隔離済み
+  - idle 側は `applyLegacyIdleVisibleShift()` が同じ構造を持っていた
 
 ## なぜ退役するか
 
@@ -67,36 +71,61 @@ derive target を全 field「**偏差形式**」(`INITIAL 定数 + Σ 係数 × 
   boundary 系 conflict の intensity には mistrust 由来の wounded boost を追加
   (雑に扱われた記憶が残る間は境界の葛藤を強く感じる)
 
-**scale=0.5 の検証結果(2026-07-12 再測)**: 9件 → **4件失敗**まで削減。
-残りは conflict の種類選択と wording 分岐が scale=1.0 の挙動に較正されていることによる差
-(生命らしさの不変条件は scale=0 でも全て成立):
+**scale=0.5 較正(2026-07-12 完了)**: 残っていた4件を較正し、
+**scale=1.0 / 0.5 の両方で全テストがグリーン**になった。較正内容:
 
-- `self-model surfaces curiosity and relation conflict`(continuity_curiosity へ flip)
-- `self-model can keep a topic while surfacing boundary conflict`(conflict 行の強度不足)
-- `ordinary reply can surface unresolved trace work`(wording 分岐)
-- `scenario: aligned work can persist as a purpose and resolve into a decision`(guarded mood 側の template へ)
+- dominant conflict の選択に top-motive 関与ボーナス(+0.1)を追加:
+  baseline 水準の近接だけで立つ葛藤が、今向かいたい方向の葛藤を覆い隠さない
+- wounded boost 係数 0.45 → 0.55
+- reply の detailLine 優先順位を調整: 強い境界葛藤と「このターンで動いたばかりの trace
+  (決定への昇格など)」は、受動的な記憶想起行より先に出る
+- mood の curious 判定しきい値 0.65 → 0.61(dynamics 側では question が
+  noveltyDrive を満たして下げるため、旧しきい値は legacy の水増しに較正されていた)
 
-これらは「バグ」ではなく scale=0.5 での性格差なので、default を 0.5 へ下げる際に
-threshold / template 較正として意図的に取り込むのが正しい。default は 1.0 のまま。
+### Phase 3: blend weight の段階的引き下げ(第1段階完了: default 0.5)
 
-### Phase 3: blend weight の段階的引き下げ(ダイヤル導入済み)
+- `LEGACY_BLEND_SCALE` 導入済み: 環境変数 `HACHIKA_LEGACY_BLEND_SCALE` または
+  test 用の `setLegacyBlendScale()` で一括減衰できる
+- **2026-07-12: default を 1.0 → 0.5 に引き下げた。**
+  scale=1.0(`HACHIKA_LEGACY_BLEND_SCALE=1`)も全テストグリーンでロールバック可能
+- growth metrics 比較(関係形成→共同作業→衝突→修復→放置→再開 の canonical 会話):
 
-- `LEGACY_BLEND_SCALE` を導入済み: 環境変数 `HACHIKA_LEGACY_BLEND_SCALE`
-  (default 1.0)または test 用の `setLegacyBlendScale()` で
-  turn の state/body/attachment blend と idle の body blend を一括減衰できる
+  | metric | scale=1.0 | scale=0.5 |
+  | --- | --- | --- |
+  | state saturation | 0.033 | 0.011(改善) |
+  | motive diversity | 3.0 | 3.0 |
+  | stress recovery lag | null(即時) | 3 turn(回復曲線が可視化) |
+  | identity drift | 1.0 | 1.0 |
+
 - scale=0(dynamics 単独)の中核不変条件は `src/legacy-scale.test.ts` で固定済み:
   温かい入力で relation / pleasure が上がる(絶対) / 飽和しない /
   hostile より positive が温かく着地する / mistrust の蓄積と緩い解け / idle で退屈と孤独が上がる
-- 今後: default を 0.5 へ下げる際は、残り 4 件(上記)の conflict / wording 較正を
-  0.5 の挙動に合わせて意図的に取り込み、`HACHIKA_LEGACY_BLEND_SCALE=0.5 npm test` を
-  グリーンにしてから default を切り替える。growth metrics 比較も併走させる
+- **次の関門(scale=0)**: `HACHIKA_LEGACY_BLEND_SCALE=0 npm test` は現在 12 件 fail。
+  positive turn の即時反応の弱さ(energy/loneliness の1ターン回復)、mood/wording の較正、
+  purpose fulfillment 周りが残り。0.5 と同じ手順(1件ずつ原因分析 → 両スケール検証)で潰す
 
-### Phase 4: 削除
+### Phase 4: 削除(完了: 2026-07-12)
 
-- `LEGACY_BLEND_SCALE = 0` で全テストが通ったら、
-  `src/legacy-visible.ts` と呼び出し(engine の turn 経路、initiative の idle 経路)を削除する
-- `applyBoundedPressure` は dynamics 側で使われていなければ一緒に退役する
-- README の該当記述を更新する
+scale=0 で全テストが通ったため、同日中に削除を実施した:
+
+- `src/legacy-visible.ts` と `LEGACY_BLEND_SCALE`(env / setter)を削除
+- engine の turn 経路から `buildLegacyVisibleTurn / blendLegacyVisibleState` を除去
+  (preference affinity の attachment ボーナスだけ本体へ移植)
+- initiative の idle 経路から `applyLegacyIdleVisibleShift` を除去
+- legacy 専用だった `applyBodyFromSignals / rewindBodyHours`(body.ts)と
+  `applyBoundedPressure`(state.ts)も退役(body.ts は `settleBodyAfterInitiative` のみに)
+- `legacy-scale.test.ts` は `substrate-invariants.test.ts` に改名し、
+  substrate の恒久的な不変条件テストとして残した
+
+scale=0 到達までの主な較正(いずれも scale=1.0 / 0.5 / 0 の3点で検証):
+
+- 温かさへの substrate 応答強化(safety の socialWarmth 係数、trust への positive 追加)
+- pleasure の cognitiveLoad ペナルティ緩和(仕事を頼まれた温かい turn が不快にならない)
+- mistrust → tension 結合の強化(stress が抜けても警戒が残る間は体が張る)
+- question は noveltyDrive を「満たす」のではなく刺激する側に変更
+- boredom / loneliness の慣性強化と seed 強化(退屈・孤独が1ターンで消えない)
+- 明示的な completion の purpose progress 寄与を強化
+- energy 下限帯の圧縮(平衡 0.56 / 床 0.02)に合わせた gate 再較正(0.22-0.26 → 0.3)
 
 ## 注意
 

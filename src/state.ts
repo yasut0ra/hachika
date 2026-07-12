@@ -84,23 +84,6 @@ export function blendVisibleValue(
   return clamp01(current + (target - current) * targetWeight);
 }
 
-export function applyBoundedPressure(
-  value: number,
-  increase: number,
-  decrease: number,
-  baseline: number,
-  settleRate: number,
-): number {
-  const amplifiedIncrease = increase * (0.4 + (1 - value) * 0.6);
-  const amplifiedDecrease = decrease * (0.4 + value * 0.6);
-
-  return settleTowardsBaseline(
-    clamp01(value + amplifiedIncrease - amplifiedDecrease),
-    baseline,
-    settleRate,
-  );
-}
-
 export function createInitialSnapshot(): HachikaSnapshot {
   return {
     version: 24,

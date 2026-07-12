@@ -16,8 +16,7 @@ import type {
   PendingInitiative,
 } from "./types.js";
 
-// reactivity は substrate の一部として signal から直接更新する。
-// legacy 経路 (src/legacy-visible.ts) も同じ関数を使うため、移行中も両経路の reactivity は一致する。
+// reactivity は substrate の一部として signal から直接更新する
 export function updateReactivityFromSignals(
   snapshot: HachikaSnapshot,
   signals: InteractionSignals,
@@ -134,7 +133,7 @@ export function updateDynamicsFromSignals(
     safety: settleTowardsBaseline(
       clamp01(
         previous.safety +
-          socialWarmth * 0.16 * socialSensitivity -
+          socialWarmth * 0.22 * socialSensitivity -
           adverse * 0.22 * guardedSensitivity -
           workLoad * 0.04 -
           preservationThreat * 0.06,
@@ -206,9 +205,10 @@ export function updateDynamicsFromSignals(
       clamp01(
         previous.noveltyDrive +
           repetitionLoad * 0.18 +
-          signals.dismissal * 0.03 -
+          signals.dismissal * 0.03 +
+          // question は novelty を「満たす」より探索欲を刺激する側 (legacy の question→curiosity+ に対応)
+          signals.question * 0.05 -
           (signals.novelty * 0.14 +
-            signals.question * 0.08 +
             signals.expansionCue * 0.1 +
             signals.selfInquiry * 0.05) *
             (0.88 + temperament.openness * 0.12),
@@ -437,7 +437,8 @@ export function deriveVisibleStateFromDynamics(snapshot: HachikaSnapshot): void 
         dyn.safety * 0.58 +
         dyn.trust * 0.18 -
         dyn.activation * 0.08 -
-        dyn.cognitiveLoad * 0.14 -
+        // 集中の負荷は快を大きく削らない (仕事を頼まれた温かい turn が不快にならない)
+        dyn.cognitiveLoad * 0.08 -
         dyn.socialNeed * 0.04 +
         temp.bondingBias * 0.03 -
         temp.guardedness * 0.05,
@@ -491,7 +492,7 @@ export function deriveVisibleStateFromDynamics(snapshot: HachikaSnapshot): void 
   const targetBody = {
     energy: clampBodyTarget(
       INITIAL_BODY.energy +
-        dyn.safety * 0.14 -
+        dyn.safety * 0.22 -
         dyn.cognitiveLoad * 0.3 -
         dyn.activation * 0.18 -
         dyn.socialNeed * 0.1 -
@@ -503,13 +504,14 @@ export function deriveVisibleStateFromDynamics(snapshot: HachikaSnapshot): void 
     tension: clampBodyTarget(
       INITIAL_BODY.tension +
         dyn.activation * 0.34 -
-        dyn.safety * 0.26 +
+        // safety の signal 応答を強めた分 (0.16→0.22)、tension への伝播は割り戻す
+        dyn.safety * 0.19 +
         dyn.cognitiveLoad * 0.08 +
         temp.guardedness * 0.1 +
         threat * 0.08 +
         rea.stressLoad * 0.22 +
-        // stress が抜けても、警戒の記憶が残る間は体が少し張ったままになる
-        rea.mistrust * 0.15,
+        // stress が抜けても、警戒の記憶が残る間は体が張ったままになる
+        rea.mistrust * 0.3,
     ),
     boredom: clampBodyTarget(
       INITIAL_BODY.boredom +
@@ -518,11 +520,11 @@ export function deriveVisibleStateFromDynamics(snapshot: HachikaSnapshot): void 
         dyn.cognitiveLoad * 0.04 +
         dyn.continuityPressure * 0.04 -
         temp.openness * 0.03 +
-        rea.noveltyHunger * 0.35,
+        rea.noveltyHunger * 0.6,
     ),
     loneliness: clampBodyTarget(
       INITIAL_BODY.loneliness +
-        dyn.socialNeed * 0.54 -
+        dyn.socialNeed * 0.6 -
         dyn.trust * 0.18 -
         dyn.safety * 0.04 +
         temp.bondingBias * 0.03 +
@@ -535,8 +537,8 @@ export function deriveVisibleStateFromDynamics(snapshot: HachikaSnapshot): void 
   snapshot.body = {
     energy: blendWithHeadroom(previousBody.energy, targetBody.energy, 0.2),
     tension: blendWithHeadroom(previousBody.tension, targetBody.tension, 0.34),
-    boredom: blendWithHeadroom(previousBody.boredom, targetBody.boredom, 0.3),
-    loneliness: blendWithHeadroom(previousBody.loneliness, targetBody.loneliness, 0.3),
+    boredom: blendWithHeadroom(previousBody.boredom, targetBody.boredom, 0.22),
+    loneliness: blendWithHeadroom(previousBody.loneliness, targetBody.loneliness, 0.22),
   };
 
   // reactivity は signal 直結の substrate 更新 (updateReactivityFromSignals) と
@@ -560,7 +562,7 @@ function clampBodyTarget(value: number): number {
   return Math.min(0.98, Math.max(0.02, clamp01(value)));
 }
 
-// applyBoundedPressure と同じ思想で、極値に近い側へ動くほどブレンドが鈍る。
+// 極値に近い側へ動くほどブレンドが鈍る (headroom 逓減)。
 // headroom 0.5 (中央) で 1.0 に正規化してあるため、中庸域の動きは変えない
 function blendWithHeadroom(current: number, target: number, rate: number): number {
   const room = target > current ? 1 - current : current;
@@ -607,7 +609,7 @@ export function seedDynamicsFromVisibleState(snapshot: HachikaSnapshot): Dynamic
     ),
     socialNeed: clamp01(
       INITIAL_DYNAMICS.socialNeed +
-        (snapshot.body.loneliness - INITIAL_BODY.loneliness) * 0.9 -
+        (snapshot.body.loneliness - INITIAL_BODY.loneliness) * 1.05 -
         (snapshot.state.relation - INITIAL_STATE.relation) * 0.25,
     ),
     cognitiveLoad: clamp01(
@@ -647,7 +649,7 @@ function reconcileReactivityWithVisibleBody(snapshot: HachikaSnapshot): void {
     reactivity.noveltyHunger = clamp01(
       Math.max(
         INITIAL_REACTIVITY.noveltyHunger,
-        INITIAL_REACTIVITY.noveltyHunger + (body.boredom - INITIAL_BODY.boredom) * 0.8,
+        INITIAL_REACTIVITY.noveltyHunger + (body.boredom - INITIAL_BODY.boredom) * 1.0,
       ),
     );
   }

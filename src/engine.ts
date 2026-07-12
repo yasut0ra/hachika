@@ -55,10 +55,6 @@ import type {
   ProactiveDirector,
 } from "./proactive-director.js";
 import {
-  blendLegacyVisibleState,
-  buildLegacyVisibleTurn,
-} from "./legacy-visible.js";
-import {
   deriveVisibleStateFromDynamics,
   reseedDynamicsFromVisibleState,
   updateDynamicsFromSignals,
@@ -4664,7 +4660,6 @@ function applySignals(
   nextSnapshot.conversationCount = snapshot.conversationCount + 1;
   nextSnapshot.lastInteractionAt = new Date().toISOString();
   updateDynamicsFromSignals(nextSnapshot, signals);
-  const legacyVisible = buildLegacyVisibleTurn(snapshot, signals);
 
   const preferenceDelta =
     signals.positive * 0.18 +
@@ -4734,7 +4729,8 @@ function applySignals(
   );
   updateTemperament(nextSnapshot, signals);
   deriveVisibleStateFromDynamics(nextSnapshot);
-  blendLegacyVisibleState(nextSnapshot, legacyVisible, positivePreferenceAffinity);
+  // 好みの合う topic に触れた turn は、attachment がわずかに寄る
+  nextSnapshot.attachment = clamp01(nextSnapshot.attachment + positivePreferenceAffinity);
 
   return nextSnapshot;
 }
@@ -4783,7 +4779,7 @@ function resolveMood(
     return "distant";
   }
 
-  if (snapshot.state.curiosity > 0.65 && (signals.question > 0.1 || signals.novelty > 0.15)) {
+  if (snapshot.state.curiosity > 0.58 && (signals.question > 0.1 || signals.novelty > 0.15)) {
     return "curious";
   }
 
@@ -4962,6 +4958,12 @@ function composeReply(
     (mood === "guarded" && signals.negative > 0.1
       ? pickFreshText(BOUNDARY_LINES, recentAssistantLines, turnIndex)
       : null) ??
+    // 強く傷ついた境界の葛藤は、受動的な記憶想起より先に前景へ出る
+    buildStrongBoundaryConflictLine(selfModel) ??
+    // このターンで動いたばかりの trace (決定への昇格など) も、過去の想起より先に出る
+    (relevantTrace?.lastUpdatedAt === nextSnapshot.lastInteractionAt && !prioritizeBodyLine
+      ? traceLine
+      : null) ??
     (relevantMemory && (dominant === "continuity" || signals.memoryCue > 0.1)
       ? (() => {
           const topic = pickTopicFromMemory(relevantMemory, signals.topics);
@@ -4969,7 +4971,6 @@ function composeReply(
         })()
       : null) ??
     (prioritizeBodyLine ? bodyLine : null) ??
-    buildStrongBoundaryConflictLine(selfModel) ??
     buildPrimaryContinuityLine(selfModel, currentTopic) ??
     (!prioritizeBodyLine ? traceLine : null) ??
     buildConflictLine(selfModel) ??
@@ -5251,7 +5252,7 @@ function buildBodyLine(
   signals: InteractionSignals,
   currentTopic: string | undefined,
 ): string | null {
-  if (snapshot.body.energy < 0.26) {
+  if (snapshot.body.energy < 0.3) {
     return currentTopic
       ? `少し消耗している。「${currentTopic}」は勢いより輪郭を保つ方へ寄せたい。`
       : "少し消耗している。勢いより輪郭を保つ方へ寄せたい。";
@@ -5280,7 +5281,7 @@ function shouldPrioritizeBodyLine(
   snapshot: HachikaSnapshot,
   signals: InteractionSignals,
 ): boolean {
-  return snapshot.body.energy < 0.26 || (signals.topics.length === 0 && snapshot.body.loneliness > 0.72);
+  return snapshot.body.energy < 0.3 || (signals.topics.length === 0 && snapshot.body.loneliness > 0.72);
 }
 
 function buildPlannedOpener(

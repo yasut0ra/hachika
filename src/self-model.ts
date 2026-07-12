@@ -333,9 +333,28 @@ function detectConflicts(
     0.14,
   );
 
+  const topMotiveKind =
+    [...motives].sort((left, right) => right.score - left.score)[0]?.kind ?? null;
+
   return conflicts
-    .sort((left, right) => right.intensity - left.intensity)
+    .sort(
+      (left, right) =>
+        conflictSalience(right, topMotiveKind) - conflictSalience(left, topMotiveKind),
+    )
     .slice(0, 3);
+}
+
+// いちばん強い motive が絡む葛藤ほど前景で感じられる。
+// baseline 水準の近接だけで立つ葛藤が、今まさに向かいたい方向の葛藤を覆い隠さないようにする
+function conflictSalience(
+  conflict: SelfConflict,
+  topMotiveKind: SelfMotive["kind"] | null,
+): number {
+  const involvesTopMotive =
+    topMotiveKind !== null &&
+    (conflict.dominant === topMotiveKind || conflict.opposing === topMotiveKind);
+
+  return conflict.intensity + (involvesTopMotive ? 0.15 : 0);
 }
 
 function pushConflict(
@@ -426,7 +445,7 @@ function conflictContextBoost(
   kind: ConflictKind,
 ): number {
   // 最近雑に扱われた記憶が残っている間は、境界がらみの葛藤を強く感じる
-  const woundedBoost = Math.max(0, snapshot.reactivity.mistrust - 0.1) * 0.45;
+  const woundedBoost = Math.max(0, snapshot.reactivity.mistrust - 0.1) * 0.62;
 
   switch (kind) {
     case "curiosity_relation":

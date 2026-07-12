@@ -229,9 +229,10 @@ Hachika は、単に有用なだけでなく、
 - engine の turn/proactive 適用も `semantic` を優先し始めていて、legacy field と semantic plan が矛盾した時は `semantic.replyPlan / semantic.trace / semantic.proactivePlan` を authoritative に採る
 - `initiative-director` と `autonomy-director` も同じ family の v2 contract を受け始めていて、`mode: "initiative" / "autonomy"` の semantic directive を parse し、pending initiative や idle autonomy action をそこから materialize できる
 - engine / resident loop の initiative/autonomy 適用も `semantic` を優先し始めていて、legacy field と semantic plan が矛盾した時は `semantic.initiativePlan / semantic.autonomyPlan` を authoritative に採る
-- visible state の二重計算(dynamics 経路 + legacy 経路)は [src/legacy-visible.ts](/Users/yasut0ra/dev/hachika/src/legacy-visible.ts) に隔離してあり、dynamics 一本化への退役計画は [docs/legacy-visible-retirement.md](/Users/yasut0ra/dev/hachika/docs/legacy-visible-retirement.md) に整理している
-  - reactivity(mistrust の蓄積を含む)は turn / idle とも substrate 側が唯一の更新元になり、legacy blend の対象から外れた
-  - `HACHIKA_LEGACY_BLEND_SCALE`(default 1.0)で legacy 経路の寄与を一括減衰でき、scale=0(dynamics 単独)の中核不変条件は `src/legacy-scale.test.ts` で固定している
+- visible state は **dynamics substrate から一本で導出**される(旧 legacy 二重計算経路は退役済み。経緯は [docs/legacy-visible-retirement.md](/Users/yasut0ra/dev/hachika/docs/legacy-visible-retirement.md))
+  - reactivity(mistrust の蓄積を含む)は turn / idle とも substrate 側が唯一の更新元
+  - derive は全 field「偏差形式」で書かれており、無入力時の平衡が INITIAL 定数と厳密に一致する。body には物理的な慣性(state より遅い収束)と床/天井が入っている
+  - substrate 単独での生き物らしさの中核不変条件(飽和しない / 傷の履歴 / idle の退屈と孤独)は `src/substrate-invariants.test.ts` で固定している
 - OpenAI 互換 director / generator の HTTP・JSON 抽出・エラー処理は [src/llm-client.ts](/Users/yasut0ra/dev/hachika/src/llm-client.ts) の共有クライアントに統合されていて、各 director は payload 構築と schema 検証だけを持つ
 - loop / idle / proactive の見直し方針は [docs/autonomy-v2.md](/Users/yasut0ra/dev/hachika/docs/autonomy-v2.md) に整理してあり、`発話を行動の一部へ下げる / idle を batch ではなく静かな生存時間へ寄せる / proactive を outward action の一種として扱う` 方向で再構成していく
 - 現在の `turn-director` と `proactive-director` は、内部的には [src/semantic-director-schema.ts](/Users/yasut0ra/dev/hachika/src/semantic-director-schema.ts) の v2 contract を持ち始めていて、semantic topic と durable topic を分けて扱う下地が入っている

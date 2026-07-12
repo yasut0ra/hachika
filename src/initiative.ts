@@ -6,8 +6,7 @@ import {
   sortedPreferenceImprints,
   topPreferredTopics,
 } from "./memory.js";
-import { rewindBodyHours, settleBodyAfterInitiative } from "./body.js";
-import { applyLegacyIdleVisibleShift } from "./legacy-visible.js";
+import { settleBodyAfterInitiative } from "./body.js";
 import {
   deriveVisibleStateFromDynamics,
   rewindDynamicsHours,
@@ -492,8 +491,6 @@ export function rewindSnapshotBaseHours(
     return;
   }
 
-  const legacyVisible = structuredClone(snapshot);
-
   snapshot.lastInteractionAt = shiftTimestamp(snapshot.lastInteractionAt, hours);
   snapshot.initiative.lastProactiveAt = shiftTimestamp(
     snapshot.initiative.lastProactiveAt,
@@ -512,7 +509,6 @@ export function rewindSnapshotBaseHours(
   rewindDynamicsHours(snapshot, hours);
   rewindTemperamentHours(snapshot, hours);
   deriveVisibleStateFromDynamics(snapshot);
-  applyLegacyIdleVisibleShift(snapshot, legacyVisible, hours);
 
   if (snapshot.initiative.pending) {
     snapshot.initiative.pending = {

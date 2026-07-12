@@ -323,7 +323,8 @@ export function deriveTraceTendingMode(
 ): TraceTendingMode {
   if (
     trace.kind !== "decision" &&
-    (snapshot.body.energy < 0.22 ||
+    // energy の下限帯は dynamics 単独では上に圧縮されている (平衡 0.56 / 床 0.02) ため gate を再較正
+    (snapshot.body.energy < 0.3 ||
       snapshot.body.tension > 0.7 ||
       snapshot.preservation.threat > 0.24)
   ) {
@@ -1219,7 +1220,7 @@ function selectBodyPreferredTraceMotive(
     }
   }
 
-  if (snapshot.body.energy < 0.26) {
+  if (snapshot.body.energy < 0.3) {
     const preserving = motives.find(
       (motive) =>
         (motive.kind === "leave_trace" || motive.kind === "seek_continuity") &&
@@ -1587,7 +1588,7 @@ function selectTraceMaintenanceProfile(
   }
 
   if (
-    snapshot.body.energy < 0.22 ||
+    snapshot.body.energy < 0.3 ||
     snapshot.body.tension > 0.7 ||
     (snapshot.body.loneliness > 0.76 && pending.motive === "seek_continuity")
   ) {
