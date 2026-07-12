@@ -50,6 +50,7 @@ import type {
   IdentityState,
   InitiativeActivity,
   InitiativeState,
+  Aspiration,
   AutonomyUrges,
   Constitution,
   JournalEntry,
@@ -158,6 +159,7 @@ function hydrateSnapshot(raw: unknown): HachikaSnapshot {
     urges: hydrateUrges(raw.urges),
     constitution: hydrateConstitution(raw.constitution),
     journal: hydrateJournal(raw.journal),
+    aspirations: hydrateAspirations(raw.aspirations),
     temperament: hydrateTemperament(raw.temperament),
     attachment:
       typeof raw.attachment === "number" ? clamp01(raw.attachment) : initial.attachment,
@@ -198,6 +200,7 @@ export function sanitizeSnapshot(snapshot: HachikaSnapshot): HachikaSnapshot {
   snapshot.urges = sanitizeUrges(snapshot.urges);
   snapshot.constitution = sanitizeConstitution(snapshot.constitution);
   snapshot.journal = sanitizeJournal(snapshot.journal);
+  snapshot.aspirations = sanitizeAspirations(snapshot.aspirations);
   snapshot.world = sanitizeWorld(snapshot.world);
   snapshot.discourse = sanitizeDiscourse(snapshot.discourse);
   snapshot.memories = snapshot.memories
@@ -373,6 +376,41 @@ function sanitizeJournal(journal: JournalEntry[] | undefined): JournalEntry[] {
   }
 
   return journal.filter((entry) => entry.text.length > 0).slice(-30);
+}
+
+function hydrateAspirations(raw: unknown): Aspiration[] {
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+
+  return raw
+    .filter(isRecord)
+    .filter(
+      (entry) =>
+        typeof entry.theme === "string" &&
+        typeof entry.strength === "number" &&
+        typeof entry.formedAt === "string",
+    )
+    .map((entry) => ({
+      theme: entry.theme as string,
+      origin: "resolutions" as const,
+      strength: clamp01(entry.strength as number),
+      formedAt: entry.formedAt as string,
+      lastFedAt:
+        typeof entry.lastFedAt === "string" ? entry.lastFedAt : (entry.formedAt as string),
+      waning: entry.waning === true,
+    }))
+    .slice(0, 2);
+}
+
+function sanitizeAspirations(aspirations: Aspiration[] | undefined): Aspiration[] {
+  if (!Array.isArray(aspirations)) {
+    return [];
+  }
+
+  return aspirations
+    .filter((entry) => entry.theme.length > 0 && entry.strength > 0)
+    .slice(0, 2);
 }
 
 function hydrateConstitution(raw: unknown): Constitution {

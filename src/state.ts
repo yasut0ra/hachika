@@ -121,6 +121,7 @@ export function createInitialSnapshot(): HachikaSnapshot {
     urges: { ...INITIAL_URGES },
     constitution: createBirthConstitution(),
     journal: [],
+    aspirations: [],
     temperament: { ...INITIAL_TEMPERAMENT },
     attachment: INITIAL_ATTACHMENT,
     world: createInitialWorldState(),

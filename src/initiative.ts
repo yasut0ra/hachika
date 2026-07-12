@@ -14,6 +14,7 @@ import {
 } from "./dynamics.js";
 import { pickFreshText, recentAssistantReplies } from "./expression.js";
 import { buildSelfModel } from "./self-model.js";
+import { aspirationPull, rewindAspirationsHours } from "./aspiration.js";
 import { appendJournalEntry, buildIdleJournalEntry } from "./journal.js";
 import { clamp01, clampSigned } from "./state.js";
 import { rewindTemperamentHours } from "./temperament.js";
@@ -578,6 +579,7 @@ export function rewindSnapshotBaseHours(
 
   rewindDynamicsHours(snapshot, hours);
   rewindTemperamentHours(snapshot, hours);
+  rewindAspirationsHours(snapshot, hours);
   deriveVisibleStateFromDynamics(snapshot);
 
   if (snapshot.initiative.pending) {
@@ -3846,7 +3848,9 @@ function scoreDormantArchivedTrace(
     (motive === "continue_shared_work" ? boredom * 0.28 : 0) +
     (motive === "pursue_curiosity" ? boredom * 0.24 : 0) +
     (motive === "leave_trace" ? tension * 0.08 : 0) +
-    (trace.kind === "decision" ? 0.06 : 0) -
+    (trace.kind === "decision" ? 0.06 : 0) +
+    // v3 Phase 3: 自分の向かい先に近い痕跡は、静かな時間に掘り返されやすい
+    aspirationPull(snapshot, trace.topic) * 0.2 -
     reopenCount * 0.05
   );
 }

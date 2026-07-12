@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { HachikaEngine } from "./engine.js";
+import { aspirationPull, rewindAspirationsHours } from "./aspiration.js";
 import { updateIdentity } from "./identity.js";
 import { createInitialSnapshot, INITIAL_BODY, INITIAL_STATE } from "./state.js";
 
@@ -158,4 +159,45 @@ test("journal: a self-written line becomes part of identity", () => {
 
   assert.notEqual(withJournal.identity.summary, withoutJournal.identity.summary);
   assert.match(withJournal.identity.summary, /設計/);
+});
+
+test("aspiration: repeated fulfilled resolutions rise into a lasting direction", () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+
+  for (let round = 0; round < 2; round += 1) {
+    engine.respond("設計を一緒に進めて、記録として残したい。");
+    engine.respond("その設計の責務を切り分けて、もう少し前に進めよう。");
+    engine.respond("その設計はまとまった。記録として保存した。");
+  }
+
+  const snapshot = engine.getSnapshot();
+  const aspiration = snapshot.aspirations.find((entry) => entry.theme.includes("設計"));
+
+  assert.ok(aspiration, "aspiration should form from repeated fulfilled resolutions");
+  assert.ok(aspirationPull(snapshot, aspiration!.theme) > 0);
+  // 向かい先が立ったこと自体が自己記述に残る
+  assert.ok(
+    snapshot.journal.some((entry) => entry.text.includes("向かい先らしい")),
+  );
+});
+
+test("aspiration: an unfed direction fades and leaves a journal trace", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.aspirations = [
+    {
+      theme: "設計",
+      origin: "resolutions",
+      strength: 0.3,
+      formedAt: "2026-07-01T00:00:00.000Z",
+      lastFedAt: "2026-07-01T00:00:00.000Z",
+      waning: false,
+    },
+  ];
+
+  rewindAspirationsHours(snapshot, 120);
+  assert.equal(snapshot.aspirations[0]?.waning, true);
+
+  rewindAspirationsHours(snapshot, 480);
+  assert.equal(snapshot.aspirations.length, 0);
+  assert.ok(snapshot.journal.some((entry) => entry.text.includes("薄れていた")));
 });

@@ -4,6 +4,7 @@ import {
   requiresConcreteTopicSupport,
 } from "./memory.js";
 import { clamp01 } from "./state.js";
+import { aspirationPull, updateAspirationsFromResolution } from "./aspiration.js";
 import { appendJournalEntry, buildResolutionJournalEntry } from "./journal.js";
 import type {
   ActivePurpose,
@@ -163,7 +164,12 @@ function selectPurposeCandidate(
   motives: readonly SelfMotive[],
   signals: InteractionSignals,
 ): SelfMotive | null {
-  const viable = motives.filter((motive) => motive.score >= 0.44);
+  // v3 Phase 3: 自分の向かい先に近い motive は、purpose として選ばれやすい
+  const pulled = motives.map((motive) => ({
+    ...motive,
+    score: Math.min(1, motive.score + aspirationPull(snapshot, motive.topic) * 0.08),
+  }));
+  const viable = pulled.filter((motive) => motive.score >= 0.44);
   const primary = viable[0] ?? null;
 
   if (!primary) {
@@ -412,6 +418,8 @@ function resolvePurpose(
     snapshot,
     buildResolutionJournalEntry(snapshot.purpose.lastResolved, timestamp),
   );
+  // v3 Phase 3: 決着の繰り返しから、向かい先が立ち上がる
+  updateAspirationsFromResolution(snapshot, snapshot.purpose.lastResolved, timestamp);
 }
 
 function purposeAligned(

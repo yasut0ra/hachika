@@ -152,12 +152,21 @@ v2 の境界をそのまま保つ。
 - 残: 30 件を超えた古い entry の artifact 化(会話の外への materialize)、
   self-model の motive 選好への journal 反映
 
-### Phase 3: aspiration(長期目的)
+### Phase 3: aspiration(長期目的)— 実装済み (2026-07-13)
 
-- purpose の resolution 履歴から theme を抽出し、閾値を超えたら aspiration 化
-- initiative candidate scoring と purpose 選好への長期バイアスとして接続
-- 完了条件: aspiration を持つ個体は、関連 topic の archive reopen 率と
-  initiative→action conversion が持続的に高い
+- **journal に書き残された fulfilled の決着**が同じ focus で繰り返される(2回以上)と、
+  aspiration として昇華する(最大2つ、強い方を保持)。
+  立ち上がりは「気づけば「X」へ何度も戻っている。これは自分の向かい先らしい。」と
+  自己記述に残る — Phase 2 の積層が Phase 3 の形成源になる設計どおりの接続
+- 長期バイアス: `aspirationPull` が purpose 候補の選好(+0.08×strength)と
+  dormant archived trace の再浮上スコア(+0.2×strength)に効く
+- 養われない aspiration は 1 日あたり 0.02 減衰し、waning を経て消える。
+  消えるときは「「X」への向かい先は、いつの間にか薄れていた。」と journal に残る
+  (生の方向転換が記録される)
+- 完了条件は達成: 決着の繰り返し → 形成 → pull 有効、無養育 → waning → 消滅と記録、
+  を `substrate-invariants.test.ts` で恒久固定
+- 残: aspiration の LLM による言語化(identity / 発話への反映)、
+  reopen 率・conversion の縦断比較(Phase 5 の harness で)
 
 ### Phase 4: voice(声)
 
