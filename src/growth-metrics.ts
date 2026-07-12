@@ -364,6 +364,61 @@ export function calculateInitiativeToActionConversion(snapshot: HachikaSnapshot)
   return round(emissions / (recalls + emissions));
 }
 
+// v3 Phase 5: 個体差の距離。違う生を送った個体が分離しているかを測る
+
+export function calculateConstitutionDistance(
+  left: HachikaSnapshot,
+  right: HachikaSnapshot,
+): number {
+  const pairs: Array<[number, number]> = [];
+  const push = (a: Record<string, number>, b: Record<string, number>) => {
+    for (const key of Object.keys(a)) {
+      pairs.push([a[key]!, (b as Record<string, number>)[key]!]);
+    }
+  };
+
+  push(left.constitution.driveSetPoints as unknown as Record<string, number>,
+       right.constitution.driveSetPoints as unknown as Record<string, number>);
+  push(left.constitution.bodySetPoints as unknown as Record<string, number>,
+       right.constitution.bodySetPoints as unknown as Record<string, number>);
+  push(left.constitution.urgeSetPoints as unknown as Record<string, number>,
+       right.constitution.urgeSetPoints as unknown as Record<string, number>);
+  pairs.push([left.constitution.attachmentSetPoint, right.constitution.attachmentSetPoint]);
+
+  const total = pairs.reduce((sum, [a, b]) => sum + Math.abs(a - b), 0);
+  return round(total / pairs.length);
+}
+
+export function calculateVoiceDistance(
+  left: HachikaSnapshot,
+  right: HachikaSnapshot,
+): number {
+  const leftOpenings = new Set(left.voice.preferredOpenings);
+  const rightOpenings = new Set(right.voice.preferredOpenings);
+  const union = new Set([...leftOpenings, ...rightOpenings]);
+  const shared = [...leftOpenings].filter((opening) => rightOpenings.has(opening)).length;
+  const openingDistance = union.size === 0 ? 0 : 1 - shared / union.size;
+  const brevityDistance = Math.abs(left.voice.brevityBias - right.voice.brevityBias) / 2;
+
+  return round(openingDistance * 0.7 + brevityDistance * 0.3);
+}
+
+export function calculateAspirationOverlap(
+  left: HachikaSnapshot,
+  right: HachikaSnapshot,
+): number {
+  const leftThemes = new Set(left.aspirations.map((entry) => entry.theme));
+  const rightThemes = new Set(right.aspirations.map((entry) => entry.theme));
+  const union = new Set([...leftThemes, ...rightThemes]);
+
+  if (union.size === 0) {
+    return 1;
+  }
+
+  const shared = [...leftThemes].filter((theme) => rightThemes.has(theme)).length;
+  return round(shared / union.size);
+}
+
 export function summarizeLiveGrowthMetrics(snapshot: HachikaSnapshot): LiveGrowthMetrics {
   const history = snapshot.initiative.history ?? [];
   const generation = snapshot.generationHistory.slice(-12);

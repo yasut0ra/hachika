@@ -81,6 +81,12 @@
 - 定義: `proactive_emission / (idle_reactivation + proactive_emission)`
 - 目的: 掘り返した継続意図のうち、どれだけが outward action まで届いたかを見る
 
+### 13. `constitutionDistance / voiceDistance / aspirationOverlap`(v3 Phase 5)
+
+- 対象: 2つの snapshot(個体)
+- 定義: constitution 全 set-point の平均絶対差 / 声の opening 集合の非一致 + brevity 差 / aspiration theme の Jaccard 一致率
+- 目的: 違う生を送った個体が測定可能に分離しているかを見る(canonical lives は [src/canonical-lives.ts](../src/canonical-lives.ts))
+
 ## canonical scenario 候補
 
 ### A. aligned work

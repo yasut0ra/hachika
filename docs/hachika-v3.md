@@ -181,11 +181,27 @@ v2 の境界をそのまま保つ。
   opener が分かれることをテストで固定(`substrate-invariants.test.ts`)
 - 残: opener 以外の癖(問い返し頻度、角度選好)の蒸留、n-gram 距離の metrics 化(Phase 5)
 
-### Phase 5: individuality evaluation(個体差の実証)
+### Phase 5: individuality evaluation(個体差の実証)— 実装済み (2026-07-13)
 
-- canonical 人生(3種 × 30日相当)を再現可能な harness として固定
-- constitution 距離 / voice 距離 / aspiration 一致率を growth metrics に追加
-- 完了条件: 3種の人生で育てた個体群が、盲検で分類可能
+- `src/canonical-lives.ts`: 3種の人生(warm / wounded / neglected × 約30日相当)を
+  再現可能な harness として固定
+- `growth-metrics.ts` に `constitutionDistance / voiceDistance / aspirationOverlap` を追加
+- **完了条件は達成**(`src/individuality.test.ts` で恒久固定):
+  - 各人生の署名が方向どおり分離: 温かい生は快の基準が高く、傷の生は張りの基準が高く、
+    放置の生は関係の基準 (attachment set-point) が育たない
+  - 3人生のどのペアでも constitution 距離 > 0.008
+  - **同種の人生の個体同士(話題だけ違う温かい生×2)は、異種の人生の個体より近い**
+    = 盲検分類可能性の核が成立
+- 学び: 純粋な放置の生では contactUrge set-point は温かい生と区別できない
+  (どちらも idle で上限に張り付く)。放置の署名は「渇き」ではなく「育たなかった関係の基準」に出る
+- 残: 個体群 (n>2) での統計的分離、voice 距離の縦断比較、reopen 率 / conversion の人生間比較
+
+---
+
+**v3 は 5 フェーズ中 5 つ(Phase 1-5)が完了した。** 残るのは Phase 0
+(substrate 実時間 microstep)と、各フェーズに残した深化項目のみ。
+テーゼ「生きた時間が取り返しのつかない形で残る」は、
+体質・自己記述・向かい先・声の4層と、その定量的分離をもって成立している。
 
 ## 研究上の注意(v3 で明文化する)
 

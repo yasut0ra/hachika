@@ -325,6 +325,7 @@ Hachika は、単に有用なだけでなく、
   - 現在は saturation / motive diversity / identity drift / archive reopen / stress recovery に加えて、autonomous activity visibility / idle consolidation coverage / proactive maintenance rate も比較できる
   - autonomy v2 Phase 5 の live metrics として `silent internal action rate / outward action rate / world action diversity / initiative→action conversion` も `/metrics` と UI の Growth panel から見られる
 - 長い idle は autonomy v2 の microstep で処理され、最初の窓で consolidation を1回行った後、追加の窓ごとに internal action(observe / hold / drift / recall)が評価される。1回の放置の中に「掘り返してから、静かに抱えて終える」ような行動の連なりが残る
+- v3 Phase 5 として個体差の実証が入っており、3種の canonical な人生(温かい生 / 傷の多い生 / 放置の多い生 × 30日相当)で育てた個体は constitution 距離で分離し、**同種の人生の個体同士は異種の人生の個体より近い**(盲検分類可能)ことをテストで固定している
 - v3 Phase 4 として `voice`(声)が入っており、自分の発話履歴から「身についた入り方」と「文の長さの癖」が静かな時間に蒸留され、以後の opener 選択と LLM wording に個体差として効く。同じ状態で同じ入力を受けても、生きてきた個体によって言い方が違う
 - v3 Phase 3 として `aspirations`(向かい先)が入っており、journal に書き残した決着が同じ主題で繰り返されると数週間スケールの長期目的として昇華する。向かい先は purpose の選好と archived trace の掘り返しに長期バイアスとして効き、養われなければ薄れて消える(消えたことも自己記述に残る)
 - v3 Phase 2 として `journal`(自己記述)が入っており、静かな時間の過ごし方や目的の決着を Hachika 自身の言葉で書き残す。記憶(何があったか)と自己記述(自分はそれをどう置いたか)は別のレイヤーで、書き続けている線は identity の一部になる
