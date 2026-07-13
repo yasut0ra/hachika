@@ -25,6 +25,7 @@ substrate / world / autonomy history
 - `motion.manner / gestureAmplitude / gazePersistence / stillness / settlingTimeMs`
 - `actionId`: 同種の action が新しく起きた時だけ renderer が再生するための識別子
 - `layers.eyes / mouth / hands / blinkIntervalMs`: 顔と手を独立制御する描画意図
+- `speech.id / durationMs / remainingMs / cadence / emphasis`: 発話を時間イベントとして描画する情報
 - `place / phase`
 
 単一の値と単一の表情を対応させない。たとえば guardedness だけで姿勢を決めず、
@@ -44,6 +45,8 @@ tension、mistrust、preservation threat、safety の合成から身体の閉じ
 - actionId が変化した時だけ entrance gesture を再生し、polling では再発火しない
 - eyes は個体の blinkIntervalMs で短く閉じ、hold時は身体状態に応じて閉じたままになる
 - mouth は speak の間だけ neutral から quiet speaking 差分へ移る
+- speech duration は文字量と句読点から1.8〜16秒で導き、cadence / emphasis はactivationや身体状態を反映する
+- rendererはremainingMsでmouthを閉じるため、次のUI pollingを待たない
 - hands は touch / observe で reach、recall / hold で gather の薄い動作layerを出す
 - world place と phase はstageの構造と光へ反映する
 
@@ -51,8 +54,8 @@ prefers-reduced-motion では継続animationを止める。
 
 ## Next steps
 
-1. 発話イベントに duration / emphasis を持たせ、口とgestureの長さを分ける
-2. 手のpose差分を作り、残像layerから実poseへ置き換える
+1. 手のpose差分を作り、残像layerから実poseへ置き換える
+2. 発話の句読点単位タイムラインを作り、口の休止位置を文中へ入れる
 3. rendererを交換できる adapter contract を定義する
 4. snapshot replayで身体の時間変化を回帰確認する
 

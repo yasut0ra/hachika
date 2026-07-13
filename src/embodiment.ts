@@ -25,6 +25,16 @@ export interface EmbodimentLayerState {
   blinkIntervalMs: number;
 }
 
+export interface EmbodimentSpeechState {
+  id: string | null;
+  active: boolean;
+  startedAt: string | null;
+  durationMs: number;
+  remainingMs: number;
+  cadence: number;
+  emphasis: number;
+}
+
 export interface EmbodimentState {
   posture: EmbodimentPosture;
   gazeTarget: EmbodimentGazeTarget;
@@ -40,17 +50,20 @@ export interface EmbodimentState {
   tension: number;
   motion: EmbodimentMotionProfile;
   layers: EmbodimentLayerState;
+  speech: EmbodimentSpeechState;
   summary: string;
 }
 
 const ACTIVE_ACTION_MAX_AGE_MS = 5 * 60 * 1000;
-const SPEAKING_MAX_AGE_MS = 12 * 1000;
+const MIN_SPEECH_DURATION_MS = 1_800;
+const MAX_SPEECH_DURATION_MS = 16_000;
 
 export function deriveEmbodimentState(
   snapshot: HachikaSnapshot,
   now: Date = new Date(),
 ): EmbodimentState {
-  const currentAction = deriveCurrentAction(snapshot, now);
+  const speech = deriveSpeechState(snapshot, now);
+  const currentAction = deriveCurrentAction(snapshot, now, speech);
   const action = currentAction.action;
   const posture = derivePosture(snapshot);
   const gazeTarget = deriveGazeTarget(snapshot, action);
@@ -88,7 +101,7 @@ export function deriveEmbodimentState(
       snapshot.reactivity.noveltyHunger * 0.18 +
       snapshot.body.tension * 0.12,
   );
-  const layers = deriveLayerState(snapshot, action, alertness, motion);
+  const layers = deriveLayerState(snapshot, action, alertness, motion, speech);
 
   return {
     posture,
@@ -105,6 +118,7 @@ export function deriveEmbodimentState(
     tension: clamp01(snapshot.body.tension),
     motion,
     layers,
+    speech,
     summary: describeEmbodiment(posture, action, gazeTarget),
   };
 }
@@ -114,6 +128,7 @@ function deriveLayerState(
   action: EmbodimentAction,
   alertness: number,
   motion: EmbodimentMotionProfile,
+  speech: EmbodimentSpeechState,
 ): EmbodimentLayerState {
   const eyes =
     action === "hold" &&
@@ -129,7 +144,7 @@ function deriveLayerState(
 
   return {
     eyes,
-    mouth: action === "speak" ? "speaking" : "neutral",
+    mouth: speech.active ? "speaking" : "neutral",
     hands,
     blinkIntervalMs: Math.round(
       2_800 + motion.stillness * 2_800 + motion.gazePersistence * 900 - alertness * 750,
@@ -137,36 +152,89 @@ function deriveLayerState(
   };
 }
 
-function deriveCurrentAction(
+function deriveSpeechState(
   snapshot: HachikaSnapshot,
   now: Date,
-): { action: EmbodimentAction; id: string } {
+): EmbodimentSpeechState {
   const latestHachikaMemory = [...snapshot.memories]
     .reverse()
     .find((memory) => memory.role === "hachika");
+
+  if (!latestHachikaMemory) {
+    return {
+      id: null,
+      active: false,
+      startedAt: null,
+      durationMs: 0,
+      remainingMs: 0,
+      cadence: 0,
+      emphasis: 0,
+    };
+  }
+
+  const durationMs = deriveSpeechDurationMs(latestHachikaMemory.text);
+  const elapsedMs = ageMs(latestHachikaMemory.timestamp, now);
   const recentProactive =
-    latestHachikaMemory !== undefined &&
     snapshot.initiative.lastProactiveAt !== null &&
     timestampsWithin(
       latestHachikaMemory.timestamp,
       snapshot.initiative.lastProactiveAt,
       2_000,
     );
+  const canBeSpeaking = snapshot.idleClock.absenceHours < 1e-6 || recentProactive;
+  const active = canBeSpeaking && elapsedMs <= durationMs;
+  const punctuationEmphasis = /[!！?？]/u.test(latestHachikaMemory.text) ? 0.18 : 0;
+  const cadence = clamp01(
+    0.34 +
+      snapshot.dynamics.activation * 0.28 +
+      snapshot.temperament.openness * 0.16 -
+      snapshot.body.tension * 0.12 -
+      snapshot.voice.brevityBias * 0.06,
+  );
+  const emphasis = clamp01(
+    0.22 +
+      snapshot.dynamics.activation * 0.28 +
+      snapshot.state.pleasure * 0.1 +
+      snapshot.state.relation * 0.08 +
+      punctuationEmphasis -
+      snapshot.body.tension * 0.08,
+  );
 
-  if (
-    latestHachikaMemory &&
-    (snapshot.idleClock.absenceHours < 1e-6 || recentProactive) &&
-    ageMs(latestHachikaMemory.timestamp, now) <= SPEAKING_MAX_AGE_MS
-  ) {
+  return {
+    id: `speak:${latestHachikaMemory.timestamp}`,
+    active,
+    startedAt: latestHachikaMemory.timestamp,
+    durationMs,
+    remainingMs: active ? Math.max(0, Math.round(durationMs - elapsedMs)) : 0,
+    cadence,
+    emphasis,
+  };
+}
+
+function deriveSpeechDurationMs(text: string): number {
+  const spokenUnits = [...text].filter((character) => !/\s/u.test(character)).length;
+  const pauseCount = (text.match(/[、,，…]/gu) ?? []).length;
+  const stopCount = (text.match(/[。.!！?？]/gu) ?? []).length;
+  const estimated = 900 + spokenUnits * 72 + pauseCount * 150 + stopCount * 260;
+  return Math.min(MAX_SPEECH_DURATION_MS, Math.max(MIN_SPEECH_DURATION_MS, estimated));
+}
+
+function deriveCurrentAction(
+  snapshot: HachikaSnapshot,
+  now: Date,
+  speech: EmbodimentSpeechState,
+): { action: EmbodimentAction; id: string } {
+  if (speech.active && speech.id) {
     return {
       action: "speak",
-      id: `speak:${latestHachikaMemory.timestamp}`,
+      id: speech.id,
     };
   }
 
   const latestActivity = snapshot.initiative.history.at(-1);
   if (
     latestActivity?.autonomyAction &&
+    latestActivity.autonomyAction !== "speak" &&
     ageMs(latestActivity.timestamp, now) <= ACTIVE_ACTION_MAX_AGE_MS
   ) {
     return {

@@ -319,6 +319,7 @@ Hachika は、単に有用なだけでなく、
   - learned temperament から身体癖とmotion profileを導き、視線・身振り・静止への戻り方に個体差と余韻を持たせる
   - actionIdにより、新しいgestureだけを一度再生し、UI pollingでは動作を繰り返さない
   - 目・口・手は独立layerになり、blink、quiet speaking、reach / gatherの動作意図を別々に描画する
+  - 発話は固定時間ではなく文量・句読点・activation由来のduration / cadence / emphasisを持ち、mouthはpollを待たずに閉じる
   - `threshold / studio / archive` と時間帯がstage背景へ反映され、`observe / hold / drift / recall / touch / speak` は視線・距離・明るさ・小さな動きとして現れる
   - 現在の描画は透過PNG + CSSだが、embodiment contractを保ったままLive2Dや3Dへ差し替えられる
 - `scenario harness` により、複数ターンの対話シナリオを fixture として検証できる

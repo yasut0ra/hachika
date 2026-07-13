@@ -223,6 +223,8 @@ button.danger {
   --sway-x: 1px;
   --sway-angle: 0.12deg;
   --gesture-amplitude: 1;
+  --mouth-cycle-duration: 680ms;
+  --mouth-emphasis-opacity: 0.92;
   --gaze-x: 49%;
   --gaze-y: 24%;
   --avatar-brightness: 1;
@@ -517,8 +519,8 @@ button.danger {
 }
 
 .avatar-stage[data-mouth="speaking"] .avatar-layer-mouth {
-  opacity: 0.92;
-  animation: avatar-mouth-speak 680ms ease-in-out infinite;
+  opacity: var(--mouth-emphasis-opacity);
+  animation: avatar-mouth-speak var(--mouth-cycle-duration) ease-in-out infinite;
 }
 
 .avatar-layer-hand-left {
@@ -684,8 +686,8 @@ button.danger {
 }
 
 @keyframes avatar-mouth-speak {
-  0%, 100% { opacity: 0.58; }
-  48% { opacity: 0.96; }
+  0%, 100% { opacity: calc(var(--mouth-emphasis-opacity) * 0.58); }
+  48% { opacity: var(--mouth-emphasis-opacity); }
 }
 
 .panel-wide {

@@ -42,6 +42,8 @@ let avatarActionTimer = null;
 let avatarBlinkTimer = null;
 let avatarBlinkEndTimer = null;
 let currentBlinkIntervalMs = null;
+let avatarMouthTimer = null;
+let activeAvatarSpeechId = null;
 
 async function request(path, options = {}) {
   const response = await fetch(path, {
@@ -158,14 +160,14 @@ function renderAvatar(embodiment) {
   );
   renderAvatarGaze(embodiment.gazeTarget, embodiment.action, motion);
   renderAvatarGesture(embodiment.action, embodiment.actionId, motion);
-  renderAvatarLayers(
+  const layers =
     embodiment.layers ?? {
       eyes: "open",
       mouth: embodiment.action === "speak" ? "speaking" : "neutral",
       hands: "rest",
       blinkIntervalMs: 4200,
-    },
-  );
+    };
+  renderAvatarLayers(layers, embodiment.speech ?? null);
   avatarActionNode.textContent = embodiment.action;
   avatarSummaryNode.textContent = embodiment.summary;
   avatarPlaceNode.textContent = `${embodiment.place} · ${embodiment.phase}`;
@@ -272,10 +274,10 @@ function replayAvatarAction(actionId, motion) {
   });
 }
 
-function renderAvatarLayers(layers) {
+function renderAvatarLayers(layers, speech) {
   avatarStageNode.dataset.eyes = layers.eyes;
-  avatarStageNode.dataset.mouth = layers.mouth;
   avatarStageNode.dataset.hands = layers.hands;
+  renderAvatarMouth(layers.mouth, speech);
 
   if (
     layers.eyes === "closed" ||
@@ -286,6 +288,53 @@ function renderAvatarLayers(layers) {
   }
 
   scheduleAvatarBlink(layers.blinkIntervalMs);
+}
+
+function renderAvatarMouth(mouth, speech) {
+  const active = mouth === "speaking" && (speech?.active ?? true);
+
+  if (!active) {
+    cancelAvatarMouthTimer();
+    activeAvatarSpeechId = null;
+    avatarStageNode.dataset.mouth = "neutral";
+    delete avatarStageNode.dataset.speechId;
+    return;
+  }
+
+  const cadence = clamp01(speech?.cadence ?? 0.5);
+  const emphasis = clamp01(speech?.emphasis ?? 0.5);
+  const speechId = speech?.id ?? avatarStageNode.dataset.actionId ?? "speak";
+  avatarStageNode.dataset.mouth = "speaking";
+  avatarStageNode.dataset.speechId = speechId;
+  avatarStageNode.style.setProperty(
+    "--mouth-cycle-duration",
+    `${Math.round(760 - cadence * 330)}ms`,
+  );
+  avatarStageNode.style.setProperty(
+    "--mouth-emphasis-opacity",
+    (0.55 + emphasis * 0.42).toFixed(3),
+  );
+
+  if (speechId === activeAvatarSpeechId && avatarMouthTimer !== null) {
+    return;
+  }
+
+  cancelAvatarMouthTimer();
+  activeAvatarSpeechId = speechId;
+  const remainingMs = Math.max(50, Number(speech?.remainingMs) || 12_000);
+  avatarMouthTimer = window.setTimeout(() => {
+    avatarStageNode.dataset.mouth = "neutral";
+    delete avatarStageNode.dataset.speechId;
+    activeAvatarSpeechId = null;
+    avatarMouthTimer = null;
+  }, remainingMs);
+}
+
+function cancelAvatarMouthTimer() {
+  if (avatarMouthTimer !== null) {
+    window.clearTimeout(avatarMouthTimer);
+    avatarMouthTimer = null;
+  }
 }
 
 function scheduleAvatarBlink(intervalMs) {
