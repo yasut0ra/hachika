@@ -606,3 +606,30 @@ test("resident loop config reads env overrides", () => {
   assert.equal(config.idleHoursPerTick, 1.5);
   assert.equal(describeResidentLoopConfig(config), "interval:9000ms idlePerTick:1.5h");
 });
+
+test("resident loop defaults to wall-clock time", () => {
+  const config = readResidentLoopConfigFromEnv({});
+
+  assert.equal(config.intervalMs, 15_000);
+  assert.equal(config.idleHoursPerTick, null);
+  assert.equal(describeResidentLoopConfig(config), "interval:15000ms idle:wall-clock");
+});
+
+test("wall-clock resident ticks advance absence without rewinding timestamps", async () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.lastInteractionAt = "2026-04-01T00:00:00.000Z";
+  snapshot.initiative.lastProactiveAt = "2026-04-01T00:00:00.000Z";
+
+  const result = await runResidentLoopTick(snapshot, {
+    idleHours: 0.25,
+    clockMode: "wall",
+    now: new Date("2026-04-01T00:15:00.000Z"),
+  });
+
+  assert.equal(result.snapshot.idleClock.absenceHours, 0.25);
+  assert.equal(result.snapshot.lastInteractionAt, "2026-04-01T00:00:00.000Z");
+  assert.equal(
+    result.snapshot.initiative.lastProactiveAt,
+    "2026-04-01T00:00:00.000Z",
+  );
+});

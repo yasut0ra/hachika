@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { commitSnapshot } from "./persistence.js";
+import { commitSnapshot, loadSnapshot } from "./persistence.js";
 import { loadResidentLoopStatus } from "./resident-monitor.js";
 import {
   isResidentLoopAlreadyRunningError,
@@ -66,6 +66,44 @@ test("resident runtime refuses to replace a live loop owned by another runtime",
   } finally {
     await first.stop("test");
     await second.stop("cleanup");
+    await rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test("resident runtime advances the substrate by actual wall-clock elapsed time", async () => {
+  const rootDir = await mkdtemp(join(tmpdir(), "hachika-resident-runtime-wall-"));
+  const paths = {
+    snapshotPath: join(rootDir, "hachika-state.json"),
+    artifactsDir: join(rootDir, "artifacts"),
+    lockPath: join(rootDir, "resident-lock.json"),
+    statusPath: join(rootDir, "resident-status.json"),
+  };
+  let now = new Date("2026-04-01T00:00:00.000Z");
+  const initial = createInitialSnapshot();
+  initial.lastInteractionAt = now.toISOString();
+  const runtime = new ResidentLoopRuntime({
+    ...paths,
+    config: {
+      intervalMs: 3_600_000,
+      idleHoursPerTick: null,
+    },
+    replyDescription: "local",
+    now: () => now,
+  });
+
+  try {
+    await commitSnapshot(paths.snapshotPath, initial);
+    await runtime.start();
+    await runtime.tick();
+
+    now = new Date("2026-04-01T01:00:00.000Z");
+    await runtime.tick();
+
+    const snapshot = await loadSnapshot(paths.snapshotPath);
+    assert.equal(snapshot.idleClock.absenceHours, 1);
+    assert.equal(snapshot.lastInteractionAt, "2026-04-01T00:00:00.000Z");
+  } finally {
+    await runtime.stop("test");
     await rm(rootDir, { recursive: true, force: true });
   }
 });

@@ -41,10 +41,13 @@ export class ResidentLoopRuntime {
   private tickPromise: Promise<void> | null = null;
   private owned = false;
   private stopping = false;
+  private lastWallAdvanceAtMs: number;
 
   constructor(options: ResidentLoopRuntimeOptions) {
     this.options = options;
-    const startedAt = this.isoNow();
+    const startedAtDate = this.nowDate();
+    const startedAt = startedAtDate.toISOString();
+    this.lastWallAdvanceAtMs = startedAtDate.getTime();
     this.status = {
       active: false,
       pid: options.pid ?? process.pid,
@@ -152,14 +155,23 @@ export class ResidentLoopRuntime {
   }
 
   private async executeTick(): Promise<void> {
-    this.status.heartbeatAt = this.isoNow();
+    const tickStartedAt = this.nowDate();
+    const fixedIdleHours = this.options.config.idleHoursPerTick;
+    const idleHours =
+      fixedIdleHours ??
+      Math.max(0, tickStartedAt.getTime() - this.lastWallAdvanceAtMs) /
+        (60 * 60 * 1000);
+    const clockMode = fixedIdleHours === null ? "wall" : "simulated";
+    this.status.heartbeatAt = tickStartedAt.toISOString();
 
     try {
       const outcome = await runWithConflictRetry({
         operate: async () => {
           const snapshot = await loadSnapshot(this.options.snapshotPath);
           return runResidentLoopTick(snapshot, {
-            idleHours: this.options.config.idleHoursPerTick,
+            idleHours,
+            clockMode,
+            now: tickStartedAt,
             autonomyDirector: this.options.autonomyDirector ?? null,
             replyGenerator: this.options.replyGenerator ?? null,
             proactiveDirector: this.options.proactiveDirector ?? null,
@@ -189,6 +201,7 @@ export class ResidentLoopRuntime {
 
       const result = outcome.result;
       const tickAt = this.isoNow();
+      this.lastWallAdvanceAtMs = tickStartedAt.getTime();
       this.status.active = true;
       this.status.heartbeatAt = tickAt;
       this.status.lastTickAt = tickAt;
@@ -240,7 +253,11 @@ export class ResidentLoopRuntime {
   }
 
   private isoNow(): string {
-    return (this.options.now?.() ?? new Date()).toISOString();
+    return this.nowDate().toISOString();
+  }
+
+  private nowDate(): Date {
+    return this.options.now?.() ?? new Date();
   }
 }
 

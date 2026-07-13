@@ -31,6 +31,7 @@ export interface LiveGrowthMetrics {
   proactiveMaintenanceRate: number;
   silentInternalActionRate: number;
   outwardActionRate: number;
+  outwardIntentEchoRate: number;
   worldActionDiversity: number;
   initiativeToActionConversion: number;
   recentGeneratedCount: number;
@@ -339,6 +340,43 @@ export function calculateOutwardActionRate(snapshot: HachikaSnapshot): number {
   return round(outward / history.length);
 }
 
+export function calculateOutwardIntentEchoRate(snapshot: HachikaSnapshot): number {
+  const outward = (snapshot.initiative.history ?? [])
+    .filter(
+      (activity) =>
+        activity.kind === "proactive_emission" &&
+        activity.autonomyAction === "speak",
+    )
+    .slice(-12);
+
+  if (outward.length <= 1) {
+    return 0;
+  }
+
+  let echoes = 0;
+
+  for (let index = 1; index < outward.length; index += 1) {
+    const previous = outward[index - 1]!;
+    const current = outward[index]!;
+    const userReplyBetween = snapshot.generationHistory.some(
+      (entry) =>
+        entry.mode === "reply" &&
+        timestampIsAfter(entry.timestamp, previous.timestamp) &&
+        !timestampIsAfter(entry.timestamp, current.timestamp),
+    );
+
+    if (
+      !userReplyBetween &&
+      current.motive === previous.motive &&
+      current.blocker === previous.blocker
+    ) {
+      echoes += 1;
+    }
+  }
+
+  return round(echoes / (outward.length - 1));
+}
+
 export function calculateWorldActionDiversity(snapshot: HachikaSnapshot): number {
   const kinds = new Set(
     (snapshot.initiative.history ?? [])
@@ -434,6 +472,7 @@ export function summarizeLiveGrowthMetrics(snapshot: HachikaSnapshot): LiveGrowt
     proactiveMaintenanceRate: calculateProactiveMaintenanceRateFromSnapshot(snapshot),
     silentInternalActionRate: calculateSilentInternalActionRate(snapshot),
     outwardActionRate: calculateOutwardActionRate(snapshot),
+    outwardIntentEchoRate: calculateOutwardIntentEchoRate(snapshot),
     worldActionDiversity: calculateWorldActionDiversity(snapshot),
     initiativeToActionConversion: calculateInitiativeToActionConversion(snapshot),
     recentGeneratedCount: generation.length,
@@ -465,6 +504,16 @@ export function summarizeLiveGrowthMetrics(snapshot: HachikaSnapshot): LiveGrowt
             (entry) => (entry.focusMentioned ? 1 : 0),
           ),
   };
+}
+
+function timestampIsAfter(candidate: string, reference: string): boolean {
+  const candidateMs = Date.parse(candidate);
+  const referenceMs = Date.parse(reference);
+  return (
+    Number.isFinite(candidateMs) &&
+    Number.isFinite(referenceMs) &&
+    candidateMs > referenceMs
+  );
 }
 
 export function describeGrowthMetricBaselines(): Record<string, number | null> {

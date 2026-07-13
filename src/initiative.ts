@@ -309,6 +309,10 @@ export function prepareInitiativeEmission(
       hoursSinceInteraction >=
         Math.max(0, pending.readyAfterHours - urgeReadinessShift))
   ) {
+    if (!force && isOutwardIntentRefractory(snapshot, pending)) {
+      return null;
+    }
+
     const preparedPending = withInitiativeWorldContext(snapshot, pending);
     const plan = buildProactivePlan(snapshot, preparedPending, neglectLevel, null);
     const selection = buildProactiveSelectionDebug(preparedPending, null, plan);
@@ -328,6 +332,10 @@ export function prepareInitiativeEmission(
       synthesizePendingInitiative(snapshot, selfModel, [], nowIso, "neglect_ping");
 
     if (!neglectInitiative) {
+      return null;
+    }
+
+    if (isOutwardIntentRefractory(snapshot, neglectInitiative)) {
       return null;
     }
 
@@ -513,6 +521,7 @@ export interface IdleAutonomyEvaluationPlan {
 export function advanceAutonomyHours(
   snapshot: HachikaSnapshot,
   hours: number,
+  options: { shiftTimestamps?: boolean } = {},
 ): void {
   if (!Number.isFinite(hours) || hours <= 0) {
     return;
@@ -538,7 +547,7 @@ export function advanceAutonomyHours(
       remaining,
       untilEval > 1e-6 ? untilEval : IDLE_AUTONOMY_WINDOW_HOURS,
     );
-    rewindSnapshotBaseHours(snapshot, step);
+    rewindSnapshotBaseHours(snapshot, step, options);
     remaining -= step;
   }
 
@@ -636,24 +645,31 @@ export function materializeIdleAutonomyEvaluation(
 export function rewindSnapshotHours(
   snapshot: HachikaSnapshot,
   hours: number,
+  options: { shiftTimestamps?: boolean } = {},
 ): void {
-  advanceAutonomyHours(snapshot, hours);
+  advanceAutonomyHours(snapshot, hours, options);
 }
 
 export function rewindSnapshotBaseHours(
   snapshot: HachikaSnapshot,
   hours: number,
+  options: { shiftTimestamps?: boolean } = {},
 ): void {
   if (!Number.isFinite(hours) || hours <= 0) {
     return;
   }
 
-  snapshot.lastInteractionAt = shiftTimestamp(snapshot.lastInteractionAt, hours);
-  snapshot.initiative.lastProactiveAt = shiftTimestamp(
-    snapshot.initiative.lastProactiveAt,
-    hours,
-  );
-  snapshot.preservation.lastThreatAt = shiftTimestamp(snapshot.preservation.lastThreatAt, hours);
+  if (options.shiftTimestamps !== false) {
+    snapshot.lastInteractionAt = shiftTimestamp(snapshot.lastInteractionAt, hours);
+    snapshot.initiative.lastProactiveAt = shiftTimestamp(
+      snapshot.initiative.lastProactiveAt,
+      hours,
+    );
+    snapshot.preservation.lastThreatAt = shiftTimestamp(
+      snapshot.preservation.lastThreatAt,
+      hours,
+    );
+  }
 
   const absenceBefore = snapshot.idleClock.absenceHours;
   const absenceAfter = absenceBefore + hours;
@@ -694,7 +710,7 @@ export function rewindSnapshotBaseHours(
   rewindAspirationsHours(snapshot, hours);
   deriveVisibleStateFromDynamics(snapshot);
 
-  if (snapshot.initiative.pending) {
+  if (snapshot.initiative.pending && options.shiftTimestamps !== false) {
     snapshot.initiative.pending = {
       ...snapshot.initiative.pending,
       createdAt: shiftTimestamp(snapshot.initiative.pending.createdAt, hours) ?? snapshot.initiative.pending.createdAt,
@@ -2613,6 +2629,56 @@ function calculateNeglectLevel(
   }
 
   return clamp01((hours - 6) / 48);
+}
+
+// Internal recall may recur during one silence, but the same outward motive should not
+// keep asking for the user's attention without a new user turn or a changed blocker.
+// This is a local invariant so wording variation cannot bypass it.
+function isOutwardIntentRefractory(
+  snapshot: HachikaSnapshot,
+  pending: PendingInitiative,
+): boolean {
+  const lastMatchingOutward = [...(snapshot.initiative.history ?? [])]
+    .reverse()
+    .find(
+      (activity) =>
+        activity.kind === "proactive_emission" &&
+        activity.autonomyAction === "speak" &&
+        activity.motive === pending.motive,
+    );
+
+  if (!lastMatchingOutward) {
+    return false;
+  }
+
+  if (
+    pending.blocker !== null &&
+    pending.blocker !== lastMatchingOutward.blocker
+  ) {
+    return false;
+  }
+
+  return !isTimestampAfter(
+    snapshot.lastInteractionAt,
+    lastMatchingOutward.timestamp,
+  );
+}
+
+function isTimestampAfter(
+  candidate: string | null,
+  reference: string | null,
+): boolean {
+  if (!candidate || !reference) {
+    return false;
+  }
+
+  const candidateMs = Date.parse(candidate);
+  const referenceMs = Date.parse(reference);
+  return (
+    Number.isFinite(candidateMs) &&
+    Number.isFinite(referenceMs) &&
+    candidateMs > referenceMs
+  );
 }
 
 function elapsedHours(timestamp: string | null, now: Date): number {

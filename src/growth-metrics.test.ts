@@ -14,6 +14,7 @@ import {
   calculateProactiveMaintenanceRateFromSnapshot,
   calculateSnapshotArchiveReopenRate,
   calculateProactiveMaintenanceRate,
+  calculateOutwardIntentEchoRate,
   calculateStateSaturationRatio,
   calculateStressRecoveryLag,
   summarizeLiveGrowthMetrics,
@@ -373,11 +374,54 @@ test("autonomy metrics reflect the balance between silent and outward actions", 
   assert.equal(calculateInitiativeToActionConversion(snapshot), 0.5);
 });
 
+test("outward intent echo ignores a repeat after the user returns", () => {
+  const snapshot = createInitialSnapshot();
+  for (const timestamp of [
+    "2026-03-19T01:00:00.000Z",
+    "2026-03-19T02:00:00.000Z",
+    "2026-03-19T04:00:00.000Z",
+  ]) {
+    snapshot.initiative.history.push({
+      kind: "proactive_emission",
+      autonomyAction: "speak",
+      timestamp,
+      motive: "seek_continuity",
+      topic: "設計",
+      traceTopic: "設計",
+      blocker: null,
+      place: "studio",
+      worldAction: "observe",
+      maintenanceAction: null,
+      reopened: false,
+      hours: null,
+      summary: "設計へ触れ直した。",
+    });
+  }
+  snapshot.generationHistory.push({
+    timestamp: "2026-03-19T03:00:00.000Z",
+    mode: "reply",
+    source: "rule",
+    provider: null,
+    model: null,
+    fallbackUsed: false,
+    focus: null,
+    fallbackOverlap: 0,
+    openerEcho: false,
+    abstractTermRatio: 0,
+    concreteDetailScore: 0,
+    focusMentioned: null,
+    summary: "reply",
+  });
+
+  assert.equal(calculateOutwardIntentEchoRate(snapshot), 0.5);
+});
+
 test("autonomy metrics stay zero on an empty history", () => {
   const snapshot = createInitialSnapshot();
 
   assert.equal(calculateSilentInternalActionRate(snapshot), 0);
   assert.equal(calculateOutwardActionRate(snapshot), 0);
+  assert.equal(calculateOutwardIntentEchoRate(snapshot), 0);
   assert.equal(calculateWorldActionDiversity(snapshot), 0);
   assert.equal(calculateInitiativeToActionConversion(snapshot), 0);
 });

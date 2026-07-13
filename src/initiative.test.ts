@@ -324,3 +324,79 @@ test("outward emission releases contact pressure and restores silence need", () 
   assert.ok(snapshot.urges.contactUrge < 0.8);
   assert.ok(snapshot.urges.silenceNeed > 0.1);
 });
+
+test("the same outward motive stays refractory until the user returns", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.lastInteractionAt = "2026-04-01T00:00:00.000Z";
+  snapshot.initiative.lastProactiveAt = "2026-04-01T04:00:00.000Z";
+  snapshot.initiative.history.push({
+    kind: "proactive_emission",
+    autonomyAction: "speak",
+    timestamp: "2026-04-01T04:00:00.000Z",
+    motive: "seek_continuity",
+    topic: "夏インターン選考",
+    traceTopic: "夏インターン選考",
+    blocker: null,
+    place: "threshold",
+    worldAction: "observe",
+    maintenanceAction: null,
+    reopened: false,
+    hours: null,
+    summary: "一度、自分から触れ直した。",
+  });
+  snapshot.initiative.pending = {
+    kind: "resume_topic",
+    reason: "continuity",
+    motive: "seek_continuity",
+    topic: "夏インターン選考の結果",
+    stateTopic: "夏インターン選考の結果",
+    blocker: null,
+    concern: null,
+    createdAt: "2026-04-01T08:00:00.000Z",
+    readyAfterHours: 0,
+  };
+
+  const prepared = prepareInitiativeEmission(snapshot, {
+    now: new Date("2026-04-01T08:00:00.000Z"),
+  });
+
+  assert.equal(prepared, null);
+});
+
+test("a new user turn releases the outward motive refractory", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.lastInteractionAt = "2026-04-01T05:00:00.000Z";
+  snapshot.initiative.lastProactiveAt = "2026-04-01T04:00:00.000Z";
+  snapshot.initiative.history.push({
+    kind: "proactive_emission",
+    autonomyAction: "speak",
+    timestamp: "2026-04-01T04:00:00.000Z",
+    motive: "seek_continuity",
+    topic: "夏インターン選考",
+    traceTopic: "夏インターン選考",
+    blocker: null,
+    place: "threshold",
+    worldAction: "observe",
+    maintenanceAction: null,
+    reopened: false,
+    hours: null,
+    summary: "一度、自分から触れ直した。",
+  });
+  snapshot.initiative.pending = {
+    kind: "resume_topic",
+    reason: "continuity",
+    motive: "seek_continuity",
+    topic: "夏インターン選考の結果",
+    stateTopic: "夏インターン選考の結果",
+    blocker: null,
+    concern: null,
+    createdAt: "2026-04-01T05:00:00.000Z",
+    readyAfterHours: 0,
+  };
+
+  const prepared = prepareInitiativeEmission(snapshot, {
+    now: new Date("2026-04-01T09:00:00.000Z"),
+  });
+
+  assert.notEqual(prepared, null);
+});

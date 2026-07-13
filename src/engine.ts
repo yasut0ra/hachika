@@ -952,9 +952,14 @@ export class HachikaEngine {
     return message;
   }
 
-  rewindIdleHours(hours: number): void {
+  rewindIdleHours(
+    hours: number,
+    options: { clockMode?: "simulated" | "wall" } = {},
+  ): void {
     const nextSnapshot = structuredClone(this.#snapshot);
-    rewindSnapshotHours(nextSnapshot, hours);
+    rewindSnapshotHours(nextSnapshot, hours, {
+      shiftTimestamps: options.clockMode !== "wall",
+    });
     advanceWorldByIdle(nextSnapshot, hours);
     updateIdentity(nextSnapshot, new Date().toISOString());
     this.#snapshot = nextSnapshot;
@@ -962,10 +967,15 @@ export class HachikaEngine {
 
   async rewindIdleHoursAsync(
     hours: number,
-    options: { autonomyDirector?: AutonomyDirector | null } = {},
+    options: {
+      autonomyDirector?: AutonomyDirector | null;
+      clockMode?: "simulated" | "wall";
+    } = {},
   ): Promise<{ outwardMode: AutonomyOutwardMode }> {
     const nextSnapshot = structuredClone(this.#snapshot);
-    rewindSnapshotBaseHours(nextSnapshot, hours);
+    rewindSnapshotBaseHours(nextSnapshot, hours, {
+      shiftTimestamps: options.clockMode !== "wall",
+    });
     // Phase 0: 評価は tick の hours ではなく累積 absence の期日で起きる。
     // resident loop の細かい tick でも、absence が期日に達した tick で評価が動く
     const plan = prepareDueIdleAutonomyEvaluation(nextSnapshot);

@@ -81,7 +81,13 @@
 - 定義: `proactive_emission / (idle_reactivation + proactive_emission)`
 - 目的: 掘り返した継続意図のうち、どれだけが outward action まで届いたかを見る
 
-### 13. `constitutionDistance / voiceDistance / aspirationOverlap`(v3 Phase 5)
+### 13. `outwardIntentEchoRate`
+
+- 対象: 直近の `proactive_emission / speak`
+- 定義: user replyを挟まずに、同じ motive と blocker で連続した outward 発話の比率
+- 目的: 文面の言い換えでは隠れる「同じ意図でもう一度呼びかけた」を見る。通常運用ではlocal refractoryにより0へ近づく
+
+### 14. `constitutionDistance / voiceDistance / aspirationOverlap`(v3 Phase 5)
 
 - 対象: 2つの snapshot(個体)
 - 定義: constitution 全 set-point の平均絶対差 / 声の opening 集合の非一致 + brevity 差 / aspiration theme の Jaccard 一致率

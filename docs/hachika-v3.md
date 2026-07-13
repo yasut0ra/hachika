@@ -136,6 +136,8 @@ v2 の境界をそのまま保つ。
   基準を短くしすぎると turn で得た偏差が体質に吸収される前に洗い流されて
   個体差(Phase 5)が育たないことを実測で確認し、24h に置いた
 - substrate は `rewindSnapshotBaseHours` 内部で最大 6h の microstep に割られる
+- resident loop は既定でtick間のwall-clock経過量を渡し、この経路ではwall timestampを巻き戻さない。`HACHIKA_LOOP_IDLE_HOURS_PER_TICK`を明示した固定step simulationと手動rewindだけがtimestampをずらす
+- 同じ沈黙期間中に一度外へ出したmotiveはrefractoryに入り、内部でrecallが続いてもuser turnまたはblocker変化までは言い換えて再発話しない
 - idle autonomy の評価も累積の期日制: absence 6h で最初の評価、以後 8h ごと。
   記憶の再編成(imprint consolidation)は評価ごとに増分の重みで連続的に進み、
   journal / voice の定着は「夜」に相当する 24h ごとの節目でだけ起きる

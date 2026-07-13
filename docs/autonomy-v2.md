@@ -197,11 +197,13 @@ resident loop は次のように変えます。
 ### V2
 
 - fixed interval は維持してよい
-- ただし内部では `microstep` を回す
+- resident運用の経過量はwall clockから導き、明示的なsimulation時だけfixed idle hoursを使う
+- 内部では `microstep` を回す
 - 1 tick 中に:
   - zero or more internal actions
   - zero or one outward action
 - outward action は毎 tick 起きない
+- 同じ沈黙期間中の同一motiveは、内部で再想起しても一度話したらrefractoryに入る
 
 この構造なら、人間っぽい
 

@@ -20,7 +20,7 @@ export interface ResidentLoopStatus {
   reply: string | null;
   config: {
     intervalMs: number;
-    idleHoursPerTick: number;
+    idleHoursPerTick: number | null;
   } | null;
   stoppedAt: string | null;
 }
@@ -255,11 +255,15 @@ function parseResidentLoopStatus(raw: unknown): ResidentLoopStatus | null {
       isRecord(raw.config) &&
       typeof raw.config.intervalMs === "number" &&
       Number.isFinite(raw.config.intervalMs) &&
-      typeof raw.config.idleHoursPerTick === "number" &&
-      Number.isFinite(raw.config.idleHoursPerTick)
+      (raw.config.idleHoursPerTick === null ||
+        (typeof raw.config.idleHoursPerTick === "number" &&
+          Number.isFinite(raw.config.idleHoursPerTick)))
         ? {
             intervalMs: Math.max(1, Math.round(raw.config.intervalMs)),
-            idleHoursPerTick: Math.max(0, raw.config.idleHoursPerTick),
+            idleHoursPerTick:
+              raw.config.idleHoursPerTick === null
+                ? null
+                : Math.max(0, raw.config.idleHoursPerTick),
           }
         : null,
     stoppedAt: typeof raw.stoppedAt === "string" ? raw.stoppedAt : null,

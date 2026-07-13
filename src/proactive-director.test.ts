@@ -75,6 +75,22 @@ test("buildProactiveDirectorPayload keeps candidate topics grounded", () => {
     lastUpdatedAt: "2026-03-29T00:00:00.000Z",
     turnsActive: 2,
   };
+  nextSnapshot.lastInteractionAt = "2026-03-29T01:00:00.000Z";
+  nextSnapshot.initiative.history.push({
+    kind: "proactive_emission",
+    autonomyAction: "speak",
+    timestamp: "2026-03-29T02:00:00.000Z",
+    motive: "continue_shared_work",
+    topic: "仕様の境界",
+    traceTopic: "仕様の境界",
+    blocker: "責務分離が曖昧",
+    place: "studio",
+    worldAction: "touch",
+    maintenanceAction: null,
+    reopened: false,
+    hours: null,
+    summary: "仕様の境界へ触れ直した。",
+  });
 
   const payload = buildProactiveDirectorPayload({
     previousSnapshot,
@@ -110,6 +126,9 @@ test("buildProactiveDirectorPayload keeps candidate topics grounded", () => {
   assert.equal(payload.pending.place, "studio");
   assert.equal(payload.pending.stateTopic, "仕様の境界");
   assert.equal(payload.rulePlan.act, "leave_trace");
+  assert.equal(payload.recentOutward.length, 1);
+  assert.equal(payload.recentOutward[0]?.motive, "continue_shared_work");
+  assert.equal(payload.userInteractedSinceLastOutward, false);
 });
 
 test("normalizeProactiveDirective can parse semantic-director v2 proactive contract", () => {

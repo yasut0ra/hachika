@@ -612,6 +612,7 @@ function renderGrowth(growth) {
     ["proactive maintenance", formatNumber(growth.proactiveMaintenanceRate)],
     ["silent internal action", formatNumber(growth.silentInternalActionRate)],
     ["outward action", formatNumber(growth.outwardActionRate)],
+    ["outward intent echo", formatNumber(growth.outwardIntentEchoRate)],
     ["world action diversity", formatNumber(growth.worldActionDiversity)],
     ["initiative conversion", formatNumber(growth.initiativeToActionConversion)],
     ["recent generated", String(growth.recentGeneratedCount)],
@@ -796,7 +797,9 @@ function formatResidentLoopDetail(status, health) {
     status.lastProactiveAt ? `proactive ${status.lastProactiveAt}` : null,
     typeof status.lastTickAttempts === "number" ? `attempts ${status.lastTickAttempts}` : null,
     status.config
-      ? `interval ${status.config.intervalMs}ms / idle ${status.config.idleHoursPerTick}h`
+      ? status.config.idleHoursPerTick === null
+        ? `interval ${status.config.intervalMs}ms / wall clock`
+        : `interval ${status.config.intervalMs}ms / idle ${status.config.idleHoursPerTick}h`
       : null,
     status.lastInternalActivities.length > 0
       ? `internal recent ${status.lastInternalActivities.slice(-2).join(" | ")}`

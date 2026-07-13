@@ -6,6 +6,7 @@ import type { AutonomousFeedEntry, HachikaSnapshot, InitiativeActivity } from ".
 
 export interface ResidentLoopTickOptions {
   idleHours: number;
+  clockMode?: "simulated" | "wall";
   now?: Date;
   autonomyDirector?: AutonomyDirector | null;
   replyGenerator?: ReplyGenerator | null;
@@ -22,7 +23,9 @@ export interface ResidentLoopTickResult {
 
 export interface ResidentLoopConfig {
   intervalMs: number;
-  idleHoursPerTick: number;
+  // null means that ResidentLoopRuntime derives elapsed hours from the wall clock.
+  // A number is an explicit fixed-step simulation override.
+  idleHoursPerTick: number | null;
 }
 
 export async function runResidentLoopTick(
@@ -39,10 +42,13 @@ export async function runResidentLoopTick(
     if (options.autonomyDirector) {
       const autonomy = await engine.rewindIdleHoursAsync(idleHours, {
         autonomyDirector: options.autonomyDirector,
+        clockMode: options.clockMode ?? "simulated",
       });
       outwardMode = autonomy.outwardMode;
     } else {
-      engine.rewindIdleHours(idleHours);
+      engine.rewindIdleHours(idleHours, {
+        clockMode: options.clockMode ?? "simulated",
+      });
     }
     const afterIdleSnapshot = engine.getSnapshot();
     internalActivities = diffInitiativeHistory(
@@ -89,14 +95,20 @@ export async function runResidentLoopTick(
 export function readResidentLoopConfigFromEnv(
   env: NodeJS.ProcessEnv = process.env,
 ): ResidentLoopConfig {
+  const idleOverride = parseOptionalPositiveNumber(
+    env.HACHIKA_LOOP_IDLE_HOURS_PER_TICK,
+  );
+
   return {
     intervalMs: parsePositiveNumber(env.HACHIKA_LOOP_INTERVAL_MS, 15_000),
-    idleHoursPerTick: parsePositiveNumber(env.HACHIKA_LOOP_IDLE_HOURS_PER_TICK, 0.5),
+    idleHoursPerTick: idleOverride,
   };
 }
 
 export function describeResidentLoopConfig(config: ResidentLoopConfig): string {
-  return `interval:${config.intervalMs}ms idlePerTick:${config.idleHoursPerTick}h`;
+  return config.idleHoursPerTick === null
+    ? `interval:${config.intervalMs}ms idle:wall-clock`
+    : `interval:${config.intervalMs}ms idlePerTick:${config.idleHoursPerTick}h`;
 }
 
 export function formatResidentActivity(activity: InitiativeActivity): string {
@@ -183,4 +195,13 @@ function parsePositiveNumber(
 ): number {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function parseOptionalPositiveNumber(value: string | undefined): number | null {
+  if (value === undefined || value.trim() === "") {
+    return null;
+  }
+
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }

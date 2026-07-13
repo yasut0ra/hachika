@@ -130,6 +130,14 @@ export interface ProactiveDirectorPayload {
     place: HachikaSnapshot["world"]["currentPlace"];
     objectIds: string[];
   };
+  recentOutward: Array<{
+    timestamp: string;
+    action: string | null;
+    motive: string | null;
+    topic: string | null;
+    blocker: string | null;
+  }>;
+  userInteractedSinceLastOutward: boolean;
 }
 
 export interface ProactiveDirectorResult {
@@ -237,6 +245,17 @@ export function buildProactiveDirectorPayload(
     ...context.nextSnapshot.identity.anchors,
     context.nextSnapshot.purpose.active?.topic ?? "",
   ].filter((topic) => topic.length > 0)).slice(0, 6);
+  const recentOutward = context.nextSnapshot.initiative.history
+    .filter((activity) => activity.kind === "proactive_emission")
+    .slice(-6)
+    .map((activity) => ({
+      timestamp: activity.timestamp,
+      action: activity.autonomyAction,
+      motive: activity.motive,
+      topic: activity.topic,
+      blocker: activity.blocker,
+    }));
+  const lastOutward = recentOutward.at(-1) ?? null;
 
   return {
     pending: {
@@ -282,6 +301,13 @@ export function buildProactiveDirectorPayload(
         .map(([id]) => id)
         .slice(0, 3),
     },
+    recentOutward,
+    userInteractedSinceLastOutward:
+      lastOutward === null ||
+      timestampAfter(
+        context.nextSnapshot.lastInteractionAt,
+        lastOutward.timestamp,
+      ),
   };
 }
 
@@ -311,12 +337,26 @@ export function buildOpenAIProactiveDirectorMessages(
         "proactivePlan.focusTopic must be null or one of candidateTopics.",
         "topics is an array of semantic topic objects: { topic, source, durability, confidence }.",
         "pending.stateTopic is the current durable topic candidate; if it is null, prefer keeping the move ephemeral unless there is strong grounded support to emit.",
-        "Suppress weak or repetitive proactive moves. Allow grounded ones.",
+        "Suppress weak or repetitive proactive moves. If recentOutward already contains the same motive and the user has not interacted since, suppress it unless the blocker materially changed.",
         "Return JSON only.",
         JSON.stringify(payload, null, 2),
       ].join("\n\n"),
     },
   ];
+}
+
+function timestampAfter(candidate: string | null, reference: string): boolean {
+  if (!candidate) {
+    return false;
+  }
+
+  const candidateMs = Date.parse(candidate);
+  const referenceMs = Date.parse(reference);
+  return (
+    Number.isFinite(candidateMs) &&
+    Number.isFinite(referenceMs) &&
+    candidateMs > referenceMs
+  );
 }
 
 export function normalizeProactiveDirective(
@@ -632,4 +672,3 @@ function parseJsonRecord(value: string | null): Record<string, unknown> | null {
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
-

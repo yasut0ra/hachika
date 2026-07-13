@@ -617,7 +617,9 @@ function printResidentLoop(): void {
   console.log(`reply: ${status.reply ?? "none"}`);
   console.log(
     status.config
-      ? `config: intervalMs:${status.config.intervalMs} idleHoursPerTick:${status.config.idleHoursPerTick}`
+      ? status.config.idleHoursPerTick === null
+        ? `config: intervalMs:${status.config.intervalMs} idle:wall-clock`
+        : `config: intervalMs:${status.config.intervalMs} idleHoursPerTick:${status.config.idleHoursPerTick}`
       : "config: none",
   );
   console.log(`last error: ${status.lastError ?? "none"}`);
