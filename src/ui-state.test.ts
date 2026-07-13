@@ -35,6 +35,9 @@ test("buildUiState exposes recent memories, traces, and diagnostics for the web 
   assert.ok(ui.summary.identity.summary.length > 0);
   assert.equal(ui.summary.residentLoop, null);
   assert.equal(ui.summary.world.currentPlace, "studio");
+  assert.equal(ui.embodiment.place, "studio");
+  assert.ok(ui.embodiment.movementTempo >= 0 && ui.embodiment.movementTempo <= 1);
+  assert.ok(ui.embodiment.summary.length > 0);
   assert.equal(ui.growth.autonomousActivityCount, 0);
   assert.equal(ui.growth.recentGeneratedCount, 1);
   assert.ok(ui.growth.generationConcreteDetail > 0);

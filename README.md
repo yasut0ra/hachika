@@ -314,6 +314,10 @@ Hachika は、単に有用なだけでなく、
   - trace / artifact も `place / object` に結びつくので、どの場所で残された痕跡かを後から追える
   - object 側には linked traces の逆参照もあり、棚や机に触れる world inquiry では、その object に引っかかっている topic を手がかりに思い出せる
   - CLI の `/world` と Web UI の `World` panel から、今どこにいるか、時間帯がどう変わったか、最近どんな出来事があったかを見られる
+- Web UI には substrate を身体表現へ写す `embodiment` layer と2D avatarがある
+  - `posture / gaze / action / movement tempo / breath / proximity / expression warmth` を描画用の中間状態として導出し、UIが生の内部数値から直接「感情画像」を選ばない構造にしている
+  - `threshold / studio / archive` と時間帯がstage背景へ反映され、`observe / hold / drift / recall / touch / speak` は視線・距離・明るさ・小さな動きとして現れる
+  - 現在の描画は透過PNG + CSSだが、embodiment contractを保ったままLive2Dや3Dへ差し替えられる
 - `scenario harness` により、複数ターンの対話シナリオを fixture として検証できる
   - active purpose の継続と解決、blocker maintenance、archive/reopen、preservation threat、body drift による wording 変化を長めの回帰テストとして固定している
   - async scenario では LLM adapter の `reply / proactive` fallback でも local state 更新と maintenance が保たれること、input interpreter が local topic を落として social reply selection へ寄せること、proactive selection が blocker repair / archive reopen の payload まで届くことを検証している
@@ -442,6 +446,7 @@ HACHIKA_LOCAL_AI_MODEL=qwen2.5-7b-instruct
 - `/artifacts` materialize 済み artifact ファイルの一覧を表示
 - UI では `Growth` panel から `state saturation / archive reopen / archived trace share / activity count / idle consolidation / proactive maintenance` に加えて、`generation fallback / overlap / abstract / concrete / echo / focus` を見られる
 - UI では `World` panel から `clock / phase / current place / object state / recent events` を見られる
+- UI の `Embodiment` panel では、現在地と内的actionがアバターの姿勢・視線・呼吸として連続的に表示される
 - `/memory` 直近の記憶を表示
 - `/imprints` 長期記憶を `preference / boundary / relation` 別に表示
 - `/debug` 嗜好、identity、traces、preservation threat、purpose progress、直近の purpose 解決、dominant conflict、`reply/proactive` diagnostics を含む状態概要を表示

@@ -1,6 +1,8 @@
 import { describeArtifactFiles } from "./artifacts.js";
 import type { ArtifactFile } from "./artifacts.js";
 import { HachikaEngine } from "./engine.js";
+import { deriveEmbodimentState } from "./embodiment.js";
+import type { EmbodimentState } from "./embodiment.js";
 import { summarizeLiveGrowthMetrics } from "./growth-metrics.js";
 import type { LiveGrowthMetrics } from "./growth-metrics.js";
 import {
@@ -19,6 +21,7 @@ import type {
 } from "./types.js";
 
 export interface UiStatePayload {
+  embodiment: EmbodimentState;
   summary: {
     state: ReturnType<HachikaEngine["getSnapshot"]>["state"];
     body: ReturnType<HachikaEngine["getSnapshot"]>["body"];
@@ -77,6 +80,7 @@ export function buildUiState(
   const residentLoopHealth = deriveResidentLoopHealth(residentLoop, now);
 
   return {
+    embodiment: deriveEmbodimentState(snapshot, now),
     summary: {
       state: snapshot.state,
       body: snapshot.body,

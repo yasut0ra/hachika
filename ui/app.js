@@ -1,4 +1,10 @@
 const messagesNode = document.getElementById("messages");
+const avatarStageNode = document.getElementById("avatar-stage");
+const avatarActionNode = document.getElementById("avatar-action");
+const avatarSummaryNode = document.getElementById("avatar-summary");
+const avatarPlaceNode = document.getElementById("avatar-place");
+const avatarPostureNode = document.getElementById("avatar-posture");
+const avatarGazeNode = document.getElementById("avatar-gaze");
 const stateNode = document.getElementById("state-metrics");
 const worldNode = document.getElementById("world-panel");
 const identityNode = document.getElementById("identity-panel");
@@ -43,6 +49,7 @@ function render(ui, options = {}) {
   const newAutonomous = syncAutonomousFeed(ui.autonomousFeed, announceAutonomy);
   currentUi = ui;
   connectionNode.textContent = `Local UI online · auto ${Math.round(UI_POLL_INTERVAL_MS / 1000)}s`;
+  renderAvatar(ui.embodiment);
   renderMessages(ui.memories);
   renderState(ui.summary);
   renderWorld(ui.summary.world);
@@ -55,6 +62,44 @@ function render(ui, options = {}) {
   if (newAutonomous.length > 0) {
     setFlash(`hachika* ${newAutonomous.at(-1).text}`);
   }
+}
+
+function renderAvatar(embodiment) {
+  if (!embodiment) {
+    return;
+  }
+
+  avatarStageNode.dataset.place = embodiment.place;
+  avatarStageNode.dataset.phase = embodiment.phase;
+  avatarStageNode.dataset.posture = embodiment.posture;
+  avatarStageNode.dataset.action = embodiment.action;
+  avatarStageNode.dataset.gaze = embodiment.gazeTarget;
+  const postureScale = embodiment.posture === "withdrawn" ? 0.94 : 1;
+  avatarStageNode.style.setProperty(
+    "--avatar-scale",
+    ((0.82 + clamp01(embodiment.proximity) * 0.16) * postureScale).toFixed(3),
+  );
+  avatarStageNode.style.setProperty(
+    "--breath-scale",
+    (1.002 + clamp01(embodiment.breathDepth) * 0.009).toFixed(4),
+  );
+  avatarStageNode.style.setProperty(
+    "--motion-duration",
+    `${(7.2 - clamp01(embodiment.movementTempo) * 3.4).toFixed(2)}s`,
+  );
+  avatarStageNode.style.setProperty(
+    "--avatar-brightness",
+    (0.88 + clamp01(embodiment.expressionWarmth) * 0.18).toFixed(3),
+  );
+  avatarStageNode.style.setProperty(
+    "--avatar-saturation",
+    (0.82 + clamp01(embodiment.alertness) * 0.24).toFixed(3),
+  );
+  avatarActionNode.textContent = embodiment.action;
+  avatarSummaryNode.textContent = embodiment.summary;
+  avatarPlaceNode.textContent = `${embodiment.place} · ${embodiment.phase}`;
+  avatarPostureNode.textContent = embodiment.posture;
+  avatarGazeNode.textContent = `gaze · ${embodiment.gazeTarget}`;
 }
 
 function renderMessages(memories) {
@@ -415,6 +460,10 @@ function formatResidentLoopDetail(status, health) {
 
 function formatNumber(value) {
   return typeof value === "number" ? value.toFixed(2) : String(value);
+}
+
+function clamp01(value) {
+  return Math.min(1, Math.max(0, Number(value) || 0));
 }
 
 function formatDurationMs(ms) {
