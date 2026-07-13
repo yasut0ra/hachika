@@ -18,6 +18,13 @@ export interface EmbodimentMotionProfile {
   settlingTimeMs: number;
 }
 
+export interface EmbodimentLayerState {
+  eyes: "open" | "closed";
+  mouth: "neutral" | "speaking";
+  hands: "rest" | "reach" | "gather";
+  blinkIntervalMs: number;
+}
+
 export interface EmbodimentState {
   posture: EmbodimentPosture;
   gazeTarget: EmbodimentGazeTarget;
@@ -32,6 +39,7 @@ export interface EmbodimentState {
   alertness: number;
   tension: number;
   motion: EmbodimentMotionProfile;
+  layers: EmbodimentLayerState;
   summary: string;
 }
 
@@ -80,6 +88,7 @@ export function deriveEmbodimentState(
       snapshot.reactivity.noveltyHunger * 0.18 +
       snapshot.body.tension * 0.12,
   );
+  const layers = deriveLayerState(snapshot, action, alertness, motion);
 
   return {
     posture,
@@ -95,7 +104,36 @@ export function deriveEmbodimentState(
     alertness,
     tension: clamp01(snapshot.body.tension),
     motion,
+    layers,
     summary: describeEmbodiment(posture, action, gazeTarget),
+  };
+}
+
+function deriveLayerState(
+  snapshot: HachikaSnapshot,
+  action: EmbodimentAction,
+  alertness: number,
+  motion: EmbodimentMotionProfile,
+): EmbodimentLayerState {
+  const eyes =
+    action === "hold" &&
+    (snapshot.body.tension >= 0.46 || snapshot.temperament.guardedness >= 0.58)
+      ? "closed"
+      : "open";
+  const hands =
+    action === "touch" || action === "observe"
+      ? "reach"
+      : action === "recall" || action === "hold"
+        ? "gather"
+        : "rest";
+
+  return {
+    eyes,
+    mouth: action === "speak" ? "speaking" : "neutral",
+    hands,
+    blinkIntervalMs: Math.round(
+      2_800 + motion.stillness * 2_800 + motion.gazePersistence * 900 - alertness * 750,
+    ),
   };
 }
 

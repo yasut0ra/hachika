@@ -39,6 +39,9 @@ let avatarGestureTimer = null;
 let lastAvatarActionId = null;
 let avatarActionFrame = null;
 let avatarActionTimer = null;
+let avatarBlinkTimer = null;
+let avatarBlinkEndTimer = null;
+let currentBlinkIntervalMs = null;
 
 async function request(path, options = {}) {
   const response = await fetch(path, {
@@ -155,6 +158,14 @@ function renderAvatar(embodiment) {
   );
   renderAvatarGaze(embodiment.gazeTarget, embodiment.action, motion);
   renderAvatarGesture(embodiment.action, embodiment.actionId, motion);
+  renderAvatarLayers(
+    embodiment.layers ?? {
+      eyes: "open",
+      mouth: embodiment.action === "speak" ? "speaking" : "neutral",
+      hands: "rest",
+      blinkIntervalMs: 4200,
+    },
+  );
   avatarActionNode.textContent = embodiment.action;
   avatarSummaryNode.textContent = embodiment.summary;
   avatarPlaceNode.textContent = `${embodiment.place} · ${embodiment.phase}`;
@@ -259,6 +270,66 @@ function replayAvatarAction(actionId, motion) {
       avatarActionTimer = null;
     }, 1200);
   });
+}
+
+function renderAvatarLayers(layers) {
+  avatarStageNode.dataset.eyes = layers.eyes;
+  avatarStageNode.dataset.mouth = layers.mouth;
+  avatarStageNode.dataset.hands = layers.hands;
+
+  if (
+    layers.eyes === "closed" ||
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches
+  ) {
+    cancelAvatarBlinkCycle();
+    return;
+  }
+
+  scheduleAvatarBlink(layers.blinkIntervalMs);
+}
+
+function scheduleAvatarBlink(intervalMs) {
+  const nextInterval = Math.min(9000, Math.max(2200, Number(intervalMs) || 4200));
+  if (
+    avatarBlinkTimer !== null &&
+    currentBlinkIntervalMs !== null &&
+    Math.abs(currentBlinkIntervalMs - nextInterval) < 200
+  ) {
+    return;
+  }
+
+  if (avatarBlinkTimer !== null) {
+    window.clearTimeout(avatarBlinkTimer);
+  }
+  currentBlinkIntervalMs = nextInterval;
+  avatarBlinkTimer = window.setTimeout(runAvatarBlink, nextInterval);
+}
+
+function runAvatarBlink() {
+  avatarBlinkTimer = null;
+  if (avatarStageNode.dataset.eyes !== "open") {
+    return;
+  }
+
+  avatarStageNode.classList.add("avatar-blinking");
+  avatarBlinkEndTimer = window.setTimeout(() => {
+    avatarStageNode.classList.remove("avatar-blinking");
+    avatarBlinkEndTimer = null;
+    scheduleAvatarBlink(currentBlinkIntervalMs ?? 4200);
+  }, 170);
+}
+
+function cancelAvatarBlinkCycle() {
+  if (avatarBlinkTimer !== null) {
+    window.clearTimeout(avatarBlinkTimer);
+    avatarBlinkTimer = null;
+  }
+  if (avatarBlinkEndTimer !== null) {
+    window.clearTimeout(avatarBlinkEndTimer);
+    avatarBlinkEndTimer = null;
+  }
+  currentBlinkIntervalMs = null;
+  avatarStageNode.classList.remove("avatar-blinking");
 }
 
 function renderMessages(memories) {

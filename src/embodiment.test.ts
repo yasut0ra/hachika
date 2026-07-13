@@ -75,6 +75,7 @@ test("embodiment exposes a fresh reply as speaking without making it permanent",
   const speaking = deriveEmbodimentState(snapshot, NOW);
   assert.equal(speaking.action, "speak");
   assert.equal(speaking.actionId, "speak:2026-07-13T11:59:55.000Z");
+  assert.equal(speaking.layers.mouth, "speaking");
   assert.equal(
     deriveEmbodimentState(snapshot, new Date("2026-07-13T12:01:00.000Z")).action,
     "rest",
@@ -155,4 +156,32 @@ test("embodiment gives each new action occurrence a stable replay id", () => {
 
   assert.equal(first.actionId, repeatedPoll.actionId);
   assert.notEqual(first.actionId, nextOccurrence.actionId);
+});
+
+test("embodiment separates eye mouth and hand layer intentions", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.body.tension = 0.72;
+  snapshot.temperament.guardedness = 0.7;
+  snapshot.initiative.history.push({
+    kind: "idle_consolidation",
+    autonomyAction: "hold",
+    timestamp: "2026-07-13T11:59:00.000Z",
+    motive: "protect_boundary",
+    topic: null,
+    traceTopic: null,
+    blocker: null,
+    place: "threshold",
+    worldAction: null,
+    maintenanceAction: null,
+    reopened: false,
+    hours: 8,
+    summary: "言葉を抱えた。",
+  });
+
+  const holding = deriveEmbodimentState(snapshot, NOW);
+
+  assert.equal(holding.layers.eyes, "closed");
+  assert.equal(holding.layers.mouth, "neutral");
+  assert.equal(holding.layers.hands, "gather");
+  assert.ok(holding.layers.blinkIntervalMs >= 2_800);
 });

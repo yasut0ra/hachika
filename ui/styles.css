@@ -470,11 +470,10 @@ button.danger {
   animation: avatar-breathe var(--motion-duration) ease-in-out infinite;
 }
 
-.avatar-character {
+.avatar-artwork {
+  position: relative;
   width: 100%;
   height: 100%;
-  object-fit: contain;
-  object-position: 50% 100%;
   filter:
     brightness(var(--avatar-brightness))
     saturate(var(--avatar-saturation))
@@ -485,11 +484,78 @@ button.danger {
     transform var(--settle-duration) cubic-bezier(0.22, 0.72, 0.2, 1);
 }
 
-.avatar-stage[data-posture="open"] .avatar-character {
+.avatar-character,
+.avatar-layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: 50% 100%;
+}
+
+.avatar-layer {
+  z-index: 1;
+  pointer-events: none;
+  opacity: 0;
+  transition:
+    opacity 90ms ease,
+    transform var(--settle-duration) cubic-bezier(0.22, 0.72, 0.2, 1);
+}
+
+.avatar-layer-eyes {
+  clip-path: ellipse(6.4% 2.15% at 49.4% 13.2%);
+}
+
+.avatar-stage[data-eyes="closed"] .avatar-layer-eyes,
+.avatar-stage.avatar-blinking .avatar-layer-eyes {
+  opacity: 1;
+}
+
+.avatar-layer-mouth {
+  clip-path: ellipse(2.25% 1.15% at 49.3% 15.45%);
+}
+
+.avatar-stage[data-mouth="speaking"] .avatar-layer-mouth {
+  opacity: 0.92;
+  animation: avatar-mouth-speak 680ms ease-in-out infinite;
+}
+
+.avatar-layer-hand-left {
+  clip-path: ellipse(2.9% 4.1% at 34.6% 54.1%);
+}
+
+.avatar-layer-hand-right {
+  clip-path: ellipse(2.9% 4.1% at 59.3% 54.1%);
+}
+
+.avatar-stage[data-hands="reach"] .avatar-layer-hand,
+.avatar-stage[data-hands="gather"] .avatar-layer-hand {
+  opacity: 0.22;
+  filter: brightness(1.16) saturate(0.8);
+}
+
+.avatar-stage[data-hands="reach"] .avatar-layer-hand-left {
+  transform: translate(-2px, -3px);
+}
+
+.avatar-stage[data-hands="reach"] .avatar-layer-hand-right {
+  transform: translate(2px, -3px);
+}
+
+.avatar-stage[data-hands="gather"] .avatar-layer-hand-left {
+  transform: translate(2px, 1px);
+}
+
+.avatar-stage[data-hands="gather"] .avatar-layer-hand-right {
+  transform: translate(-2px, 1px);
+}
+
+.avatar-stage[data-posture="open"] .avatar-artwork {
   transform: rotate(-0.2deg) scaleX(1.008);
 }
 
-.avatar-stage[data-posture="guarded"] .avatar-character {
+.avatar-stage[data-posture="guarded"] .avatar-artwork {
   transform: rotate(-1.3deg) scaleX(0.982);
 }
 
@@ -497,7 +563,7 @@ button.danger {
   opacity: 0.84;
 }
 
-.avatar-stage[data-posture="withdrawn"] .avatar-character {
+.avatar-stage[data-posture="withdrawn"] .avatar-artwork {
   transform: rotate(-1.4deg) scaleX(0.955);
   filter:
     brightness(0.86)
@@ -514,7 +580,7 @@ button.danger {
   left: 46%;
 }
 
-.avatar-stage[data-gesture="speak"] .avatar-character {
+.avatar-stage[data-gesture="speak"] .avatar-artwork {
   filter:
     brightness(1.05)
     saturate(var(--avatar-saturation))
@@ -615,6 +681,11 @@ button.danger {
   52% {
     transform: translateY(calc(2px * var(--gesture-amplitude))) scaleX(0.996);
   }
+}
+
+@keyframes avatar-mouth-speak {
+  0%, 100% { opacity: 0.58; }
+  48% { opacity: 0.96; }
 }
 
 .panel-wide {
