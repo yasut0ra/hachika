@@ -630,6 +630,7 @@ export interface PresenceResidue {
   objectId: string | null;
   intensity: number;
   formedAt: string;
+  ageHours: number;
 }
 
 export interface PresenceState {

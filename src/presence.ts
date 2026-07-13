@@ -26,6 +26,21 @@ export interface PresenceActionContext {
   timestamp?: string;
 }
 
+const RESIDUE_HALF_LIFE_HOURS = 18;
+// substrate値は小数3桁で保存される。15秒ごとの微小差を毎回丸めると
+// tick回数依存になるため、経験時間は連続で積み、作用は30分量ずつ確定する。
+const PRESENCE_EFFECT_QUANTUM_HOURS = 0.5;
+const PRESENCE_INTENSITY_HALF_LIFE_HOURS: Record<
+  Exclude<PresenceAction, "rest">,
+  number
+> = {
+  observe: 18,
+  touch: 10,
+  recall: 14,
+  hold: 24,
+  drift: 20,
+};
+
 // presence は診断ログではなく「いま続いている経験」。
 // action を選んだ時点で欲求・身体・worldへ結果を返し、同じ経験に留まった時間も保持する。
 export function materializePresenceAction(
@@ -72,13 +87,70 @@ export function materializePresenceAction(
       ? snapshot.presence.startedAt ?? timestamp
       : timestamp,
     updatedAt: timestamp,
-    dwellHours: sameExperience
-      ? Math.round((snapshot.presence.dwellHours + hours) * 1000) / 1000
-      : Math.round(hours * 1000) / 1000,
+    dwellHours: sameExperience ? snapshot.presence.dwellHours : 0,
     residue,
   };
 
-  applyPresenceConsequences(snapshot, context.action, context.focus, hours);
+  advancePresenceHours(snapshot, hours, timestamp);
+}
+
+// resident tickが「新しい出来事」を捏造せず、すでに始まっている経験を進める。
+// dwellと作用は実時間に比例し、intensityとresidueは指数減衰するため、
+// 8hを一括で進めても15秒tickへ分けても同じ場所へ着く。
+export function advancePresenceHours(
+  snapshot: HachikaSnapshot,
+  hours: number,
+  timestamp?: string,
+): void {
+  if (!Number.isFinite(hours) || hours <= 0) {
+    return;
+  }
+
+  const presence = snapshot.presence;
+  const previousDwellHours = presence.dwellHours;
+  const nextDwellHours =
+    Math.round((previousDwellHours + hours) * 1_000_000) / 1_000_000;
+  const effectSteps = completedPresenceEffectSteps(
+    previousDwellHours,
+    nextDwellHours,
+  );
+  const updatedAt = timestamp ?? advanceTimestamp(presence.updatedAt, hours);
+  const startedAt =
+    presence.startedAt ??
+    (updatedAt ? advanceTimestamp(updatedAt, -hours) : null);
+  let intensity = presence.action === "rest" ? 0 : presence.intensity;
+  if (presence.action !== "rest") {
+    for (let step = 0; step < effectSteps; step += 1) {
+      intensity = clamp01(
+        intensity *
+          Math.pow(
+            0.5,
+            PRESENCE_EFFECT_QUANTUM_HOURS /
+              PRESENCE_INTENSITY_HALF_LIFE_HOURS[presence.action],
+          ),
+      );
+    }
+  }
+
+  snapshot.presence = {
+    ...presence,
+    intensity,
+    startedAt,
+    updatedAt,
+    dwellHours: nextDwellHours,
+    residue: decayResidueHours(presence.residue, hours),
+  };
+
+  if (presence.action !== "rest") {
+    for (let step = 0; step < effectSteps; step += 1) {
+      applyPresenceConsequences(
+        snapshot,
+        presence.action,
+        presence.focus,
+        PRESENCE_EFFECT_QUANTUM_HOURS,
+      );
+    }
+  }
 }
 
 // 会話は不在時間を終わらせるが、その直前までしていたことを消さない。
@@ -112,7 +184,8 @@ function applyPresenceConsequences(
   focus: string | null,
   hours: number,
 ): void {
-  const durationWeight = Math.min(1, Math.max(0.35, hours / 8));
+  // 線形な実時間レート。短いtickにも小さく作用し、窓の分け方では総量が変わらない。
+  const durationWeight = Math.max(0, hours / 8);
 
   switch (action) {
     case "observe":
@@ -271,6 +344,7 @@ function toResidue(
     objectId: presence.objectId,
     intensity: clamp01(presence.intensity * retention),
     formedAt: timestamp,
+    ageHours: 0,
   };
 }
 
@@ -284,4 +358,42 @@ function decayResidue(
 
   const intensity = clamp01(residue.intensity * retention);
   return intensity >= 0.08 ? { ...residue, intensity } : null;
+}
+
+function decayResidueHours(
+  residue: PresenceResidue | null,
+  hours: number,
+): PresenceResidue | null {
+  if (!residue) {
+    return null;
+  }
+
+  const previousAge = residue.ageHours;
+  const nextAge = Math.round((previousAge + Math.max(0, hours)) * 1_000_000) / 1_000_000;
+  const effectSteps = completedPresenceEffectSteps(previousAge, nextAge);
+  let decayed: PresenceResidue | null = residue;
+  for (let step = 0; step < effectSteps && decayed; step += 1) {
+    decayed = decayResidue(
+      decayed,
+      Math.pow(0.5, PRESENCE_EFFECT_QUANTUM_HOURS / RESIDUE_HALF_LIFE_HOURS),
+    );
+  }
+  return decayed ? { ...decayed, ageHours: nextAge } : null;
+}
+
+function completedPresenceEffectSteps(before: number, after: number): number {
+  const completed = (value: number): number =>
+    Math.floor((Math.max(0, value) + 1e-9) / PRESENCE_EFFECT_QUANTUM_HOURS);
+  return completed(after) - completed(before);
+}
+
+function advanceTimestamp(timestamp: string | null, hours: number): string | null {
+  if (!timestamp) {
+    return null;
+  }
+
+  const value = Date.parse(timestamp);
+  return Number.isFinite(value)
+    ? new Date(value + hours * 60 * 60 * 1000).toISOString()
+    : timestamp;
 }

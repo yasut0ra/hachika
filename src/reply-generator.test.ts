@@ -31,6 +31,7 @@ test("buildReplyGenerationPayload surfaces fallback intent and concrete actor cu
     objectId: "shelf",
     intensity: 0.54,
     formedAt: "2026-03-23T11:59:00.000Z",
+    ageHours: 0,
   };
   nextSnapshot.discourse.commitments.push({
     owner: "hachika",

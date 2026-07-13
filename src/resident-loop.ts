@@ -43,11 +43,13 @@ export async function runResidentLoopTick(
       const autonomy = await engine.rewindIdleHoursAsync(idleHours, {
         autonomyDirector: options.autonomyDirector,
         clockMode: options.clockMode ?? "simulated",
+        ...(options.now ? { now: options.now } : {}),
       });
       outwardMode = autonomy.outwardMode;
     } else {
       engine.rewindIdleHours(idleHours, {
         clockMode: options.clockMode ?? "simulated",
+        ...(options.now ? { now: options.now } : {}),
       });
     }
     const afterIdleSnapshot = engine.getSnapshot();

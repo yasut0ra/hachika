@@ -163,7 +163,7 @@ function hydrateSnapshot(raw: unknown): HachikaSnapshot {
   }
 
   return {
-    version: 32,
+    version: 33,
     revision:
       typeof raw.revision === "number" && Number.isFinite(raw.revision)
         ? Math.max(0, Math.round(raw.revision))
@@ -209,7 +209,7 @@ function hydrateSnapshot(raw: unknown): HachikaSnapshot {
 }
 
 export function sanitizeSnapshot(snapshot: HachikaSnapshot): HachikaSnapshot {
-  snapshot.version = 32;
+  snapshot.version = 33;
   snapshot.preferences = sanitizeNumberRecord(snapshot.preferences, clampSigned);
   snapshot.topicCounts = sanitizeNumberRecord(snapshot.topicCounts, (value) =>
     Math.max(0, Math.round(value)),
@@ -632,6 +632,10 @@ function hydratePresenceResidue(raw: unknown): PresenceResidue | null {
       typeof raw.intensity === "number" ? clamp01(raw.intensity) : 0,
     formedAt:
       typeof raw.formedAt === "string" ? raw.formedAt : new Date(0).toISOString(),
+    ageHours:
+      typeof raw.ageHours === "number" && Number.isFinite(raw.ageHours)
+        ? Math.min(720, Math.max(0, raw.ageHours))
+        : 0,
   };
 }
 

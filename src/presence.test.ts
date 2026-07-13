@@ -4,6 +4,7 @@ import test from "node:test";
 import { deriveEmbodimentState } from "./embodiment.js";
 import { sanitizeSnapshot } from "./persistence.js";
 import {
+  advancePresenceHours,
   interruptPresenceForUserTurn,
   materializePresenceAction,
 } from "./presence.js";
@@ -160,4 +161,106 @@ test("embodiment follows an ongoing presence beyond the old five minute activity
     embodiment.actionId,
     "presence:hold:2026-07-14T01:00:00.000Z",
   );
+});
+
+test("short wall-clock ticks advance an ongoing experience without creating a new episode", () => {
+  const snapshot = createInitialSnapshot();
+  materializePresenceAction(snapshot, {
+    action: "observe",
+    hours: 0,
+    focus: "灯り",
+    rationale: "world_pull",
+    place: "threshold",
+    objectId: "lamp",
+    timestamp: "2026-07-14T12:00:00.000Z",
+  });
+  const startedAt = snapshot.presence.startedAt;
+  const worldEvents = snapshot.world.recentEvents.length;
+  const worldUrgeBefore = snapshot.urges.worldUrge;
+
+  advancePresenceHours(snapshot, 0.25, "2026-07-14T12:15:00.000Z");
+
+  assert.equal(snapshot.presence.startedAt, startedAt);
+  assert.equal(snapshot.presence.updatedAt, "2026-07-14T12:15:00.000Z");
+  assert.equal(snapshot.presence.dwellHours, 0.25);
+  assert.equal(snapshot.world.recentEvents.length, worldEvents);
+  assert.equal(snapshot.urges.worldUrge, worldUrgeBefore);
+
+  advancePresenceHours(snapshot, 0.25, "2026-07-14T12:30:00.000Z");
+
+  assert.equal(snapshot.presence.dwellHours, 0.5);
+  assert.equal(snapshot.world.recentEvents.length, worldEvents);
+  assert.ok(snapshot.urges.worldUrge < worldUrgeBefore);
+});
+
+test("presence duration, intensity, and consequences are stable across tick sizes", () => {
+  const bulk = createInitialSnapshot();
+  materializePresenceAction(bulk, {
+    action: "hold",
+    hours: 0,
+    focus: "約束",
+    rationale: "memory_pull",
+    timestamp: "2026-07-14T04:00:00.000Z",
+  });
+  const fine = structuredClone(bulk);
+
+  advancePresenceHours(bulk, 8, "2026-07-14T12:00:00.000Z");
+  for (let index = 1; index <= 32; index += 1) {
+    advancePresenceHours(
+      fine,
+      0.25,
+      new Date(Date.parse("2026-07-14T04:00:00.000Z") + index * 15 * 60 * 1000)
+        .toISOString(),
+    );
+  }
+
+  assert.equal(fine.presence.dwellHours, bulk.presence.dwellHours);
+  assert.equal(fine.presence.intensity, bulk.presence.intensity);
+  assert.equal(fine.urges.silenceNeed, bulk.urges.silenceNeed);
+  assert.ok(
+    Math.abs(fine.dynamics.cognitiveLoad - bulk.dynamics.cognitiveLoad) < 1e-9,
+  );
+});
+
+test("return residue fades by elapsed time instead of resident tick count", () => {
+  const snapshot = createInitialSnapshot();
+  materializePresenceAction(snapshot, {
+    action: "recall",
+    hours: 0,
+    focus: "約束",
+    rationale: "trace_pull",
+    timestamp: "2026-07-14T12:00:00.000Z",
+  });
+  interruptPresenceForUserTurn(snapshot, "2026-07-14T12:05:00.000Z");
+  const residueBefore = snapshot.presence.residue!.intensity;
+
+  advancePresenceHours(snapshot, 9, "2026-07-14T21:05:00.000Z");
+
+  assert.equal(snapshot.presence.action, "rest");
+  assert.equal(snapshot.presence.dwellHours, 9);
+  assert.ok(snapshot.presence.residue!.intensity < residueBefore);
+  assert.ok(
+    Math.abs(snapshot.presence.residue!.intensity - residueBefore * Math.SQRT1_2) <
+      0.001,
+  );
+  assert.equal(snapshot.presence.residue!.ageHours, 9);
+});
+
+test("version 32 residue migrates with a zero elapsed-time baseline", () => {
+  const legacy = createInitialSnapshot();
+  legacy.version = 32;
+  materializePresenceAction(legacy, {
+    action: "observe",
+    hours: 0,
+    focus: "灯り",
+    rationale: "world_pull",
+    timestamp: "2026-07-14T12:00:00.000Z",
+  });
+  interruptPresenceForUserTurn(legacy, "2026-07-14T12:05:00.000Z");
+  delete (legacy.presence.residue as unknown as { ageHours?: number }).ageHours;
+
+  const migrated = sanitizeSnapshot(legacy);
+
+  assert.equal(migrated.version, 33);
+  assert.equal(migrated.presence.residue?.ageHours, 0);
 });

@@ -18,7 +18,7 @@ import { pickFreshText, recentAssistantReplies } from "./expression.js";
 import { buildSelfModel } from "./self-model.js";
 import { aspirationPull, rewindAspirationsHours } from "./aspiration.js";
 import { appendJournalEntry, buildIdleJournalEntry } from "./journal.js";
-import { materializePresenceAction } from "./presence.js";
+import { advancePresenceHours, materializePresenceAction } from "./presence.js";
 import { distillVoiceProfile } from "./voice.js";
 import {
   canAutonomouslySurfaceMemoryThread,
@@ -537,10 +537,15 @@ export interface IdleAutonomyEvaluationPlan {
   nightly: boolean;
 }
 
+interface AutonomyTimeOptions {
+  shiftTimestamps?: boolean;
+  now?: Date;
+}
+
 export function advanceAutonomyHours(
   snapshot: HachikaSnapshot,
   hours: number,
-  options: { shiftTimestamps?: boolean } = {},
+  options: AutonomyTimeOptions = {},
 ): void {
   if (!Number.isFinite(hours) || hours <= 0) {
     return;
@@ -548,6 +553,15 @@ export function advanceAutonomyHours(
 
   let remaining = hours;
   let evaluations = 0;
+  let elapsed = 0;
+  const timestampAt = (elapsedHours: number): string | undefined => {
+    if (!options.now) {
+      return undefined;
+    }
+    return new Date(
+      options.now.getTime() - (hours - elapsedHours) * 60 * 60 * 1000,
+    ).toISOString();
+  };
 
   while (remaining > 1e-6) {
     // 期日を過ぎているなら (前回の呼び出しが評価上限で打ち切られた場合など)、進める前に評価する
@@ -556,7 +570,7 @@ export function advanceAutonomyHours(
 
       if (plan) {
         evaluations += 1;
-        materializeIdleAutonomyEvaluation(snapshot, plan);
+        materializeIdleAutonomyEvaluation(snapshot, plan, timestampAt(elapsed));
       }
     }
 
@@ -566,7 +580,11 @@ export function advanceAutonomyHours(
       remaining,
       untilEval > 1e-6 ? untilEval : IDLE_AUTONOMY_WINDOW_HOURS,
     );
-    rewindSnapshotBaseHours(snapshot, step, options);
+    elapsed += step;
+    rewindSnapshotBaseHours(snapshot, step, {
+      ...options,
+      ...(options.now ? { now: new Date(timestampAt(elapsed)!) } : {}),
+    });
     remaining -= step;
   }
 
@@ -575,7 +593,7 @@ export function advanceAutonomyHours(
     const plan = prepareDueIdleAutonomyEvaluation(snapshot);
 
     if (plan) {
-      materializeIdleAutonomyEvaluation(snapshot, plan);
+      materializeIdleAutonomyEvaluation(snapshot, plan, timestampAt(elapsed));
     }
   }
 }
@@ -636,10 +654,12 @@ export function prepareDueIdleAutonomyEvaluation(
 export function materializeIdleAutonomyEvaluation(
   snapshot: HachikaSnapshot,
   plan: IdleAutonomyEvaluationPlan,
+  timestamp: string = new Date().toISOString(),
 ): void {
   materializeIdleAutonomyAction(snapshot, plan.prepared, {
     consolidateImprints: true,
     consolidationHours: plan.windowHours,
+    timestamp,
   });
 
   if (!plan.nightly) {
@@ -648,7 +668,7 @@ export function materializeIdleAutonomyEvaluation(
 
   snapshot.idleClock.lastConsolidationAbsenceHours = snapshot.idleClock.absenceHours;
   // v3 Phase 4: 声は静かな時間に定着する
-  distillVoiceProfile(snapshot, new Date().toISOString());
+  distillVoiceProfile(snapshot, timestamp);
   // v3: 静かな時間をどう過ごしたかを、自分の言葉で1行残す
   appendJournalEntry(
     snapshot,
@@ -656,7 +676,7 @@ export function materializeIdleAutonomyEvaluation(
       snapshot,
       plan.prepared.action,
       plan.prepared.prioritizedTopic,
-      new Date().toISOString(),
+      timestamp,
     ),
   );
 }
@@ -664,7 +684,7 @@ export function materializeIdleAutonomyEvaluation(
 export function rewindSnapshotHours(
   snapshot: HachikaSnapshot,
   hours: number,
-  options: { shiftTimestamps?: boolean } = {},
+  options: AutonomyTimeOptions = {},
 ): void {
   advanceAutonomyHours(snapshot, hours, options);
 }
@@ -672,7 +692,7 @@ export function rewindSnapshotHours(
 export function rewindSnapshotBaseHours(
   snapshot: HachikaSnapshot,
   hours: number,
-  options: { shiftTimestamps?: boolean } = {},
+  options: AutonomyTimeOptions = {},
 ): void {
   if (!Number.isFinite(hours) || hours <= 0) {
     return;
@@ -723,6 +743,7 @@ export function rewindSnapshotBaseHours(
     };
     rewindDynamicsHours(snapshot, step, absence);
     rewindTemperamentHours(snapshot, step, absence);
+    advancePresenceHours(snapshot, step, options.now?.toISOString());
     stepped += step;
   }
 
@@ -941,7 +962,11 @@ function shouldSuppressPendingCarryOver(
 export function materializeIdleAutonomyAction(
   snapshot: HachikaSnapshot,
   prepared: PreparedIdleAutonomyAction,
-  options: { consolidateImprints?: boolean; consolidationHours?: number } = {},
+  options: {
+    consolidateImprints?: boolean;
+    consolidationHours?: number;
+    timestamp?: string;
+  } = {},
 ): void {
   const consolidateImprints = options.consolidateImprints ?? true;
   // consolidation の重みは「前回の再編成からどれだけ静けさが経ったか」
@@ -949,7 +974,8 @@ export function materializeIdleAutonomyAction(
   const traceWorld = prepared.selected?.trace.worldContext;
   materializePresenceAction(snapshot, {
     action: prepared.action,
-    hours: prepared.hours,
+    // 評価はここから始める行動を選ぶ。経過時間は以後のresident tickが積む。
+    hours: 0,
     focus: prepared.prioritizedTopic,
     rationale: prepared.attentionReasons?.[0] ?? null,
     place: traceWorld?.place ?? snapshot.world.currentPlace,
@@ -959,6 +985,7 @@ export function materializeIdleAutonomyAction(
       (prepared.action === "recall" && traceWorld?.objectId)
         ? "observe"
         : null,
+    ...(options.timestamp ? { timestamp: options.timestamp } : {}),
   });
   if (shouldSuppressPendingCarryOver(prepared.attentionReasons)) {
     snapshot.initiative.pending = null;

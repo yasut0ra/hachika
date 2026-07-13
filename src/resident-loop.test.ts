@@ -639,3 +639,30 @@ test("wall-clock resident ticks advance absence without rewinding timestamps", a
     "2026-04-01T00:00:00.000Z",
   );
 });
+
+test("wall-clock resident ticks continuously advance an existing presence", async () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.presence = {
+    action: "hold",
+    focus: "設計",
+    rationale: "unfinished_work",
+    place: "studio",
+    objectId: "desk",
+    intensity: 0.64,
+    startedAt: "2026-04-01T00:00:00.000Z",
+    updatedAt: "2026-04-01T00:00:00.000Z",
+    dwellHours: 2,
+    residue: null,
+  };
+
+  const result = await runResidentLoopTick(snapshot, {
+    idleHours: 0.25,
+    clockMode: "wall",
+    now: new Date("2026-04-01T00:15:00.000Z"),
+  });
+
+  assert.equal(result.snapshot.presence.action, "hold");
+  assert.equal(result.snapshot.presence.dwellHours, 2.25);
+  assert.equal(result.snapshot.presence.updatedAt, "2026-04-01T00:15:00.000Z");
+  assert.equal(result.internalActivities.length, 0);
+});
