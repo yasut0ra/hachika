@@ -17,6 +17,11 @@ import {
   recentAssistantReplies,
 } from "./expression.js";
 import { summarizeRecentGenerationQuality } from "./generation-quality.js";
+import {
+  deriveMemoryThreads,
+  selectMemoryThread,
+  type MemoryThread,
+} from "./memory-threads.js";
 import type { ProactivePlan, ResponsePlan } from "./response-planner.js";
 import { deriveTraceTendingMode, pickPrimaryArtifactItem, readTraceLifecycle, sortedTraces } from "./traces.js";
 import { describeWorldPlaceJa, summarizeWorldForPrompt } from "./world.js";
@@ -155,6 +160,10 @@ interface CommonGenerationPayload {
     tending: string;
     confidence: number;
   }>;
+  memoryThreads: {
+    active: MemoryThread | null;
+    recent: MemoryThread[];
+  };
   imprints: {
     preference: Array<{
       topic: string;
@@ -421,6 +430,7 @@ export function buildOpenAIChatMessages(
         "If payload.discourse is present, treat it as the current answer obligation and do not drift away from it.",
         "Use behaviorDirective to decide whether this turn must answer directly first, soften boundary posture, or avoid world garnish.",
         "Use replySelection to stay faithful to the exact chosen focus, trace, boundary, and trace priority.",
+        "When memoryThreads.active is present, treat its episodes as one chronological subject: preserve settled facts, continue from the latest episode, and do not present an older episode as the current state.",
         "If turnDirective.target is hachika_name or user_name, make the referent of 名前 explicit instead of drifting into generic relation talk.",
         "If turnDirective.target is hachika_profile or user_profile, keep the wording anchored to that person rather than generic shared work.",
         "When responsePlan.mentionWorld is true, ground the wording in payload.world before reaching for identity or trace language.",
@@ -472,6 +482,7 @@ export function buildOpenAIProactiveMessages(
         "Use composition.intentSummary, composition.mustMention, composition.optionalDetails, composition.avoidTopics, and composition.styleNotes as the main brief.",
         "Use proactivePlan as the primary guide for stance, distance, act, and emphasis.",
         "Use proactiveSelection to stay faithful to the chosen focus topic, maintenance trace, blocker, and reopen state.",
+        "When memoryThreads.active is present, continue the thread from its latest episode. Do not repeat an earlier episode as a new discovery or ask again for a fact already settled in memoryThreads.active.facts.",
         "If payload.world helps situate the utterance, you may lightly lean on it without inventing new world changes.",
         "Use expression.perspective.preferredAngle as the main expressive lens.",
         "You may lean on one nearby option from expression.perspective.options to vary emphasis, but do not contradict the local plan.",
@@ -494,6 +505,7 @@ function buildCommonGenerationPayload(
   perspective: CommonGenerationPayload["expression"]["perspective"],
   expressionSnapshot: HachikaSnapshot = snapshot,
 ): CommonGenerationPayload {
+  const activeMemoryThread = selectMemoryThread(snapshot, [currentTopic]);
   return {
     currentTopic,
     expression: {
@@ -545,6 +557,10 @@ function buildCommonGenerationPayload(
       tending: deriveTraceTendingMode(snapshot, trace),
       confidence: trace.work.confidence,
     })),
+    memoryThreads: {
+      active: activeMemoryThread,
+      recent: deriveMemoryThreads(snapshot).slice(0, 2),
+    },
     imprints: {
       preference: sortedPreferenceImprints(snapshot, 3).map((imprint) => ({
         topic: imprint.topic,
@@ -586,6 +602,10 @@ function buildReplyCompositionBrief(
   context: ReplyGenerationContext,
   currentTopic: string | null,
 ): GenerationCompositionBrief {
+  const memoryThread = selectMemoryThread(context.nextSnapshot, [
+    currentTopic,
+    context.replySelection.relevantTraceTopic,
+  ]);
   const discourseTarget = context.discourse?.target ?? context.replySelection.discourseTarget ?? null;
   const mustMention = uniqueNonEmpty([
     currentTopic,
@@ -627,6 +647,9 @@ function buildReplyCompositionBrief(
     context.responsePlan.mentionTrace
       ? readTraceNextStep(context.nextSnapshot, context.replySelection.relevantTraceTopic)
       : null,
+    context.responsePlan.mentionTrace
+      ? buildMemoryThreadContinuationCue(memoryThread)
+      : null,
     context.responsePlan.mentionWorld
       ? currentWorldObjectState(context.nextSnapshot)
       : null,
@@ -635,8 +658,18 @@ function buildReplyCompositionBrief(
   ]);
 
   const avoidTopics = uniqueNonEmpty([
-    ...collectUnrelatedTopics(currentTopic, Object.keys(context.nextSnapshot.traces), 2),
-    ...collectUnrelatedTopics(currentTopic, context.nextSnapshot.identity.anchors, 2),
+    ...collectUnrelatedTopics(
+      currentTopic,
+      Object.keys(context.nextSnapshot.traces),
+      2,
+      memoryThread?.traceTopics,
+    ),
+    ...collectUnrelatedTopics(
+      currentTopic,
+      context.nextSnapshot.identity.anchors,
+      2,
+      memoryThread?.traceTopics,
+    ),
   ]).slice(0, 4);
 
   return {
@@ -653,6 +686,10 @@ function buildProactiveCompositionBrief(
   context: ProactiveGenerationContext,
   currentTopic: string | null,
 ): GenerationCompositionBrief {
+  const memoryThread = selectMemoryThread(context.nextSnapshot, [
+    currentTopic,
+    context.proactiveSelection.maintenanceTraceTopic,
+  ]);
   const mustMention = uniqueNonEmpty([
     currentTopic,
     context.proactiveSelection.maintenanceTraceTopic,
@@ -670,13 +707,24 @@ function buildProactiveCompositionBrief(
     readPrimaryTraceDetail(context.nextSnapshot, context.proactiveSelection.maintenanceTraceTopic),
     readTraceBlocker(context.nextSnapshot, context.proactiveSelection.maintenanceTraceTopic),
     readTraceNextStep(context.nextSnapshot, context.proactiveSelection.maintenanceTraceTopic),
+    buildMemoryThreadContinuationCue(memoryThread),
     context.neglectLevel > 0.24 ? "切れたままにはしたくない" : null,
     context.pending.place ? currentWorldObjectState(context.nextSnapshot) : null,
   ]);
 
   const avoidTopics = uniqueNonEmpty([
-    ...collectUnrelatedTopics(currentTopic, Object.keys(context.nextSnapshot.traces), 2),
-    ...collectUnrelatedTopics(currentTopic, context.nextSnapshot.identity.anchors, 2),
+    ...collectUnrelatedTopics(
+      currentTopic,
+      Object.keys(context.nextSnapshot.traces),
+      2,
+      memoryThread?.traceTopics,
+    ),
+    ...collectUnrelatedTopics(
+      currentTopic,
+      context.nextSnapshot.identity.anchors,
+      2,
+      memoryThread?.traceTopics,
+    ),
   ]).slice(0, 4);
 
   return {
@@ -1070,10 +1118,33 @@ function collectUnrelatedTopics(
   currentTopic: string | null,
   topics: readonly string[],
   limit: number,
+  relatedTopics: readonly string[] = [],
 ): string[] {
+  const related = new Set(relatedTopics);
   return topics
-    .filter((topic) => topic && (!currentTopic || !topicsLooselyMatch(currentTopic, topic)))
+    .filter(
+      (topic) =>
+        topic &&
+        !related.has(topic) &&
+        (!currentTopic || !topicsLooselyMatch(currentTopic, topic)),
+    )
     .slice(0, limit);
+}
+
+function buildMemoryThreadContinuationCue(thread: MemoryThread | null): string | null {
+  if (!thread || thread.traceTopics.length < 2) {
+    return null;
+  }
+
+  const latest = thread.episodes.at(-1);
+  const priorFact = thread.facts.find((fact) => fact !== latest?.detail) ?? null;
+  const continuation = latest?.nextStep ?? thread.nextSteps.at(-1) ?? latest?.detail ?? null;
+  const parts = [
+    `同じ「${thread.title}」の話として${thread.traceTopics.length}件を接続`,
+    priorFact ? `既知: ${priorFact}` : null,
+    continuation ? `現在地: ${continuation}` : null,
+  ].filter((part): part is string => part !== null);
+  return parts.join(" / ");
 }
 
 function uniqueNonEmpty(values: Array<string | null | undefined>): string[] {

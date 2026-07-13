@@ -76,6 +76,30 @@ test("buildProactiveDirectorPayload keeps candidate topics grounded", () => {
     turnsActive: 2,
   };
   nextSnapshot.lastInteractionAt = "2026-03-29T01:00:00.000Z";
+  nextSnapshot.traces["仕様の境界"] = {
+    topic: "仕様の境界",
+    kind: "spec_fragment",
+    status: "active",
+    lastAction: "continued",
+    summary: "仕様の境界は責務分離の途中にある。",
+    sourceMotive: "continue_shared_work",
+    artifact: {
+      memo: ["仕様の境界を整理する"],
+      fragments: ["責務を分離する"],
+      decisions: [],
+      nextSteps: ["公開APIを決める"],
+    },
+    work: {
+      focus: "責務分離",
+      confidence: 0.6,
+      blockers: ["責務分離が曖昧"],
+      staleAt: null,
+    },
+    salience: 0.7,
+    mentions: 2,
+    createdAt: "2026-03-29T00:00:00.000Z",
+    lastUpdatedAt: "2026-03-29T01:00:00.000Z",
+  };
   nextSnapshot.initiative.history.push({
     kind: "proactive_emission",
     autonomyAction: "speak",
@@ -129,6 +153,8 @@ test("buildProactiveDirectorPayload keeps candidate topics grounded", () => {
   assert.equal(payload.recentOutward.length, 1);
   assert.equal(payload.recentOutward[0]?.motive, "continue_shared_work");
   assert.equal(payload.userInteractedSinceLastOutward, false);
+  assert.equal(payload.memoryThread?.traceTopics[0], "仕様の境界");
+  assert.deepEqual(payload.memoryThread?.nextSteps, ["公開APIを決める"]);
 });
 
 test("normalizeProactiveDirective can parse semantic-director v2 proactive contract", () => {

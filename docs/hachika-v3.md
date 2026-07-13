@@ -146,6 +146,11 @@ v2 の境界をそのまま保つ。
 - 完了条件は達成: 分割不変・累積閾値・tick と一括の consolidation 同値・
   turn による absence リセットを `substrate-invariants.test.ts` で恒久固定
 
+Phase 0 の上には memory threading を置いた。複数 topic に割れた trace を
+共起・内容参照・特徴語から一つの chronology として派生させ、reply と
+proactive の両方が「古い断片の反復」ではなく「最新 episode の続き」を参照する。
+保存 schema は増やさず、既存 snapshot から毎回再構成する。
+
 ### Phase 1: constitution(体質)— 実装済み (2026-07-12)
 
 - `INITIAL_STATE / INITIAL_BODY / INITIAL_URGES / INITIAL_ATTACHMENT` は birth 値となり、

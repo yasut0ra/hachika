@@ -18,6 +18,7 @@ import {
 } from "./llm-client.js";
 import { resolveOpenAICompatibleConfig } from "./llm-env.js";
 import { summarizeWorldForPrompt } from "./world.js";
+import { selectMemoryThread, type MemoryThread } from "./memory-threads.js";
 import type {
   HachikaSnapshot,
   PendingInitiative,
@@ -138,6 +139,7 @@ export interface ProactiveDirectorPayload {
     blocker: string | null;
   }>;
   userInteractedSinceLastOutward: boolean;
+  memoryThread: MemoryThread | null;
 }
 
 export interface ProactiveDirectorResult {
@@ -308,6 +310,12 @@ export function buildProactiveDirectorPayload(
         context.nextSnapshot.lastInteractionAt,
         lastOutward.timestamp,
       ),
+    memoryThread: selectMemoryThread(context.nextSnapshot, [
+      context.pending.topic,
+      context.pending.stateTopic,
+      context.selection.focusTopic,
+      context.selection.maintenanceTraceTopic,
+    ]),
   };
 }
 
@@ -338,6 +346,7 @@ export function buildOpenAIProactiveDirectorMessages(
         "topics is an array of semantic topic objects: { topic, source, durability, confidence }.",
         "pending.stateTopic is the current durable topic candidate; if it is null, prefer keeping the move ephemeral unless there is strong grounded support to emit.",
         "Suppress weak or repetitive proactive moves. If recentOutward already contains the same motive and the user has not interacted since, suppress it unless the blocker materially changed.",
+        "If memoryThread is present, judge the candidate against the whole chronology. Do not revive an older episode as if it were current; emit only when the latest episode, blocker, or next step gives a real continuation.",
         "Return JSON only.",
         JSON.stringify(payload, null, 2),
       ].join("\n\n"),

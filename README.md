@@ -300,6 +300,10 @@ Hachika は、単に有用なだけでなく、
 - 同じ consolidation pass は recent memories の recurring topic も見直し、preference imprint / relation imprint / identity state を薄く再配置するため、会話していない間にも「何が残りやすいか」が少し変わる
 - 反対に、触れられていない弱い preference imprint は idle 中に少しずつ減衰し、long-tail の古い topic が永遠に前景を占有し続けにくくしている
 - older memory tail も idle 中に圧縮され、最近の tail と topic 代表に加えて repeated topic は `consolidated memory` として束ねて残すため、長い履歴の要点を失いにくいまま prompt 面の雑音を減らせる
+- related trace は `memory thread` として実行時に再構成される。topic の近似だけでなく、artifact 内の共通語・相互参照・memory 内の共起を使って、「選考」「参加決定」「仕事内容」「次の課題」のような別々の trace を一つの時系列へ束ねる
+  - thread は既存 snapshot から派生するため、新しい保存状態を増やさず、過去データにもそのまま適用できる
+  - reply / proactive generation は active thread の `facts / episodes / blockers / nextSteps` を受け取り、確定済みの事実を再質問したり、古い episode を現在地として言い直したりせず、最新の続きから話せる
+  - trace ごとの自動生成文 (`次に触れられる形へ整える` など) は thread の continuation から除外される
 - relation imprint も idle 中に continuity / attention / shared_work の相対重みを少し組み替え、身体状態と temperament に合わない stale な closeness は前景から退きやすくなった
 - boundary imprint も静かな時間では少しずつ和らぎ、ただし absence 寄りの neglect や強い guardedness を伴う境界はそれより長く残りやすい
 - identity anchor は category の固定順ではなく traces / imprints / recent memories / previous anchors をまとめて score 化して選ばれ、最近の recurring topic が stale な anchor を追い越しやすくなった

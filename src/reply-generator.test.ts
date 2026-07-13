@@ -56,6 +56,20 @@ test("buildReplyGenerationPayload surfaces fallback intent and concrete actor cu
     createdAt: "2026-03-19T12:00:00.000Z",
     lastUpdatedAt: "2026-03-19T12:00:00.000Z",
   };
+  nextSnapshot.traces.APIアーキテクチャ = {
+    ...structuredClone(nextSnapshot.traces.設計),
+    topic: "APIアーキテクチャ",
+    summary: "APIアーキテクチャは設計の責務分離から続いている。",
+    artifact: {
+      memo: ["設計ではAPIの責務を分ける"],
+      fragments: ["API境界を定義する"],
+      decisions: [],
+      nextSteps: ["公開インターフェースを決める"],
+    },
+    salience: 0.3,
+    createdAt: "2026-03-19T12:05:00.000Z",
+    lastUpdatedAt: "2026-03-19T12:05:00.000Z",
+  };
   nextSnapshot.preferenceImprints.設計 = {
     topic: "設計",
     salience: 0.62,
@@ -205,6 +219,12 @@ test("buildReplyGenerationPayload surfaces fallback intent and concrete actor cu
   assert.equal(payload.traces[0]?.topic, "設計");
   assert.equal(payload.traces[0]?.tending, "deepen");
   assert.ok(payload.traces[0]?.blockers.includes("責務が未定"));
+  assert.ok(payload.memoryThreads.active?.traceTopics.includes("設計"));
+  assert.ok(payload.memoryThreads.active?.traceTopics.includes("APIアーキテクチャ"));
+  assert.ok(
+    payload.composition.optionalDetails.some((detail) => detail.includes("件を接続")),
+  );
+  assert.equal(payload.composition.avoidTopics.includes("APIアーキテクチャ"), false);
   assert.equal(payload.imprints.preference[0]?.topic, "設計");
   assert.equal(payload.recentMemories[0]?.text, "設計をもう一段詰めたい。");
   assert.equal(payload.world.currentPlace, nextSnapshot.world.currentPlace);
