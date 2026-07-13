@@ -345,8 +345,7 @@ function deriveThreadFrontier(
 ): MemoryThreadFrontier {
   if (
     thread.phase === "parked" ||
-    thread.phase === "closed" ||
-    thread.phase === "resolved"
+    thread.phase === "closed"
   ) {
     return settledFrontier(thread.title);
   }
@@ -386,7 +385,10 @@ function deriveThreadFrontier(
     return createFrontier(thread, "next_step", nextStep, latestEpisode?.traceTopic ?? null);
   }
 
-  if (latestEpisode && latestEpisode.status !== "resolved") {
+  if (
+    latestEpisode &&
+    (latestEpisode.status !== "resolved" || latestEpisode.lifecycle === "archived")
+  ) {
     return createFrontier(
       thread,
       "new_episode",

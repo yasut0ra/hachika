@@ -79,6 +79,8 @@ frontierは次の優先順位で決まる。
 5. `new_episode`: まだ外へ出していない最新episode
 6. `settled`: 新しく外へ出す未完了がない
 
+解決済みでarchiveされたepisodeも、意図的な回想の入口として一度だけ`new_episode`になれる。そこでproactive発話したfingerprintをcheckpointするため、内容が進まない限り同じ回想は繰り返さない。
+
 frontierは`phase / kind / sourceTopic / summary`から決定的なfingerprintを作る。Hachikaがそのfrontierについてproactive発話した時点で、fingerprintを`InitiativeActivity.frontierKey`へcheckpointする。
 
 同じthreadの現在fingerprintと最後に発話したfingerprintが一致する場合、次を抑制する。
