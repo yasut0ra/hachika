@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   canAutonomouslySurfaceMemoryThread,
   deriveMemoryThreads,
+  hasNewMemoryThreadFrontier,
   recordMemoryThreadLifecycleFromTurn,
   selectMemoryThread,
 } from "./memory-threads.js";
@@ -243,4 +244,64 @@ test("legacy trace text can infer closure followed by a later user reopen", () =
   const thread = deriveMemoryThreads(snapshot)[0];
   assert.equal(thread?.phase, "reopened");
   assert.match(thread?.lastLifecycleEvent?.reason ?? "", /一区切り/);
+});
+
+test("episode frontier prioritizes questions, blockers, and concrete next steps", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.traces.設計 = trace("設計", "2026-07-01T00:00:00.000Z", {
+    memo: ["APIの境界を分ける"],
+    nextSteps: ["公開インターフェースを決める"],
+  });
+
+  assert.equal(deriveMemoryThreads(snapshot)[0]?.frontier.kind, "next_step");
+  assert.equal(
+    deriveMemoryThreads(snapshot)[0]?.frontier.summary,
+    "公開インターフェースを決める",
+  );
+
+  snapshot.traces.設計!.work.blockers = ["責務分離が曖昧"];
+  assert.equal(deriveMemoryThreads(snapshot)[0]?.frontier.kind, "blocked");
+
+  snapshot.discourse.openQuestions.push({
+    target: "work_topic",
+    text: "設計はどのAPIから分ける？",
+    askedAt: "2026-07-01T01:00:00.000Z",
+    status: "open",
+    resolvedAt: null,
+  });
+  assert.equal(deriveMemoryThreads(snapshot)[0]?.frontier.kind, "open_question");
+});
+
+test("frontier checkpoint suppresses repeats until thread content changes", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.traces.設計 = trace("設計", "2026-07-01T00:00:00.000Z", {
+    nextSteps: ["公開インターフェースを決める"],
+  });
+  const first = deriveMemoryThreads(snapshot)[0];
+  assert.ok(first);
+  assert.equal(hasNewMemoryThreadFrontier(snapshot, "設計"), true);
+
+  snapshot.initiative.history.push({
+    kind: "proactive_emission",
+    autonomyAction: "speak",
+    timestamp: "2026-07-01T01:00:00.000Z",
+    motive: "continue_shared_work",
+    topic: "設計",
+    traceTopic: "設計",
+    blocker: null,
+    place: "studio",
+    worldAction: null,
+    maintenanceAction: null,
+    reopened: false,
+    frontierKey: first.frontier.key,
+    hours: null,
+    summary: "設計の次の一歩へ触れた。",
+  });
+
+  assert.equal(hasNewMemoryThreadFrontier(snapshot, "設計"), false);
+
+  snapshot.traces.設計!.artifact.nextSteps = ["API schemaを固定する"];
+  snapshot.traces.設計!.lastUpdatedAt = "2026-07-01T02:00:00.000Z";
+  assert.equal(hasNewMemoryThreadFrontier(snapshot, "設計"), true);
+  assert.notEqual(deriveMemoryThreads(snapshot)[0]?.frontier.key, first.frontier.key);
 });

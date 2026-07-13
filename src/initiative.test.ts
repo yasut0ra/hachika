@@ -452,3 +452,65 @@ test("parked memory thread cannot become an autonomous outward emission", () => 
 
   assert.equal(prepared, null);
 });
+
+test("a surfaced episode frontier stays silent until its content advances", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.lastInteractionAt = "2026-07-01T00:00:00.000Z";
+  snapshot.traces.設計 = {
+    topic: "設計",
+    kind: "spec_fragment",
+    status: "active",
+    lastAction: "expanded",
+    summary: "設計の責務を分けている。",
+    sourceMotive: "continue_shared_work",
+    artifact: {
+      memo: ["APIの責務を分ける"],
+      fragments: ["境界を定義する"],
+      decisions: [],
+      nextSteps: ["公開インターフェースを決める"],
+    },
+    work: { focus: "API境界", confidence: 0.6, blockers: [], staleAt: null },
+    salience: 0.8,
+    mentions: 2,
+    createdAt: "2026-07-01T00:00:00.000Z",
+    lastUpdatedAt: "2026-07-01T00:00:00.000Z",
+  };
+  snapshot.initiative.pending = {
+    kind: "resume_topic",
+    reason: "work_claim",
+    motive: "continue_shared_work",
+    topic: "設計",
+    stateTopic: "設計",
+    blocker: null,
+    concern: null,
+    createdAt: "2026-07-01T00:00:00.000Z",
+    readyAfterHours: 0,
+  };
+
+  const first = emitInitiative(snapshot, {
+    force: true,
+    now: new Date("2026-07-01T01:00:00.000Z"),
+  });
+  assert.notEqual(first, null);
+  assert.match(snapshot.initiative.history.at(-1)?.frontierKey ?? "", /^frontier:/);
+
+  snapshot.lastInteractionAt = "2026-07-01T02:00:00.000Z";
+  snapshot.initiative.pending = {
+    kind: "resume_topic",
+    reason: "work_claim",
+    motive: "continue_shared_work",
+    topic: "設計",
+    stateTopic: "設計",
+    blocker: null,
+    concern: null,
+    createdAt: "2026-07-01T02:00:00.000Z",
+    readyAfterHours: 0,
+  };
+
+  assert.equal(
+    prepareInitiativeEmission(snapshot, {
+      now: new Date("2026-07-01T08:00:00.000Z"),
+    }),
+    null,
+  );
+});

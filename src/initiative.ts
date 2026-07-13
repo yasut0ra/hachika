@@ -18,7 +18,11 @@ import { buildSelfModel } from "./self-model.js";
 import { aspirationPull, rewindAspirationsHours } from "./aspiration.js";
 import { appendJournalEntry, buildIdleJournalEntry } from "./journal.js";
 import { distillVoiceProfile } from "./voice.js";
-import { canAutonomouslySurfaceMemoryThread } from "./memory-threads.js";
+import {
+  canAutonomouslySurfaceMemoryThread,
+  hasNewMemoryThreadFrontier,
+  selectMemoryThread,
+} from "./memory-threads.js";
 import { clamp01, clampSigned } from "./state.js";
 import { rewindTemperamentHours } from "./temperament.js";
 import {
@@ -300,6 +304,10 @@ export function prepareInitiativeEmission(
   const pending =
     pendingCandidate &&
     canAutonomouslySurfaceMemoryThread(
+      snapshot,
+      pendingCandidate.stateTopic ?? pendingCandidate.topic,
+    ) &&
+    hasNewMemoryThreadFrontier(
       snapshot,
       pendingCandidate.stateTopic ?? pendingCandidate.topic,
     )
@@ -2090,6 +2098,10 @@ function finalizeEmission(
     worldAction: pending.worldAction ?? null,
     maintenanceAction: maintenance?.action ?? null,
     reopened: wasReopenedByMaintenance(maintenance),
+    frontierKey:
+      selectMemoryThread(snapshot, [
+        maintenance?.trace.topic ?? pending.stateTopic ?? pending.topic,
+      ])?.frontier.key ?? null,
     hours: null,
     summary: buildProactiveActivitySummary(snapshot, pending, maintenance),
   });
@@ -2176,6 +2188,7 @@ function finalizeOutwardAction(
     worldAction: pending.worldAction ?? outwardAction,
     maintenanceAction: maintenance?.action ?? null,
     reopened: wasReopenedByMaintenance(maintenance),
+    frontierKey: null,
     hours: null,
     summary: buildOutwardActionSummary(snapshot, pending, maintenance, outwardAction),
   });
@@ -2262,6 +2275,7 @@ function recordInitiativeActivity(
     (last.place ?? null) === (activity.place ?? null) &&
     (last.worldAction ?? null) === (activity.worldAction ?? null) &&
     last.maintenanceAction === activity.maintenanceAction &&
+    (last.frontierKey ?? null) === (activity.frontierKey ?? null) &&
     last.summary === activity.summary
   ) {
     snapshot.initiative.history = [
@@ -2271,6 +2285,7 @@ function recordInitiativeActivity(
         timestamp: activity.timestamp,
         motive: activity.motive ?? last.motive,
         reopened: last.reopened || activity.reopened,
+        frontierKey: activity.frontierKey ?? last.frontierKey ?? null,
         hours: activity.hours ?? last.hours,
         autonomyAction: activity.autonomyAction ?? last.autonomyAction,
       },
@@ -3756,7 +3771,7 @@ function selectInitiativeBlocker(
   const blocked = sortedTraces(snapshot, 24)
     .filter(
       (trace) =>
-        canAutonomouslySurfaceMemoryThread(snapshot, trace.topic) &&
+        !shouldSuppressInitiativeTopic(snapshot, trace.topic) &&
         trace.status !== "resolved" &&
         trace.work.blockers.length > 0 &&
         trace.work.confidence < 0.82,
@@ -3792,7 +3807,7 @@ function sortedArchivedInitiativeTraces(
     .filter(
       (trace) =>
         readTraceLifecycle(trace).phase === "archived" &&
-        canAutonomouslySurfaceMemoryThread(snapshot, trace.topic),
+        !shouldSuppressInitiativeTopic(snapshot, trace.topic),
     )
     .sort((left, right) => right.salience - left.salience)
     .slice(0, limit);
@@ -3942,6 +3957,10 @@ function shouldSuppressInitiativeTopic(
   topic: string | null | undefined,
 ): boolean {
   if (topic && !canAutonomouslySurfaceMemoryThread(snapshot, topic)) {
+    return true;
+  }
+
+  if (topic && !hasNewMemoryThreadFrontier(snapshot, topic)) {
     return true;
   }
 

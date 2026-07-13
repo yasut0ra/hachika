@@ -18,11 +18,25 @@ export interface MemoryThreadEpisode {
   updatedAt: string;
 }
 
+export interface MemoryThreadFrontier {
+  kind:
+    | "open_question"
+    | "open_request"
+    | "blocked"
+    | "next_step"
+    | "new_episode"
+    | "settled";
+  key: string;
+  summary: string;
+  sourceTopic: string | null;
+}
+
 export interface MemoryThread {
   id: string;
   title: string;
   phase: "active" | "parked" | "closed" | "reopened" | "resolved";
   lastLifecycleEvent: MemoryThreadLifecycleEvent | null;
+  frontier: MemoryThreadFrontier;
   traceTopics: string[];
   startedAt: string;
   lastUpdatedAt: string;
@@ -173,6 +187,49 @@ export function canAutonomouslySurfaceMemoryThread(
   return thread === null || (thread.phase !== "parked" && thread.phase !== "closed");
 }
 
+export function hasNewMemoryThreadFrontier(
+  snapshot: HachikaSnapshot,
+  topic: string | null | undefined,
+): boolean {
+  if (!topic) {
+    return true;
+  }
+  const thread = selectMemoryThread(snapshot, [topic]);
+  if (!thread) {
+    return true;
+  }
+  if (
+    thread.phase === "parked" ||
+    thread.phase === "closed" ||
+    thread.frontier.kind === "settled"
+  ) {
+    return false;
+  }
+
+  const latestSurface = [...snapshot.initiative.history]
+    .reverse()
+    .find(
+      (activity) =>
+        activity.kind === "proactive_emission" &&
+        activity.autonomyAction === "speak" &&
+        [activity.traceTopic, activity.topic].some(
+          (activityTopic) =>
+            activityTopic !== null && thread.traceTopics.includes(activityTopic),
+        ),
+    );
+
+  if (!latestSurface) {
+    return true;
+  }
+  if (latestSurface.frontierKey) {
+    return latestSurface.frontierKey !== thread.frontier.key;
+  }
+
+  // v26以前のactivityにはfingerprintがない。同じthreadが最後に更新された後で
+  // すでに発話していれば、その時点のfrontierは一度出したものとして移行する。
+  return latestSurface.timestamp < thread.lastUpdatedAt;
+}
+
 export function selectMemoryThread(
   snapshot: HachikaSnapshot,
   topics: readonly (string | null | undefined)[],
@@ -264,11 +321,12 @@ function buildMemoryThread(
   );
   const lifecycleEvent = resolveThreadLifecycleEvent(snapshot, chronological, title);
 
-  return {
+  const thread: MemoryThread = {
     id: `thread:${title}`,
     title,
     phase: lifecycleEvent?.phase ?? (allResolved ? "resolved" : "active"),
     lastLifecycleEvent: lifecycleEvent,
+    frontier: settledFrontier(title),
     traceTopics: chronological.map((trace) => trace.topic),
     startedAt: chronological[0]!.createdAt,
     lastUpdatedAt: chronological.at(-1)!.lastUpdatedAt,
@@ -276,6 +334,91 @@ function buildMemoryThread(
     blockers,
     nextSteps,
     episodes: episodes.slice(-6),
+  };
+  thread.frontier = deriveThreadFrontier(snapshot, thread);
+  return thread;
+}
+
+function deriveThreadFrontier(
+  snapshot: HachikaSnapshot,
+  thread: MemoryThread,
+): MemoryThreadFrontier {
+  if (
+    thread.phase === "parked" ||
+    thread.phase === "closed" ||
+    thread.phase === "resolved"
+  ) {
+    return settledFrontier(thread.title);
+  }
+
+  const openQuestion = [...snapshot.discourse.openQuestions]
+    .reverse()
+    .find(
+      (question) =>
+        question.status === "open" &&
+        question.target === "work_topic" &&
+        textMentionsThread(thread, question.text),
+    );
+  if (openQuestion) {
+    return createFrontier(thread, "open_question", openQuestion.text, thread.episodes.at(-1)?.traceTopic ?? null);
+  }
+
+  const openRequest = [...snapshot.discourse.openRequests]
+    .reverse()
+    .find(
+      (request) =>
+        request.status === "open" &&
+        request.kind === "task" &&
+        textMentionsThread(thread, request.text),
+    );
+  if (openRequest) {
+    return createFrontier(thread, "open_request", openRequest.text, thread.episodes.at(-1)?.traceTopic ?? null);
+  }
+
+  const latestEpisode = thread.episodes.at(-1) ?? null;
+  const blocker = latestEpisode?.blocker ?? thread.blockers.at(-1) ?? null;
+  if (blocker) {
+    return createFrontier(thread, "blocked", blocker, latestEpisode?.traceTopic ?? null);
+  }
+
+  const nextStep = latestEpisode?.nextStep ?? thread.nextSteps.at(-1) ?? null;
+  if (nextStep) {
+    return createFrontier(thread, "next_step", nextStep, latestEpisode?.traceTopic ?? null);
+  }
+
+  if (latestEpisode && latestEpisode.status !== "resolved") {
+    return createFrontier(
+      thread,
+      "new_episode",
+      latestEpisode.detail,
+      latestEpisode.traceTopic,
+    );
+  }
+
+  return settledFrontier(thread.title);
+}
+
+function createFrontier(
+  thread: MemoryThread,
+  kind: MemoryThreadFrontier["kind"],
+  summary: string,
+  sourceTopic: string | null,
+): MemoryThreadFrontier {
+  const material = [thread.phase, kind, sourceTopic ?? "", summary.normalize("NFKC").trim()].join("\u0000");
+  return {
+    kind,
+    key: `frontier:${hashText(material)}`,
+    summary,
+    sourceTopic,
+  };
+}
+
+function settledFrontier(title: string): MemoryThreadFrontier {
+  return {
+    kind: "settled",
+    key: `frontier:${hashText(`settled\u0000${title}`)}`,
+    summary: "新しく外へ出す未完了はない",
+    sourceTopic: null,
   };
 }
 
@@ -320,6 +463,7 @@ function inferLegacyThreadLifecycle(
     title,
     phase: "active",
     lastLifecycleEvent: null,
+    frontier: settledFrontier(title),
     traceTopics: traces.map((trace) => trace.topic),
     startedAt: traces[0]!.createdAt,
     lastUpdatedAt: traces.at(-1)!.lastUpdatedAt,
@@ -370,6 +514,15 @@ function inferLegacyThreadLifecycle(
     }
   }
   return current;
+}
+
+function hashText(value: string): string {
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(36);
 }
 
 function classifyThreadTerminalTurn(text: string): "parked" | "closed" | null {

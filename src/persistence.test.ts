@@ -550,7 +550,7 @@ test("loadSnapshot seeds latent dynamics from older visible-only snapshots", asy
 
     const loaded = await loadSnapshot(filePath);
 
-    assert.equal(loaded.version, 26);
+    assert.equal(loaded.version, 27);
     assert.equal(loaded.revision, 3);
     assert.equal(loaded.discourse.hachikaName?.value, "ハチカ");
     assert.ok(
@@ -618,8 +618,23 @@ test("commitSnapshot rejects stale revisions and keeps the newer snapshot", asyn
       timestamp: "2026-07-01T00:00:00.000Z",
       reason: "設計の話はここで終わりにする",
     });
+    initial.initiative.history.push({
+      kind: "proactive_emission",
+      autonomyAction: "speak",
+      timestamp: "2026-07-01T00:30:00.000Z",
+      motive: "continue_shared_work",
+      topic: "設計",
+      traceTopic: "設計",
+      blocker: null,
+      maintenanceAction: null,
+      reopened: false,
+      frontierKey: "frontier:abc123",
+      hours: null,
+      summary: "設計のfrontierへ触れた",
+    });
     const saved = await saveSnapshot(filePath, initial);
     assert.equal(saved.memoryThreadEvents[0]?.phase, "closed");
+    assert.equal(saved.initiative.history[0]?.frontierKey, "frontier:abc123");
 
     const stale = structuredClone(initial);
     stale.state.curiosity = 0.91;

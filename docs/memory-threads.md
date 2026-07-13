@@ -65,3 +65,28 @@ parked / closed thread は次の全経路から局所的に除外する。
 終了turnはinitiative schedulingより先にevent化する。そのため、同じturnのdirectorが終了済みtopicをpendingへ戻すこともできない。再開eventはHachikaのproactive発話では作られず、ユーザーの明示的な再言及またはcontinuation cueだけが作れる。
 
 古いsnapshotにはeventが存在しないため、user memoryとtrace artifact内の明示的な終了文からlegacy lifecycleを推定する。一度新しいeventが保存されたthreadでは、保存eventをauthoritativeに使う。
+
+## Episode frontier
+
+chronologyの末尾と「次に外へ出す価値があるもの」は同じではない。各threadは一つのepisode frontierを持つ。
+
+frontierは次の優先順位で決まる。
+
+1. `open_question`: work topicに結びついた未回答の問い
+2. `open_request`: 未完了のtask request
+3. `blocked`: 最新episodeまたはthread全体のblocker
+4. `next_step`: 具体的に残っている次の一歩
+5. `new_episode`: まだ外へ出していない最新episode
+6. `settled`: 新しく外へ出す未完了がない
+
+frontierは`phase / kind / sourceTopic / summary`から決定的なfingerprintを作る。Hachikaがそのfrontierについてproactive発話した時点で、fingerprintを`InitiativeActivity.frontierKey`へcheckpointする。
+
+同じthreadの現在fingerprintと最後に発話したfingerprintが一致する場合、次を抑制する。
+
+- 既存pending initiativeの発話
+- initiative topic / blocker selection
+- archived traceのidle recall
+
+ユーザーが戻ったという事実だけでは同じ内容をもう一度話す理由にならない。問いが追加・解決された、blockerが変化した、next stepが変わった、新しいepisodeが加わった場合にだけfingerprintが変わり、再びfrontierが開く。
+
+旧activityには`frontierKey`がないため、最後のproactive発話時刻がthreadの最終更新以後なら、その時点のfrontierはすでに一度外へ出たものとして移行する。

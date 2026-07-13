@@ -141,7 +141,7 @@ export function blendVisibleValue(
 
 export function createInitialSnapshot(): HachikaSnapshot {
   return {
-    version: 26,
+    version: 27,
     revision: 0,
     state: { ...INITIAL_STATE },
     body: { ...INITIAL_BODY },

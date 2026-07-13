@@ -151,7 +151,7 @@ function hydrateSnapshot(raw: unknown): HachikaSnapshot {
   }
 
   return {
-    version: 26,
+    version: 27,
     revision:
       typeof raw.revision === "number" && Number.isFinite(raw.revision)
         ? Math.max(0, Math.round(raw.revision))
@@ -1702,6 +1702,10 @@ function hydrateInitiativeActivity(raw: unknown): InitiativeActivity | null {
       ? raw.maintenanceAction
       : null,
     reopened: raw.reopened === true,
+    frontierKey:
+      typeof raw.frontierKey === "string" && raw.frontierKey.trim().length > 0
+        ? raw.frontierKey.trim()
+        : null,
     hours:
       typeof raw.hours === "number" && Number.isFinite(raw.hours)
         ? Math.max(0, Math.round(raw.hours * 10) / 10)
@@ -2265,6 +2269,11 @@ function sanitizeInitiative(
           ? activity.maintenanceAction
           : null,
         motive: isMotiveKind(activity.motive) ? activity.motive : null,
+        frontierKey:
+          typeof activity.frontierKey === "string" &&
+          activity.frontierKey.startsWith("frontier:")
+            ? activity.frontierKey.slice(0, 96)
+            : null,
         hours:
           typeof activity.hours === "number" && Number.isFinite(activity.hours)
             ? Math.max(0, Math.round(activity.hours * 10) / 10)

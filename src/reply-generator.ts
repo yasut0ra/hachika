@@ -430,7 +430,7 @@ export function buildOpenAIChatMessages(
         "If payload.discourse is present, treat it as the current answer obligation and do not drift away from it.",
         "Use behaviorDirective to decide whether this turn must answer directly first, soften boundary posture, or avoid world garnish.",
         "Use replySelection to stay faithful to the exact chosen focus, trace, boundary, and trace priority.",
-        "When memoryThreads.active is present, treat its episodes as one chronological subject: preserve settled facts, continue from the latest episode, and do not present an older episode as the current state. If its phase is parked or closed, acknowledge that boundary and do not continue the subject. If its phase is reopened, continue only because the user returned to it.",
+        "When memoryThreads.active is present, treat its episodes as one chronological subject: preserve settled facts, continue from memoryThreads.active.frontier, and do not present an older episode as the current state. If its phase is parked or closed, acknowledge that boundary and do not continue the subject. If its phase is reopened, continue only because the user returned to it. Do not invent progress beyond the frontier.",
         "If turnDirective.target is hachika_name or user_name, make the referent of 名前 explicit instead of drifting into generic relation talk.",
         "If turnDirective.target is hachika_profile or user_profile, keep the wording anchored to that person rather than generic shared work.",
         "When responsePlan.mentionWorld is true, ground the wording in payload.world before reaching for identity or trace language.",
@@ -482,7 +482,7 @@ export function buildOpenAIProactiveMessages(
         "Use composition.intentSummary, composition.mustMention, composition.optionalDetails, composition.avoidTopics, and composition.styleNotes as the main brief.",
         "Use proactivePlan as the primary guide for stance, distance, act, and emphasis.",
         "Use proactiveSelection to stay faithful to the chosen focus topic, maintenance trace, blocker, and reopen state.",
-        "When memoryThreads.active is present, continue the thread from its latest episode. Do not repeat an earlier episode as a new discovery or ask again for a fact already settled in memoryThreads.active.facts.",
+        "When memoryThreads.active is present, continue only from memoryThreads.active.frontier. Do not repeat an earlier episode as a new discovery, ask again for a settled fact, or speak when the frontier is settled.",
         "If payload.world helps situate the utterance, you may lightly lean on it without inventing new world changes.",
         "Use expression.perspective.preferredAngle as the main expressive lens.",
         "You may lean on one nearby option from expression.perspective.options to vary emphasis, but do not contradict the local plan.",
@@ -1132,7 +1132,7 @@ function collectUnrelatedTopics(
 }
 
 function buildMemoryThreadContinuationCue(thread: MemoryThread | null): string | null {
-  if (!thread || thread.traceTopics.length < 2) {
+  if (!thread) {
     return null;
   }
 
@@ -1140,13 +1140,17 @@ function buildMemoryThreadContinuationCue(thread: MemoryThread | null): string |
     return `同じ「${thread.title}」の話は${thread.phase}。覚えておくが、こちらから続きを持ち出さない`;
   }
 
-  const latest = thread.episodes.at(-1);
-  const priorFact = thread.facts.find((fact) => fact !== latest?.detail) ?? null;
-  const continuation = latest?.nextStep ?? thread.nextSteps.at(-1) ?? latest?.detail ?? null;
+  if (thread.frontier.kind === "settled") {
+    return `「${thread.title}」には新しく外へ出す未完了はない`;
+  }
+
+  const priorFact = thread.facts.find((fact) => fact !== thread.frontier.summary) ?? null;
   const parts = [
-    `同じ「${thread.title}」の話として${thread.traceTopics.length}件を接続`,
+    thread.traceTopics.length >= 2
+      ? `同じ「${thread.title}」の話として${thread.traceTopics.length}件を接続`
+      : `「${thread.title}」の話`,
     priorFact ? `既知: ${priorFact}` : null,
-    continuation ? `現在地: ${continuation}` : null,
+    `frontier(${thread.frontier.kind}): ${thread.frontier.summary}`,
   ].filter((part): part is string => part !== null);
   return parts.join(" / ");
 }

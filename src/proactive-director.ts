@@ -141,6 +141,7 @@ export interface ProactiveDirectorPayload {
     motive: string | null;
     topic: string | null;
     blocker: string | null;
+    frontierKey: string | null;
   }>;
   userInteractedSinceLastOutward: boolean;
   memoryThread: MemoryThread | null;
@@ -264,6 +265,7 @@ export function buildProactiveDirectorPayload(
       motive: activity.motive,
       topic: activity.topic,
       blocker: activity.blocker,
+      frontierKey: activity.frontierKey ?? null,
     }));
   const lastOutward = recentOutward.at(-1) ?? null;
 
@@ -354,7 +356,7 @@ export function buildOpenAIProactiveDirectorMessages(
         "topics is an array of semantic topic objects: { topic, source, durability, confidence }.",
         "pending.stateTopic is the current durable topic candidate; if it is null, prefer keeping the move ephemeral unless there is strong grounded support to emit.",
         "Suppress weak or repetitive proactive moves. If recentOutward already contains the same motive and the user has not interacted since, suppress it unless the blocker materially changed.",
-        "If memoryThread is present, judge the candidate against the whole chronology. Always suppress parked or closed threads. Do not revive an older episode as if it were current; emit only when the latest episode, blocker, or next step gives a real continuation.",
+        "If memoryThread is present, judge the candidate against its frontier and whole chronology. Always suppress parked, closed, or settled-frontier threads. Do not revive an older episode as if it were current; emit only when the frontier contains a genuinely new question, request, blocker, next step, or episode.",
         "Return JSON only.",
         JSON.stringify(payload, null, 2),
       ].join("\n\n"),

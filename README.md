@@ -305,6 +305,7 @@ Hachika は、単に有用なだけでなく、
   - reply / proactive generation は active thread の `facts / episodes / blockers / nextSteps` を受け取り、確定済みの事実を再質問したり、古い episode を現在地として言い直したりせず、最新の続きから話せる
   - trace ごとの自動生成文 (`次に触れられる形へ整える` など) は thread の continuation から除外される
   - thread lifecycle は `active / parked / closed / reopened / resolved`。topic shift や「一旦置こう」は parked、「この話は終わり」は closed になり、記憶は残しても idle recall / pending initiative / proactive candidate から外れる。ユーザーがその主題へ戻ったturnだけが reopened にできる
+  - 各threadはepisode frontierを一つ持つ。優先順位は `open question -> open task request -> blocker -> next step -> new episode -> settled`。proactiveでfrontierを一度外へ出すとfingerprintをactivityへcheckpointし、問い・詰まり・次の一歩・episode内容が変わるまでは同じthreadを言い換えて再発話しない
 - relation imprint も idle 中に continuity / attention / shared_work の相対重みを少し組み替え、身体状態と temperament に合わない stale な closeness は前景から退きやすくなった
 - boundary imprint も静かな時間では少しずつ和らぎ、ただし absence 寄りの neglect や強い guardedness を伴う境界はそれより長く残りやすい
 - identity anchor は category の固定順ではなく traces / imprints / recent memories / previous anchors をまとめて score 化して選ばれ、最近の recurring topic が stale な anchor を追い越しやすくなった

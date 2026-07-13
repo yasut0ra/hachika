@@ -459,6 +459,7 @@ export interface InitiativeActivity {
   worldAction?: WorldActionKind | null;
   maintenanceAction: TraceMaintenanceAction | null;
   reopened: boolean;
+  frontierKey?: string | null;
   hours: number | null;
   summary: string;
 }
