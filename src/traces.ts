@@ -751,7 +751,7 @@ function collectDiscourseTraceCandidates(
       (commitment) =>
         commitment.owner === "hachika" &&
         commitment.kind === "task" &&
-        commitment.status === "accepted",
+        (commitment.status === "accepted" || commitment.status === "renegotiated"),
     );
 
   if (

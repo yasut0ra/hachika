@@ -378,20 +378,20 @@ function deriveThreadFrontier(
     return createFrontier(thread, "open_request", openRequest.text, thread.episodes.at(-1)?.traceTopic ?? null);
   }
 
-  const acceptedTask = [...snapshot.discourse.commitments]
+  const activeTask = [...snapshot.discourse.commitments]
     .reverse()
     .find(
       (commitment) =>
         commitment.owner === "hachika" &&
         commitment.kind === "task" &&
-        commitment.status === "accepted" &&
+        (commitment.status === "accepted" || commitment.status === "renegotiated") &&
         textMentionsThread(thread, commitment.text),
     );
-  if (acceptedTask) {
+  if (activeTask) {
     return createFrontier(
       thread,
       "open_request",
-      acceptedTask.text,
+      activeTask.text,
       thread.episodes.at(-1)?.traceTopic ?? null,
     );
   }

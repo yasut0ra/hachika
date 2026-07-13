@@ -2125,6 +2125,31 @@ test("a task reply accepts the commitment without claiming the task is finished"
   assert.equal(unchanged.snapshot.discourse.commitments.at(-1)?.status, "accepted");
 });
 
+test("a user can renegotiate and later withdraw an accepted task", () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+
+  engine.respond("仕様の境界を整理して");
+  const renegotiated = engine.respond("仕様の境界はいったん保留にして");
+  const active = renegotiated.snapshot.discourse.commitments.find(
+    (commitment) => commitment.text === "仕様の境界を整理して",
+  );
+
+  assert.equal(active?.status, "renegotiated");
+  assert.equal(active?.events.at(-1)?.kind, "user_renegotiation");
+
+  const released = engine.respond("仕様の境界はもうやらなくていい");
+  const closed = released.snapshot.discourse.commitments.find(
+    (commitment) => commitment.text === "仕様の境界を整理して",
+  );
+
+  assert.equal(closed?.status, "released");
+  assert.equal(closed?.evidence?.kind, "user_withdrawal");
+  assert.deepEqual(closed?.events.map((event) => event.kind), [
+    "user_renegotiation",
+    "user_withdrawal",
+  ]);
+});
+
 test("response planner keeps unresolved direct-answer obligations ahead of stale work focus", async () => {
   const snapshot = createInitialSnapshot();
   snapshot.discourse.openRequests.push({

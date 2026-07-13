@@ -6,7 +6,7 @@ import { createInitialSnapshot } from "./state.js";
 test("createInitialSnapshot starts on the current snapshot version", () => {
   const snapshot = createInitialSnapshot();
 
-  assert.equal(snapshot.version, 29);
+  assert.equal(snapshot.version, 30);
   assert.deepEqual(snapshot.memoryThreadEvents, []);
   assert.ok(snapshot.dynamics);
   assert.equal(snapshot.discourse.userName, null);

@@ -944,6 +944,7 @@ export class HachikaEngine {
   ): string {
     remember(nextSnapshot, "hachika", message, topics, "neutral");
     advanceTaskCommitments(nextSnapshot, {
+      reply: message,
       timestamp: nextSnapshot.initiative.lastProactiveAt ?? new Date().toISOString(),
     });
     recordExplicitHachikaQuestion(
@@ -5665,6 +5666,7 @@ function updateDiscourseState(
   );
   advanceTaskCommitments(snapshot, {
     input: normalized,
+    reply,
     signals,
     timestamp,
   });

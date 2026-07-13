@@ -448,6 +448,7 @@ test("loadSnapshot and saveSnapshot apply sanitation to persisted files", async 
       "2026-03-21T03:05:00.000Z",
     );
     assert.equal(loaded.discourse.commitments[1]?.evidence, null);
+    assert.deepEqual(loaded.discourse.commitments[1]?.events, []);
 
     await saveSnapshot(filePath, loaded);
     const raw = await readFile(filePath, "utf8");
@@ -602,6 +603,7 @@ test("sanitizeSnapshot preserves accepted task state and fulfillment evidence", 
       summary: "設計を整理した",
       recordedAt: "2026-07-14T01:00:00.000Z",
     },
+    events: [],
   });
 
   sanitizeSnapshot(snapshot);
@@ -617,6 +619,62 @@ test("sanitizeSnapshot preserves accepted task state and fulfillment evidence", 
     summary: "設計を整理した",
     recordedAt: "2026-07-14T01:00:00.000Z",
   });
+  assert.deepEqual(
+    snapshot.discourse.commitments[0]?.events.map((event) => event.kind),
+    ["trace_resolution"],
+  );
+});
+
+test("sanitizeSnapshot preserves renegotiation history and released task evidence", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.discourse.openRequests.push({
+    target: "work_topic",
+    kind: "task",
+    text: "設計を整理して",
+    askedAt: "2026-07-14T00:00:00.000Z",
+    requestedBy: "user",
+    responsibleParty: "hachika",
+    status: "resolved",
+    resolvedAt: "2026-07-14T00:10:00.000Z",
+  });
+  const withdrawal = {
+    kind: "user_withdrawal" as const,
+    topic: "設計",
+    summary: "設計はもうやらなくていい",
+    recordedAt: "2026-07-14T02:00:00.000Z",
+  };
+  snapshot.discourse.commitments.push({
+    owner: "hachika",
+    kind: "task",
+    source: "request",
+    sourceAskedAt: "2026-07-14T00:00:00.000Z",
+    target: "work_topic",
+    text: "設計を整理して",
+    status: "released",
+    createdAt: "2026-07-14T00:00:00.000Z",
+    acceptedAt: "2026-07-14T00:10:00.000Z",
+    resolvedAt: "2026-07-14T02:00:00.000Z",
+    evidence: withdrawal,
+    events: [
+      {
+        kind: "user_renegotiation",
+        topic: "設計",
+        summary: "設計はいったん保留にして",
+        recordedAt: "2026-07-14T01:00:00.000Z",
+      },
+      withdrawal,
+    ],
+  });
+
+  sanitizeSnapshot(snapshot);
+
+  const commitment = snapshot.discourse.commitments[0];
+  assert.equal(commitment?.status, "released");
+  assert.equal(commitment?.evidence?.kind, "user_withdrawal");
+  assert.deepEqual(commitment?.events.map((event) => event.kind), [
+    "user_renegotiation",
+    "user_withdrawal",
+  ]);
 });
 
 test("loadSnapshot seeds latent dynamics from older visible-only snapshots", async () => {
@@ -667,7 +725,7 @@ test("loadSnapshot seeds latent dynamics from older visible-only snapshots", asy
 
     const loaded = await loadSnapshot(filePath);
 
-    assert.equal(loaded.version, 29);
+    assert.equal(loaded.version, 30);
     assert.equal(loaded.revision, 3);
     assert.equal(loaded.discourse.hachikaName?.value, "ハチカ");
     assert.ok(

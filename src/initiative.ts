@@ -2970,7 +2970,7 @@ function hasConcreteInitiativeWorkIntent(
     (commitment) =>
       commitment.owner === "hachika" &&
       commitment.kind === "task" &&
-      commitment.status === "accepted",
+      (commitment.status === "accepted" || commitment.status === "renegotiated"),
   );
 
   return (
@@ -2999,7 +2999,7 @@ function collectInitiativeDiscourseTopics(
       (commitment) =>
         commitment.owner === "hachika" &&
         commitment.kind === "task" &&
-        commitment.status === "accepted",
+        (commitment.status === "accepted" || commitment.status === "renegotiated"),
     );
 
   if (

@@ -320,7 +320,7 @@ test("frontier checkpoint suppresses repeats until thread content changes", () =
   assert.notEqual(deriveMemoryThreads(snapshot)[0]?.frontier.key, first.frontier.key);
 });
 
-test("an accepted task remains the thread frontier until evidence fulfills it", () => {
+test("accepted and renegotiated tasks remain frontier until fulfilled or released", () => {
   const snapshot = createInitialSnapshot();
   snapshot.traces.設計 = trace("設計", "2026-07-14T00:00:00.000Z", {
     nextSteps: ["公開インターフェースを決める"],
@@ -343,14 +343,26 @@ test("an accepted task remains the thread frontier until evidence fulfills it", 
 
   assert.equal(deriveMemoryThreads(snapshot)[0]?.frontier.kind, "open_request");
 
-  snapshot.discourse.commitments[0]!.status = "fulfilled";
+  snapshot.discourse.commitments[0]!.status = "renegotiated";
+  snapshot.discourse.commitments[0]!.events.push({
+    kind: "user_renegotiation",
+    topic: "設計",
+    summary: "設計はいったん保留にして",
+    recordedAt: "2026-07-14T01:30:00.000Z",
+  });
+  assert.equal(deriveMemoryThreads(snapshot)[0]?.frontier.kind, "open_request");
+
+  snapshot.discourse.commitments[0]!.status = "released";
   snapshot.discourse.commitments[0]!.resolvedAt = "2026-07-14T02:00:00.000Z";
   snapshot.discourse.commitments[0]!.evidence = {
-    kind: "trace_resolution",
+    kind: "user_withdrawal",
     topic: "設計",
-    summary: "設計を整理した",
+    summary: "設計はもうやらなくていい",
     recordedAt: "2026-07-14T02:00:00.000Z",
   };
+  snapshot.discourse.commitments[0]!.events.push(
+    snapshot.discourse.commitments[0]!.evidence,
+  );
 
   assert.equal(deriveMemoryThreads(snapshot)[0]?.frontier.kind, "next_step");
 });

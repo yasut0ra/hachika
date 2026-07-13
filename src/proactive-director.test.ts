@@ -127,6 +127,7 @@ test("buildProactiveDirectorPayload keeps candidate topics grounded", () => {
     acceptedAt: "2026-03-29T00:05:00.000Z",
     resolvedAt: null,
     evidence: null,
+    events: [],
   });
 
   const payload = buildProactiveDirectorPayload({
@@ -170,6 +171,7 @@ test("buildProactiveDirectorPayload keeps candidate topics grounded", () => {
   assert.deepEqual(payload.memoryThread?.nextSteps, ["公開APIを決める"]);
   assert.equal(payload.discourse.openHachikaCommitments[0]?.status, "accepted");
   assert.equal(payload.discourse.openHachikaCommitments[0]?.kind, "task");
+  assert.equal(payload.discourse.openHachikaCommitments[0]?.stalled, false);
 });
 
 test("normalizeProactiveDirective can parse semantic-director v2 proactive contract", () => {

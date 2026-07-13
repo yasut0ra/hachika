@@ -156,7 +156,7 @@ function hydrateSnapshot(raw: unknown): HachikaSnapshot {
   }
 
   return {
-    version: 29,
+    version: 30,
     revision:
       typeof raw.revision === "number" && Number.isFinite(raw.revision)
         ? Math.max(0, Math.round(raw.revision))
@@ -987,6 +987,17 @@ function hydrateDiscourseCommitment(raw: unknown): DiscourseCommitment | null {
     typeof raw.sourceAskedAt === "string" && raw.sourceAskedAt.trim().length > 0
       ? raw.sourceAskedAt
       : new Date(0).toISOString();
+  const evidence = hydrateDiscourseCommitmentEvidence(raw.evidence);
+  const events = hydrateDiscourseCommitmentEvents(raw.events);
+  if (
+    evidence &&
+    !events.some(
+      (event) =>
+        event.kind === evidence.kind && event.recordedAt === evidence.recordedAt,
+    )
+  ) {
+    events.push(evidence);
+  }
 
   return {
     owner: raw.owner,
@@ -996,11 +1007,12 @@ function hydrateDiscourseCommitment(raw: unknown): DiscourseCommitment | null {
     target: isTurnTarget(raw.target) ? raw.target : "none",
     text,
     status:
-      raw.status === "fulfilled"
-        ? "fulfilled"
-        : raw.status === "accepted"
-          ? "accepted"
-          : "open",
+      raw.status === "fulfilled" ||
+      raw.status === "released" ||
+      raw.status === "renegotiated" ||
+      raw.status === "accepted"
+        ? raw.status
+        : "open",
     createdAt:
       typeof raw.createdAt === "string" && raw.createdAt.trim().length > 0
         ? raw.createdAt
@@ -1013,8 +1025,21 @@ function hydrateDiscourseCommitment(raw: unknown): DiscourseCommitment | null {
       typeof raw.resolvedAt === "string" && raw.resolvedAt.trim().length > 0
         ? raw.resolvedAt
         : null,
-    evidence: hydrateDiscourseCommitmentEvidence(raw.evidence),
+    evidence,
+    events: events.slice(-12),
   };
+}
+
+function hydrateDiscourseCommitmentEvents(
+  raw: unknown,
+): DiscourseCommitmentEvidence[] {
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+  return raw
+    .map((event) => hydrateDiscourseCommitmentEvidence(event))
+    .filter((event): event is DiscourseCommitmentEvidence => event !== null)
+    .slice(-12);
 }
 
 function hydrateDiscourseCommitmentEvidence(
@@ -1131,7 +1156,11 @@ function isDiscourseCommitmentEvidenceKind(
   return (
     value === "user_completion" ||
     value === "trace_resolution" ||
-    value === "trace_decision"
+    value === "trace_decision" ||
+    value === "user_renegotiation" ||
+    value === "hachika_renegotiation" ||
+    value === "user_withdrawal" ||
+    value === "hachika_release"
   );
 }
 

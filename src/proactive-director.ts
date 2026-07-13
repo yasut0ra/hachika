@@ -17,6 +17,7 @@ import {
   OpenAIChatClient,
 } from "./llm-client.js";
 import { resolveOpenAICompatibleConfig } from "./llm-env.js";
+import { describeTaskCommitmentTiming } from "./discourse.js";
 import { summarizeWorldForPrompt } from "./world.js";
 import {
   canAutonomouslySurfaceMemoryThread,
@@ -25,6 +26,7 @@ import {
 } from "./memory-threads.js";
 import type {
   HachikaSnapshot,
+  DiscourseCommitmentEvidence,
   PendingInitiative,
   ProactiveSelectionDebug,
   WorldActionKind,
@@ -40,6 +42,8 @@ const HACHIKA_PROACTIVE_DIRECTOR_SYSTEM_PROMPT = [
   "Allow proactive moves when they are concretely grounded in a trace, blocker, relation continuity, or current world object context.",
   "Respect discourse ownership: only awaitingUserQuestions may be gently revisited; openHachikaCommitments are Hachika's own unfinished obligations and must never be pushed back onto the user as a question.",
   "A task commitment with status accepted is unfinished. Do not imply it is complete without recorded evidence.",
+  "A renegotiated task remains unfinished. A released task is no longer active and is not a success.",
+  "When an active task is stalled, prefer concrete progress; if it cannot continue, use explicit renegotiation or release language. Never release it from age alone.",
   "Keep plan close to rulePlan unless there is a strong semantic reason to change act, focus, distance, or emphasis.",
   "topics are semantic topics for the utterance. stateTopics are the subset worth durable state hardening.",
   "When the move is mostly atmospheric or ephemeral, prefer topics: [] and stateTopics: [].",
@@ -157,7 +161,11 @@ export interface ProactiveDirectorPayload {
       target: string;
       text: string;
       createdAt: string;
-      status: "open" | "accepted";
+      status: "open" | "accepted" | "renegotiated";
+      latestEventKind: DiscourseCommitmentEvidence["kind"] | null;
+      ageHours: number | null;
+      inactiveHours: number | null;
+      stalled: boolean;
     }>;
   };
   memoryThread: MemoryThread | null;
@@ -259,6 +267,10 @@ export function describeProactiveDirector(director: ProactiveDirector | null): s
 export function buildProactiveDirectorPayload(
   context: ProactiveDirectorContext,
 ): ProactiveDirectorPayload {
+  const observedAt =
+    context.nextSnapshot.initiative.lastProactiveAt ??
+    context.nextSnapshot.lastInteractionAt ??
+    new Date().toISOString();
   const candidateTopics = unique([
     context.pending.topic ?? "",
     context.pending.stateTopic ?? "",
@@ -354,16 +366,36 @@ export function buildProactiveDirectorPayload(
         .filter(
           (commitment) =>
             commitment.owner === "hachika" &&
-            (commitment.status === "open" || commitment.status === "accepted"),
+            (commitment.status === "open" ||
+              commitment.status === "accepted" ||
+              commitment.status === "renegotiated"),
         )
         .slice(-4)
-        .map((commitment) => ({
-          kind: commitment.kind,
-          target: commitment.target,
-          text: commitment.text,
-          createdAt: commitment.createdAt,
-          status: commitment.status === "accepted" ? "accepted" : "open",
-        })),
+        .map((commitment) => {
+          const timing = commitment.kind === "task"
+            ? describeTaskCommitmentTiming(
+                context.nextSnapshot,
+                commitment,
+                observedAt,
+              )
+            : null;
+          return {
+            kind: commitment.kind,
+            target: commitment.target,
+            text: commitment.text,
+            createdAt: commitment.createdAt,
+            status:
+              commitment.status === "renegotiated"
+                ? "renegotiated" as const
+                : commitment.status === "accepted"
+                  ? "accepted" as const
+                  : "open" as const,
+            latestEventKind: commitment.events.at(-1)?.kind ?? null,
+            ageHours: timing?.ageHours ?? null,
+            inactiveHours: timing?.inactiveHours ?? null,
+            stalled: timing?.stalled ?? false,
+          };
+        }),
     },
     memoryThread: selectMemoryThread(context.nextSnapshot, [
       context.pending.topic,

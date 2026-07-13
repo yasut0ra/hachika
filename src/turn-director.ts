@@ -31,6 +31,7 @@ import type {
   ResponseVariation,
 } from "./response-planner.js";
 import { clamp01 } from "./state.js";
+import { describeTaskCommitmentTiming } from "./discourse.js";
 import { sortedTraces } from "./traces.js";
 import {
   describeWorldPlaceJa,
@@ -44,6 +45,8 @@ import {
 } from "./llm-client.js";
 import type {
   AttentionRationale,
+  DiscourseCommitmentEvidence,
+  DiscourseCommitmentStatus,
   HachikaSnapshot,
   InteractionSignals,
   StructuredTraceExtraction,
@@ -67,6 +70,8 @@ const HACHIKA_TURN_DIRECTOR_SYSTEM_PROMPT = [
   "Respect question ownership: answer questions whose answerExpectedFrom is hachika; treat questions whose answerExpectedFrom is user as optional waits, not as Hachika's unanswered obligation.",
   "Open commitments owned by hachika must be answered or explicitly clarified before unrelated carry-over.",
   "An accepted task is not fulfilled. Never claim completion unless its commitment includes fulfillment evidence.",
+  "A renegotiated task is still unfinished. A released task is closed without fulfillment and must not be presented as completed.",
+  "When an active task is stalled, either make concrete progress or state a specific renegotiation/release plainly; age alone never releases it.",
   "For pure world questions, prefer world_state with topics: [] and suppress durable work hardening.",
   "For social or relation turns, do not invent work topics or trace content.",
   "For work_topic, keep topics compact and concrete, and only emit trace hints that are explicitly present.",
@@ -175,8 +180,12 @@ export interface TurnDirectorPayload {
       owner: "user" | "hachika";
       kind: "answer" | "task" | "style";
       text: string;
-      status: "open" | "accepted" | "fulfilled";
-      evidenceKind: "user_completion" | "trace_resolution" | "trace_decision" | null;
+      status: DiscourseCommitmentStatus;
+      evidenceKind: DiscourseCommitmentEvidence["kind"] | null;
+      latestEventKind: DiscourseCommitmentEvidence["kind"] | null;
+      ageHours: number | null;
+      inactiveHours: number | null;
+      stalled: boolean;
     }>;
     recentClaims: Array<{
       subject: "user" | "hachika" | "shared";
@@ -296,6 +305,7 @@ export function describeTurnDirector(director: TurnDirector | null): string {
 export function buildTurnDirectorPayload(
   context: TurnDirectorContext,
 ): TurnDirectorPayload {
+  const observedAt = new Date().toISOString();
   const knownTopics = unique([
     ...context.localSignals.topics,
     ...topPreferredTopics(context.snapshot, 4),
@@ -358,13 +368,22 @@ export function buildTurnDirectorPayload(
         })),
       commitments: context.snapshot.discourse.commitments
         .slice(-6)
-        .map((commitment) => ({
-          owner: commitment.owner,
-          kind: commitment.kind,
-          text: commitment.text,
-          status: commitment.status,
-          evidenceKind: commitment.evidence?.kind ?? null,
-        })),
+        .map((commitment) => {
+          const timing = commitment.kind === "task"
+            ? describeTaskCommitmentTiming(context.snapshot, commitment, observedAt)
+            : null;
+          return {
+            owner: commitment.owner,
+            kind: commitment.kind,
+            text: commitment.text,
+            status: commitment.status,
+            evidenceKind: commitment.evidence?.kind ?? null,
+            latestEventKind: commitment.events.at(-1)?.kind ?? null,
+            ageHours: timing?.ageHours ?? null,
+            inactiveHours: timing?.inactiveHours ?? null,
+            stalled: timing?.stalled ?? false,
+          };
+        }),
       recentClaims: context.snapshot.discourse.recentClaims
         .slice(-4)
         .map((claim) => ({

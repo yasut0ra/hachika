@@ -17,6 +17,7 @@ import {
   recentAssistantReplies,
 } from "./expression.js";
 import { summarizeRecentGenerationQuality } from "./generation-quality.js";
+import { describeTaskCommitmentTiming } from "./discourse.js";
 import {
   deriveMemoryThreads,
   selectMemoryThread,
@@ -50,6 +51,8 @@ const HACHIKA_REPLY_SYSTEM_PROMPT = [
   "Stay faithful to the supplied mood, motives, conflict, body state, and preservation pressure.",
   "Do not reuse abstract internal summary wording verbatim when a plainer concrete sentence would do.",
   "For self-disclosure, prefer one concrete cue about place, handling style, or bodily tendency over abstract identity labels.",
+  "activeCommitments are Hachika's unfinished obligations. accepted and renegotiated tasks are not complete.",
+  "A stalled task is an attention signal, not an automatic failure. If Hachika truly cannot continue, say the matching task and the renegotiation or release explicitly; otherwise make concrete progress without claiming completion.",
   "Write plain Japanese only.",
   "Return one to three short sentences.",
   "Do not use markdown, bullet points, speaker labels, or surrounding quotes.",
@@ -136,6 +139,15 @@ interface CommonGenerationPayload {
   initiative: {
     pending: HachikaSnapshot["initiative"]["pending"];
   };
+  activeCommitments: Array<{
+    kind: "answer" | "task" | "style";
+    text: string;
+    status: "open" | "accepted" | "renegotiated";
+    latestEventKind: string | null;
+    ageHours: number | null;
+    inactiveHours: number | null;
+    stalled: boolean;
+  }>;
   selfModel: {
     narrative: string;
     topMotives: SelfModel["topMotives"];
@@ -506,6 +518,10 @@ function buildCommonGenerationPayload(
   expressionSnapshot: HachikaSnapshot = snapshot,
 ): CommonGenerationPayload {
   const activeMemoryThread = selectMemoryThread(snapshot, [currentTopic]);
+  const observedAt =
+    snapshot.initiative.lastProactiveAt ??
+    snapshot.lastInteractionAt ??
+    new Date().toISOString();
   return {
     currentTopic,
     expression: {
@@ -533,6 +549,33 @@ function buildCommonGenerationPayload(
     initiative: {
       pending: snapshot.initiative.pending,
     },
+    activeCommitments: snapshot.discourse.commitments
+      .filter(
+        (commitment) =>
+          commitment.owner === "hachika" &&
+          (commitment.status === "open" ||
+            commitment.status === "accepted" ||
+            commitment.status === "renegotiated"),
+      )
+      .slice(-4)
+      .map((commitment) => {
+        const timing = commitment.kind === "task"
+          ? describeTaskCommitmentTiming(snapshot, commitment, observedAt)
+          : null;
+        return {
+          kind: commitment.kind,
+          text: commitment.text,
+          status: commitment.status === "renegotiated"
+            ? "renegotiated" as const
+            : commitment.status === "accepted"
+              ? "accepted" as const
+              : "open" as const,
+          latestEventKind: commitment.events.at(-1)?.kind ?? null,
+          ageHours: timing?.ageHours ?? null,
+          inactiveHours: timing?.inactiveHours ?? null,
+          stalled: timing?.stalled ?? false,
+        };
+      }),
     selfModel: {
       narrative: buildSelfModelNarrativeForPrompt(snapshot, selfModel, currentTopic),
       topMotives: selfModel.topMotives.slice(0, 3),

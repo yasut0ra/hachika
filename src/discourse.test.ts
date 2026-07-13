@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   advanceTaskCommitments,
+  describeTaskCommitmentTiming,
   reconcileDiscourseCommitments,
 } from "./discourse.js";
 import { createInitialSnapshot } from "./state.js";
@@ -133,6 +134,154 @@ test("decision evidence only fulfills a task that asked Hachika to decide", () =
     "REST方式を採用する",
   );
 });
+
+test("a user can release the matching task without a generic topic shift releasing it", () => {
+  const snapshot = acceptedTaskSnapshot("仕様の境界を整理して");
+
+  advanceTaskCommitments(snapshot, {
+    input: "UIはもうやらなくていい",
+    signals: signals({ abandonment: 0.8, topics: ["UI"] }),
+    timestamp: "2026-07-14T01:00:00.000Z",
+  });
+  assert.equal(snapshot.discourse.commitments[0]?.status, "accepted");
+
+  advanceTaskCommitments(snapshot, {
+    input: "仕様の境界はもうやらなくていい",
+    signals: signals({ abandonment: 0.8, topics: ["仕様の境界"] }),
+    timestamp: "2026-07-14T02:00:00.000Z",
+  });
+
+  const commitment = snapshot.discourse.commitments[0];
+  assert.equal(commitment?.status, "released");
+  assert.equal(commitment?.evidence?.kind, "user_withdrawal");
+  assert.equal(commitment?.resolvedAt, "2026-07-14T02:00:00.000Z");
+  assert.deepEqual(commitment?.events.map((event) => event.kind), [
+    "user_withdrawal",
+  ]);
+});
+
+test("renegotiation stays active and remains in history after later fulfillment", () => {
+  const snapshot = acceptedTaskSnapshot("仕様の境界を整理して");
+
+  advanceTaskCommitments(snapshot, {
+    input: "仕様の境界はいったん保留にして",
+    signals: signals({ abandonment: 0.5, topics: ["仕様の境界"] }),
+    timestamp: "2026-07-14T01:00:00.000Z",
+  });
+
+  assert.equal(snapshot.discourse.commitments[0]?.status, "renegotiated");
+  assert.equal(snapshot.discourse.commitments[0]?.evidence, null);
+  assert.equal(
+    snapshot.discourse.commitments[0]?.events[0]?.kind,
+    "user_renegotiation",
+  );
+
+  advanceTaskCommitments(snapshot, {
+    input: "仕様の境界の整理が完了した",
+    signals: signals({
+      completion: 0.6,
+      workCue: 0.8,
+      topics: ["仕様の境界"],
+    }),
+    timestamp: "2026-07-14T03:00:00.000Z",
+  });
+
+  assert.equal(snapshot.discourse.commitments[0]?.status, "fulfilled");
+  assert.deepEqual(
+    snapshot.discourse.commitments[0]?.events.map((event) => event.kind),
+    ["user_renegotiation", "user_completion"],
+  );
+});
+
+test("Hachika must use explicit matching language to release its own task", () => {
+  const snapshot = acceptedTaskSnapshot("仕様の境界を整理して");
+
+  advanceTaskCommitments(snapshot, {
+    reply: "少し難しいが、仕様の境界をもう少し考える。",
+    timestamp: "2026-07-14T01:00:00.000Z",
+  });
+  assert.equal(snapshot.discourse.commitments[0]?.status, "accepted");
+
+  advanceTaskCommitments(snapshot, {
+    reply: "仕様の境界の作業は引き受けられない。この約束を手放す。",
+    timestamp: "2026-07-14T02:00:00.000Z",
+  });
+
+  assert.equal(snapshot.discourse.commitments[0]?.status, "released");
+  assert.equal(
+    snapshot.discourse.commitments[0]?.evidence?.kind,
+    "hachika_release",
+  );
+});
+
+test("Hachika can explicitly renegotiate a matching task without closing it", () => {
+  const snapshot = acceptedTaskSnapshot("仕様の境界を整理して");
+
+  advanceTaskCommitments(snapshot, {
+    reply: "仕様の境界の進め方を見直したい。先に責務の確認が必要だ。",
+    timestamp: "2026-07-14T02:00:00.000Z",
+  });
+
+  const commitment = snapshot.discourse.commitments[0];
+  assert.equal(commitment?.status, "renegotiated");
+  assert.equal(commitment?.resolvedAt, null);
+  assert.equal(commitment?.evidence, null);
+  assert.equal(commitment?.events.at(-1)?.kind, "hachika_renegotiation");
+});
+
+test("task timing surfaces stalled work without releasing it automatically", () => {
+  const snapshot = acceptedTaskSnapshot("仕様の境界を整理して");
+  const commitment = snapshot.discourse.commitments[0]!;
+
+  const beforeThreshold = describeTaskCommitmentTiming(
+    snapshot,
+    commitment,
+    "2026-07-16T23:59:00.000Z",
+  );
+  assert.equal(beforeThreshold.stalled, false);
+
+  const atThreshold = describeTaskCommitmentTiming(
+    snapshot,
+    commitment,
+    "2026-07-17T00:00:00.000Z",
+  );
+  assert.equal(atThreshold.stalled, true);
+  assert.equal(atThreshold.inactiveHours, 72);
+  assert.equal(commitment.status, "accepted");
+
+  snapshot.traces["仕様の境界"] = resolvedTrace(
+    "仕様の境界",
+    "2026-07-18T00:00:00.000Z",
+  );
+  const afterProgress = describeTaskCommitmentTiming(
+    snapshot,
+    commitment,
+    "2026-07-19T00:00:00.000Z",
+  );
+  assert.equal(afterProgress.ageHours, 120);
+  assert.equal(afterProgress.inactiveHours, 24);
+  assert.equal(afterProgress.stalled, false);
+});
+
+function acceptedTaskSnapshot(text: string) {
+  const snapshot = createInitialSnapshot();
+  snapshot.discourse.openRequests.push({
+    target: "work_topic",
+    kind: "task",
+    text,
+    askedAt: "2026-07-14T00:00:00.000Z",
+    requestedBy: "user",
+    responsibleParty: "hachika",
+    status: "resolved",
+    resolvedAt: "2026-07-14T00:00:00.000Z",
+  });
+  snapshot.discourse.commitments = reconcileDiscourseCommitments(
+    [],
+    [],
+    snapshot.discourse.openRequests,
+  );
+  return snapshot;
+}
 
 function resolvedTrace(topic: string, lastUpdatedAt: string): TraceEntry {
   return {

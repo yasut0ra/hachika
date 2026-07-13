@@ -14,7 +14,11 @@ export function reconcileDiscourseCommitments(
   questions: readonly DiscourseOpenQuestion[],
   requests: readonly DiscourseOpenRequest[],
 ): DiscourseCommitment[] {
-  const commitments = existing.map((commitment) => ({ ...commitment }));
+  const commitments = existing.map((commitment) => ({
+    ...commitment,
+    evidence: commitment.evidence ? { ...commitment.evidence } : null,
+    events: commitment.events.map((event) => ({ ...event })),
+  }));
   const userRequests = requests.filter(
     (request) =>
       request.requestedBy === "user" && request.responsibleParty === "hachika",
@@ -61,16 +65,15 @@ export function reconcileDiscourseCommitments(
         commitment.source === source.source &&
         commitment.sourceAskedAt === source.sourceAskedAt,
     );
-    const sourceStatus =
+    const sourceStatus: DiscourseCommitment["status"] =
       source.status !== "resolved"
         ? "open"
         : source.kind === "task"
           ? "accepted"
           : "fulfilled";
-    const status =
-      source.kind === "task" && current?.status === "fulfilled" && current.evidence
-        ? "fulfilled"
-        : sourceStatus;
+    const status = source.kind === "task"
+      ? preservedTaskStatus(current) ?? sourceStatus
+      : sourceStatus;
 
     if (current) {
       current.kind = source.kind;
@@ -82,10 +85,13 @@ export function reconcileDiscourseCommitments(
           ? (current.acceptedAt ?? source.resolvedAt)
           : null;
       current.resolvedAt =
-        status === "fulfilled"
+        status === "fulfilled" || status === "released"
           ? (current.resolvedAt ?? source.resolvedAt)
           : null;
-      current.evidence = status === "fulfilled" ? current.evidence : null;
+      current.evidence =
+        status === "fulfilled" || status === "released"
+          ? current.evidence
+          : null;
       continue;
     }
 
@@ -105,6 +111,7 @@ export function reconcileDiscourseCommitments(
       resolvedAt:
         status === "fulfilled" && source.kind !== "task" ? source.resolvedAt : null,
       evidence: null,
+      events: [],
     });
   }
 
@@ -115,22 +122,36 @@ export function advanceTaskCommitments(
   snapshot: HachikaSnapshot,
   context: {
     input?: string;
+    reply?: string;
     signals?: InteractionSignals;
     timestamp: string;
   },
 ): void {
-  const acceptedTasks = snapshot.discourse.commitments.filter(
-    (commitment) =>
-      commitment.owner === "hachika" &&
-      commitment.kind === "task" &&
-      commitment.status === "accepted",
-  );
+  const transitioned = new Set<DiscourseCommitment>();
+  const activeTasks = activeTaskCommitments(snapshot);
+  const userRelease = context.input && isUserWithdrawal(context.input)
+    ? selectTransitionTarget(activeTasks, context.input, context.signals?.topics ?? [])
+    : null;
 
-  for (const commitment of acceptedTasks) {
+  if (userRelease) {
+    releaseCommitment(userRelease.commitment, {
+      kind: "user_withdrawal",
+      topic: userRelease.topic,
+      summary: compactEvidenceSummary(context.input!),
+      recordedAt: context.timestamp,
+    });
+    transitioned.add(userRelease.commitment);
+  }
+
+  for (const commitment of activeTaskCommitments(snapshot)) {
     const traceEvidence = findTaskTraceEvidence(snapshot, commitment);
     const userEvidence = traceEvidence
       ? null
-      : findUserCompletionEvidence(commitment, acceptedTasks, context);
+      : findUserCompletionEvidence(
+          commitment,
+          activeTaskCommitments(snapshot),
+          context,
+        );
     const evidence = traceEvidence ?? userEvidence;
     if (!evidence) {
       continue;
@@ -139,7 +160,252 @@ export function advanceTaskCommitments(
     commitment.status = "fulfilled";
     commitment.resolvedAt = evidence.recordedAt;
     commitment.evidence = evidence;
+    appendCommitmentEvent(commitment, evidence);
+    transitioned.add(commitment);
   }
+
+  const remainingTasks = activeTaskCommitments(snapshot);
+  const userRenegotiation =
+    context.input && isUserRenegotiation(context.input)
+      ? selectTransitionTarget(
+          remainingTasks.filter((commitment) => !transitioned.has(commitment)),
+          context.input,
+          context.signals?.topics ?? [],
+        )
+      : null;
+  if (userRenegotiation) {
+    renegotiateCommitment(userRenegotiation.commitment, {
+      kind: "user_renegotiation",
+      topic: userRenegotiation.topic,
+      summary: compactEvidenceSummary(context.input!),
+      recordedAt: context.timestamp,
+    });
+    transitioned.add(userRenegotiation.commitment);
+  }
+
+  if (!context.reply) {
+    return;
+  }
+
+  const hachikaTasks = activeTaskCommitments(snapshot).filter(
+    (commitment) => !transitioned.has(commitment),
+  );
+  const hachikaRelease = isHachikaRelease(context.reply)
+    ? selectTransitionTarget(hachikaTasks, context.reply, [])
+    : null;
+  if (hachikaRelease) {
+    releaseCommitment(hachikaRelease.commitment, {
+      kind: "hachika_release",
+      topic: hachikaRelease.topic,
+      summary: compactEvidenceSummary(context.reply),
+      recordedAt: context.timestamp,
+    });
+    transitioned.add(hachikaRelease.commitment);
+  }
+
+  const hachikaRenegotiation = isHachikaRenegotiation(context.reply)
+    ? selectTransitionTarget(
+        activeTaskCommitments(snapshot).filter(
+          (commitment) => !transitioned.has(commitment),
+        ),
+        context.reply,
+        [],
+      )
+    : null;
+  if (hachikaRenegotiation) {
+    renegotiateCommitment(hachikaRenegotiation.commitment, {
+      kind: "hachika_renegotiation",
+      topic: hachikaRenegotiation.topic,
+      summary: compactEvidenceSummary(context.reply),
+      recordedAt: context.timestamp,
+    });
+  }
+}
+
+export interface TaskCommitmentTiming {
+  ageHours: number;
+  inactiveHours: number;
+  stalled: boolean;
+  lastProgressAt: string;
+}
+
+export function describeTaskCommitmentTiming(
+  snapshot: HachikaSnapshot,
+  commitment: DiscourseCommitment,
+  observedAt: string,
+): TaskCommitmentTiming {
+  const acceptedAt = commitment.acceptedAt ?? commitment.createdAt;
+  const topics = commitmentTopics(commitment.text);
+  const matchingTraceTimes = Object.values(snapshot.traces)
+    .filter((trace) => topics.length > 0 && traceMatchesCommitment(trace, topics))
+    .map((trace) => trace.lastUpdatedAt);
+  const eventTimes = commitment.events.map((event) => event.recordedAt);
+  const lastProgressAt = [acceptedAt, ...matchingTraceTimes, ...eventTimes]
+    .filter(isValidTimestamp)
+    .sort((left, right) => right.localeCompare(left))[0] ?? acceptedAt;
+  const ageHours = elapsedHours(acceptedAt, observedAt);
+  const inactiveHours = elapsedHours(lastProgressAt, observedAt);
+
+  return {
+    ageHours,
+    inactiveHours,
+    stalled:
+      (commitment.status === "accepted" || commitment.status === "renegotiated") &&
+      inactiveHours >= 72,
+    lastProgressAt,
+  };
+}
+
+function preservedTaskStatus(
+  commitment: DiscourseCommitment | undefined,
+): DiscourseCommitment["status"] | null {
+  if (
+    commitment?.status === "fulfilled" &&
+    commitment.evidence &&
+    isFulfillmentEvidence(commitment.evidence)
+  ) {
+    return "fulfilled";
+  }
+  if (
+    commitment?.status === "released" &&
+    commitment.evidence &&
+    isReleaseEvidence(commitment.evidence)
+  ) {
+    return "released";
+  }
+  if (
+    commitment?.status === "renegotiated" &&
+    commitment.events.at(-1) !== undefined &&
+    isRenegotiationEvidence(commitment.events.at(-1)!)
+  ) {
+    return "renegotiated";
+  }
+  return null;
+}
+
+function activeTaskCommitments(snapshot: HachikaSnapshot): DiscourseCommitment[] {
+  return snapshot.discourse.commitments.filter(
+    (commitment) =>
+      commitment.owner === "hachika" &&
+      commitment.kind === "task" &&
+      (commitment.status === "accepted" || commitment.status === "renegotiated"),
+  );
+}
+
+function releaseCommitment(
+  commitment: DiscourseCommitment,
+  evidence: DiscourseCommitmentEvidence,
+): void {
+  commitment.status = "released";
+  commitment.resolvedAt = evidence.recordedAt;
+  commitment.evidence = evidence;
+  appendCommitmentEvent(commitment, evidence);
+}
+
+function renegotiateCommitment(
+  commitment: DiscourseCommitment,
+  evidence: DiscourseCommitmentEvidence,
+): void {
+  commitment.status = "renegotiated";
+  commitment.resolvedAt = null;
+  commitment.evidence = null;
+  appendCommitmentEvent(commitment, evidence);
+}
+
+function appendCommitmentEvent(
+  commitment: DiscourseCommitment,
+  evidence: DiscourseCommitmentEvidence,
+): void {
+  commitment.events.push(evidence);
+  commitment.events = commitment.events.slice(-12);
+}
+
+function selectTransitionTarget(
+  commitments: readonly DiscourseCommitment[],
+  text: string,
+  signalTopics: readonly string[],
+): { commitment: DiscourseCommitment; topic: string | null } | null {
+  const currentTopics = uniqueTopics([...signalTopics, ...extractTopics(text)]);
+  const matched = [...commitments]
+    .reverse()
+    .map((commitment) => {
+      const expectedTopics = commitmentTopics(commitment.text);
+      const topic = expectedTopics.find((expected) =>
+        currentTopics.some((current) => topicsLooselyMatch(expected, current)),
+      ) ?? null;
+      return { commitment, topic };
+    })
+    .find((candidate) => candidate.topic !== null);
+
+  if (matched) {
+    return matched;
+  }
+
+  if (
+    commitments.length === 1 &&
+    !currentTopics.some(
+      (topic) =>
+        isMeaningfulTopic(topic) &&
+        !/(?:その件|この件|依頼|お願い|約束|作業|保留|後で|あとで|また今度)/u.test(
+          topic,
+        ),
+    ) &&
+    /(?:その件|この件|それ|これ|依頼|お願い|約束|作業|保留|後で|あとで|また今度)/u.test(
+      text,
+    )
+  ) {
+    return { commitment: commitments[0]!, topic: null };
+  }
+  return null;
+}
+
+function isUserWithdrawal(text: string): boolean {
+  return (
+    /(?:やらなくて|しなくて|対応しなくて|進めなくて).{0,5}(?:いい|大丈夫)/u.test(text) ||
+    /(?:依頼|お願い|約束).{0,10}(?:取り下げ|撤回|解除)/u.test(text) ||
+    /(?:その|この|例の).{0,18}(?:やめよう|中止|不要|もういい)/u.test(text)
+  );
+}
+
+function isUserRenegotiation(text: string): boolean {
+  return (
+    /(?:一旦|いったん|今は).{0,16}(?:保留|置いて|止めて|待って)/u.test(text) ||
+    /(?:後で|あとで|また今度).{0,16}(?:やろう|進めよう|再開)/u.test(text) ||
+    /(?:急がなくて|期限|締切|条件|進め方).{0,18}(?:いい|変え|延ば|見直)/u.test(text)
+  );
+}
+
+function isHachikaRelease(text: string): boolean {
+  return (
+    /(?:依頼|作業|約束).{0,16}(?:引き受けられない|取り下げる|手放す)/u.test(text) ||
+    /(?:対応|実行|継続).{0,12}(?:できない|しないことにする)/u.test(text)
+  );
+}
+
+function isHachikaRenegotiation(text: string): boolean {
+  return (
+    /(?:条件|期限|締切|進め方).{0,16}(?:変えたい|延ばしたい|見直したい|相談したい)/u.test(text) ||
+    /(?:先に|まず).{0,24}(?:確認|情報|合意).{0,10}(?:必要|ほしい)/u.test(text)
+  );
+}
+
+function isFulfillmentEvidence(evidence: DiscourseCommitmentEvidence): boolean {
+  return (
+    evidence.kind === "user_completion" ||
+    evidence.kind === "trace_resolution" ||
+    evidence.kind === "trace_decision"
+  );
+}
+
+function isReleaseEvidence(evidence: DiscourseCommitmentEvidence): boolean {
+  return evidence.kind === "user_withdrawal" || evidence.kind === "hachika_release";
+}
+
+function isRenegotiationEvidence(evidence: DiscourseCommitmentEvidence): boolean {
+  return (
+    evidence.kind === "user_renegotiation" ||
+    evidence.kind === "hachika_renegotiation"
+  );
 }
 
 function findTaskTraceEvidence(
@@ -274,6 +540,19 @@ function timestampAfter(candidate: string, reference: string): boolean {
   return Number.isFinite(candidateTime) &&
     Number.isFinite(referenceTime) &&
     candidateTime > referenceTime;
+}
+
+function isValidTimestamp(value: string): boolean {
+  return Number.isFinite(Date.parse(value));
+}
+
+function elapsedHours(from: string, to: string): number {
+  const fromTime = Date.parse(from);
+  const toTime = Date.parse(to);
+  if (!Number.isFinite(fromTime) || !Number.isFinite(toTime)) {
+    return 0;
+  }
+  return Math.max(0, (toTime - fromTime) / 3_600_000);
 }
 
 function compactEvidenceSummary(text: string): string {

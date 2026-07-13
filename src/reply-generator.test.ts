@@ -22,6 +22,21 @@ test("buildReplyGenerationPayload surfaces fallback intent and concrete actor cu
   nextSnapshot.identity.summary = "設計の痕跡を残したがる輪郭が少し固まってきた。";
   nextSnapshot.identity.currentArc = "今は設計を目印のままにせず、もう一段具体化したい。";
   nextSnapshot.identity.anchors = ["設計"];
+  nextSnapshot.lastInteractionAt = "2026-03-23T12:00:00.000Z";
+  nextSnapshot.discourse.commitments.push({
+    owner: "hachika",
+    kind: "task",
+    source: "request",
+    sourceAskedAt: "2026-03-19T12:00:00.000Z",
+    target: "work_topic",
+    text: "設計を整理して",
+    status: "accepted",
+    createdAt: "2026-03-19T12:00:00.000Z",
+    acceptedAt: "2026-03-19T12:00:00.000Z",
+    resolvedAt: null,
+    evidence: null,
+    events: [],
+  });
   nextSnapshot.purpose.active = {
     kind: "continue_shared_work",
     topic: "設計",
@@ -216,6 +231,8 @@ test("buildReplyGenerationPayload surfaces fallback intent and concrete actor cu
   assert.match(payload.identity.currentArc, /次に/);
   assert.match(payload.selfModel.narrative, /いまの一歩|前へ進める/);
   assert.equal(payload.purpose.active?.kind, "continue_shared_work");
+  assert.equal(payload.activeCommitments[0]?.status, "accepted");
+  assert.equal(payload.activeCommitments[0]?.stalled, true);
   assert.equal(payload.traces[0]?.topic, "設計");
   assert.equal(payload.traces[0]?.tending, "deepen");
   assert.ok(payload.traces[0]?.blockers.includes("責務が未定"));

@@ -195,12 +195,21 @@ export interface DiscourseOpenRequest {
 
 export type DiscourseCommitmentKind = "answer" | "task" | "style";
 
-export type DiscourseCommitmentStatus = "open" | "accepted" | "fulfilled";
+export type DiscourseCommitmentStatus =
+  | "open"
+  | "accepted"
+  | "renegotiated"
+  | "fulfilled"
+  | "released";
 
 export type DiscourseCommitmentEvidenceKind =
   | "user_completion"
   | "trace_resolution"
-  | "trace_decision";
+  | "trace_decision"
+  | "user_renegotiation"
+  | "hachika_renegotiation"
+  | "user_withdrawal"
+  | "hachika_release";
 
 export interface DiscourseCommitmentEvidence {
   kind: DiscourseCommitmentEvidenceKind;
@@ -221,6 +230,7 @@ export interface DiscourseCommitment {
   acceptedAt: string | null;
   resolvedAt: string | null;
   evidence: DiscourseCommitmentEvidence | null;
+  events: DiscourseCommitmentEvidence[];
 }
 
 export interface DiscourseState {
