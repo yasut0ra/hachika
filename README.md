@@ -378,8 +378,9 @@ npm run ui
 
 デフォルトでは `http://127.0.0.1:3042` で起動します。  
 `HACHIKA_UI_HOST` と `HACHIKA_UI_PORT` で変更できます。
+Web UI は resident loop も同じプロセス内で起動するため、これだけで Hachika の時間と自律行動が進みます。UI server を停止すると、UI が所有している loop も安全に停止します。すでに別プロセスの loop が動いている場合は二重起動せず、その既存 loop を利用します。
 
-常在 loop を動かす場合:
+UIなしで常在 loop だけを動かす場合（CLIとの併用やheadless運用）:
 
 ```bash
 npm run loop
@@ -388,7 +389,7 @@ npm run loop
 `HACHIKA_LOOP_INTERVAL_MS` で tick 間隔、`HACHIKA_LOOP_IDLE_HOURS_PER_TICK` で 1 tick あたりに進める疑似 idle 時間を変えられます。  
 loop は snapshot を定期的に読み込み、まず idle 由来の `internal action` を進め、その後で必要なら `outward proactive` を評価して `initiative.history` と artifacts に反映します。
 internal action はいま `observe / hold / drift / recall` の候補から先に選ばれ、そのあとで snapshot 上の変化として materialize されます。resident loop では `OPENAI_AUTONOMY_MODEL` があると、この internal action 候補を autonomy director が `keep / suppress / reshape` でき、さらにその tick を `silent / touch / speak` のどれで終えるかも裁けます。
-Web UI を開いていれば、loop が出した autonomous proactive は polling で自動表示されます。
+Web UI では、内蔵または既存 loop が出した autonomous proactive を polling で自動表示します。
 CLI も resident loop と併用していれば、入力待ちのまま autonomous proactive が流れます。
 CLI と UI server は各操作の直前に snapshot を再読込するので、loop と併用しても state の見え方がずれにくくなっています。
 起動中は `data/resident-lock.json` と `data/resident-status.json` を使って多重起動防止と heartbeat/status 表示を行います。

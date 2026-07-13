@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { extname, normalize, resolve } from "node:path";
 
 import { syncArtifacts } from "./artifacts.js";
+import { createAutonomyDirectorFromEnv } from "./autonomy-director.js";
 import { createBehaviorDirectorFromEnv } from "./behavior-director.js";
 import { runWithConflictRetry } from "./conflict-retry.js";
 import { HachikaEngine } from "./engine.js";
@@ -11,7 +12,12 @@ import { createInputInterpreterFromEnv } from "./input-interpreter.js";
 import { createInitiativeDirectorFromEnv } from "./initiative-director.js";
 import { commitSnapshot, loadSnapshot } from "./persistence.js";
 import { createProactiveDirectorFromEnv } from "./proactive-director.js";
-import { createReplyGeneratorFromEnv } from "./reply-generator.js";
+import { createReplyGeneratorFromEnv, describeReplyGenerator } from "./reply-generator.js";
+import { readResidentLoopConfigFromEnv } from "./resident-loop.js";
+import {
+  isResidentLoopAlreadyRunningError,
+  ResidentLoopRuntime,
+} from "./resident-runtime.js";
 import { createResponsePlannerFromEnv } from "./response-planner.js";
 import { createTraceExtractorFromEnv } from "./trace-extractor.js";
 import { createTurnDirectorFromEnv } from "./turn-director.js";
@@ -20,6 +26,7 @@ import { buildUiState } from "./ui-state.js";
 
 const snapshotPath = resolve(process.cwd(), "data/hachika-state.json");
 const artifactsDir = resolve(process.cwd(), "data/artifacts");
+const residentLockPath = resolve(process.cwd(), "data/resident-lock.json");
 const residentStatusPath = resolve(process.cwd(), "data/resident-status.json");
 const uiDir = resolve(process.cwd(), "ui");
 loadDotEnv();
@@ -28,6 +35,7 @@ const port = Number(process.env.HACHIKA_UI_PORT?.trim() || "3042");
 const snapshot = await loadSnapshot(snapshotPath);
 const engine = new HachikaEngine(snapshot);
 const replyGenerator = createReplyGeneratorFromEnv();
+const autonomyDirector = createAutonomyDirectorFromEnv();
 const proactiveDirector = createProactiveDirectorFromEnv();
 const turnDirector = createTurnDirectorFromEnv();
 const inputInterpreter = createInputInterpreterFromEnv();
@@ -35,6 +43,21 @@ const behaviorDirector = createBehaviorDirectorFromEnv();
 const initiativeDirector = createInitiativeDirectorFromEnv();
 const responsePlanner = createResponsePlannerFromEnv();
 const traceExtractor = createTraceExtractorFromEnv();
+const residentLoop = new ResidentLoopRuntime({
+  snapshotPath,
+  artifactsDir,
+  lockPath: residentLockPath,
+  statusPath: residentStatusPath,
+  config: readResidentLoopConfigFromEnv(),
+  replyDescription: describeReplyGenerator(replyGenerator),
+  replyGenerator,
+  autonomyDirector,
+  proactiveDirector,
+  log: console.log,
+  error: console.error,
+});
+let ownsResidentLoop = false;
+let shuttingDown = false;
 
 await persistState(engine);
 
@@ -180,9 +203,86 @@ const server = createServer(async (request, response) => {
   }
 });
 
-server.listen(port, host, () => {
-  console.log(`Hachika UI listening on http://${host}:${port}`);
+process.on("SIGINT", () => {
+  void shutdown("SIGINT");
 });
+process.on("SIGTERM", () => {
+  void shutdown("SIGTERM");
+});
+
+await listenServer(server, port, host);
+console.log(`Hachika UI listening on http://${host}:${port}`);
+
+try {
+  await residentLoop.start();
+  ownsResidentLoop = true;
+  console.log("Hachika resident loop started with UI");
+} catch (error) {
+  if (isResidentLoopAlreadyRunningError(error)) {
+    console.log("Hachika UI is using the existing resident loop");
+  } else {
+    console.error(
+      `[ui/loop] startup error: ${error instanceof Error ? error.message : "resident_loop_startup_error"}`,
+    );
+  }
+}
+
+async function listenServer(
+  currentServer: typeof server,
+  currentPort: number,
+  currentHost: string,
+): Promise<void> {
+  await new Promise<void>((resolveListen, rejectListen) => {
+    const onError = (error: Error) => {
+      rejectListen(error);
+    };
+
+    currentServer.once("error", onError);
+    currentServer.listen(currentPort, currentHost, () => {
+      currentServer.off("error", onError);
+      resolveListen();
+    });
+  });
+}
+
+async function shutdown(signal: string): Promise<void> {
+  if (shuttingDown) {
+    return;
+  }
+
+  shuttingDown = true;
+
+  try {
+    if (server.listening) {
+      await new Promise<void>((resolveClose, rejectClose) => {
+        server.close((error) => {
+          if (error) {
+            rejectClose(error);
+            return;
+          }
+          resolveClose();
+        });
+      });
+    }
+  } catch (error) {
+    console.error(
+      `[ui] shutdown error: ${error instanceof Error ? error.message : "ui_server_shutdown_error"}`,
+    );
+  }
+
+  try {
+    if (ownsResidentLoop) {
+      await residentLoop.stop(signal);
+      ownsResidentLoop = false;
+    }
+  } catch (error) {
+    console.error(
+      `[ui/loop] shutdown error: ${error instanceof Error ? error.message : "resident_loop_shutdown_error"}`,
+    );
+  }
+
+  console.log("Hachika UI stopped");
+}
 
 async function persistState(currentEngine: HachikaEngine): Promise<boolean> {
   const currentSnapshot = currentEngine.getSnapshot();
