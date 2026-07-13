@@ -129,6 +129,7 @@ const STOPWORDS = new Set([
   "です",
   "ます",
   "ない",
+  "しない",
   "たい",
   "もう",
   "もっと",
@@ -206,6 +207,8 @@ const RELATIONAL_TOPICS = new Set([
   "自己紹介",
 ]);
 
+export const MEMORY_LIMIT = 96;
+
 export function extractTopics(text: string): string[] {
   const topics: string[] = [];
   const seen = new Set<string>();
@@ -247,9 +250,9 @@ export function extractTopics(text: string): string[] {
 }
 
 const USER_SELF_NAME_PATTERNS = [
-  /^(?:私|わたし|僕|ぼく|俺|おれ)は([^\s。、！？?？]{1,24}?)(?:です|だよ|だ)?$/u,
-  /^(?:私|わたし|僕|ぼく|俺|おれ)の名前は([^\s。、！？?？]{1,24}?)(?:です|だよ|だ)?$/u,
-  /(?:^|[\s\n。！？!?])(?:私|わたし|僕|ぼく|俺|おれ)の名前は([^\s。、！？?？]{1,24}?)(?:です|だよ|だ)?(?=$|[\s\n。、！？!?])/u,
+  /^(?:私|わたし|僕|ぼく|俺|おれ)は[\s　]*([^\s。、！？?？]{1,24}?)(?:です|だよ|だ)?$/u,
+  /^(?:私|わたし|僕|ぼく|俺|おれ)の名前は[\s　]*([^\s。、！？?？]{1,24}?)(?:です|だよ|だ)?$/u,
+  /(?:^|[\s\n。！？!?])(?:私|わたし|僕|ぼく|俺|おれ)の名前は[\s　]*([^\s。、！？?？]{1,24}?)(?:です|だよ|だ)?(?=$|[\s\n。、！？!?])/u,
 ] as const;
 
 const USER_NAME_MEMORY_CUE_PATTERN =
@@ -266,32 +269,39 @@ export function extractDeclaredUserName(text: string): string | null {
       continue;
     }
 
-    if (
-      candidate.length <= 1 ||
-      STOPWORDS.has(candidate) ||
-      /^(?:あなた|君|きみ|私|わたし|僕|ぼく|俺|おれ|ハチカ)$/u.test(candidate) ||
-      /(?:思う|思っ|感じる|感じ|言う|言っ|してる|する|したい|した|いる|ある)$/u.test(
-        candidate,
-      )
-    ) {
-      continue;
+    const name = validatePersonalNameCandidate(candidate);
+    if (name) {
+      return name;
     }
-
-    return candidate;
   }
 
   const cueMatch = normalized.match(USER_NAME_MEMORY_CUE_PATTERN);
   const cueCandidate = cueMatch?.[1]?.trim() ?? null;
-  if (
-    cueCandidate &&
-    !/[がをにはへとで]/u.test(cueCandidate) &&
-    !STOPWORDS.has(cueCandidate) &&
-    !/^(?:あなた|君|きみ|私|わたし|僕|ぼく|俺|おれ|ハチカ)$/u.test(cueCandidate)
-  ) {
-    return cueCandidate;
+  if (cueCandidate && !/[がをにはへとで]/u.test(cueCandidate)) {
+    return validatePersonalNameCandidate(cueCandidate);
   }
 
   return null;
+}
+
+export function validatePersonalNameCandidate(candidate: string): string | null {
+  const normalized = candidate.normalize("NFKC").trim();
+
+  if (
+    normalized.length <= 1 ||
+    normalized.length > 24 ||
+    STOPWORDS.has(normalized) ||
+    /[\s。、！？!?？]/u.test(normalized) ||
+    /^(?:あなた|君|きみ|私|わたし|僕|ぼく|俺|おれ|ハチカ)$/u.test(normalized) ||
+    /(?:何|なに|なん|どなた|誰|だれ|ちゃんと|覚え|憶え|知っ|分か|わか)/u.test(normalized) ||
+    /(?:思う|思っ|感じる|感じ|言う|言っ|してる|する|したい|した|いる|ある|ますか|ですか|だっけ|かい|かな|でしょう)$/u.test(
+      normalized,
+    )
+  ) {
+    return null;
+  }
+
+  return normalized;
 }
 
 export function extractLocalTopics(text: string): string[] {
@@ -362,6 +372,7 @@ function readCompoundHead(
 
   let topic = base;
   let consumed = 1;
+  const canBridgeIntoKanjiWord = /^[a-z]+$/u.test(base) || SINGLE_KANJI.test(base);
 
   if (HIRAGANA_ONLY.test(base)) {
     return { topic, consumed };
@@ -376,7 +387,12 @@ function readCompoundHead(
 
     const normalized = normalizeTopicPart(next.segment);
 
-    if (!normalized || !SINGLE_KANJI.test(normalized)) {
+    if (
+      !normalized ||
+      HAS_HIRAGANA.test(normalized) ||
+      (!SINGLE_KANJI.test(normalized) &&
+        !(canBridgeIntoKanjiWord && /^[一-龠々]{2,}$/u.test(normalized)))
+    ) {
       break;
     }
 
@@ -422,8 +438,8 @@ export function remember(
     weight: 1,
   });
 
-  if (snapshot.memories.length > 24) {
-    snapshot.memories.splice(0, snapshot.memories.length - 24);
+  if (snapshot.memories.length > MEMORY_LIMIT) {
+    snapshot.memories.splice(0, snapshot.memories.length - MEMORY_LIMIT);
   }
 }
 

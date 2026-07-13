@@ -15,6 +15,7 @@ import {
   remember,
   topPreferredTopics,
   topicsLooselyMatch,
+  validatePersonalNameCandidate,
 } from "./memory.js";
 import {
   buildPendingInitiativeFromSemanticInitiativePlan,
@@ -1220,9 +1221,17 @@ export class HachikaEngine {
     replyDebug: GeneratedTextDebug,
   ): TurnResult {
     const sentiment = classifySentiment(prepared.sentimentScore);
+    const localMemoryTopics =
+      prepared.signals.workCue < 0.28 ? extractLocalTopics(input) : [];
+    const memoryTopics = uniqueTopics([
+      ...prepared.signals.topics,
+      ...localMemoryTopics,
+    ])
+      .filter(isMeaningfulTopic)
+      .slice(0, 6);
 
-    remember(prepared.nextSnapshot, "user", input, prepared.signals.topics, sentiment);
-    remember(prepared.nextSnapshot, "hachika", reply, prepared.signals.topics, "neutral");
+    remember(prepared.nextSnapshot, "user", input, memoryTopics, sentiment);
+    remember(prepared.nextSnapshot, "hachika", reply, memoryTopics, "neutral");
     updateDiscourseState(
       prepared.nextSnapshot,
       input,
@@ -5583,15 +5592,11 @@ function buildSocialLine(
 function extractAssignedHachikaName(text: string): string | null {
   const normalized = text.normalize("NFKC").trim();
   const match = normalized.match(
-    /(?:あなた|君|きみ)の名前は([^\s。、！？?？]{1,24}?)(?:です|だよ|だ)?(?:[。！？!?]|$)/u,
+    /(?:あなた|君|きみ)の名前は[\s　]*([^\s。、！？?？]{1,24}?)(?:です|だよ|だ)?(?:[。！？!?]|$)/u,
   );
   const candidate = match?.[1]?.trim() ?? null;
 
-  if (!candidate || candidate.length <= 1) {
-    return null;
-  }
-
-  return candidate;
+  return candidate ? validatePersonalNameCandidate(candidate) : null;
 }
 
 function updateDiscourseState(

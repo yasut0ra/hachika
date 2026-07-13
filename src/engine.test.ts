@@ -1800,6 +1800,23 @@ test("local fallback remembers assigned hachika naming as a discourse fact", () 
   assert.equal(result.snapshot.traces["名前"], undefined);
 });
 
+test("name recall questions cannot overwrite either participant name", () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+
+  engine.respond("私の名前は やすとら。あなたの名前はネオン。覚えてね。");
+  const result = engine.respond("私の名前はちゃんと覚えていますか。君の名前は覚えているかい");
+
+  assert.equal(result.snapshot.discourse.userName?.value, "やすとら");
+  assert.equal(result.snapshot.discourse.hachikaName?.value, "ネオン");
+});
+
+test("ordinary conversation topics are indexed in episodic turn memory", () => {
+  const result = new HachikaEngine(createInitialSnapshot()).respond("SF短編集が多いな");
+  const userMemory = result.snapshot.memories.find((memory) => memory.role === "user");
+
+  assert.ok(userMemory?.topics.includes("sf短編集"));
+});
+
 test("respondAsync records a resolved direct referent question in discourse state", async () => {
   const engine = new HachikaEngine(createInitialSnapshot());
 

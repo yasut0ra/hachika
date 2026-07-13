@@ -6,6 +6,7 @@ import {
 import { clamp01 } from "./state.js";
 import { aspirationPull, updateAspirationsFromResolution } from "./aspiration.js";
 import { appendJournalEntry, buildResolutionJournalEntry } from "./journal.js";
+import { canAutonomouslySurfaceMemoryThread } from "./memory-threads.js";
 import type {
   ActivePurpose,
   HachikaSnapshot,
@@ -20,6 +21,18 @@ export function updatePurpose(
   signals: InteractionSignals,
   timestamp = new Date().toISOString(),
 ): void {
+  let active = snapshot.purpose.active;
+  if (active?.topic && !canAutonomouslySurfaceMemoryThread(snapshot, active.topic)) {
+    resolvePurpose(
+      snapshot,
+      active,
+      "abandoned",
+      `「${active.topic}」は手放された話題なので、こちらから目的として保持しない。`,
+      timestamp,
+    );
+    active = null;
+  }
+
   const suppressNonWorkCandidate = shouldSuppressPurposeCandidateForDiscourseDemand(
     snapshot,
     signals,
@@ -29,7 +42,6 @@ export function updatePurpose(
     : selectPurposeCandidate(snapshot, selfModel.topMotives, signals);
   const boundaryCandidate =
     selfModel.topMotives.find((motive) => motive.kind === "protect_boundary") ?? null;
-  const active = snapshot.purpose.active;
 
   if (!active) {
     if (candidate && candidate.score >= 0.44) {
@@ -169,7 +181,11 @@ function selectPurposeCandidate(
     ...motive,
     score: Math.min(1, motive.score + aspirationPull(snapshot, motive.topic) * 0.08),
   }));
-  const viable = pulled.filter((motive) => motive.score >= 0.44);
+  const viable = pulled.filter(
+    (motive) =>
+      motive.score >= 0.44 &&
+      canAutonomouslySurfaceMemoryThread(snapshot, motive.topic),
+  );
   const primary = viable[0] ?? null;
 
   if (!primary) {
@@ -251,7 +267,11 @@ function selectSuccessorCandidate(
   motives: readonly SelfMotive[],
   current: ActivePurpose,
 ): SelfMotive | null {
-  const viable = motives.filter((motive) => motive.score >= 0.46);
+  const viable = motives.filter(
+    (motive) =>
+      motive.score >= 0.46 &&
+      canAutonomouslySurfaceMemoryThread(snapshot, motive.topic),
+  );
   const primary = viable[0] ?? null;
   const discoursePreferred =
     primary &&
@@ -292,7 +312,7 @@ function selectSuccessorCandidate(
   }
 
   return (
-    motives.find(
+    viable.find(
       (motive) =>
         motive.score >= 0.46 &&
         (motive.kind !== current.kind || motive.topic !== current.topic),

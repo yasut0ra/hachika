@@ -76,6 +76,7 @@ const THREAD_CLOSED_PATTERNS = [
   /(?:もう|これで).{0,16}(?:話|話題).{0,8}(?:終わり|終わりに|終える|終わらせ)/u,
   /(?:話|話題).{0,8}(?:終わりにし|終わらせ|出さない|触れない)/u,
   /(?:今後|もう).{0,12}(?:話さない|触れない|持ち出さない)/u,
+  /(?:もう)?.{0,16}(?:話|話題).{0,8}(?:したくない|はいい|もういい)/u,
 ];
 
 const THREAD_PARKED_PATTERNS = [
@@ -164,7 +165,7 @@ export function recordMemoryThreadLifecycleFromTurn(
 
   if (
     (target.phase === "parked" || target.phase === "closed") &&
-    (textMentionsThread(target, input) || signals.memoryCue >= 0.2)
+    textMentionsThread(target, input)
   ) {
     return appendMemoryThreadEvent(nextSnapshot, {
       phase: "reopened",

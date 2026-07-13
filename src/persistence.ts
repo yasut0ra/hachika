@@ -12,6 +12,7 @@ import {
   extractDeclaredUserName,
   extractTopics,
   isMeaningfulTopic,
+  MEMORY_LIMIT,
   requiresConcreteTopicSupport,
   topicsLooselyMatch,
 } from "./memory.js";
@@ -1642,7 +1643,7 @@ function hydrateMemories(raw: unknown): MemoryEntry[] {
     });
   }
 
-  return memories.slice(-24);
+  return memories.slice(-MEMORY_LIMIT);
 }
 
 function hydrateMemoryThreadEvents(raw: unknown): MemoryThreadLifecycleEvent[] {

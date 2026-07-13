@@ -6,6 +6,8 @@ import {
   extractLocalTopics,
   extractTopics,
   isMeaningfulTopic,
+  MEMORY_LIMIT,
+  remember,
   requiresConcreteTopicSupport,
   topPreferredTopics,
 } from "./memory.js";
@@ -66,6 +68,34 @@ test("extractDeclaredUserName reads simple japanese self introductions", () => {
   assert.equal(extractDeclaredUserName("知らないみたいだね 私の名前はやすとらです"), "やすとら");
   assert.equal(extractDeclaredUserName("私は胃が弱いです\nいよわです 覚えてね"), "いよわ");
   assert.equal(extractDeclaredUserName("私はそう思う"), null);
+});
+
+test("name questions are not mistaken for declarations", () => {
+  assert.equal(extractDeclaredUserName("私の名前はちゃんと覚えていますか"), null);
+  assert.equal(
+    extractDeclaredUserName("私の名前は やすとら。 あなたの開発者です"),
+    "やすとら",
+  );
+});
+
+test("topic extraction keeps japanese compounds used in ordinary conversation", () => {
+  assert.ok(extractLocalTopics("SF短編集が多いな").includes("sf短編集"));
+  assert.ok(
+    extractLocalTopics("ハマってる本か 非日常を手頃に味わえるところが良い").includes(
+      "非日常",
+    ),
+  );
+});
+
+test("turn memory keeps a wider episodic window with a fixed upper bound", () => {
+  const snapshot = createInitialSnapshot();
+
+  for (let index = 0; index < MEMORY_LIMIT + 8; index += 1) {
+    remember(snapshot, "user", `記憶 ${index}`, ["記憶"], "neutral");
+  }
+
+  assert.equal(snapshot.memories.length, MEMORY_LIMIT);
+  assert.equal(snapshot.memories[0]?.text, "記憶 8");
 });
 
 test("isMeaningfulTopic rejects low-information conversational fragments", () => {

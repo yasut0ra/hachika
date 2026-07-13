@@ -8,6 +8,7 @@ import {
 import { clamp01 } from "./state.js";
 import { sortedTraces } from "./traces.js";
 import { recurringJournalFocus } from "./journal.js";
+import { canAutonomouslySurfaceMemoryThread } from "./memory-threads.js";
 import type {
   HachikaSnapshot,
   IdentityState,
@@ -20,14 +21,28 @@ export function updateIdentity(
   timestamp = snapshot.lastInteractionAt ?? new Date().toISOString(),
 ): void {
   const previous = snapshot.identity;
-  const topPreference = sortedPreferenceImprints(snapshot, 2);
-  const topTrace = sortedTraces(snapshot, 2);
+  const topPreference = sortedPreferenceImprints(snapshot, 8)
+    .filter((imprint) => canAutonomouslySurfaceMemoryThread(snapshot, imprint.topic))
+    .slice(0, 2);
+  const topTrace = sortedTraces(snapshot, 8)
+    .filter((trace) => canAutonomouslySurfaceMemoryThread(snapshot, trace.topic))
+    .slice(0, 2);
   const topBoundary = sortedBoundaryImprints(snapshot, 1)[0];
   const continuity = snapshot.relationImprints.continuity;
   const attention = snapshot.relationImprints.attention;
   const sharedWork = snapshot.relationImprints.shared_work;
-  const activePurpose = snapshot.purpose.active;
-  const lastResolved = snapshot.purpose.lastResolved;
+  const activePurpose = canAutonomouslySurfaceMemoryThread(
+    snapshot,
+    snapshot.purpose.active?.topic,
+  )
+    ? snapshot.purpose.active
+    : null;
+  const lastResolved = canAutonomouslySurfaceMemoryThread(
+    snapshot,
+    snapshot.purpose.lastResolved?.topic,
+  )
+    ? snapshot.purpose.lastResolved
+    : null;
   const lowEnergy = clamp01(0.54 - snapshot.body.energy);
   const tension = snapshot.body.tension;
   const boredom = snapshot.body.boredom;
@@ -245,7 +260,9 @@ function deriveIdentityAnchors(snapshot: HachikaSnapshot): string[] {
   );
 
   for (const topic of previousAnchors.slice(0, 4)) {
-    accumulateAnchorScore(scores, topic, 0.08);
+    if (qualifiesIdentityAnchor(snapshot, topic, recentMemoryScores.get(topic) ?? 0)) {
+      accumulateAnchorScore(scores, topic, 0.08);
+    }
   }
 
   return [...scores.entries()]
@@ -265,6 +282,10 @@ function qualifiesIdentityAnchor(
   topic: string,
   recentMemoryScore = 0,
 ): boolean {
+  if (!canAutonomouslySurfaceMemoryThread(snapshot, topic)) {
+    return false;
+  }
+
   const requiresSupport = requiresConcreteTopicSupport(topic);
 
   return (
@@ -319,8 +340,18 @@ function buildCurrentArc(
   anchors: string[],
 ): string {
   const focus = anchors[0];
-  const activePurpose = snapshot.purpose.active;
-  const lastResolved = snapshot.purpose.lastResolved;
+  const activePurpose = canAutonomouslySurfaceMemoryThread(
+    snapshot,
+    snapshot.purpose.active?.topic,
+  )
+    ? snapshot.purpose.active
+    : null;
+  const lastResolved = canAutonomouslySurfaceMemoryThread(
+    snapshot,
+    snapshot.purpose.lastResolved?.topic,
+  )
+    ? snapshot.purpose.lastResolved
+    : null;
 
   if (activePurpose) {
     return describePurpose(activePurpose.kind, activePurpose.topic ?? focus ?? null);

@@ -10,6 +10,8 @@ import {
   selectMemoryThread,
 } from "./memory-threads.js";
 import { createInitialSnapshot } from "./state.js";
+import { updateIdentity } from "./identity.js";
+import { updatePurpose } from "./purpose.js";
 import type { InteractionSignals, TraceEntry, TraceKind } from "./types.js";
 
 function signals(overrides: Partial<InteractionSignals> = {}): InteractionSignals {
@@ -197,6 +199,85 @@ test("thread lifecycle closes a subject and reopens it only on a user return", (
   assert.equal(reopenEvent?.phase, "reopened");
   assert.equal(deriveMemoryThreads(reopened)[0]?.phase, "reopened");
   assert.equal(canAutonomouslySurfaceMemoryThread(reopened, "インターン"), true);
+});
+
+test("a generic memory question cannot reopen the latest closed thread", () => {
+  const previous = createInitialSnapshot();
+  previous.traces.インターン = trace("インターン", "2026-07-01T00:00:00.000Z");
+  previous.purpose.active = {
+    kind: "seek_continuity",
+    topic: "インターン",
+    summary: "インターンの話を保つ",
+    confidence: 0.7,
+    progress: 0.4,
+    createdAt: "2026-07-01T00:00:00.000Z",
+    lastUpdatedAt: "2026-07-01T00:00:00.000Z",
+    turnsActive: 2,
+  };
+  const closed = structuredClone(previous);
+  recordMemoryThreadLifecycleFromTurn(
+    previous,
+    closed,
+    "もうインターンの話はいいって。もう話したくない",
+    signals({ abandonment: 0.8 }),
+    "2026-07-02T00:00:00.000Z",
+  );
+  const next = structuredClone(closed);
+
+  const event = recordMemoryThreadLifecycleFromTurn(
+    closed,
+    next,
+    "私の名前はちゃんと覚えていますか",
+    signals({ memoryCue: 0.8, topics: ["名前"] }),
+    "2026-07-03T00:00:00.000Z",
+  );
+
+  assert.equal(event, null);
+  assert.equal(deriveMemoryThreads(next)[0]?.phase, "closed");
+});
+
+test("closed threads cannot remain a purpose or identity anchor", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.traces.インターン = trace("インターン", "2026-07-01T00:00:00.000Z");
+  snapshot.topicCounts.インターン = 12;
+  snapshot.identity.anchors = ["インターン"];
+  snapshot.purpose.active = {
+    kind: "seek_continuity",
+    topic: "インターン",
+    summary: "インターンの話を保つ",
+    confidence: 0.8,
+    progress: 0.4,
+    createdAt: "2026-07-01T00:00:00.000Z",
+    lastUpdatedAt: "2026-07-01T00:00:00.000Z",
+    turnsActive: 3,
+  };
+  snapshot.memoryThreadEvents.push({
+    phase: "closed",
+    topics: ["インターン"],
+    timestamp: "2026-07-02T00:00:00.000Z",
+    reason: "もうインターンの話はいい",
+  });
+
+  updatePurpose(
+    snapshot,
+    {
+      narrative: "別の話へ移る",
+      topMotives: [
+        { kind: "seek_continuity", score: 0.9, topic: "インターン", reason: "古い痕跡" },
+        { kind: "pursue_curiosity", score: 0.62, topic: "短編集", reason: "今の話" },
+      ],
+      conflicts: [],
+      dominantConflict: null,
+    },
+    signals({ novelty: 0.4, topics: ["短編集"] }),
+    "2026-07-03T00:00:00.000Z",
+  );
+  updateIdentity(snapshot, "2026-07-03T00:00:00.000Z");
+
+  assert.equal(snapshot.purpose.lastResolved?.topic, "インターン");
+  assert.equal(snapshot.purpose.lastResolved?.outcome, "abandoned");
+  assert.equal(snapshot.purpose.active?.topic, "短編集");
+  assert.equal(snapshot.identity.anchors.includes("インターン"), false);
 });
 
 test("topic shift parks the current thread without forgetting it", () => {
