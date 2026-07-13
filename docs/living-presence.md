@@ -39,12 +39,23 @@ Snapshot versionは33。旧snapshotには静かな`rest` presence、world object
 - action intensityとresidueは実時間の指数減衰になり、呼び出し回数ではなく過ごした時間で薄れる
 - wall-clock tickの`updatedAt`は実際のtick時刻を使う
 
+## Phase 3: contact and recovery
+
+実装済み。
+
+- `touch / rest`をidle autonomyのinternal candidateへ加えた
+- energy低下、cognitive load、緊張が一定以上なら、未完了topicがあっても`rest`を優先する
+- intentional `rest`は`body_need`を理由に持ち、activation / cognitive load / stress / silence needを実時間で回復させる
+- ongoing `rest`はembodimentにも継続中の行動として現れ、休んでいる間は場所を勝手に移らない
+- world urgeが高く、近くのobjectにfamiliarityが育っていると`observe`ではなく`touch`を選べる
+- familiarなobjectへの`touch`は、未知のobjectより認知costが低く、安全を少し回復させる
+- internal `touch`はworld eventとobject stateを一度だけ変え、その後はpresenceのdwellとして続く
+
 ## Next
 
-1. `touch / rest`をinternal candidateへ広げ、行動ごとのcostと回復を深める
-2. world objectごとの経験差をcandidate selectionへ戻す
-3. journalをrule templateではなく、実際に続いたpresence episodeから書く
-4. 同じ不在でも生活史の違う個体が異なるepisodeを辿るscenario testを置く
+1. journalをrule templateではなく、実際に続いたpresence episodeから書く
+2. 同じ不在でも生活史の違う個体が異なるepisodeを辿るscenario testを厚くする
+3. familiarityを単一値から、安心・作業・記憶など質の異なる関係へ育てる
 
 ## Non-goals
 

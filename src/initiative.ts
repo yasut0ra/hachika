@@ -86,7 +86,13 @@ interface IdleConsolidationReport {
   compressed: boolean;
 }
 
-export type IdleAutonomyAction = "observe" | "hold" | "drift" | "recall";
+export type IdleAutonomyAction =
+  | "observe"
+  | "touch"
+  | "rest"
+  | "hold"
+  | "drift"
+  | "recall";
 
 interface PreparedIdleRecallSelection {
   trace: HachikaSnapshot["traces"][string];
@@ -836,9 +842,17 @@ export function prepareIdleAutonomyAction(
       : null;
   const prioritizedTopic = selected?.trace.topic ?? null;
   const prioritizedMotive = selected?.motive ?? null;
-  const action = selected?.shouldInstallPending
-    ? "recall"
-    : selectIdleInternalAction(snapshot, absenceDepthHours, prioritizedTopic);
+  const backgroundAction = selectIdleInternalAction(
+    snapshot,
+    absenceDepthHours,
+    prioritizedTopic,
+  );
+  const action =
+    backgroundAction === "rest"
+      ? "rest"
+      : selected?.shouldInstallPending
+        ? "recall"
+        : backgroundAction;
 
   return {
     action,
@@ -858,6 +872,14 @@ function deriveIdleAutonomyAttentionReasons(
 
   if (action === "observe") {
     reasons.add("world_pull");
+  }
+
+  if (action === "touch") {
+    reasons.add("world_pull");
+  }
+
+  if (action === "rest") {
+    reasons.add("body_need");
   }
 
   if (action === "hold") {
@@ -981,7 +1003,9 @@ export function materializeIdleAutonomyAction(
     place: traceWorld?.place ?? snapshot.world.currentPlace,
     objectId: traceWorld?.objectId ?? null,
     worldAction:
-      prepared.action === "observe" ||
+      prepared.action === "touch"
+        ? "touch"
+        : prepared.action === "observe" ||
       (prepared.action === "recall" && traceWorld?.objectId)
         ? "observe"
         : null,
@@ -1045,7 +1069,7 @@ export function materializeIdleAutonomyAction(
     recordInitiativeActivity(snapshot, {
       kind: "idle_reactivation",
       autonomyAction: "recall",
-      timestamp: new Date().toISOString(),
+      timestamp: options.timestamp ?? new Date().toISOString(),
       motive: prepared.selected.motive,
       topic: prepared.selected.trace.topic,
       traceTopic: prepared.selected.trace.topic,
@@ -1062,7 +1086,13 @@ export function materializeIdleAutonomyAction(
       ),
     });
     if (report?.focusTopic && report.focusTopic !== prepared.selected.trace.topic) {
-      recordIdleConsolidation(snapshot, prepared.hours, report, "hold");
+      recordIdleConsolidation(
+        snapshot,
+        prepared.hours,
+        report,
+        "hold",
+        options.timestamp,
+      );
     }
     return;
   }
@@ -1076,7 +1106,24 @@ export function materializeIdleAutonomyAction(
           prepared.prioritizedMotive,
         )
       : null;
-    recordIdleConsolidation(snapshot, prepared.hours, report, "observe");
+    recordIdleConsolidation(
+      snapshot,
+      prepared.hours,
+      report,
+      "observe",
+      options.timestamp,
+    );
+    return;
+  }
+
+  if (prepared.action === "touch" || prepared.action === "rest") {
+    recordIdleConsolidation(
+      snapshot,
+      prepared.hours,
+      null,
+      prepared.action,
+      options.timestamp,
+    );
     return;
   }
 
@@ -1088,7 +1135,13 @@ export function materializeIdleAutonomyAction(
         prepared.prioritizedMotive,
       )
     : null;
-  recordIdleConsolidation(snapshot, prepared.hours, report, prepared.action);
+  recordIdleConsolidation(
+    snapshot,
+    prepared.hours,
+    report,
+    prepared.action,
+    options.timestamp,
+  );
 }
 
 function selectIdleInternalAction(
@@ -1096,6 +1149,16 @@ function selectIdleInternalAction(
   hours: number,
   prioritizedTopic: string | null,
 ): IdleAutonomyAction {
+  const energySetPoint = snapshot.constitution.bodySetPoints.energy;
+  const needsRest =
+    snapshot.body.energy <= Math.max(0.24, energySetPoint - 0.16) ||
+    snapshot.dynamics.cognitiveLoad >= 0.72 ||
+    (snapshot.body.tension >= 0.68 && snapshot.body.energy <= energySetPoint);
+
+  if (needsRest) {
+    return "rest";
+  }
+
   if (prioritizedTopic) {
     return "hold";
   }
@@ -1119,6 +1182,27 @@ function selectIdleInternalAction(
 
   if (urges.silenceNeed >= 0.55 && urges.silenceNeed >= urges.worldUrge) {
     return "hold";
+  }
+
+  const objectId = getCurrentWorldObjectId(snapshot.world);
+  const familiarity = objectId
+    ? snapshot.world.objects[objectId]?.familiarity ?? 0
+    : 0;
+  const touchPull =
+    urges.worldUrge * 0.62 +
+    familiarity * 0.34 +
+    snapshot.temperament.openness * 0.12 +
+    snapshot.world.places[snapshot.world.currentPlace].warmth * 0.08 -
+    snapshot.body.tension * 0.16 -
+    snapshot.dynamics.cognitiveLoad * 0.12;
+
+  if (
+    objectId &&
+    urges.worldUrge >= 0.5 &&
+    familiarity >= 0.18 &&
+    touchPull >= 0.52
+  ) {
+    return "touch";
   }
 
   return "observe";
@@ -2261,44 +2345,46 @@ function recordIdleConsolidation(
   hours: number,
   report: IdleConsolidationReport | null,
   desiredAction: IdleAutonomyAction = "observe",
+  timestamp: string = new Date().toISOString(),
 ): void {
   const observationOnly = report === null;
   const quietHold = observationOnly && desiredAction === "hold";
   const observing = desiredAction === "observe";
+  const touching = desiredAction === "touch";
 
   if (!observationOnly && (!report.focusTopic && !report.compressed)) {
     return;
   }
 
   const currentPlace = snapshot.world.currentPlace;
-  const observationWorldAction = observing && !quietHold ? ("observe" as const) : null;
+  const observationWorldAction = touching
+    ? ("touch" as const)
+    : observing && !quietHold
+      ? ("observe" as const)
+      : null;
   const autonomyAction = observationOnly
-    ? quietHold
-      ? "hold"
-      : "observe"
+    ? desiredAction
     : observing
       ? "observe"
-    : desiredAction === "drift"
-      ? "drift"
-      : "hold";
+      : desiredAction === "drift"
+        ? "drift"
+        : "hold";
 
   recordInitiativeActivity(snapshot, {
     kind: "idle_consolidation",
     autonomyAction,
-    timestamp: new Date().toISOString(),
+    timestamp,
     motive: null,
     topic: observationOnly ? null : report.focusTopic,
     traceTopic: null,
     blocker: null,
-    place: observing && !quietHold ? currentPlace : null,
+    place: observing || touching ? currentPlace : null,
     worldAction: observationWorldAction,
     maintenanceAction: null,
     reopened: false,
     hours: Math.round(hours * 10) / 10,
     summary: observationOnly
-      ? quietHold
-        ? buildIdleHoldSummary(snapshot)
-        : buildIdleObservationSummary(snapshot)
+      ? buildIdleActivitySummary(snapshot, desiredAction)
       : buildIdleConsolidationSummary(report),
   });
 }
@@ -2361,6 +2447,30 @@ function buildIdleObservationSummary(snapshot: HachikaSnapshot): string {
   }
 
   return `静かな時間で${describeWorldPlaceJa(snapshot.world.currentPlace)}の気配を見ていた。`;
+}
+
+function buildIdleActivitySummary(
+  snapshot: HachikaSnapshot,
+  action: IdleAutonomyAction,
+): string {
+  switch (action) {
+    case "touch": {
+      const objectId = getCurrentWorldObjectId(snapshot.world);
+      return objectId
+        ? `静かな時間に${describeWorldObjectJa(objectId)}へ触れていた。`
+        : `静かな時間に${describeWorldPlaceJa(snapshot.world.currentPlace)}の輪郭へ触れていた。`;
+    }
+    case "rest":
+      return "静かな時間では、注意をほどいて休んでいた。";
+    case "hold":
+      return buildIdleHoldSummary(snapshot);
+    case "drift":
+      return "静かな時間では、行き先を決めずに記憶の間を漂っていた。";
+    case "observe":
+      return buildIdleObservationSummary(snapshot);
+    case "recall":
+      return "静かな時間では、残っている記憶へ戻っていた。";
+  }
 }
 
 function buildIdleHoldSummary(snapshot: HachikaSnapshot): string {

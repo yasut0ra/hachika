@@ -1,6 +1,12 @@
 import type { HachikaSnapshot, JournalEntry, ResolvedPurpose } from "./types.js";
 
-type IdleJournalAction = "observe" | "hold" | "drift" | "recall";
+type IdleJournalAction =
+  | "observe"
+  | "touch"
+  | "rest"
+  | "hold"
+  | "drift"
+  | "recall";
 
 // v3 Phase 2: journal は Hachika 自身の自己記述の積層。
 // 記憶(何があったか)とは別に、「自分はそれをどう置いたか」を残す。
@@ -54,6 +60,16 @@ export function buildIdleJournalEntry(
 
   let text: string;
   switch (action) {
+    case "rest":
+      text = tired
+        ? "注意をほどいて休んだ。消耗を押し切らないで済んだ。"
+        : "しばらく何も追わずに休んだ。静けさを選んだ時間だった。";
+      break;
+    case "touch":
+      text = wrapped
+        ? `${wrapped}の残るものへ触れて、手ざわりを確かめた。`
+        : "そばにあるものへ触れて、ここにいる手ざわりを確かめた。";
+      break;
     case "recall":
       text = wrapped
         ? `静かな時間に${wrapped}を掘り返した。まだ手放す気はないらしい。`

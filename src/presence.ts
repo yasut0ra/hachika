@@ -15,7 +15,7 @@ import type {
 } from "./types.js";
 
 export interface PresenceActionContext {
-  action: Exclude<PresenceAction, "rest">;
+  action: PresenceAction;
   hours: number;
   focus: string | null;
   rationale: AttentionRationale | null;
@@ -30,10 +30,8 @@ const RESIDUE_HALF_LIFE_HOURS = 18;
 // substrate値は小数3桁で保存される。15秒ごとの微小差を毎回丸めると
 // tick回数依存になるため、経験時間は連続で積み、作用は30分量ずつ確定する。
 const PRESENCE_EFFECT_QUANTUM_HOURS = 0.5;
-const PRESENCE_INTENSITY_HALF_LIFE_HOURS: Record<
-  Exclude<PresenceAction, "rest">,
-  number
-> = {
+const PRESENCE_INTENSITY_HALF_LIFE_HOURS: Record<PresenceAction, number> = {
+  rest: 30,
   observe: 18,
   touch: 10,
   recall: 14,
@@ -67,6 +65,7 @@ export function materializePresenceAction(
   const intensity = derivePresenceIntensity(snapshot, context);
   const sameExperience =
     snapshot.presence.action === context.action &&
+    snapshot.presence.rationale === context.rationale &&
     snapshot.presence.focus === context.focus &&
     snapshot.presence.place === place &&
     snapshot.presence.objectId === objectId;
@@ -118,18 +117,16 @@ export function advancePresenceHours(
   const startedAt =
     presence.startedAt ??
     (updatedAt ? advanceTimestamp(updatedAt, -hours) : null);
-  let intensity = presence.action === "rest" ? 0 : presence.intensity;
-  if (presence.action !== "rest") {
-    for (let step = 0; step < effectSteps; step += 1) {
-      intensity = clamp01(
-        intensity *
-          Math.pow(
-            0.5,
-            PRESENCE_EFFECT_QUANTUM_HOURS /
-              PRESENCE_INTENSITY_HALF_LIFE_HOURS[presence.action],
-          ),
-      );
-    }
+  let intensity = presence.intensity;
+  for (let step = 0; step < effectSteps; step += 1) {
+    intensity = clamp01(
+      intensity *
+        Math.pow(
+          0.5,
+          PRESENCE_EFFECT_QUANTUM_HOURS /
+            PRESENCE_INTENSITY_HALF_LIFE_HOURS[presence.action],
+        ),
+    );
   }
 
   snapshot.presence = {
@@ -141,15 +138,13 @@ export function advancePresenceHours(
     residue: decayResidueHours(presence.residue, hours),
   };
 
-  if (presence.action !== "rest") {
-    for (let step = 0; step < effectSteps; step += 1) {
-      applyPresenceConsequences(
-        snapshot,
-        presence.action,
-        presence.focus,
-        PRESENCE_EFFECT_QUANTUM_HOURS,
-      );
-    }
+  for (let step = 0; step < effectSteps; step += 1) {
+    applyPresenceConsequences(
+      snapshot,
+      presence.action,
+      presence.focus,
+      PRESENCE_EFFECT_QUANTUM_HOURS,
+    );
   }
 }
 
@@ -180,7 +175,7 @@ export function interruptPresenceForUserTurn(
 
 function applyPresenceConsequences(
   snapshot: HachikaSnapshot,
-  action: Exclude<PresenceAction, "rest">,
+  action: PresenceAction,
   focus: string | null,
   hours: number,
 ): void {
@@ -188,6 +183,28 @@ function applyPresenceConsequences(
   const durationWeight = Math.max(0, hours / 8);
 
   switch (action) {
+    case "rest": {
+      if (snapshot.presence.rationale !== "body_need") {
+        break;
+      }
+      const quiet = snapshot.world.places[snapshot.presence.place]?.quiet ?? 0.5;
+      snapshot.urges.silenceNeed = clamp01(
+        snapshot.urges.silenceNeed - 0.18 * durationWeight,
+      );
+      snapshot.dynamics.activation = clamp01(
+        snapshot.dynamics.activation - 0.035 * durationWeight,
+      );
+      snapshot.dynamics.cognitiveLoad = clamp01(
+        snapshot.dynamics.cognitiveLoad - 0.055 * durationWeight,
+      );
+      snapshot.dynamics.safety = clamp01(
+        snapshot.dynamics.safety + 0.014 * quiet * durationWeight,
+      );
+      snapshot.reactivity.stressLoad = clamp01(
+        snapshot.reactivity.stressLoad - 0.02 * durationWeight,
+      );
+      break;
+    }
     case "observe":
       snapshot.urges.worldUrge = clamp01(
         snapshot.urges.worldUrge - 0.14 * durationWeight,
@@ -199,7 +216,8 @@ function applyPresenceConsequences(
         snapshot.dynamics.noveltyDrive - 0.025 * durationWeight,
       );
       break;
-    case "touch":
+    case "touch": {
+      const familiarity = currentPresenceObjectFamiliarity(snapshot);
       snapshot.urges.worldUrge = clamp01(
         snapshot.urges.worldUrge - 0.19 * durationWeight,
       );
@@ -207,9 +225,18 @@ function applyPresenceConsequences(
         snapshot.urges.closureUrge - 0.04 * durationWeight,
       );
       snapshot.dynamics.cognitiveLoad = clamp01(
-        snapshot.dynamics.cognitiveLoad + 0.012 * durationWeight,
+        snapshot.dynamics.cognitiveLoad +
+          0.02 * (1 - familiarity * 0.8) * durationWeight,
+      );
+      snapshot.dynamics.safety = clamp01(
+        snapshot.dynamics.safety + 0.022 * familiarity * durationWeight,
+      );
+      snapshot.dynamics.activation = clamp01(
+        snapshot.dynamics.activation +
+          0.012 * (1 - familiarity * 0.5) * durationWeight,
       );
       break;
+    }
     case "recall": {
       snapshot.urges.recallUrge = clamp01(
         snapshot.urges.recallUrge - 0.17 * durationWeight,
@@ -297,6 +324,12 @@ function derivePresenceIntensity(
   }
 
   switch (context.action) {
+    case "rest":
+      return clamp01(
+        0.22 +
+          Math.max(0, 0.58 - snapshot.body.energy) * 0.6 +
+          snapshot.dynamics.cognitiveLoad * 0.18,
+      );
     case "observe":
       return clamp01(0.2 + snapshot.urges.worldUrge * 0.42);
     case "touch":
@@ -316,6 +349,11 @@ function derivePresenceIntensity(
     case "drift":
       return clamp01(0.18 + snapshot.urges.recallUrge * 0.28);
   }
+}
+
+function currentPresenceObjectFamiliarity(snapshot: HachikaSnapshot): number {
+  const objectId = snapshot.presence.objectId;
+  return objectId ? snapshot.world.objects[objectId]?.familiarity ?? 0 : 0;
 }
 
 function residueFromPreviousPresence(

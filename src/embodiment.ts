@@ -231,7 +231,10 @@ function deriveCurrentAction(
     };
   }
 
-  if (snapshot.presence.action !== "rest") {
+  if (
+    snapshot.presence.action !== "rest" ||
+    snapshot.presence.rationale === "body_need"
+  ) {
     return {
       action: snapshot.presence.action,
       id: `presence:${snapshot.presence.action}:${snapshot.presence.startedAt ?? "ongoing"}`,

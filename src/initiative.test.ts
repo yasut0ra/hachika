@@ -5,6 +5,7 @@ import { buildSelfModel } from "./self-model.js";
 import { createInitialSnapshot } from "./state.js";
 import {
   emitInitiative,
+  materializeIdleAutonomyAction,
   prepareIdleAutonomyAction,
   prepareInitiativeEmission,
   prepareScheduledInitiative,
@@ -236,6 +237,52 @@ test("prepareIdleAutonomyAction cools to hold while directness corrections remai
   assert.ok(prepared);
   assert.equal(prepared?.action, "hold");
   assert.deepEqual(prepared?.attentionReasons, ["direct_referent"]);
+});
+
+test("idle autonomy chooses intentional rest when continuing would overdraw the body", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.body.energy = 0.24;
+  snapshot.body.tension = 0.66;
+  snapshot.dynamics.cognitiveLoad = 0.76;
+
+  const prepared = prepareIdleAutonomyAction(snapshot, 8);
+
+  assert.equal(prepared?.action, "rest");
+  assert.deepEqual(prepared?.attentionReasons, ["body_need"]);
+});
+
+test("world familiarity turns observation into touch for the same internal state", () => {
+  const unfamiliar = createInitialSnapshot();
+  const familiar = createInitialSnapshot();
+  for (const snapshot of [unfamiliar, familiar]) {
+    snapshot.urges.worldUrge = 0.82;
+    snapshot.body.energy = 0.62;
+    snapshot.body.tension = 0.22;
+    snapshot.dynamics.cognitiveLoad = 0.34;
+  }
+  familiar.world.objects.lamp!.familiarity = 0.72;
+
+  assert.equal(prepareIdleAutonomyAction(unfamiliar, 8)?.action, "observe");
+  assert.equal(prepareIdleAutonomyAction(familiar, 8)?.action, "touch");
+});
+
+test("internal touch changes the nearby object once and becomes an ongoing presence", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.world.objects.lamp!.familiarity = 0.64;
+  const prepared = prepareIdleAutonomyAction(snapshot, 8)!;
+  prepared.action = "touch";
+  prepared.attentionReasons = ["world_pull"];
+
+  materializeIdleAutonomyAction(snapshot, prepared, {
+    consolidateImprints: false,
+    timestamp: "2026-07-14T12:00:00.000Z",
+  });
+
+  assert.equal(snapshot.presence.action, "touch");
+  assert.equal(snapshot.presence.objectId, "lamp");
+  assert.equal(snapshot.world.recentEvents.at(-1)?.kind, "touch");
+  assert.equal(snapshot.initiative.history.at(-1)?.autonomyAction, "touch");
+  assert.equal(snapshot.initiative.history.at(-1)?.worldAction, "touch");
 });
 
 test("emitInitiative stays silent while a direct referent question is still open", () => {

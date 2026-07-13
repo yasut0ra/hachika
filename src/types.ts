@@ -379,6 +379,7 @@ export type AttentionRationale =
   | "memory_pull"
   | "trace_pull"
   | "world_pull"
+  | "body_need"
   | "curiosity";
 
 export interface WorldPlaceState {
@@ -535,6 +536,7 @@ export type InitiativeAutonomyAction =
   | "hold"
   | "drift"
   | "touch"
+  | "rest"
   | "speak";
 
 export interface InitiativeActivity {

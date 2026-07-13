@@ -674,6 +674,7 @@ function isAttentionRationale(
     value === "memory_pull" ||
     value === "trace_pull" ||
     value === "world_pull" ||
+    value === "body_need" ||
     value === "curiosity"
   );
 }
@@ -3290,6 +3291,7 @@ function isInitiativeAutonomyAction(
     value === "hold" ||
     value === "drift" ||
     value === "touch" ||
+    value === "rest" ||
     value === "speak"
   );
 }

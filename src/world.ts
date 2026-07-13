@@ -414,7 +414,10 @@ function chooseInteractionPlace(
 }
 
 function chooseIdlePlace(snapshot: HachikaSnapshot): WorldPlaceId {
-  if (snapshot.presence.action !== "rest") {
+  if (
+    snapshot.presence.action !== "rest" ||
+    snapshot.presence.rationale === "body_need"
+  ) {
     return snapshot.presence.place;
   }
 

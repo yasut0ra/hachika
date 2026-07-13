@@ -53,6 +53,7 @@ const ATTENTION_RATIONALE_VALUES = new Set<AttentionRationale>([
   "memory_pull",
   "trace_pull",
   "world_pull",
+  "body_need",
   "curiosity",
 ]);
 
@@ -112,7 +113,7 @@ export interface SemanticInitiativePlan {
 
 export interface SemanticAutonomyPlan {
   keep: boolean;
-  action: Exclude<InitiativeAutonomyAction, "speak" | "touch" | null>;
+  action: Exclude<InitiativeAutonomyAction, "speak" | null>;
   outwardMode: SemanticAutonomyOutwardMode;
 }
 
@@ -381,7 +382,7 @@ export function buildSemanticInitiativePlan(options: {
 
 export function buildSemanticAutonomyPlan(options: {
   keep: boolean;
-  action: Exclude<InitiativeAutonomyAction, "speak" | "touch" | null>;
+  action: Exclude<InitiativeAutonomyAction, "speak" | null>;
   outwardMode: SemanticAutonomyOutwardMode;
 }): SemanticAutonomyPlan {
   return {

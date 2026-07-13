@@ -25,12 +25,14 @@ const HACHIKA_AUTONOMY_DIRECTOR_SYSTEM_PROMPT = [
   "You decide whether a locally synthesized internal autonomy action should materialize for Hachika during a resident-loop tick.",
   "Return JSON only.",
   "Do not write prose, markdown, or explanations.",
-  "The local engine already prepared an internal action candidate: observe, hold, drift, or recall.",
+  "The local engine already prepared an internal action candidate: observe, touch, rest, hold, drift, or recall.",
   "You may keep it, suppress it, or lightly reshape the action.",
   "You may also decide the outward mode after this internal action: none, touch, or speak.",
   "Prefer recall only when there is clear grounded continuity in a concrete trace, object-linked topic, or unfinished work.",
   "Prefer hold or drift for quiet internal organization.",
   "Prefer observe for low-pressure silent ticks where it is more natural to simply stay with the world.",
+  "Prefer touch when a familiar nearby object offers grounded contact without requiring speech.",
+  "Prefer rest when low energy, tension, or cognitive load makes continued attention costly.",
   "Prefer outwardMode:none for quiet, settled ticks that should remain silent after the internal action.",
   "Prefer outwardMode:touch when a light outward action would feel natural but speaking would be too heavy.",
   "Prefer outwardMode:speak only when there is clear grounded continuity, neglect pressure, or a concrete follow-through worth expressing.",
@@ -41,8 +43,10 @@ const HACHIKA_AUTONOMY_DIRECTOR_SYSTEM_PROMPT = [
   "Return a single JSON object.",
 ].join(" ");
 
-const INTERNAL_ACTION_VALUES = new Set<Exclude<InitiativeAutonomyAction, "speak" | "touch" | null>>([
+const INTERNAL_ACTION_VALUES = new Set<Exclude<InitiativeAutonomyAction, "speak" | null>>([
   "observe",
+  "touch",
+  "rest",
   "hold",
   "drift",
   "recall",
@@ -54,7 +58,7 @@ export type AutonomyOutwardMode = "none" | "touch" | "speak";
 
 export interface AutonomyDirective {
   keep: boolean;
-  action: Exclude<InitiativeAutonomyAction, "speak" | "touch" | null>;
+  action: Exclude<InitiativeAutonomyAction, "speak" | null>;
   outwardMode: AutonomyOutwardMode;
   semantic?: SemanticAutonomyDirectiveV2;
   summary: string;
@@ -69,7 +73,7 @@ export interface AutonomyDirectorContext {
 
 export interface AutonomyDirectorPayload {
   hours: number;
-  suggestedAction: Exclude<InitiativeAutonomyAction, "speak" | "touch" | null>;
+  suggestedAction: Exclude<InitiativeAutonomyAction, "speak" | null>;
   attentionReasons: AttentionRationale[];
   discourse: {
     userName: string | null;
@@ -324,7 +328,7 @@ function buildOpenAIAutonomyDirectorMessages(
 
 function normalizeAutonomyDirective(
   text: string,
-  fallbackAction: Exclude<InitiativeAutonomyAction, "speak" | "touch" | null>,
+  fallbackAction: Exclude<InitiativeAutonomyAction, "speak" | null>,
   attentionReasons: readonly AttentionRationale[] = [],
 ): AutonomyDirective | null {
   try {
@@ -353,7 +357,7 @@ function normalizeAutonomyDirective(
         ? "none"
         : "speak";
     const action = INTERNAL_ACTION_VALUES.has(raw.action as never)
-      ? (raw.action as Exclude<InitiativeAutonomyAction, "speak" | "touch" | null>)
+      ? (raw.action as Exclude<InitiativeAutonomyAction, "speak" | null>)
       : fallbackAction;
     const summary =
       typeof raw.summary === "string" && raw.summary.trim().length > 0
@@ -379,7 +383,7 @@ function normalizeAutonomyDirective(
 
 function normalizeSemanticAutonomyDirectiveRecord(
   raw: Record<string, unknown>,
-  fallbackAction: Exclude<InitiativeAutonomyAction, "speak" | "touch" | null>,
+  fallbackAction: Exclude<InitiativeAutonomyAction, "speak" | null>,
   attentionReasons: readonly AttentionRationale[],
 ): SemanticAutonomyDirectiveV2 | null {
   if (raw.mode !== "autonomy") {
@@ -395,7 +399,7 @@ function normalizeSemanticAutonomyDirectiveRecord(
   const plan = isRecord(raw.autonomyPlan) ? raw.autonomyPlan : null;
   const keep = readBoolean(plan?.keep, true);
   const action = INTERNAL_ACTION_VALUES.has(plan?.action as never)
-    ? (plan?.action as Exclude<InitiativeAutonomyAction, "speak" | "touch" | null>)
+    ? (plan?.action as Exclude<InitiativeAutonomyAction, "speak" | null>)
     : fallbackAction;
   const outwardMode = OUTWARD_MODE_VALUES.has(plan?.outwardMode as AutonomyOutwardMode)
     ? (plan?.outwardMode as SemanticAutonomyOutwardMode)
@@ -418,7 +422,7 @@ function normalizeSemanticAutonomyDirectiveRecord(
 
 function buildSemanticAutonomyDirective(options: {
   keep: boolean;
-  action: Exclude<InitiativeAutonomyAction, "speak" | "touch" | null>;
+  action: Exclude<InitiativeAutonomyAction, "speak" | null>;
   outwardMode: AutonomyOutwardMode;
   attentionReasons?: readonly AttentionRationale[];
 }): SemanticAutonomyDirectiveV2 {
