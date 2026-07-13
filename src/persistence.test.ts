@@ -550,7 +550,7 @@ test("loadSnapshot seeds latent dynamics from older visible-only snapshots", asy
 
     const loaded = await loadSnapshot(filePath);
 
-    assert.equal(loaded.version, 25);
+    assert.equal(loaded.version, 26);
     assert.equal(loaded.revision, 3);
     assert.equal(loaded.discourse.hachikaName?.value, "ハチカ");
     assert.ok(
@@ -563,6 +563,7 @@ test("loadSnapshot seeds latent dynamics from older visible-only snapshots", asy
     assert.deepEqual(loaded.journal, []);
     assert.deepEqual(loaded.aspirations, []);
     assert.deepEqual(loaded.voice, createInitialSnapshot().voice);
+    assert.deepEqual(loaded.memoryThreadEvents, []);
     assert.ok(loaded.dynamics.safety < 0.5);
     assert.ok(loaded.dynamics.trust > 0.5);
     assert.ok(loaded.dynamics.activation > 0.5);
@@ -611,7 +612,14 @@ test("commitSnapshot rejects stale revisions and keeps the newer snapshot", asyn
 
   try {
     const initial = createInitialSnapshot();
+    initial.memoryThreadEvents.push({
+      phase: "closed",
+      topics: ["設計"],
+      timestamp: "2026-07-01T00:00:00.000Z",
+      reason: "設計の話はここで終わりにする",
+    });
     const saved = await saveSnapshot(filePath, initial);
+    assert.equal(saved.memoryThreadEvents[0]?.phase, "closed");
 
     const stale = structuredClone(initial);
     stale.state.curiosity = 0.91;
@@ -621,6 +629,7 @@ test("commitSnapshot rejects stale revisions and keeps the newer snapshot", asyn
     assert.equal(conflict.ok, false);
     assert.equal(conflict.conflict, true);
     assert.equal(conflict.snapshot.revision, saved.revision);
+    assert.equal(conflict.snapshot.memoryThreadEvents[0]?.reason, "設計の話はここで終わりにする");
     assert.notEqual(conflict.snapshot.state.curiosity, 0.91);
   } finally {
     await rm(tempDir, { recursive: true, force: true });

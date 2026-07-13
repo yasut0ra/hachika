@@ -1,9 +1,41 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { deriveMemoryThreads, selectMemoryThread } from "./memory-threads.js";
+import {
+  canAutonomouslySurfaceMemoryThread,
+  deriveMemoryThreads,
+  recordMemoryThreadLifecycleFromTurn,
+  selectMemoryThread,
+} from "./memory-threads.js";
 import { createInitialSnapshot } from "./state.js";
-import type { TraceEntry, TraceKind } from "./types.js";
+import type { InteractionSignals, TraceEntry, TraceKind } from "./types.js";
+
+function signals(overrides: Partial<InteractionSignals> = {}): InteractionSignals {
+  return {
+    positive: 0,
+    negative: 0,
+    question: 0,
+    novelty: 0,
+    intimacy: 0,
+    dismissal: 0,
+    memoryCue: 0,
+    expansionCue: 0,
+    completion: 0,
+    abandonment: 0,
+    preservationThreat: 0,
+    preservationConcern: null,
+    repetition: 0,
+    neglect: 0,
+    greeting: 0,
+    smalltalk: 0,
+    repair: 0,
+    selfInquiry: 0,
+    worldInquiry: 0,
+    workCue: 0,
+    topics: [],
+    ...overrides,
+  };
+}
 
 function trace(
   topic: string,
@@ -118,4 +150,97 @@ test("selectMemoryThread resolves a member topic to the whole thread", () => {
   const selected = selectMemoryThread(snapshot, ["インターン業務"]);
   assert.deepEqual(selected?.traceTopics, ["インターン選考", "インターン業務"]);
   assert.equal(selectMemoryThread(snapshot, [null, "未知の話題"]), null);
+});
+
+test("thread lifecycle closes a subject and reopens it only on a user return", () => {
+  const previous = createInitialSnapshot();
+  previous.traces.インターン = trace(
+    "インターン",
+    "2026-07-01T00:00:00.000Z",
+    { memo: ["参加先は決定済み"] },
+  );
+  previous.purpose.active = {
+    kind: "seek_continuity",
+    topic: "インターン",
+    summary: "インターンの話を保つ",
+    confidence: 0.7,
+    progress: 0.4,
+    createdAt: "2026-07-01T00:00:00.000Z",
+    lastUpdatedAt: "2026-07-01T00:00:00.000Z",
+    turnsActive: 2,
+  };
+  const closed = structuredClone(previous);
+
+  const closeEvent = recordMemoryThreadLifecycleFromTurn(
+    previous,
+    closed,
+    "インターンの話はもう終わりにしましょう",
+    signals({ abandonment: 0.8 }),
+    "2026-07-02T00:00:00.000Z",
+  );
+
+  assert.equal(closeEvent?.phase, "closed");
+  assert.equal(deriveMemoryThreads(closed)[0]?.phase, "closed");
+  assert.equal(canAutonomouslySurfaceMemoryThread(closed, "インターン"), false);
+
+  const reopened = structuredClone(closed);
+  const reopenEvent = recordMemoryThreadLifecycleFromTurn(
+    closed,
+    reopened,
+    "インターンの続きを話そう",
+    signals({ memoryCue: 0.7, topics: ["インターン"] }),
+    "2026-07-03T00:00:00.000Z",
+  );
+
+  assert.equal(reopenEvent?.phase, "reopened");
+  assert.equal(deriveMemoryThreads(reopened)[0]?.phase, "reopened");
+  assert.equal(canAutonomouslySurfaceMemoryThread(reopened, "インターン"), true);
+});
+
+test("topic shift parks the current thread without forgetting it", () => {
+  const previous = createInitialSnapshot();
+  previous.traces.設計 = trace("設計", "2026-07-01T00:00:00.000Z");
+  previous.purpose.active = {
+    kind: "continue_shared_work",
+    topic: "設計",
+    summary: "設計を進める",
+    confidence: 0.7,
+    progress: 0.4,
+    createdAt: "2026-07-01T00:00:00.000Z",
+    lastUpdatedAt: "2026-07-01T00:00:00.000Z",
+    turnsActive: 2,
+  };
+  const next = structuredClone(previous);
+
+  recordMemoryThreadLifecycleFromTurn(
+    previous,
+    next,
+    "一旦置いて、別の話をしましょう",
+    signals({ abandonment: 0.7 }),
+    "2026-07-02T00:00:00.000Z",
+  );
+
+  const thread = deriveMemoryThreads(next)[0];
+  assert.equal(thread?.phase, "parked");
+  assert.deepEqual(thread?.traceTopics, ["設計"]);
+});
+
+test("legacy trace text can infer closure followed by a later user reopen", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.traces.インターン = trace(
+    "インターン",
+    "2026-07-02T00:00:00.000Z",
+    { memo: ["もうインターンの話は終わりにしませんか"] },
+  );
+  snapshot.memories.push({
+    role: "user",
+    text: "インターン選考が一区切りついて安心した",
+    timestamp: "2026-07-03T00:00:00.000Z",
+    topics: [],
+    sentiment: "positive",
+  });
+
+  const thread = deriveMemoryThreads(snapshot)[0];
+  assert.equal(thread?.phase, "reopened");
+  assert.match(thread?.lastLifecycleEvent?.reason ?? "", /一区切り/);
 });

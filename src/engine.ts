@@ -106,6 +106,10 @@ import {
 } from "./state.js";
 import { findRelevantTrace, pickPrimaryArtifactItem, updateTraces } from "./traces.js";
 import {
+  canAutonomouslySurfaceMemoryThread,
+  recordMemoryThreadLifecycleFromTurn,
+} from "./memory-threads.js";
+import {
   advanceWorldByIdle,
   advanceWorldFromInteraction,
   describeWorldPhaseJa,
@@ -1344,6 +1348,16 @@ async function applyInitiativeDirector(
             worldAction: directed.directive.worldAction,
           }, prepared.initiativeDecision?.attentionReasons ?? [])
         : null;
+    if (
+      nextSnapshot.initiative.pending &&
+      !canAutonomouslySurfaceMemoryThread(
+        nextSnapshot,
+        nextSnapshot.initiative.pending.stateTopic ??
+          nextSnapshot.initiative.pending.topic,
+      )
+    ) {
+      nextSnapshot.initiative.pending = null;
+    }
     updateIdentity(
       nextSnapshot,
       nextSnapshot.lastInteractionAt ?? new Date().toISOString(),
@@ -1711,6 +1725,13 @@ function prepareTurnFromSignals(
   );
   const sentimentScore = scoreSentiment(stateSignals);
   const nextSnapshot = applySignals(snapshot, stateSignals, sentimentScore);
+  recordMemoryThreadLifecycleFromTurn(
+    previousSnapshot,
+    nextSnapshot,
+    input,
+    stateSignals,
+    nextSnapshot.lastInteractionAt ?? new Date().toISOString(),
+  );
   if (behaviorDirective.coolCurrentContext) {
     abandonActivePurpose(
       nextSnapshot,
@@ -3767,6 +3788,10 @@ function sanitizeInitiativeStateTopic(
   topic: string | null | undefined,
 ): string | null {
   if (!topic) {
+    return null;
+  }
+
+  if (!canAutonomouslySurfaceMemoryThread(snapshot, topic)) {
     return null;
   }
 

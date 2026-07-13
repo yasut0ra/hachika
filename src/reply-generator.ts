@@ -430,7 +430,7 @@ export function buildOpenAIChatMessages(
         "If payload.discourse is present, treat it as the current answer obligation and do not drift away from it.",
         "Use behaviorDirective to decide whether this turn must answer directly first, soften boundary posture, or avoid world garnish.",
         "Use replySelection to stay faithful to the exact chosen focus, trace, boundary, and trace priority.",
-        "When memoryThreads.active is present, treat its episodes as one chronological subject: preserve settled facts, continue from the latest episode, and do not present an older episode as the current state.",
+        "When memoryThreads.active is present, treat its episodes as one chronological subject: preserve settled facts, continue from the latest episode, and do not present an older episode as the current state. If its phase is parked or closed, acknowledge that boundary and do not continue the subject. If its phase is reopened, continue only because the user returned to it.",
         "If turnDirective.target is hachika_name or user_name, make the referent of 名前 explicit instead of drifting into generic relation talk.",
         "If turnDirective.target is hachika_profile or user_profile, keep the wording anchored to that person rather than generic shared work.",
         "When responsePlan.mentionWorld is true, ground the wording in payload.world before reaching for identity or trace language.",
@@ -1134,6 +1134,10 @@ function collectUnrelatedTopics(
 function buildMemoryThreadContinuationCue(thread: MemoryThread | null): string | null {
   if (!thread || thread.traceTopics.length < 2) {
     return null;
+  }
+
+  if (thread.phase === "parked" || thread.phase === "closed") {
+    return `同じ「${thread.title}」の話は${thread.phase}。覚えておくが、こちらから続きを持ち出さない`;
   }
 
   const latest = thread.episodes.at(-1);

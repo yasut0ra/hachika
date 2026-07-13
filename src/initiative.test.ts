@@ -400,3 +400,55 @@ test("a new user turn releases the outward motive refractory", () => {
 
   assert.notEqual(prepared, null);
 });
+
+test("parked memory thread cannot become an autonomous outward emission", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.lastInteractionAt = "2026-07-01T00:00:00.000Z";
+  snapshot.traces.インターン = {
+    topic: "インターン",
+    kind: "continuity_marker",
+    status: "active",
+    lastAction: "continued",
+    summary: "インターンの話を覚えている。",
+    sourceMotive: "seek_continuity",
+    artifact: {
+      memo: ["参加先は決定済み"],
+      fragments: [],
+      decisions: [],
+      nextSteps: ["大学の課題を先に終わらせる"],
+    },
+    work: {
+      focus: null,
+      confidence: 0.6,
+      blockers: [],
+      staleAt: null,
+    },
+    salience: 0.8,
+    mentions: 2,
+    createdAt: "2026-07-01T00:00:00.000Z",
+    lastUpdatedAt: "2026-07-01T00:00:00.000Z",
+  };
+  snapshot.memoryThreadEvents.push({
+    phase: "parked",
+    topics: ["インターン"],
+    timestamp: "2026-07-01T01:00:00.000Z",
+    reason: "この話はいったん置いておこう",
+  });
+  snapshot.initiative.pending = {
+    kind: "resume_topic",
+    reason: "continuity",
+    motive: "seek_continuity",
+    topic: "インターン",
+    stateTopic: "インターン",
+    blocker: null,
+    concern: null,
+    createdAt: "2026-07-01T01:00:00.000Z",
+    readyAfterHours: 0,
+  };
+
+  const prepared = prepareInitiativeEmission(snapshot, {
+    now: new Date("2026-07-02T00:00:00.000Z"),
+  });
+
+  assert.equal(prepared, null);
+});

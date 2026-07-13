@@ -18,6 +18,7 @@ import { buildSelfModel } from "./self-model.js";
 import { aspirationPull, rewindAspirationsHours } from "./aspiration.js";
 import { appendJournalEntry, buildIdleJournalEntry } from "./journal.js";
 import { distillVoiceProfile } from "./voice.js";
+import { canAutonomouslySurfaceMemoryThread } from "./memory-threads.js";
 import { clamp01, clampSigned } from "./state.js";
 import { rewindTemperamentHours } from "./temperament.js";
 import {
@@ -294,8 +295,16 @@ export function prepareInitiativeEmission(
     return null;
   }
 
-  const pending =
+  const pendingCandidate =
     snapshot.initiative.pending ?? synthesizeSnapshotPreservationInitiative(snapshot, nowIso);
+  const pending =
+    pendingCandidate &&
+    canAutonomouslySurfaceMemoryThread(
+      snapshot,
+      pendingCandidate.stateTopic ?? pendingCandidate.topic,
+    )
+      ? pendingCandidate
+      : null;
 
   // autonomy v2: 向き直りたい圧が高いほど早く、黙っていたい圧が強いほど遅く外へ出る。
   // 相対シフトなので、中立の urges では readyAfterHours どおり (明示の「今すぐ」を遅らせない)
@@ -3747,6 +3756,7 @@ function selectInitiativeBlocker(
   const blocked = sortedTraces(snapshot, 24)
     .filter(
       (trace) =>
+        canAutonomouslySurfaceMemoryThread(snapshot, trace.topic) &&
         trace.status !== "resolved" &&
         trace.work.blockers.length > 0 &&
         trace.work.confidence < 0.82,
@@ -3779,7 +3789,11 @@ function sortedArchivedInitiativeTraces(
   limit: number,
 ): Array<HachikaSnapshot["traces"][string]> {
   return Object.values(snapshot.traces)
-    .filter((trace) => readTraceLifecycle(trace).phase === "archived")
+    .filter(
+      (trace) =>
+        readTraceLifecycle(trace).phase === "archived" &&
+        canAutonomouslySurfaceMemoryThread(snapshot, trace.topic),
+    )
     .sort((left, right) => right.salience - left.salience)
     .slice(0, limit);
 }
@@ -3927,6 +3941,10 @@ function shouldSuppressInitiativeTopic(
   snapshot: HachikaSnapshot,
   topic: string | null | undefined,
 ): boolean {
+  if (topic && !canAutonomouslySurfaceMemoryThread(snapshot, topic)) {
+    return true;
+  }
+
   if (!topic || !requiresConcreteTopicSupport(topic)) {
     return false;
   }

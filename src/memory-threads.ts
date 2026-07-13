@@ -1,6 +1,11 @@
 import { extractTopics, topicsLooselyMatch } from "./memory.js";
 import { pickPrimaryArtifactItem, readTraceLifecycle } from "./traces.js";
-import type { HachikaSnapshot, TraceEntry } from "./types.js";
+import type {
+  HachikaSnapshot,
+  InteractionSignals,
+  MemoryThreadLifecycleEvent,
+  TraceEntry,
+} from "./types.js";
 
 export interface MemoryThreadEpisode {
   traceTopic: string;
@@ -16,7 +21,8 @@ export interface MemoryThreadEpisode {
 export interface MemoryThread {
   id: string;
   title: string;
-  phase: "active" | "resolved";
+  phase: "active" | "parked" | "closed" | "reopened" | "resolved";
+  lastLifecycleEvent: MemoryThreadLifecycleEvent | null;
   traceTopics: string[];
   startedAt: string;
   lastUpdatedAt: string;
@@ -49,6 +55,18 @@ const THREAD_BOILERPLATE = [
   /続きの目印として残/u,
   /前進用の断片として残/u,
   /前のやり取りからひとまとまり/u,
+];
+
+const THREAD_CLOSED_PATTERNS = [
+  /(?:もう|これで).{0,16}(?:話|話題).{0,8}(?:終わり|終わりに|終える|終わらせ)/u,
+  /(?:話|話題).{0,8}(?:終わりにし|終わらせ|出さない|触れない)/u,
+  /(?:今後|もう).{0,12}(?:話さない|触れない|持ち出さない)/u,
+];
+
+const THREAD_PARKED_PATTERNS = [
+  /(?:一旦|いったん|今は).{0,12}(?:置いて|置く|やめる|やめよう|保留)/u,
+  /(?:また|続きは).{0,8}(?:あとで|後で|今度)/u,
+  /(?:別の話|違う話|他の話|話題を変|話を変)/u,
 ];
 
 export function deriveMemoryThreads(snapshot: HachikaSnapshot): MemoryThread[] {
@@ -86,8 +104,73 @@ export function deriveMemoryThreads(snapshot: HachikaSnapshot): MemoryThread[] {
   });
 
   return [...groups.values()]
-    .map((group) => buildMemoryThread(group, signatures))
+    .map((group) => buildMemoryThread(snapshot, group, signatures))
     .sort(compareMemoryThreads);
+}
+
+export function recordMemoryThreadLifecycleFromTurn(
+  previousSnapshot: HachikaSnapshot,
+  nextSnapshot: HachikaSnapshot,
+  input: string,
+  signals: InteractionSignals,
+  timestamp: string,
+): MemoryThreadLifecycleEvent | null {
+  const threads = deriveMemoryThreads(previousSnapshot);
+  let target = selectMemoryThreadForText(previousSnapshot, input);
+
+  if (!target) {
+    target = selectMemoryThread(previousSnapshot, [
+      previousSnapshot.purpose.active?.topic,
+      previousSnapshot.initiative.pending?.topic,
+      previousSnapshot.initiative.pending?.stateTopic,
+    ]);
+  }
+
+  if (!target && signals.memoryCue >= 0.2) {
+    target = threads
+      .filter((thread) => thread.phase === "parked" || thread.phase === "closed")
+      .sort((left, right) => right.lastUpdatedAt.localeCompare(left.lastUpdatedAt))[0] ?? null;
+  }
+
+  if (!target) {
+    return null;
+  }
+
+  const explicitPhase = classifyThreadTerminalTurn(input);
+  const phase = explicitPhase ?? (signals.abandonment >= 0.2 ? "parked" : null);
+  if (phase) {
+    return appendMemoryThreadEvent(nextSnapshot, {
+      phase,
+      topics: target.traceTopics,
+      timestamp,
+      reason: input,
+    });
+  }
+
+  if (
+    (target.phase === "parked" || target.phase === "closed") &&
+    (textMentionsThread(target, input) || signals.memoryCue >= 0.2)
+  ) {
+    return appendMemoryThreadEvent(nextSnapshot, {
+      phase: "reopened",
+      topics: target.traceTopics,
+      timestamp,
+      reason: input,
+    });
+  }
+
+  return null;
+}
+
+export function canAutonomouslySurfaceMemoryThread(
+  snapshot: HachikaSnapshot,
+  topic: string | null | undefined,
+): boolean {
+  if (!topic) {
+    return true;
+  }
+  const thread = selectMemoryThread(snapshot, [topic]);
+  return thread === null || (thread.phase !== "parked" && thread.phase !== "closed");
 }
 
 export function selectMemoryThread(
@@ -145,6 +228,7 @@ function tracesBelongToSameThread(
 }
 
 function buildMemoryThread(
+  snapshot: HachikaSnapshot,
   traces: TraceEntry[],
   signatures: Map<string, Set<string>>,
 ): MemoryThread {
@@ -178,11 +262,13 @@ function buildMemoryThread(
   const allResolved = chronological.every(
     (trace) => trace.status === "resolved" || readTraceLifecycle(trace).phase === "archived",
   );
+  const lifecycleEvent = resolveThreadLifecycleEvent(snapshot, chronological, title);
 
   return {
     id: `thread:${title}`,
     title,
-    phase: allResolved ? "resolved" : "active",
+    phase: lifecycleEvent?.phase ?? (allResolved ? "resolved" : "active"),
+    lastLifecycleEvent: lifecycleEvent,
     traceTopics: chronological.map((trace) => trace.topic),
     startedAt: chronological[0]!.createdAt,
     lastUpdatedAt: chronological.at(-1)!.lastUpdatedAt,
@@ -191,6 +277,144 @@ function buildMemoryThread(
     nextSteps,
     episodes: episodes.slice(-6),
   };
+}
+
+function selectMemoryThreadForText(
+  snapshot: HachikaSnapshot,
+  text: string,
+): MemoryThread | null {
+  const normalized = text.normalize("NFKC").trim().toLowerCase();
+  const threads = deriveMemoryThreads(snapshot);
+  const direct = threads.find(
+    (thread) =>
+      normalized.includes(thread.title.toLowerCase()) ||
+      thread.traceTopics.some((topic) => normalized.includes(topic.toLowerCase())),
+  );
+  return direct ?? selectMemoryThread(snapshot, extractTopics(text));
+}
+
+function resolveThreadLifecycleEvent(
+  snapshot: HachikaSnapshot,
+  traces: TraceEntry[],
+  title: string,
+): MemoryThreadLifecycleEvent | null {
+  const traceTopics = traces.map((trace) => trace.topic);
+  const persisted = snapshot.memoryThreadEvents
+    .filter((event) => eventTargetsThread(event, traceTopics))
+    .sort((left, right) => left.timestamp.localeCompare(right.timestamp));
+
+  if (persisted.length > 0) {
+    return persisted.at(-1) ?? null;
+  }
+
+  return inferLegacyThreadLifecycle(snapshot, traces, title);
+}
+
+function inferLegacyThreadLifecycle(
+  snapshot: HachikaSnapshot,
+  traces: TraceEntry[],
+  title: string,
+): MemoryThreadLifecycleEvent | null {
+  const provisional: MemoryThread = {
+    id: `thread:${title}`,
+    title,
+    phase: "active",
+    lastLifecycleEvent: null,
+    traceTopics: traces.map((trace) => trace.topic),
+    startedAt: traces[0]!.createdAt,
+    lastUpdatedAt: traces.at(-1)!.lastUpdatedAt,
+    facts: [],
+    blockers: [],
+    nextSteps: [],
+    episodes: [],
+  };
+  const candidates: Array<{ text: string; timestamp: string; user: boolean }> = [];
+
+  for (const trace of traces) {
+    for (const text of [
+      ...trace.artifact.memo,
+      ...trace.artifact.fragments,
+      ...trace.artifact.decisions,
+      ...trace.artifact.nextSteps,
+    ]) {
+      if (classifyThreadTerminalTurn(text)) {
+        candidates.push({ text, timestamp: trace.lastUpdatedAt, user: false });
+      }
+    }
+  }
+  for (const memory of snapshot.memories) {
+    if (memory.role === "user" && textMentionsThread(provisional, memory.text)) {
+      candidates.push({ text: memory.text, timestamp: memory.timestamp, user: true });
+    }
+  }
+
+  let current: MemoryThreadLifecycleEvent | null = null;
+  for (const candidate of candidates.sort((left, right) =>
+    left.timestamp.localeCompare(right.timestamp),
+  )) {
+    const terminal = classifyThreadTerminalTurn(candidate.text);
+    if (terminal) {
+      current = {
+        phase: terminal,
+        topics: provisional.traceTopics,
+        timestamp: candidate.timestamp,
+        reason: candidate.text,
+      };
+    } else if (candidate.user && current && current.timestamp < candidate.timestamp) {
+      current = {
+        phase: "reopened",
+        topics: provisional.traceTopics,
+        timestamp: candidate.timestamp,
+        reason: candidate.text,
+      };
+    }
+  }
+  return current;
+}
+
+function classifyThreadTerminalTurn(text: string): "parked" | "closed" | null {
+  const normalized = text.normalize("NFKC").trim();
+  if (THREAD_PARKED_PATTERNS.some((pattern) => pattern.test(normalized))) {
+    return "parked";
+  }
+  if (THREAD_CLOSED_PATTERNS.some((pattern) => pattern.test(normalized))) {
+    return "closed";
+  }
+  return null;
+}
+
+function textMentionsThread(thread: MemoryThread, text: string): boolean {
+  const normalized = text.normalize("NFKC").trim().toLowerCase();
+  if (
+    normalized.includes(thread.title.toLowerCase()) ||
+    thread.traceTopics.some((topic) => normalized.includes(topic.toLowerCase()))
+  ) {
+    return true;
+  }
+  const terms = extractTopics(text);
+  return terms.some(
+    (term) =>
+      topicsLooselyMatch(term, thread.title) ||
+      thread.traceTopics.some((topic) => topicsLooselyMatch(term, topic)),
+  );
+}
+
+function eventTargetsThread(
+  event: MemoryThreadLifecycleEvent,
+  traceTopics: readonly string[],
+): boolean {
+  return event.topics.some((eventTopic) =>
+    traceTopics.some((traceTopic) => topicsLooselyMatch(eventTopic, traceTopic)),
+  );
+}
+
+function appendMemoryThreadEvent(
+  snapshot: HachikaSnapshot,
+  event: MemoryThreadLifecycleEvent,
+): MemoryThreadLifecycleEvent {
+  snapshot.memoryThreadEvents.push(event);
+  snapshot.memoryThreadEvents = snapshot.memoryThreadEvents.slice(-24);
+  return event;
 }
 
 function buildEpisode(trace: TraceEntry): MemoryThreadEpisode {

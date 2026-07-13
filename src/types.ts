@@ -116,6 +116,15 @@ export interface MemoryEntry {
   weight?: number;
 }
 
+export type MemoryThreadLifecyclePhase = "parked" | "closed" | "reopened";
+
+export interface MemoryThreadLifecycleEvent {
+  phase: MemoryThreadLifecyclePhase;
+  topics: string[];
+  timestamp: string;
+  reason: string;
+}
+
 export type DiscourseFactKind = "user_name" | "hachika_name";
 
 export type DiscourseFactSource =
@@ -533,6 +542,7 @@ export interface HachikaSnapshot {
   preferences: Record<string, number>;
   topicCounts: Record<string, number>;
   memories: MemoryEntry[];
+  memoryThreadEvents: MemoryThreadLifecycleEvent[];
   preferenceImprints: Record<string, PreferenceImprint>;
   boundaryImprints: Record<string, BoundaryImprint>;
   relationImprints: Record<string, RelationImprint>;

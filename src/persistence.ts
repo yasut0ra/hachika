@@ -59,6 +59,7 @@ import type {
   JournalEntry,
   LearnedTemperament,
   MemoryEntry,
+  MemoryThreadLifecycleEvent,
   MotiveKind,
   PendingInitiative,
   PreservationConcern,
@@ -150,7 +151,7 @@ function hydrateSnapshot(raw: unknown): HachikaSnapshot {
   }
 
   return {
-    version: 25,
+    version: 26,
     revision:
       typeof raw.revision === "number" && Number.isFinite(raw.revision)
         ? Math.max(0, Math.round(raw.revision))
@@ -174,6 +175,7 @@ function hydrateSnapshot(raw: unknown): HachikaSnapshot {
       Math.max(0, Math.round(value)),
     ),
     memories: hydrateMemories(raw.memories),
+    memoryThreadEvents: hydrateMemoryThreadEvents(raw.memoryThreadEvents),
     preferenceImprints: hydratePreferenceImprints(raw.preferenceImprints, raw.imprints),
     boundaryImprints: hydrateBoundaryImprints(raw.boundaryImprints),
     relationImprints: hydrateRelationImprints(raw.relationImprints),
@@ -221,6 +223,9 @@ export function sanitizeSnapshot(snapshot: HachikaSnapshot): HachikaSnapshot {
           : 1,
     }))
     .slice(-24);
+  snapshot.memoryThreadEvents = sanitizeMemoryThreadEvents(
+    snapshot.memoryThreadEvents,
+  );
   snapshot.discourse.userName ??= inferUserNameFactFromHistory(snapshot);
   snapshot.preferenceImprints = sanitizePreferenceImprints(snapshot.preferenceImprints);
   const supportedTopics = deriveSupportedSnapshotTopics(snapshot);
@@ -1133,6 +1138,58 @@ function hydrateMemories(raw: unknown): MemoryEntry[] {
   }
 
   return memories.slice(-24);
+}
+
+function hydrateMemoryThreadEvents(raw: unknown): MemoryThreadLifecycleEvent[] {
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+
+  return raw
+    .filter(isRecord)
+    .map((event) => {
+      const phase =
+        event.phase === "parked" ||
+        event.phase === "closed" ||
+        event.phase === "reopened"
+          ? event.phase
+          : null;
+      const topics = Array.isArray(event.topics)
+        ? Array.from(
+            new Set(
+              event.topics
+                .filter((topic): topic is string => typeof topic === "string")
+                .map((topic) => topic.normalize("NFKC").trim())
+                .filter((topic) => isMeaningfulTopic(topic)),
+            ),
+          ).slice(0, 12)
+        : [];
+
+      if (!phase || topics.length === 0) {
+        return null;
+      }
+
+      return {
+        phase,
+        topics,
+        timestamp:
+          typeof event.timestamp === "string" && event.timestamp.trim().length > 0
+            ? event.timestamp
+            : new Date().toISOString(),
+        reason:
+          typeof event.reason === "string" && event.reason.trim().length > 0
+            ? event.reason.trim().slice(0, 240)
+            : phase,
+      } satisfies MemoryThreadLifecycleEvent;
+    })
+    .filter((event): event is MemoryThreadLifecycleEvent => event !== null)
+    .slice(-24);
+}
+
+function sanitizeMemoryThreadEvents(
+  events: readonly MemoryThreadLifecycleEvent[],
+): MemoryThreadLifecycleEvent[] {
+  return hydrateMemoryThreadEvents(events);
 }
 
 function hydratePreferenceImprints(

@@ -8,6 +8,7 @@ import type { InitiativeDirector } from "./initiative-director.js";
 import type { ProactiveDirector } from "./proactive-director.js";
 import type { ResponsePlanner } from "./response-planner.js";
 import { createInitialSnapshot } from "./state.js";
+import { deriveMemoryThreads } from "./memory-threads.js";
 import type { TraceExtractor } from "./trace-extractor.js";
 import type { TurnDirector } from "./turn-director.js";
 import type {
@@ -27,6 +28,58 @@ test("positive interaction increases relation and pleasure", () => {
   assert.ok(result.snapshot.attachment > before.attachment);
   assert.equal(result.snapshot.memories.length, 2);
   assert.ok(result.snapshot.relationImprints.attention !== undefined);
+});
+
+test("user closure records a closed memory thread before initiative scheduling", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.traces.インターン = {
+    topic: "インターン",
+    kind: "continuity_marker",
+    status: "active",
+    lastAction: "continued",
+    summary: "インターンの話を覚えている。",
+    sourceMotive: "seek_continuity",
+    artifact: {
+      memo: ["参加先は決定済み"],
+      fragments: [],
+      decisions: [],
+      nextSteps: ["大学の課題を先に終わらせる"],
+    },
+    work: { focus: null, confidence: 0.6, blockers: [], staleAt: null },
+    salience: 0.8,
+    mentions: 2,
+    createdAt: "2026-07-01T00:00:00.000Z",
+    lastUpdatedAt: "2026-07-01T00:00:00.000Z",
+  };
+  snapshot.purpose.active = {
+    kind: "seek_continuity",
+    topic: "インターン",
+    summary: "インターンの話を保つ",
+    confidence: 0.7,
+    progress: 0.4,
+    createdAt: "2026-07-01T00:00:00.000Z",
+    lastUpdatedAt: "2026-07-01T00:00:00.000Z",
+    turnsActive: 2,
+  };
+  snapshot.initiative.pending = {
+    kind: "resume_topic",
+    reason: "continuity",
+    motive: "seek_continuity",
+    topic: "インターン",
+    stateTopic: "インターン",
+    blocker: null,
+    concern: null,
+    createdAt: "2026-07-01T00:00:00.000Z",
+    readyAfterHours: 0,
+  };
+
+  const result = new HachikaEngine(snapshot).respond(
+    "インターンの話はもう終わりにしましょう",
+  );
+
+  assert.equal(result.snapshot.memoryThreadEvents.at(-1)?.phase, "closed");
+  assert.equal(deriveMemoryThreads(result.snapshot)[0]?.phase, "closed");
+  assert.notEqual(result.snapshot.initiative.pending?.topic, "インターン");
 });
 
 test("positive interaction can restore energy and reduce loneliness", () => {
