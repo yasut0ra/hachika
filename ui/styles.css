@@ -487,6 +487,8 @@ button.danger {
 }
 
 .avatar-character,
+.avatar-pose,
+.avatar-head-lock,
 .avatar-layer {
   position: absolute;
   inset: 0;
@@ -496,8 +498,50 @@ button.danger {
   object-position: 50% 100%;
 }
 
-.avatar-layer {
+.avatar-character {
+  z-index: 0;
+  opacity: 1;
+  transition: opacity 380ms ease;
+}
+
+.avatar-pose {
   z-index: 1;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 380ms ease;
+}
+
+.avatar-head-lock {
+  z-index: 2;
+  pointer-events: none;
+  opacity: 0;
+  -webkit-mask-image: radial-gradient(
+    ellipse 13.5% 13% at 49.3% 14%,
+    black 70%,
+    transparent 100%
+  );
+  mask-image: radial-gradient(
+    ellipse 13.5% 13% at 49.3% 14%,
+    black 70%,
+    transparent 100%
+  );
+  transition: opacity 380ms ease;
+}
+
+.avatar-stage[data-hands="reach"] .avatar-character,
+.avatar-stage[data-hands="gather"] .avatar-character {
+  opacity: 0;
+}
+
+.avatar-stage[data-hands="reach"] .avatar-pose-reach,
+.avatar-stage[data-hands="gather"] .avatar-pose-gather,
+.avatar-stage[data-hands="reach"] .avatar-head-lock,
+.avatar-stage[data-hands="gather"] .avatar-head-lock {
+  opacity: 1;
+}
+
+.avatar-layer {
+  z-index: 3;
   pointer-events: none;
   opacity: 0;
   transition:
@@ -521,36 +565,6 @@ button.danger {
 .avatar-stage[data-mouth="speaking"] .avatar-layer-mouth {
   opacity: var(--mouth-emphasis-opacity);
   animation: avatar-mouth-speak var(--mouth-cycle-duration) ease-in-out infinite;
-}
-
-.avatar-layer-hand-left {
-  clip-path: ellipse(2.9% 4.1% at 34.6% 54.1%);
-}
-
-.avatar-layer-hand-right {
-  clip-path: ellipse(2.9% 4.1% at 59.3% 54.1%);
-}
-
-.avatar-stage[data-hands="reach"] .avatar-layer-hand,
-.avatar-stage[data-hands="gather"] .avatar-layer-hand {
-  opacity: 0.22;
-  filter: brightness(1.16) saturate(0.8);
-}
-
-.avatar-stage[data-hands="reach"] .avatar-layer-hand-left {
-  transform: translate(-2px, -3px);
-}
-
-.avatar-stage[data-hands="reach"] .avatar-layer-hand-right {
-  transform: translate(2px, -3px);
-}
-
-.avatar-stage[data-hands="gather"] .avatar-layer-hand-left {
-  transform: translate(2px, 1px);
-}
-
-.avatar-stage[data-hands="gather"] .avatar-layer-hand-right {
-  transform: translate(-2px, 1px);
 }
 
 .avatar-stage[data-posture="open"] .avatar-artwork {

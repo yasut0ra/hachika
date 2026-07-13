@@ -47,22 +47,24 @@ tension、mistrust、preservation threat、safety の合成から身体の閉じ
 - mouth は speak の間だけ neutral から quiet speaking 差分へ移る
 - speech duration は文字量と句読点から1.8〜16秒で導き、cadence / emphasis はactivationや身体状態を反映する
 - rendererはremainingMsでmouthを閉じるため、次のUI pollingを待たない
-- hands は touch / observe で reach、recall / hold で gather の薄い動作layerを出す
+- hands は touch / observe で reach、recall / hold で gather の実poseへ短くcrossfadeする
+- pose差分の上へneutralの頭部をsoft maskで固定し、身体が動いてもidentityを揺らさない
 - world place と phase はstageの構造と光へ反映する
 
 prefers-reduced-motion では継続animationを止める。
 
 ## Next steps
 
-1. 手のpose差分を作り、残像layerから実poseへ置き換える
-2. 発話の句読点単位タイムラインを作り、口の休止位置を文中へ入れる
-3. rendererを交換できる adapter contract を定義する
-4. snapshot replayで身体の時間変化を回帰確認する
+1. 発話の句読点単位タイムラインを作り、口の休止位置を文中へ入れる
+2. rendererを交換できる adapter contract を定義する
+3. snapshot replayで身体の時間変化を回帰確認する
 
 ## Layer assets
 
 - `hachika-neutral-v2.png`: identityを固定するbase
 - `hachika-blink-v1.png`: 目閉じ差分。rendererは目の周辺だけをclipする
 - `hachika-speak-v1.png`: quiet speaking差分。rendererは口の周辺だけをclipする
+- `hachika-reach-v1.png`: 片手を近くの物へ伸ばす全身pose差分
+- `hachika-gather-v1.png`: 両手を腹部へ寄せる全身pose差分
 
-差分2点はbuilt-in image generationのidentity-preserve editで作成した。全身を切り替えず局所clipで重ねるため、baseの輪郭・衣服・姿勢は常にneutral-v2を正とする。
+差分4点はbuilt-in image generationのidentity-preserve editで作成した。目と口は局所clip、手は全身poseを切り替える。手poseでも頭部だけはneutral-v2をsoft maskで重ね、顔の輪郭とidentityをbaseへ固定する。
