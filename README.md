@@ -316,6 +316,8 @@ Hachika は、単に有用なだけでなく、
   - CLI の `/world` と Web UI の `World` panel から、今どこにいるか、時間帯がどう変わったか、最近どんな出来事があったかを見られる
 - Web UI には substrate を身体表現へ写す `embodiment` layer と2D avatarがある
   - `posture / gaze / action / movement tempo / breath / proximity / expression warmth` を描画用の中間状態として導出し、UIが生の内部数値から直接「感情画像」を選ばない構造にしている
+  - learned temperament から身体癖とmotion profileを導き、視線・身振り・静止への戻り方に個体差と余韻を持たせる
+  - actionIdにより、新しいgestureだけを一度再生し、UI pollingでは動作を繰り返さない
   - `threshold / studio / archive` と時間帯がstage背景へ反映され、`observe / hold / drift / recall / touch / speak` は視線・距離・明るさ・小さな動きとして現れる
   - 現在の描画は透過PNG + CSSだが、embodiment contractを保ったままLive2Dや3Dへ差し替えられる
 - `scenario harness` により、複数ターンの対話シナリオを fixture として検証できる

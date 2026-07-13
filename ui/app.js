@@ -31,6 +31,14 @@ let currentUi = null;
 let knownAutonomousIds = new Set();
 let flashTimer = null;
 let renderedMessageKeys = null;
+let displayedAvatarGaze = null;
+let pendingAvatarGaze = null;
+let avatarGazeTimer = null;
+let displayedAvatarGesture = null;
+let avatarGestureTimer = null;
+let lastAvatarActionId = null;
+let avatarActionFrame = null;
+let avatarActionTimer = null;
 
 async function request(path, options = {}) {
   const response = await fetch(path, {
@@ -93,7 +101,14 @@ function renderAvatar(embodiment) {
   avatarStageNode.dataset.phase = embodiment.phase;
   avatarStageNode.dataset.posture = embodiment.posture;
   avatarStageNode.dataset.action = embodiment.action;
-  avatarStageNode.dataset.gaze = embodiment.gazeTarget;
+  const motion = embodiment.motion ?? {
+    manner: "measured",
+    gestureAmplitude: 0.4,
+    gazePersistence: 0.5,
+    stillness: 0.5,
+    settlingTimeMs: 1400,
+  };
+  avatarStageNode.dataset.manner = motion.manner;
   const postureScale = embodiment.posture === "withdrawn" ? 0.94 : 1;
   avatarStageNode.style.setProperty(
     "--avatar-scale",
@@ -115,12 +130,135 @@ function renderAvatar(embodiment) {
     "--avatar-saturation",
     (0.82 + clamp01(embodiment.alertness) * 0.24).toFixed(3),
   );
+  avatarStageNode.style.setProperty(
+    "--settle-duration",
+    `${Math.max(400, Number(motion.settlingTimeMs) || 1400)}ms`,
+  );
+  avatarStageNode.style.setProperty(
+    "--gaze-duration",
+    `${(2.2 + clamp01(motion.gazePersistence) * 2.4).toFixed(2)}s`,
+  );
+  const mannerDirection = {
+    reaching: 1,
+    measured: 0.35,
+    guarded: -0.2,
+    searching: -1,
+  }[motion.manner] ?? 0.35;
+  const sway = clamp01(motion.gestureAmplitude) * (1 - clamp01(motion.stillness) * 0.55);
+  avatarStageNode.style.setProperty(
+    "--sway-x",
+    `${(mannerDirection * sway * 3.2).toFixed(2)}px`,
+  );
+  avatarStageNode.style.setProperty(
+    "--sway-angle",
+    `${(mannerDirection * sway * 0.38).toFixed(3)}deg`,
+  );
+  renderAvatarGaze(embodiment.gazeTarget, embodiment.action, motion);
+  renderAvatarGesture(embodiment.action, embodiment.actionId, motion);
   avatarActionNode.textContent = embodiment.action;
   avatarSummaryNode.textContent = embodiment.summary;
   avatarPlaceNode.textContent = `${embodiment.place} · ${embodiment.phase}`;
   conversationPlaceNode.textContent = `${embodiment.place} · ${embodiment.phase}`;
   avatarPostureNode.textContent = embodiment.posture;
-  avatarGazeNode.textContent = `gaze · ${embodiment.gazeTarget}`;
+}
+
+function renderAvatarGaze(nextGaze, action, motion) {
+  if (displayedAvatarGaze === null) {
+    applyAvatarGaze(nextGaze);
+    return;
+  }
+
+  if (nextGaze === displayedAvatarGaze) {
+    cancelPendingAvatarGaze();
+    return;
+  }
+
+  if (nextGaze === pendingAvatarGaze) {
+    return;
+  }
+
+  cancelPendingAvatarGaze();
+  pendingAvatarGaze = nextGaze;
+  const delay =
+    action === "speak" && nextGaze === "viewer"
+      ? 80
+      : 180 + clamp01(motion.gazePersistence) * 1200;
+  avatarGazeTimer = window.setTimeout(() => {
+    applyAvatarGaze(nextGaze);
+    pendingAvatarGaze = null;
+    avatarGazeTimer = null;
+  }, delay);
+}
+
+function applyAvatarGaze(gaze) {
+  displayedAvatarGaze = gaze;
+  avatarStageNode.dataset.gaze = gaze;
+  avatarGazeNode.textContent = `gaze · ${gaze}`;
+}
+
+function cancelPendingAvatarGaze() {
+  if (avatarGazeTimer !== null) {
+    window.clearTimeout(avatarGazeTimer);
+    avatarGazeTimer = null;
+  }
+  pendingAvatarGaze = null;
+}
+
+function renderAvatarGesture(action, actionId, motion) {
+  avatarStageNode.dataset.action = action;
+  avatarStageNode.dataset.actionId = actionId || "rest";
+
+  if (displayedAvatarGesture === null) {
+    applyAvatarGesture(action);
+  } else if (action !== "rest") {
+    cancelAvatarGestureTimer();
+    applyAvatarGesture(action);
+  } else if (displayedAvatarGesture !== "rest" && avatarGestureTimer === null) {
+    avatarGestureTimer = window.setTimeout(() => {
+      applyAvatarGesture("rest");
+      avatarGestureTimer = null;
+    }, Math.max(400, Number(motion.settlingTimeMs) || 1400));
+  }
+
+  if (action !== "rest" && actionId && actionId !== lastAvatarActionId) {
+    replayAvatarAction(actionId, motion);
+  }
+  lastAvatarActionId = actionId;
+}
+
+function applyAvatarGesture(gesture) {
+  displayedAvatarGesture = gesture;
+  avatarStageNode.dataset.gesture = gesture;
+}
+
+function cancelAvatarGestureTimer() {
+  if (avatarGestureTimer !== null) {
+    window.clearTimeout(avatarGestureTimer);
+    avatarGestureTimer = null;
+  }
+}
+
+function replayAvatarAction(actionId, motion) {
+  if (avatarActionFrame !== null) {
+    window.cancelAnimationFrame(avatarActionFrame);
+  }
+  if (avatarActionTimer !== null) {
+    window.clearTimeout(avatarActionTimer);
+  }
+
+  avatarStageNode.classList.remove("avatar-action-enter");
+  avatarStageNode.style.setProperty(
+    "--gesture-amplitude",
+    (0.65 + clamp01(motion.gestureAmplitude) * 0.7).toFixed(3),
+  );
+  avatarActionFrame = window.requestAnimationFrame(() => {
+    avatarStageNode.classList.add("avatar-action-enter");
+    avatarActionFrame = null;
+    avatarActionTimer = window.setTimeout(() => {
+      avatarStageNode.classList.remove("avatar-action-enter");
+      avatarActionTimer = null;
+    }, 1200);
+  });
 }
 
 function renderMessages(memories) {

@@ -72,7 +72,9 @@ test("embodiment exposes a fresh reply as speaking without making it permanent",
     sentiment: "neutral",
   });
 
-  assert.equal(deriveEmbodimentState(snapshot, NOW).action, "speak");
+  const speaking = deriveEmbodimentState(snapshot, NOW);
+  assert.equal(speaking.action, "speak");
+  assert.equal(speaking.actionId, "speak:2026-07-13T11:59:55.000Z");
   assert.equal(
     deriveEmbodimentState(snapshot, new Date("2026-07-13T12:01:00.000Z")).action,
     "rest",
@@ -91,4 +93,66 @@ test("embodiment does not keep speaking after simulated idle has moved on", () =
   snapshot.idleClock.absenceHours = 8;
 
   assert.equal(deriveEmbodimentState(snapshot, NOW).action, "rest");
+});
+
+test("embodiment learns a reaching manner from relational openness", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.temperament.bondingBias = 0.92;
+  snapshot.temperament.openness = 0.78;
+  snapshot.temperament.selfDisclosureBias = 0.72;
+  snapshot.temperament.guardedness = 0.1;
+  snapshot.temperament.workDrive = 0.24;
+  snapshot.temperament.traceHunger = 0.28;
+
+  const embodiment = deriveEmbodimentState(snapshot, NOW);
+
+  assert.equal(embodiment.motion.manner, "reaching");
+  assert.ok(embodiment.motion.gazePersistence > 0.6);
+});
+
+test("embodiment learns still guarded movement from guarded temperament", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.temperament.guardedness = 0.92;
+  snapshot.temperament.openness = 0.18;
+  snapshot.temperament.selfDisclosureBias = 0.12;
+  snapshot.temperament.bondingBias = 0.22;
+  snapshot.temperament.workDrive = 0.3;
+  snapshot.temperament.traceHunger = 0.66;
+
+  const embodiment = deriveEmbodimentState(snapshot, NOW);
+
+  assert.equal(embodiment.motion.manner, "guarded");
+  assert.ok(embodiment.motion.stillness > 0.65);
+  assert.ok(embodiment.motion.gestureAmplitude < 0.35);
+  assert.ok(embodiment.motion.settlingTimeMs > 1_700);
+});
+
+test("embodiment gives each new action occurrence a stable replay id", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.initiative.history.push({
+    kind: "idle_reactivation",
+    autonomyAction: "recall",
+    timestamp: "2026-07-13T11:58:00.000Z",
+    motive: "seek_continuity",
+    topic: "仕様",
+    traceTopic: "仕様",
+    blocker: null,
+    place: "archive",
+    worldAction: "touch",
+    maintenanceAction: null,
+    reopened: false,
+    hours: 8,
+    summary: "棚の痕跡を思い返した。",
+  });
+
+  const first = deriveEmbodimentState(snapshot, NOW);
+  const repeatedPoll = deriveEmbodimentState(snapshot, NOW);
+  snapshot.initiative.history.push({
+    ...snapshot.initiative.history[0]!,
+    timestamp: "2026-07-13T11:59:00.000Z",
+  });
+  const nextOccurrence = deriveEmbodimentState(snapshot, NOW);
+
+  assert.equal(first.actionId, repeatedPoll.actionId);
+  assert.notEqual(first.actionId, nextOccurrence.actionId);
 });

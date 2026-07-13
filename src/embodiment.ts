@@ -8,11 +8,21 @@ import type {
 export type EmbodimentPosture = "open" | "settled" | "guarded" | "withdrawn";
 export type EmbodimentGazeTarget = "viewer" | "lamp" | "desk" | "shelf" | "down" | "distance";
 export type EmbodimentAction = InitiativeAutonomyAction | "rest";
+export type EmbodimentManner = "reaching" | "measured" | "guarded" | "searching";
+
+export interface EmbodimentMotionProfile {
+  manner: EmbodimentManner;
+  gestureAmplitude: number;
+  gazePersistence: number;
+  stillness: number;
+  settlingTimeMs: number;
+}
 
 export interface EmbodimentState {
   posture: EmbodimentPosture;
   gazeTarget: EmbodimentGazeTarget;
   action: EmbodimentAction;
+  actionId: string;
   place: WorldPlaceId;
   phase: HachikaSnapshot["world"]["phase"];
   movementTempo: number;
@@ -21,6 +31,7 @@ export interface EmbodimentState {
   expressionWarmth: number;
   alertness: number;
   tension: number;
+  motion: EmbodimentMotionProfile;
   summary: string;
 }
 
@@ -31,9 +42,11 @@ export function deriveEmbodimentState(
   snapshot: HachikaSnapshot,
   now: Date = new Date(),
 ): EmbodimentState {
-  const action = deriveCurrentAction(snapshot, now);
+  const currentAction = deriveCurrentAction(snapshot, now);
+  const action = currentAction.action;
   const posture = derivePosture(snapshot);
   const gazeTarget = deriveGazeTarget(snapshot, action);
+  const motion = deriveMotionProfile(snapshot);
   const movementTempo = clamp01(
     0.12 +
       snapshot.body.energy * 0.48 +
@@ -72,6 +85,7 @@ export function deriveEmbodimentState(
     posture,
     gazeTarget,
     action,
+    actionId: currentAction.id,
     place: snapshot.world.currentPlace,
     phase: snapshot.world.phase,
     movementTempo,
@@ -80,6 +94,7 @@ export function deriveEmbodimentState(
     expressionWarmth,
     alertness,
     tension: clamp01(snapshot.body.tension),
+    motion,
     summary: describeEmbodiment(posture, action, gazeTarget),
   };
 }
@@ -87,7 +102,7 @@ export function deriveEmbodimentState(
 function deriveCurrentAction(
   snapshot: HachikaSnapshot,
   now: Date,
-): EmbodimentAction {
+): { action: EmbodimentAction; id: string } {
   const latestHachikaMemory = [...snapshot.memories]
     .reverse()
     .find((memory) => memory.role === "hachika");
@@ -105,7 +120,10 @@ function deriveCurrentAction(
     (snapshot.idleClock.absenceHours < 1e-6 || recentProactive) &&
     ageMs(latestHachikaMemory.timestamp, now) <= SPEAKING_MAX_AGE_MS
   ) {
-    return "speak";
+    return {
+      action: "speak",
+      id: `speak:${latestHachikaMemory.timestamp}`,
+    };
   }
 
   const latestActivity = snapshot.initiative.history.at(-1);
@@ -113,15 +131,85 @@ function deriveCurrentAction(
     latestActivity?.autonomyAction &&
     ageMs(latestActivity.timestamp, now) <= ACTIVE_ACTION_MAX_AGE_MS
   ) {
-    return latestActivity.autonomyAction;
+    return {
+      action: latestActivity.autonomyAction,
+      id: `${latestActivity.autonomyAction}:${latestActivity.timestamp}`,
+    };
   }
 
   const latestWorldEvent = snapshot.world.recentEvents.at(-1);
   if (latestWorldEvent && ageMs(latestWorldEvent.timestamp, now) <= ACTIVE_ACTION_MAX_AGE_MS) {
-    return worldEventToAction(latestWorldEvent.kind);
+    const action = worldEventToAction(latestWorldEvent.kind);
+    return {
+      action,
+      id: `${action}:${latestWorldEvent.timestamp}`,
+    };
   }
 
-  return "rest";
+  return {
+    action: "rest",
+    id: "rest",
+  };
+}
+
+function deriveMotionProfile(snapshot: HachikaSnapshot): EmbodimentMotionProfile {
+  const temperament = snapshot.temperament;
+  const mannerScores: Record<EmbodimentManner, number> = {
+    reaching:
+      temperament.bondingBias * 0.6 +
+      temperament.openness * 0.15 +
+      temperament.selfDisclosureBias * 0.15 -
+      temperament.guardedness * 0.1,
+    searching:
+      temperament.openness * 0.35 +
+      temperament.workDrive * 0.3 +
+      temperament.traceHunger * 0.35 -
+      temperament.bondingBias * 0.12,
+    guarded:
+      temperament.guardedness * 0.58 +
+      temperament.traceHunger * 0.16 +
+      (1 - temperament.selfDisclosureBias) * 0.18 +
+      (1 - temperament.openness) * 0.08,
+    measured:
+      0.46 -
+      Math.max(
+        Math.abs(temperament.bondingBias - temperament.workDrive),
+        Math.abs(temperament.openness - temperament.guardedness),
+        Math.abs(temperament.traceHunger - 0.5),
+      ) *
+        0.25,
+  };
+  const manner = (Object.entries(mannerScores) as [EmbodimentManner, number][]).reduce(
+    (best, candidate) => (candidate[1] > best[1] ? candidate : best),
+  )[0];
+  const stillness = clamp01(
+    0.28 +
+      temperament.guardedness * 0.38 +
+      temperament.traceHunger * 0.16 -
+      temperament.openness * 0.18,
+  );
+  const gestureAmplitude = clamp01(
+    0.18 +
+      temperament.openness * 0.3 +
+      temperament.workDrive * 0.12 +
+      temperament.bondingBias * 0.08 -
+      temperament.guardedness * 0.22,
+  );
+  const gazePersistence = clamp01(
+    0.25 +
+      temperament.bondingBias * 0.38 +
+      temperament.traceHunger * 0.12 +
+      temperament.selfDisclosureBias * 0.1 -
+      temperament.guardedness * 0.18,
+  );
+
+  return {
+    manner,
+    gestureAmplitude,
+    gazePersistence,
+    stillness,
+    settlingTimeMs: Math.round(650 + stillness * 1_250 + temperament.traceHunger * 450),
+  };
 }
 
 function derivePosture(snapshot: HachikaSnapshot): EmbodimentPosture {

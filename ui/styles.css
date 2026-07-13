@@ -218,6 +218,13 @@ button.danger {
   --avatar-scale: 0.9;
   --breath-scale: 1.006;
   --motion-duration: 5.4s;
+  --settle-duration: 1.4s;
+  --gaze-duration: 3.4s;
+  --sway-x: 1px;
+  --sway-angle: 0.12deg;
+  --gesture-amplitude: 1;
+  --gaze-x: 49%;
+  --gaze-y: 24%;
   --avatar-brightness: 1;
   --avatar-saturation: 1;
   position: relative;
@@ -415,20 +422,25 @@ button.danger {
 .gaze-thread {
   position: absolute;
   z-index: 3;
+  top: var(--gaze-y);
+  left: var(--gaze-x);
   width: 7px;
   height: 7px;
   border: 1px solid rgba(243, 205, 159, 0.68);
   border-radius: 50%;
   opacity: 0.7;
-  animation: gaze-pulse 2.8s ease-in-out infinite;
+  transition:
+    top var(--settle-duration) cubic-bezier(0.22, 0.72, 0.2, 1),
+    left var(--settle-duration) cubic-bezier(0.22, 0.72, 0.2, 1);
+  animation: gaze-pulse var(--gaze-duration) ease-in-out infinite;
 }
 
-.avatar-stage[data-gaze="viewer"] .gaze-thread { top: 24%; left: 49%; }
-.avatar-stage[data-gaze="lamp"] .gaze-thread { top: 22%; right: 12%; }
-.avatar-stage[data-gaze="desk"] .gaze-thread { right: 25%; bottom: 19%; }
-.avatar-stage[data-gaze="shelf"] .gaze-thread { top: 36%; right: 19%; }
-.avatar-stage[data-gaze="down"] .gaze-thread { left: 48%; bottom: 35%; }
-.avatar-stage[data-gaze="distance"] .gaze-thread { top: 18%; left: 14%; }
+.avatar-stage[data-gaze="viewer"] { --gaze-x: 49%; --gaze-y: 24%; }
+.avatar-stage[data-gaze="lamp"] { --gaze-x: 88%; --gaze-y: 22%; }
+.avatar-stage[data-gaze="desk"] { --gaze-x: 75%; --gaze-y: 81%; }
+.avatar-stage[data-gaze="shelf"] { --gaze-x: 81%; --gaze-y: 36%; }
+.avatar-stage[data-gaze="down"] { --gaze-x: 48%; --gaze-y: 65%; }
+.avatar-stage[data-gaze="distance"] { --gaze-x: 14%; --gaze-y: 18%; }
 
 .avatar-distance {
   position: absolute;
@@ -439,7 +451,16 @@ button.danger {
   height: 102%;
   transform: translateX(-50%) scale(var(--avatar-scale));
   transform-origin: 50% 100%;
-  transition: left 1.2s ease, transform 1.2s ease, opacity 700ms ease;
+  transition:
+    left var(--settle-duration) cubic-bezier(0.22, 0.72, 0.2, 1),
+    transform var(--settle-duration) cubic-bezier(0.22, 0.72, 0.2, 1),
+    opacity var(--settle-duration) ease;
+}
+
+.avatar-gesture {
+  width: 100%;
+  height: 100%;
+  transform-origin: 50% 86%;
 }
 
 .avatar-breath {
@@ -459,7 +480,9 @@ button.danger {
     saturate(var(--avatar-saturation))
     drop-shadow(0 28px 26px rgba(0, 0, 0, 0.34));
   transform-origin: 50% 86%;
-  transition: filter 700ms ease, transform 900ms ease;
+  transition:
+    filter var(--settle-duration) ease,
+    transform var(--settle-duration) cubic-bezier(0.22, 0.72, 0.2, 1);
 }
 
 .avatar-stage[data-posture="open"] .avatar-character {
@@ -482,20 +505,35 @@ button.danger {
     drop-shadow(0 28px 26px rgba(0, 0, 0, 0.42));
 }
 
-.avatar-stage[data-action="recall"] .avatar-distance,
-.avatar-stage[data-action="touch"] .avatar-distance {
+.avatar-stage[data-gesture="recall"] .avatar-distance,
+.avatar-stage[data-gesture="touch"] .avatar-distance {
   left: 54%;
 }
 
-.avatar-stage[data-action="drift"] .avatar-distance {
+.avatar-stage[data-gesture="drift"] .avatar-distance {
   left: 46%;
 }
 
-.avatar-stage[data-action="speak"] .avatar-character {
+.avatar-stage[data-gesture="speak"] .avatar-character {
   filter:
     brightness(1.05)
     saturate(var(--avatar-saturation))
     drop-shadow(0 24px 30px rgba(182, 87, 53, 0.2));
+}
+
+.avatar-stage.avatar-action-enter:is([data-gesture="speak"], [data-gesture="observe"])
+  .avatar-gesture {
+  animation: avatar-gesture-open 820ms cubic-bezier(0.2, 0.78, 0.22, 1) both;
+}
+
+.avatar-stage.avatar-action-enter:is([data-gesture="recall"], [data-gesture="touch"])
+  .avatar-gesture {
+  animation: avatar-gesture-turn 980ms cubic-bezier(0.2, 0.72, 0.2, 1) both;
+}
+
+.avatar-stage.avatar-action-enter:is([data-gesture="hold"], [data-gesture="drift"])
+  .avatar-gesture {
+  animation: avatar-gesture-inward 1100ms cubic-bezier(0.24, 0.62, 0.2, 1) both;
 }
 
 .stage-vignette {
@@ -542,12 +580,41 @@ button.danger {
 
 @keyframes avatar-breathe {
   0%, 100% { transform: translateY(0) scaleY(1); }
-  48% { transform: translateY(-2px) scaleY(var(--breath-scale)); }
+  48% {
+    transform:
+      translateX(var(--sway-x))
+      translateY(-2px)
+      rotate(var(--sway-angle))
+      scaleY(var(--breath-scale));
+  }
 }
 
 @keyframes gaze-pulse {
   0%, 100% { transform: scale(0.78); opacity: 0.35; }
   50% { transform: scale(1.35); opacity: 0.86; box-shadow: 0 0 13px rgba(231, 170, 98, 0.4); }
+}
+
+@keyframes avatar-gesture-open {
+  0%, 100% { transform: translateY(0) scale(1); }
+  38% {
+    transform: translateY(calc(-3px * var(--gesture-amplitude))) scale(1.006);
+  }
+}
+
+@keyframes avatar-gesture-turn {
+  0%, 100% { transform: translateX(0) rotate(0); }
+  46% {
+    transform:
+      translateX(calc(3px * var(--gesture-amplitude)))
+      rotate(calc(0.32deg * var(--gesture-amplitude)));
+  }
+}
+
+@keyframes avatar-gesture-inward {
+  0%, 100% { transform: translateY(0) scaleX(1); }
+  52% {
+    transform: translateY(calc(2px * var(--gesture-amplitude))) scaleX(0.996);
+  }
 }
 
 .panel-wide {

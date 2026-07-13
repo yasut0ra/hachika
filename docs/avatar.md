@@ -22,6 +22,8 @@ substrate / world / autonomy history
 - `action`: observe / recall / hold / drift / touch / speak / rest
 - `movementTempo / breathDepth / proximity`
 - `expressionWarmth / alertness / tension`
+- `motion.manner / gestureAmplitude / gazePersistence / stillness / settlingTimeMs`
+- `actionId`: 同種の action が新しく起きた時だけ renderer が再生するための識別子
 - `place / phase`
 
 単一の値と単一の表情を対応させない。たとえば guardedness だけで姿勢を決めず、
@@ -35,14 +37,17 @@ tension、mistrust、preservation threat、safety の合成から身体の閉じ
 - warmth / alertness は明るさと彩度へ弱く反映する
 - posture は身体の開きと傾きへ反映する
 - action は視線対象と位置の小さな移動へ反映する
+- learned temperament から `reaching / measured / guarded / searching` の身体癖を導く
+- gaze は現在値へ即時ジャンプせず、gazePersistence に応じて直前の対象へ少し残る
+- action が rest に戻っても gesture は settlingTimeMs だけ余韻を残す
+- actionId が変化した時だけ entrance gesture を再生し、polling では再発火しない
 - world place と phase はstageの構造と光へ反映する
 
 prefers-reduced-motion では継続animationを止める。
 
 ## Next steps
 
-1. habit を導入し、同じ緊張でも「視線を外す」「固まる」など個体ごとの身体癖を分ける
-2. 発話を瞬間イベントとして配信し、poll間隔より短い speak gesture も確実に再生する
-3. gaze と手の動きを独立layerへ分ける
-4. rendererを交換できる adapter contract を定義する
-5. snapshot replayで身体の時間変化を回帰確認する
+1. gaze と目・口・手の動きを独立layerへ分ける
+2. 発話イベントに duration / emphasis を持たせ、口とgestureの長さを分ける
+3. rendererを交換できる adapter contract を定義する
+4. snapshot replayで身体の時間変化を回帰確認する
