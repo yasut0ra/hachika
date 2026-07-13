@@ -387,6 +387,27 @@ test("loadSnapshot and saveSnapshot apply sanitation to persisted files", async 
         },
         purpose: createInitialSnapshot().purpose,
         initiative: createInitialSnapshot().initiative,
+        discourse: {
+          openQuestions: [
+            {
+              target: "user_profile",
+              text: "今は何を話したい？",
+              askedAt: "2026-03-21T01:00:00.000Z",
+              status: "open",
+              resolvedAt: null,
+            },
+          ],
+          openRequests: [
+            {
+              target: "hachika_name",
+              kind: "direct_answer",
+              text: "名前を答えて",
+              askedAt: "2026-03-21T02:00:00.000Z",
+              status: "open",
+              resolvedAt: null,
+            },
+          ],
+        },
         lastInteractionAt: null,
         conversationCount: 1,
       }, null, 2)}\n`,
@@ -401,6 +422,17 @@ test("loadSnapshot and saveSnapshot apply sanitation to persisted files", async 
     assert.equal(loaded.traces.かな, undefined);
     assert.deepEqual(loaded.temperament, createInitialSnapshot().temperament);
     assert.equal(loaded.discourse.hachikaName?.value, "ハチカ");
+    assert.deepEqual(
+      loaded.discourse.openQuestions.map((question) => ({
+        askedBy: question.askedBy,
+        answerExpectedFrom: question.answerExpectedFrom,
+      })),
+      [{ askedBy: "hachika", answerExpectedFrom: "user" }],
+    );
+    assert.equal(loaded.discourse.openRequests[0]?.requestedBy, "user");
+    assert.equal(loaded.discourse.openRequests[0]?.responsibleParty, "hachika");
+    assert.equal(loaded.discourse.commitments[0]?.kind, "answer");
+    assert.equal(loaded.discourse.commitments[0]?.status, "open");
 
     await saveSnapshot(filePath, loaded);
     const raw = await readFile(filePath, "utf8");
@@ -447,6 +479,8 @@ test("sanitizeSnapshot keeps valid discourse facts and falls back on invalid hac
       kind: "style",
       text: "ハチカ自身の名前を具体的に答えて。",
       askedAt: "2026-03-31T00:00:00.000Z",
+      requestedBy: "user",
+      responsibleParty: "hachika",
       status: "open",
       resolvedAt: null,
     },
@@ -455,6 +489,8 @@ test("sanitizeSnapshot keeps valid discourse facts and falls back on invalid hac
       kind: "task",
       text: "x",
       askedAt: "2026-03-31T00:00:00.000Z",
+      requestedBy: "user",
+      responsibleParty: "hachika",
       status: "open",
       resolvedAt: null,
     },
@@ -478,10 +514,30 @@ test("sanitizeSnapshot keeps valid discourse facts and falls back on invalid hac
       kind: "style",
       text: "ハチカ自身の名前を具体的に答えて。",
       askedAt: "2026-03-31T00:00:00.000Z",
+      requestedBy: "user",
+      responsibleParty: "hachika",
       status: "open",
       resolvedAt: null,
     },
   ]);
+  assert.deepEqual(
+    snapshot.discourse.commitments.map((commitment) => ({
+      owner: commitment.owner,
+      kind: commitment.kind,
+      source: commitment.source,
+      status: commitment.status,
+      text: commitment.text,
+    })),
+    [
+      {
+        owner: "hachika",
+        kind: "style",
+        source: "request",
+        status: "open",
+        text: "ハチカ自身の名前を具体的に答えて。",
+      },
+    ],
+  );
 });
 
 test("sanitizeSnapshot can recover a declared user name from recent memory", () => {
@@ -550,7 +606,7 @@ test("loadSnapshot seeds latent dynamics from older visible-only snapshots", asy
 
     const loaded = await loadSnapshot(filePath);
 
-    assert.equal(loaded.version, 27);
+    assert.equal(loaded.version, 28);
     assert.equal(loaded.revision, 3);
     assert.equal(loaded.discourse.hachikaName?.value, "ハチカ");
     assert.ok(

@@ -36,6 +36,7 @@ import type {
   BehaviorDirector,
 } from "./behavior-director.js";
 import type { InitiativeDirector } from "./initiative-director.js";
+import { reconcileDiscourseCommitments } from "./discourse.js";
 import {
   materializePreparedInitiative,
   materializePreparedOutwardAction,
@@ -939,6 +940,12 @@ export class HachikaEngine {
     replyDebug: GeneratedTextDebug,
   ): string {
     remember(nextSnapshot, "hachika", message, topics, "neutral");
+    recordExplicitHachikaQuestion(
+      nextSnapshot,
+      message,
+      topics.some(isMeaningfulTopic) ? "work_topic" : "user_profile",
+      nextSnapshot.initiative.lastProactiveAt ?? new Date().toISOString(),
+    );
     recordGeneratedQuality(
       nextSnapshot,
       replyDebug,
@@ -1201,7 +1208,14 @@ export class HachikaEngine {
 
     remember(prepared.nextSnapshot, "user", input, prepared.signals.topics, sentiment);
     remember(prepared.nextSnapshot, "hachika", reply, prepared.signals.topics, "neutral");
-    updateDiscourseState(prepared.nextSnapshot, input, prepared.signals, prepared.turnDebug);
+    updateDiscourseState(
+      prepared.nextSnapshot,
+      input,
+      reply,
+      prepared.signals,
+      prepared.turnDebug,
+      prepared.responsePlan,
+    );
     recordGeneratedQuality(
       prepared.nextSnapshot,
       replyDebug,
@@ -2475,7 +2489,10 @@ function resolveDiscourseReplyObligation(
 } {
   const unresolvedRequest = [...snapshot.discourse.openRequests]
     .reverse()
-    .find((request) => request.status === "open");
+    .find(
+      (request) =>
+        request.status === "open" && request.responsibleParty === "hachika",
+    );
   if (unresolvedRequest && unresolvedRequest.kind !== "task") {
     return {
       target: unresolvedRequest.target,
@@ -2487,7 +2504,10 @@ function resolveDiscourseReplyObligation(
 
   const unresolvedQuestion = [...snapshot.discourse.openQuestions]
     .reverse()
-    .find((question) => question.status === "open");
+    .find(
+      (question) =>
+        question.status === "open" && question.answerExpectedFrom === "hachika",
+    );
   if (unresolvedQuestion) {
     return {
       target: unresolvedQuestion.target,
@@ -3908,7 +3928,10 @@ function resolvePersistentDiscourseLifecycleObligation(
 } | null {
   const unresolvedRequest = [...snapshot.discourse.openRequests]
     .reverse()
-    .find((request) => request.status === "open");
+    .find(
+      (request) =>
+        request.status === "open" && request.responsibleParty === "hachika",
+    );
 
   if (unresolvedRequest && unresolvedRequest.kind !== "task") {
     return {
@@ -3921,7 +3944,10 @@ function resolvePersistentDiscourseLifecycleObligation(
 
   const unresolvedQuestion = [...snapshot.discourse.openQuestions]
     .reverse()
-    .find((question) => question.status === "open");
+    .find(
+      (question) =>
+        question.status === "open" && question.answerExpectedFrom === "hachika",
+    );
 
   if (unresolvedQuestion) {
     return {
@@ -5555,8 +5581,10 @@ function extractAssignedHachikaName(text: string): string | null {
 function updateDiscourseState(
   snapshot: HachikaSnapshot,
   input: string,
+  reply: string,
   signals: InteractionSignals,
   turnDebug: TurnDirectiveDebug | null,
+  responsePlan: ResponsePlan,
 ): void {
   const timestamp = snapshot.lastInteractionAt ?? new Date().toISOString();
   const normalized = input.normalize("NFKC").trim();
@@ -5586,13 +5614,17 @@ function updateDiscourseState(
     };
   }
 
-  resolveUserOwnedOpenQuestion(snapshot, normalized, signals, turnDebug, timestamp);
+  resolveQuestionAwaitingUser(snapshot, normalized, signals, turnDebug, timestamp);
+  resolveQuestionAwaitingHachika(snapshot, turnDebug, timestamp);
+  resolveRequestAwaitingHachika(snapshot, turnDebug, timestamp);
 
   if (turnDebug && turnDebug.target !== "none" && shouldRecordOpenQuestion(normalized, signals, turnDebug)) {
     snapshot.discourse.openQuestions.push({
       target: turnDebug.target,
       text: normalized,
       askedAt: timestamp,
+      askedBy: "user",
+      answerExpectedFrom: "hachika",
       status: turnDebug.answerMode === "clarify" ? "open" : "resolved",
       resolvedAt: turnDebug.answerMode === "clarify" ? null : timestamp,
     });
@@ -5604,6 +5636,8 @@ function updateDiscourseState(
     snapshot.discourse.openRequests.push(request);
     snapshot.discourse.openRequests = snapshot.discourse.openRequests.slice(-8);
   }
+
+  recordHachikaQuestion(snapshot, reply, turnDebug, responsePlan, timestamp);
 
   if (!declaredUserName && !assignedHachikaName) {
     const claim = detectDiscourseClaim(normalized, signals, turnDebug, timestamp);
@@ -5617,9 +5651,15 @@ function updateDiscourseState(
   if (correction) {
     snapshot.discourse.lastCorrection = correction;
   }
+
+  snapshot.discourse.commitments = reconcileDiscourseCommitments(
+    snapshot.discourse.commitments,
+    snapshot.discourse.openQuestions,
+    snapshot.discourse.openRequests,
+  );
 }
 
-function resolveUserOwnedOpenQuestion(
+function resolveQuestionAwaitingUser(
   snapshot: HachikaSnapshot,
   input: string,
   signals: InteractionSignals,
@@ -5632,14 +5672,14 @@ function resolveUserOwnedOpenQuestion(
 
   const question = [...snapshot.discourse.openQuestions]
     .reverse()
-    .find((candidate) => candidate.status === "open");
+    .find(
+      (candidate) =>
+        candidate.status === "open" &&
+        candidate.askedBy === "hachika" &&
+        candidate.answerExpectedFrom === "user",
+    );
 
-  if (
-    !question ||
-    (question.target !== "user_name" &&
-      question.target !== "user_profile" &&
-      question.target !== "relation")
-  ) {
+  if (!question) {
     return;
   }
 
@@ -5653,6 +5693,138 @@ function resolveUserOwnedOpenQuestion(
 
   question.status = "resolved";
   question.resolvedAt = timestamp;
+}
+
+function resolveQuestionAwaitingHachika(
+  snapshot: HachikaSnapshot,
+  turnDebug: TurnDirectiveDebug | null,
+  timestamp: string,
+): void {
+  if (!turnDebug || turnDebug.answerMode === "clarify") {
+    return;
+  }
+
+  const question = [...snapshot.discourse.openQuestions]
+    .reverse()
+    .find(
+      (candidate) =>
+        candidate.status === "open" &&
+        candidate.askedBy === "user" &&
+        candidate.answerExpectedFrom === "hachika" &&
+        (turnDebug.target === candidate.target || turnDebug.target === "none"),
+    );
+
+  if (question) {
+    question.status = "resolved";
+    question.resolvedAt = timestamp;
+  }
+}
+
+function resolveRequestAwaitingHachika(
+  snapshot: HachikaSnapshot,
+  turnDebug: TurnDirectiveDebug | null,
+  timestamp: string,
+): void {
+  if (!turnDebug || turnDebug.answerMode === "clarify") {
+    return;
+  }
+
+  const request = [...snapshot.discourse.openRequests]
+    .reverse()
+    .find(
+      (candidate) =>
+        candidate.status === "open" &&
+        candidate.requestedBy === "user" &&
+        candidate.responsibleParty === "hachika" &&
+        (turnDebug.target === candidate.target || turnDebug.target === "none"),
+    );
+
+  if (request) {
+    request.status = "resolved";
+    request.resolvedAt = timestamp;
+  }
+}
+
+function recordHachikaQuestion(
+  snapshot: HachikaSnapshot,
+  reply: string,
+  turnDebug: TurnDirectiveDebug | null,
+  responsePlan: ResponsePlan,
+  timestamp: string,
+): void {
+  const target = inferHachikaQuestionTarget(turnDebug, responsePlan);
+  recordExplicitHachikaQuestion(snapshot, reply, target, timestamp);
+}
+
+function recordExplicitHachikaQuestion(
+  snapshot: HachikaSnapshot,
+  reply: string,
+  target: HachikaSnapshot["discourse"]["openQuestions"][number]["target"],
+  timestamp: string,
+): void {
+  const text = extractLastExplicitQuestion(reply);
+  if (!text) {
+    return;
+  }
+
+  const duplicate = snapshot.discourse.openQuestions.some(
+    (question) =>
+      question.status === "open" &&
+      question.askedBy === "hachika" &&
+      question.answerExpectedFrom === "user" &&
+      question.text === text,
+  );
+  if (duplicate) {
+    return;
+  }
+
+  snapshot.discourse.openQuestions.push({
+    target,
+    text,
+    askedAt: timestamp,
+    askedBy: "hachika",
+    answerExpectedFrom: "user",
+    status: "open",
+    resolvedAt: null,
+  });
+  snapshot.discourse.openQuestions = snapshot.discourse.openQuestions.slice(-8);
+}
+
+function extractLastExplicitQuestion(reply: string): string | null {
+  const normalized = reply.normalize("NFKC").trim();
+  const questionEnd = Math.max(normalized.lastIndexOf("?"), normalized.lastIndexOf("？"));
+  if (questionEnd < 0) {
+    return null;
+  }
+
+  const prefix = normalized.slice(0, questionEnd);
+  const sentenceStart = Math.max(
+    prefix.lastIndexOf("\n"),
+    prefix.lastIndexOf("。"),
+    prefix.lastIndexOf("!"),
+    prefix.lastIndexOf("！"),
+  );
+  const latest = normalized.slice(sentenceStart + 1, questionEnd + 1).trim();
+  return latest.length >= 3 ? latest : null;
+}
+
+function inferHachikaQuestionTarget(
+  turnDebug: TurnDirectiveDebug | null,
+  responsePlan: ResponsePlan,
+): HachikaSnapshot["discourse"]["openQuestions"][number]["target"] {
+  if (responsePlan.focusTopic || turnDebug?.target === "work_topic") {
+    return "work_topic";
+  }
+  if (responsePlan.act === "attune") {
+    return turnDebug?.target === "relation" ? "relation" : "user_profile";
+  }
+  if (turnDebug?.target === "hachika_name") {
+    return "user_name";
+  }
+  if (turnDebug?.target === "hachika_profile") {
+    return "user_profile";
+  }
+  return turnDebug?.target ?? "none";
 }
 
 function shouldRecordOpenQuestion(
@@ -5701,6 +5873,8 @@ function detectDiscourseRequest(
     kind: styleRequest ? "style" : taskRequest ? "task" : "direct_answer",
     text: input,
     askedAt: timestamp,
+    requestedBy: "user",
+    responsibleParty: "hachika",
     status: turnDebug.answerMode === "clarify" ? "open" : "resolved",
     resolvedAt: turnDebug.answerMode === "clarify" ? null : timestamp,
   };

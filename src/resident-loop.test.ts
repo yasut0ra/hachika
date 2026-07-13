@@ -243,6 +243,8 @@ test("resident loop clears stale pending and stays quiet while a direct referent
     target: "hachika_name",
     text: "あなたの名前は？",
     askedAt: "2026-04-01T00:00:00.000Z",
+    askedBy: "user",
+    answerExpectedFrom: "hachika",
     status: "open",
     resolvedAt: null,
   });
@@ -270,6 +272,8 @@ test("resident loop can ask the user to resolve a user-owned open question", asy
     target: "user_profile",
     text: "なんて言われたい?",
     askedAt: "2026-04-01T00:00:00.000Z",
+    askedBy: "hachika",
+    answerExpectedFrom: "user",
     status: "open",
     resolvedAt: null,
   });
@@ -294,6 +298,8 @@ test("resident loop keeps a user-owned open question probe when proactive direct
     target: "user_profile",
     text: "なんて言われたい?",
     askedAt: "2026-04-01T00:00:00.000Z",
+    askedBy: "hachika",
+    answerExpectedFrom: "user",
     status: "open",
     resolvedAt: null,
   });

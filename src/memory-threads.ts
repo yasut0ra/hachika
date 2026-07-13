@@ -355,6 +355,8 @@ function deriveThreadFrontier(
     .find(
       (question) =>
         question.status === "open" &&
+        question.askedBy === "hachika" &&
+        question.answerExpectedFrom === "user" &&
         question.target === "work_topic" &&
         textMentionsThread(thread, question.text),
     );
@@ -367,6 +369,8 @@ function deriveThreadFrontier(
     .find(
       (request) =>
         request.status === "open" &&
+        request.requestedBy === "user" &&
+        request.responsibleParty === "hachika" &&
         request.kind === "task" &&
         textMentionsThread(thread, request.text),
     );

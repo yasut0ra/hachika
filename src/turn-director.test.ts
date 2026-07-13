@@ -79,6 +79,8 @@ test("rule turn directive can continue an unresolved direct referent request fro
     kind: "style",
     text: "ハチカ自身の名前を具体的に答えて。",
     askedAt: "2026-04-01T00:00:00.000Z",
+    requestedBy: "user",
+    responsibleParty: "hachika",
     status: "open",
     resolvedAt: null,
   });

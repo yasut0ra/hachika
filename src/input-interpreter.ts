@@ -116,12 +116,16 @@ export interface InputInterpretationPayload {
     openQuestions: Array<{
       target: string;
       text: string;
+      askedBy: "user" | "hachika";
+      answerExpectedFrom: "user" | "hachika";
       status: string;
     }>;
     openRequests: Array<{
       target: string;
       kind: string;
       text: string;
+      requestedBy: "user" | "hachika";
+      responsibleParty: "user" | "hachika";
       status: string;
     }>;
     lastCorrection: {
@@ -250,6 +254,8 @@ export function buildInputInterpretationPayload(
         .map((question) => ({
           target: question.target,
           text: question.text,
+          askedBy: question.askedBy,
+          answerExpectedFrom: question.answerExpectedFrom,
           status: question.status,
         })),
       openRequests: context.snapshot.discourse.openRequests
@@ -258,6 +264,8 @@ export function buildInputInterpretationPayload(
           target: request.target,
           kind: request.kind,
           text: request.text,
+          requestedBy: request.requestedBy,
+          responsibleParty: request.responsibleParty,
           status: request.status,
         })),
       lastCorrection: context.snapshot.discourse.lastCorrection
@@ -373,9 +381,15 @@ function buildInterpreterActorCue(
 
   if (
     snapshot.discourse.openRequests.some(
-      (request) => request.status === "open" && request.kind !== "task",
+      (request) =>
+        request.status === "open" &&
+        request.responsibleParty === "hachika" &&
+        request.kind !== "task",
     ) ||
-    snapshot.discourse.openQuestions.some((question) => question.status === "open")
+    snapshot.discourse.openQuestions.some(
+      (question) =>
+        question.status === "open" && question.answerExpectedFrom === "hachika",
+    )
   ) {
     return `いまは${place}で、聞かれていることを取り違えずに受け取りたい。`;
   }

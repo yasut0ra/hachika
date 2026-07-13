@@ -793,9 +793,15 @@ function hasUnresolvedNonWorkDiscourseObligation(
   snapshot: HachikaSnapshot,
 ): boolean {
   if (
-    snapshot.discourse.openQuestions.some((question) => question.status === "open") ||
+    snapshot.discourse.openQuestions.some(
+      (question) =>
+        question.status === "open" && question.answerExpectedFrom === "hachika",
+    ) ||
     snapshot.discourse.openRequests.some(
-      (request) => request.status === "open" && request.kind !== "task",
+      (request) =>
+        request.status === "open" &&
+        request.responsibleParty === "hachika" &&
+        request.kind !== "task",
     )
   ) {
     return true;

@@ -242,7 +242,8 @@ Hachika は、単に有用なだけでなく、
 - OpenAI 互換 director / generator の HTTP・JSON 抽出・エラー処理は [src/llm-client.ts](src/llm-client.ts) の共有クライアントに統合されていて、各 director は payload 構築と schema 検証だけを持つ
 - loop / idle / proactive の見直し方針は [docs/autonomy-v2.md](docs/autonomy-v2.md) に整理してあり、`発話を行動の一部へ下げる / idle を batch ではなく静かな生存時間へ寄せる / proactive を outward action の一種として扱う` 方向で再構成していく
 - 現在の `turn-director` と `proactive-director` は、内部的には [src/semantic-director-schema.ts](src/semantic-director-schema.ts) の v2 contract を持ち始めていて、semantic topic と durable topic を分けて扱う下地が入っている
-  - `discourse state` も名前 fact だけでなく `openQuestions / openRequests / recentClaims / lastCorrection` を持ち始めていて、`topic` ではなく「何が言われて、何がまだ未解決か」を semantic core に渡す方向へ寄せている
+  - `discourse state` も名前 fact だけでなく `openQuestions / openRequests / commitments / recentClaims / lastCorrection` を持ち始めていて、`topic` ではなく「何が言われて、誰が次に応じる側で、何がまだ未解決か」を semantic core に渡す方向へ寄せている
+  - questionは`askedBy / answerExpectedFrom`、requestは`requestedBy / responsibleParty`を持つ。Hachikaが実際に返した疑問文も記録し、ユーザーからの未回答質問をユーザーへ聞き返す材料と混同しない。引き受けたanswer/task/styleは短いcommitment ledgerとして`open / fulfilled`を追跡する（[docs/discourse-ownership.md](docs/discourse-ownership.md)）
   - `purpose` と `initiative` の candidate selection も、topic だけでなく `recentClaims / openRequests / lastCorrection` を見て work / relation を優先し直すようになっている
   - `initiative.pending.reason` も `work_request / work_claim / relation_claim / relation_correction` のような discourse source を持てるので、なぜその pending が立っているかを topic 以外でも追える
   - `trace` 側も recent work claim / open task request を weak な work support として見始めていて、逆に unresolved な referent/directness correction が残っている間は weak な topic だけで durable trace を立てにくくしている
@@ -305,7 +306,7 @@ Hachika は、単に有用なだけでなく、
   - reply / proactive generation は active thread の `facts / episodes / blockers / nextSteps` を受け取り、確定済みの事実を再質問したり、古い episode を現在地として言い直したりせず、最新の続きから話せる
   - trace ごとの自動生成文 (`次に触れられる形へ整える` など) は thread の continuation から除外される
   - thread lifecycle は `active / parked / closed / reopened / resolved`。topic shift や「一旦置こう」は parked、「この話は終わり」は closed になり、記憶は残しても idle recall / pending initiative / proactive candidate から外れる。ユーザーがその主題へ戻ったturnだけが reopened にできる
-  - 各threadはepisode frontierを一つ持つ。優先順位は `open question -> open task request -> blocker -> next step -> new episode -> settled`。proactiveでfrontierを一度外へ出すとfingerprintをactivityへcheckpointし、問い・詰まり・次の一歩・episode内容が変わるまでは同じthreadを言い換えて再発話しない
+  - 各threadはepisode frontierを一つ持つ。優先順位は `open question -> open task request -> blocker -> next step -> new episode -> settled`。ここでopen questionになれるのはHachikaが尋ねてユーザーの返答を待っている問いだけ。proactiveでfrontierを一度外へ出すとfingerprintをactivityへcheckpointし、問い・詰まり・次の一歩・episode内容が変わるまでは同じthreadを言い換えて再発話しない
 - relation imprint も idle 中に continuity / attention / shared_work の相対重みを少し組み替え、身体状態と temperament に合わない stale な closeness は前景から退きやすくなった
 - boundary imprint も静かな時間では少しずつ和らぎ、ただし absence 寄りの neglect や強い guardedness を伴う境界はそれより長く残りやすい
 - identity anchor は category の固定順ではなく traces / imprints / recent memories / previous anchors をまとめて score 化して選ばれ、最近の recurring topic が stale な anchor を追い越しやすくなった

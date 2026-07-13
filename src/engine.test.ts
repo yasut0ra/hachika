@@ -1838,8 +1838,19 @@ test("respondAsync records a resolved direct referent question in discourse stat
   const lastQuestion = result.snapshot.discourse.openQuestions.at(-1);
 
   assert.equal(lastQuestion?.target, "hachika_name");
+  assert.equal(lastQuestion?.askedBy, "user");
+  assert.equal(lastQuestion?.answerExpectedFrom, "hachika");
   assert.equal(lastQuestion?.status, "resolved");
   assert.equal(lastQuestion?.resolvedAt !== null, true);
+  assert.deepEqual(
+    result.snapshot.discourse.commitments.slice(-1).map((commitment) => ({
+      owner: commitment.owner,
+      kind: commitment.kind,
+      status: commitment.status,
+      source: commitment.source,
+    })),
+    [{ owner: "hachika", kind: "answer", status: "fulfilled", source: "question" }],
+  );
 });
 
 test("respond resolves a user-owned open question when the user answers", () => {
@@ -1848,6 +1859,8 @@ test("respond resolves a user-owned open question when the user answers", () => 
     target: "user_profile",
     text: "なんて言われたい?",
     askedAt: "2026-04-01T00:00:00.000Z",
+    askedBy: "hachika",
+    answerExpectedFrom: "user",
     status: "open",
     resolvedAt: null,
   });
@@ -1858,6 +1871,29 @@ test("respond resolves a user-owned open question when the user answers", () => 
 
   assert.equal(question?.status, "resolved");
   assert.equal(question?.resolvedAt !== null, true);
+  assert.equal(result.snapshot.discourse.commitments.length, 0);
+});
+
+test("respond records Hachika's actual ask-back and resolves it on the user's answer", () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+
+  const asked = engine.respond("何か聞いて");
+  const question = asked.snapshot.discourse.openQuestions.find(
+    (candidate) => candidate.askedBy === "hachika" && candidate.status === "open",
+  );
+
+  assert.ok(question);
+  assert.equal(question.answerExpectedFrom, "user");
+  assert.match(question.text, /いま近いのはどれ/u);
+  assert.doesNotMatch(question.text, /まだ掘れる/u);
+
+  const answered = engine.respond("軽く話したい");
+  const resolved = answered.snapshot.discourse.openQuestions.find(
+    (candidate) => candidate.askedAt === question.askedAt && candidate.text === question.text,
+  );
+  assert.equal(resolved?.status, "resolved");
+  assert.equal(resolved?.resolvedAt !== null, true);
+  assert.equal(answered.snapshot.discourse.commitments.length, 0);
 });
 
 test("respondAsync records directness and referent corrections in discourse state", async () => {
@@ -2023,6 +2059,8 @@ test("local fallback prioritizes unresolved direct-answer requests over stale tr
     kind: "style",
     text: "ハチカ自身の名前を具体的に答えて。",
     askedAt: "2026-04-01T00:00:00.000Z",
+    requestedBy: "user",
+    responsibleParty: "hachika",
     status: "open",
     resolvedAt: null,
   });
@@ -2065,6 +2103,10 @@ test("local fallback prioritizes unresolved direct-answer requests over stale tr
   assert.equal(result.debug.reply.selection?.currentTopic, null);
   assert.doesNotMatch(result.reply, /仕様/);
   assert.match(result.reply, /名前|ハチカ/);
+  assert.equal(result.snapshot.discourse.openRequests[0]?.status, "resolved");
+  assert.equal(result.snapshot.discourse.commitments[0]?.owner, "hachika");
+  assert.equal(result.snapshot.discourse.commitments[0]?.kind, "style");
+  assert.equal(result.snapshot.discourse.commitments[0]?.status, "fulfilled");
 });
 
 test("response planner keeps unresolved direct-answer obligations ahead of stale work focus", async () => {
@@ -2074,6 +2116,8 @@ test("response planner keeps unresolved direct-answer obligations ahead of stale
     kind: "style",
     text: "ハチカ自身の名前を具体的に答えて。",
     askedAt: "2026-04-01T00:00:00.000Z",
+    requestedBy: "user",
+    responsibleParty: "hachika",
     status: "open",
     resolvedAt: null,
   });
@@ -3268,6 +3312,8 @@ test("respondAsync suppresses weak durable hardening while a non-work discourse 
     kind: "direct_answer",
     text: "具体的に答えて",
     askedAt: "2026-04-01T00:00:00.000Z",
+    requestedBy: "user",
+    responsibleParty: "hachika",
     status: "open",
     resolvedAt: null,
   });
@@ -3319,6 +3365,8 @@ test("respondAsync still allows explicit new work despite an older non-work disc
     kind: "direct_answer",
     text: "具体的に答えて",
     askedAt: "2026-04-01T00:00:00.000Z",
+    requestedBy: "user",
+    responsibleParty: "hachika",
     status: "open",
     resolvedAt: null,
   });

@@ -143,10 +143,14 @@ export interface DiscourseFact {
 
 export type DiscourseQuestionStatus = "open" | "resolved";
 
+export type DiscourseActor = "user" | "hachika";
+
 export interface DiscourseOpenQuestion {
   target: TurnTarget;
   text: string;
   askedAt: string;
+  askedBy: DiscourseActor;
+  answerExpectedFrom: DiscourseActor;
   status: DiscourseQuestionStatus;
   resolvedAt: string | null;
 }
@@ -183,7 +187,25 @@ export interface DiscourseOpenRequest {
   kind: DiscourseRequestKind;
   text: string;
   askedAt: string;
+  requestedBy: DiscourseActor;
+  responsibleParty: DiscourseActor;
   status: DiscourseQuestionStatus;
+  resolvedAt: string | null;
+}
+
+export type DiscourseCommitmentKind = "answer" | "task" | "style";
+
+export type DiscourseCommitmentStatus = "open" | "fulfilled";
+
+export interface DiscourseCommitment {
+  owner: DiscourseActor;
+  kind: DiscourseCommitmentKind;
+  source: "question" | "request";
+  sourceAskedAt: string;
+  target: TurnTarget | "none";
+  text: string;
+  status: DiscourseCommitmentStatus;
+  createdAt: string;
   resolvedAt: string | null;
 }
 
@@ -193,6 +215,7 @@ export interface DiscourseState {
   openQuestions: DiscourseOpenQuestion[];
   recentClaims: DiscourseClaim[];
   openRequests: DiscourseOpenRequest[];
+  commitments: DiscourseCommitment[];
   lastCorrection: DiscourseCorrection | null;
 }
 

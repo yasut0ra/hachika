@@ -265,7 +265,20 @@ test("episode frontier prioritizes questions, blockers, and concrete next steps"
   snapshot.discourse.openQuestions.push({
     target: "work_topic",
     text: "設計はどのAPIから分ける？",
+    askedAt: "2026-07-01T00:30:00.000Z",
+    askedBy: "user",
+    answerExpectedFrom: "hachika",
+    status: "open",
+    resolvedAt: null,
+  });
+  assert.equal(deriveMemoryThreads(snapshot)[0]?.frontier.kind, "blocked");
+
+  snapshot.discourse.openQuestions.push({
+    target: "work_topic",
+    text: "設計はどのAPIから分ける？",
     askedAt: "2026-07-01T01:00:00.000Z",
+    askedBy: "hachika",
+    answerExpectedFrom: "user",
     status: "open",
     resolvedAt: null,
   });

@@ -35,6 +35,8 @@ test("prepareScheduledInitiative suppresses weak pending when discourse still ne
     target: "hachika_name",
     text: "あなたの名前は？",
     askedAt: "2026-04-01T00:00:00.000Z",
+    askedBy: "user",
+    answerExpectedFrom: "hachika",
     status: "open",
     resolvedAt: null,
   });
@@ -79,6 +81,8 @@ test("prepareScheduledInitiative still allows explicit work while a direct refer
     target: "hachika_name",
     text: "あなたの名前は？",
     askedAt: "2026-04-01T00:00:00.000Z",
+    askedBy: "user",
+    answerExpectedFrom: "hachika",
     status: "open",
     resolvedAt: null,
   });
@@ -255,6 +259,8 @@ test("emitInitiative stays silent while a direct referent question is still open
     target: "hachika_name",
     text: "あなたの名前は？",
     askedAt: "2026-04-01T00:00:00.000Z",
+    askedBy: "user",
+    answerExpectedFrom: "hachika",
     status: "open",
     resolvedAt: null,
   });

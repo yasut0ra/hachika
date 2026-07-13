@@ -867,10 +867,12 @@ function deriveDiscourseDemandAttentionReasons(
 ): AttentionRationale[] {
   const reasons = new Set<AttentionRationale>();
   const unresolved = snapshot.discourse.openQuestions.filter(
-    (question) => question.status === "open",
+    (question) =>
+      question.status === "open" && question.answerExpectedFrom === "hachika",
   );
   const unresolvedRequests = snapshot.discourse.openRequests.filter(
-    (request) => request.status === "open",
+    (request) =>
+      request.status === "open" && request.responsibleParty === "hachika",
   );
 
   if (
@@ -2875,7 +2877,12 @@ function synthesizeUserAnswerInitiative(
 ): PendingInitiative | null {
   const question = [...snapshot.discourse.openQuestions]
     .reverse()
-    .find((candidate) => candidate.status === "open");
+    .find(
+      (candidate) =>
+        candidate.status === "open" &&
+        candidate.askedBy === "hachika" &&
+        candidate.answerExpectedFrom === "user",
+    );
 
   if (
     !question ||

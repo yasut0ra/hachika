@@ -224,6 +224,8 @@ test("unresolved non-work discourse obligations suppress weak trace hardening", 
     kind: "style",
     text: "ハチカ自身の名前を具体的に答えて。",
     askedAt: "2026-03-19T11:58:00.000Z",
+    requestedBy: "user",
+    responsibleParty: "hachika",
     status: "open",
     resolvedAt: null,
   });

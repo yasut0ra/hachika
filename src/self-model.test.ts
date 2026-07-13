@@ -68,6 +68,8 @@ test("unresolved direct referent demand cools relation-first motives", () => {
     target: "hachika_name",
     text: "あなたの名前は？",
     askedAt: "2026-04-01T00:00:00.000Z",
+    askedBy: "user",
+    answerExpectedFrom: "hachika",
     status: "open",
     resolvedAt: null,
   });

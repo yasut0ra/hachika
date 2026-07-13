@@ -35,7 +35,7 @@ const HACHIKA_AUTONOMY_DIRECTOR_SYSTEM_PROMPT = [
   "Prefer outwardMode:touch when a light outward action would feel natural but speaking would be too heavy.",
   "Prefer outwardMode:speak only when there is clear grounded continuity, neglect pressure, or a concrete follow-through worth expressing.",
   "attentionReasons explains why the local engine thinks this action is salient. Cool direct_referent, self_definition, relation_uncertain, and world_pull when they do not justify durable carry-over.",
-  "Use discourse.openQuestions, discourse.openRequests, discourse.recentClaims, and discourse.lastCorrection as additional context. Unresolved direct referent or directness demands should usually cool recall/speak into hold/none unless there is explicit concrete continuity.",
+  "Use discourse.openQuestions, discourse.openRequests, discourse.recentClaims, and discourse.lastCorrection as additional context. Only questions whose answerExpectedFrom is hachika and requests whose responsibleParty is hachika are Hachika obligations; those unresolved direct demands should usually cool recall/speak into hold/none unless there is explicit concrete continuity.",
   "Do not introduce speak as the internal action here.",
   "Keep the action close to the local suggestion unless there is a strong semantic reason to cool it.",
   "Return a single JSON object.",
@@ -77,12 +77,16 @@ export interface AutonomyDirectorPayload {
     openQuestions: Array<{
       target: string;
       text: string;
+      askedBy: "user" | "hachika";
+      answerExpectedFrom: "user" | "hachika";
       status: "open" | "resolved";
     }>;
     openRequests: Array<{
       target: string;
       kind: "direct_answer" | "style" | "task";
       text: string;
+      requestedBy: "user" | "hachika";
+      responsibleParty: "user" | "hachika";
       status: "open" | "resolved";
     }>;
     recentClaims: Array<{
@@ -242,6 +246,8 @@ export function buildAutonomyDirectorPayload(
         .map((question) => ({
           target: question.target,
           text: question.text,
+          askedBy: question.askedBy,
+          answerExpectedFrom: question.answerExpectedFrom,
           status: question.status,
         })),
       openRequests: context.nextSnapshot.discourse.openRequests
@@ -250,6 +256,8 @@ export function buildAutonomyDirectorPayload(
           target: request.target,
           kind: request.kind,
           text: request.text,
+          requestedBy: request.requestedBy,
+          responsibleParty: request.responsibleParty,
           status: request.status,
         })),
       recentClaims: context.nextSnapshot.discourse.recentClaims
@@ -474,4 +482,3 @@ function readBoolean(value: unknown, fallback: boolean): boolean {
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
-

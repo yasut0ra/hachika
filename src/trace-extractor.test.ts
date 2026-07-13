@@ -27,6 +27,8 @@ test("buildTraceExtractionPayload surfaces known topics and signal summary", () 
     kind: "style",
     text: "ハチカ自身の名前を具体的に答えて。",
     askedAt: "2026-03-20T00:00:00.000Z",
+    requestedBy: "user",
+    responsibleParty: "hachika",
     status: "open",
     resolvedAt: null,
   });

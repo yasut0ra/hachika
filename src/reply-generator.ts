@@ -935,7 +935,14 @@ function buildIdentitySummaryForPrompt(
   const place = describeWorldPlaceJa(snapshot.world.currentPlace);
   const objectState = currentWorldObjectState(snapshot);
 
-  if (snapshot.discourse.openRequests.some((request) => request.status === "open" && request.kind !== "task")) {
+  if (
+    snapshot.discourse.openRequests.some(
+      (request) =>
+        request.status === "open" &&
+        request.responsibleParty === "hachika" &&
+        request.kind !== "task",
+    )
+  ) {
     return `いまは${place}で、聞かれていることへ先にまっすぐ返したい。`;
   }
 

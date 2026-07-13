@@ -38,6 +38,7 @@ const HACHIKA_PROACTIVE_DIRECTOR_SYSTEM_PROMPT = [
   "The local engine already selected a candidate proactive action. Your job is to accept, suppress, or lightly reshape its expressive plan.",
   "Prefer suppressing weak, repetitive, overly abstract, or socially intrusive proactive moves.",
   "Allow proactive moves when they are concretely grounded in a trace, blocker, relation continuity, or current world object context.",
+  "Respect discourse ownership: only awaitingUserQuestions may be gently revisited; openHachikaCommitments are Hachika's own unfinished obligations and must never be pushed back onto the user as a question.",
   "Keep plan close to rulePlan unless there is a strong semantic reason to change act, focus, distance, or emphasis.",
   "topics are semantic topics for the utterance. stateTopics are the subset worth durable state hardening.",
   "When the move is mostly atmospheric or ephemeral, prefer topics: [] and stateTopics: [].",
@@ -144,6 +145,19 @@ export interface ProactiveDirectorPayload {
     frontierKey: string | null;
   }>;
   userInteractedSinceLastOutward: boolean;
+  discourse: {
+    awaitingUserQuestions: Array<{
+      target: string;
+      text: string;
+      askedAt: string;
+    }>;
+    openHachikaCommitments: Array<{
+      kind: "answer" | "task" | "style";
+      target: string;
+      text: string;
+      createdAt: string;
+    }>;
+  };
   memoryThread: MemoryThread | null;
 }
 
@@ -320,6 +334,33 @@ export function buildProactiveDirectorPayload(
         context.nextSnapshot.lastInteractionAt,
         lastOutward.timestamp,
       ),
+    discourse: {
+      awaitingUserQuestions: context.nextSnapshot.discourse.openQuestions
+        .filter(
+          (question) =>
+            question.status === "open" &&
+            question.askedBy === "hachika" &&
+            question.answerExpectedFrom === "user",
+        )
+        .slice(-4)
+        .map((question) => ({
+          target: question.target,
+          text: question.text,
+          askedAt: question.askedAt,
+        })),
+      openHachikaCommitments: context.nextSnapshot.discourse.commitments
+        .filter(
+          (commitment) =>
+            commitment.owner === "hachika" && commitment.status === "open",
+        )
+        .slice(-4)
+        .map((commitment) => ({
+          kind: commitment.kind,
+          target: commitment.target,
+          text: commitment.text,
+          createdAt: commitment.createdAt,
+        })),
+    },
     memoryThread: selectMemoryThread(context.nextSnapshot, [
       context.pending.topic,
       context.pending.stateTopic,
@@ -357,6 +398,7 @@ export function buildOpenAIProactiveDirectorMessages(
         "pending.stateTopic is the current durable topic candidate; if it is null, prefer keeping the move ephemeral unless there is strong grounded support to emit.",
         "Suppress weak or repetitive proactive moves. If recentOutward already contains the same motive and the user has not interacted since, suppress it unless the blocker materially changed.",
         "If memoryThread is present, judge the candidate against its frontier and whole chronology. Always suppress parked, closed, or settled-frontier threads. Do not revive an older episode as if it were current; emit only when the frontier contains a genuinely new question, request, blocker, next step, or episode.",
+        "If discourse.openHachikaCommitments is non-empty, suppress unrelated proactive speech. Never phrase Hachika's own open commitment as something the user owes an answer to.",
         "Return JSON only.",
         JSON.stringify(payload, null, 2),
       ].join("\n\n"),

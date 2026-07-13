@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 
 import { writeTextFileAtomic } from "./atomic-file.js";
+import { reconcileDiscourseCommitments } from "./discourse.js";
 import {
   createDefaultDynamicsState,
   deriveVisibleStateFromDynamics,
@@ -34,6 +35,9 @@ import type {
   DiscourseClaim,
   DiscourseClaimKind,
   DiscourseClaimSubject,
+  DiscourseActor,
+  DiscourseCommitment,
+  DiscourseCommitmentKind,
   DiscourseCorrection,
   DiscourseCorrectionKind,
   DiscourseFact,
@@ -151,7 +155,7 @@ function hydrateSnapshot(raw: unknown): HachikaSnapshot {
   }
 
   return {
-    version: 27,
+    version: 28,
     revision:
       typeof raw.revision === "number" && Number.isFinite(raw.revision)
         ? Math.max(0, Math.round(raw.revision))
@@ -584,13 +588,21 @@ function hydrateDiscourse(raw: unknown): DiscourseState {
     return initial;
   }
 
+  const openQuestions = hydrateDiscourseOpenQuestions(raw.openQuestions);
+  const openRequests = hydrateDiscourseOpenRequests(raw.openRequests);
+
   return {
     userName: hydrateDiscourseFact(raw.userName, "user_name"),
     hachikaName:
       hydrateDiscourseFact(raw.hachikaName, "hachika_name") ?? initial.hachikaName,
-    openQuestions: hydrateDiscourseOpenQuestions(raw.openQuestions),
+    openQuestions,
     recentClaims: hydrateDiscourseClaims(raw.recentClaims),
-    openRequests: hydrateDiscourseOpenRequests(raw.openRequests),
+    openRequests,
+    commitments: reconcileDiscourseCommitments(
+      hydrateDiscourseCommitments(raw.commitments),
+      openQuestions,
+      openRequests,
+    ),
     lastCorrection: hydrateDiscourseCorrection(raw.lastCorrection),
   };
 }
@@ -647,14 +659,22 @@ function hydrateNumberRecord(
 }
 
 function sanitizeDiscourse(discourse: DiscourseState): DiscourseState {
+  const openQuestions = sanitizeDiscourseOpenQuestions(discourse.openQuestions);
+  const openRequests = sanitizeDiscourseOpenRequests(discourse.openRequests);
+
   return {
     userName: sanitizeDiscourseFact(discourse.userName, "user_name"),
     hachikaName:
       sanitizeDiscourseFact(discourse.hachikaName, "hachika_name") ??
       createInitialSnapshot().discourse.hachikaName,
-    openQuestions: sanitizeDiscourseOpenQuestions(discourse.openQuestions),
+    openQuestions,
     recentClaims: sanitizeDiscourseClaims(discourse.recentClaims),
-    openRequests: sanitizeDiscourseOpenRequests(discourse.openRequests),
+    openRequests,
+    commitments: reconcileDiscourseCommitments(
+      sanitizeDiscourseCommitments(discourse.commitments),
+      openQuestions,
+      openRequests,
+    ),
     lastCorrection: sanitizeDiscourseCorrection(discourse.lastCorrection),
   };
 }
@@ -746,6 +766,7 @@ function hydrateDiscourseOpenQuestion(raw: unknown): DiscourseOpenQuestion | nul
       typeof raw.askedAt === "string" && raw.askedAt.trim().length > 0
         ? raw.askedAt
         : new Date(0).toISOString(),
+    ...hydrateQuestionActors(raw),
     status: isDiscourseQuestionStatus(raw.status) ? raw.status : "open",
     resolvedAt:
       typeof raw.resolvedAt === "string" && raw.resolvedAt.trim().length > 0
@@ -771,6 +792,10 @@ function sanitizeDiscourseOpenQuestions(
           typeof question.askedAt === "string" && question.askedAt.trim().length > 0
             ? question.askedAt
             : new Date(0).toISOString(),
+        askedBy: isDiscourseActor(question.askedBy) ? question.askedBy : "user",
+        answerExpectedFrom: isDiscourseActor(question.answerExpectedFrom)
+          ? question.answerExpectedFrom
+          : "hachika",
         status: isDiscourseQuestionStatus(question.status) ? question.status : "open",
         resolvedAt:
           typeof question.resolvedAt === "string" && question.resolvedAt.trim().length > 0
@@ -867,6 +892,10 @@ function hydrateDiscourseOpenRequest(raw: unknown): DiscourseOpenRequest | null 
       typeof raw.askedAt === "string" && raw.askedAt.trim().length > 0
         ? raw.askedAt
         : new Date(0).toISOString(),
+    requestedBy: isDiscourseActor(raw.requestedBy) ? raw.requestedBy : "user",
+    responsibleParty: isDiscourseActor(raw.responsibleParty)
+      ? raw.responsibleParty
+      : "hachika",
     status: isDiscourseQuestionStatus(raw.status) ? raw.status : "open",
     resolvedAt:
       typeof raw.resolvedAt === "string" && raw.resolvedAt.trim().length > 0
@@ -893,6 +922,12 @@ function sanitizeDiscourseOpenRequests(
           typeof request.askedAt === "string" && request.askedAt.trim().length > 0
             ? request.askedAt
             : new Date(0).toISOString(),
+        requestedBy: isDiscourseActor(request.requestedBy)
+          ? request.requestedBy
+          : "user",
+        responsibleParty: isDiscourseActor(request.responsibleParty)
+          ? request.responsibleParty
+          : "hachika",
         status: isDiscourseQuestionStatus(request.status) ? request.status : "open",
         resolvedAt:
           typeof request.resolvedAt === "string" && request.resolvedAt.trim().length > 0
@@ -902,6 +937,86 @@ function sanitizeDiscourseOpenRequests(
     })
     .filter((request): request is DiscourseOpenRequest => request !== null)
     .slice(-8);
+}
+
+function hydrateQuestionActors(raw: Record<string, unknown>): {
+  askedBy: "user" | "hachika";
+  answerExpectedFrom: "user" | "hachika";
+} {
+  if (isDiscourseActor(raw.askedBy) && isDiscourseActor(raw.answerExpectedFrom)) {
+    return {
+      askedBy: raw.askedBy,
+      answerExpectedFrom: raw.answerExpectedFrom,
+    };
+  }
+
+  const target = isTurnTarget(raw.target) ? raw.target : "none";
+  const status = isDiscourseQuestionStatus(raw.status) ? raw.status : "open";
+  const legacyAwaitedUser =
+    status === "open" &&
+    (target === "user_name" || target === "user_profile" || target === "relation");
+
+  return legacyAwaitedUser
+    ? { askedBy: "hachika", answerExpectedFrom: "user" }
+    : { askedBy: "user", answerExpectedFrom: "hachika" };
+}
+
+function hydrateDiscourseCommitments(raw: unknown): DiscourseCommitment[] {
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+
+  return raw
+    .map((entry) => hydrateDiscourseCommitment(entry))
+    .filter((entry): entry is DiscourseCommitment => entry !== null)
+    .slice(-16);
+}
+
+function hydrateDiscourseCommitment(raw: unknown): DiscourseCommitment | null {
+  if (!isRecord(raw)) {
+    return null;
+  }
+
+  const text = sanitizeDiscourseQuestionText(raw.text);
+  if (!text || !isDiscourseActor(raw.owner)) {
+    return null;
+  }
+
+  const sourceAskedAt =
+    typeof raw.sourceAskedAt === "string" && raw.sourceAskedAt.trim().length > 0
+      ? raw.sourceAskedAt
+      : new Date(0).toISOString();
+
+  return {
+    owner: raw.owner,
+    kind: isDiscourseCommitmentKind(raw.kind) ? raw.kind : "answer",
+    source: raw.source === "request" ? "request" : "question",
+    sourceAskedAt,
+    target: isTurnTarget(raw.target) ? raw.target : "none",
+    text,
+    status: raw.status === "fulfilled" ? "fulfilled" : "open",
+    createdAt:
+      typeof raw.createdAt === "string" && raw.createdAt.trim().length > 0
+        ? raw.createdAt
+        : sourceAskedAt,
+    resolvedAt:
+      typeof raw.resolvedAt === "string" && raw.resolvedAt.trim().length > 0
+        ? raw.resolvedAt
+        : null,
+  };
+}
+
+function sanitizeDiscourseCommitments(
+  commitments: readonly DiscourseCommitment[] | undefined,
+): DiscourseCommitment[] {
+  if (!Array.isArray(commitments)) {
+    return [];
+  }
+
+  return commitments
+    .map((commitment) => hydrateDiscourseCommitment(commitment))
+    .filter((commitment): commitment is DiscourseCommitment => commitment !== null)
+    .slice(-16);
 }
 
 function hydrateDiscourseCorrection(raw: unknown): DiscourseCorrection | null {
@@ -963,6 +1078,14 @@ function sanitizeDiscourseQuestionText(value: unknown): string | null {
 
 function isDiscourseQuestionStatus(value: unknown): value is DiscourseQuestionStatus {
   return value === "open" || value === "resolved";
+}
+
+function isDiscourseActor(value: unknown): value is DiscourseActor {
+  return value === "user" || value === "hachika";
+}
+
+function isDiscourseCommitmentKind(value: unknown): value is DiscourseCommitmentKind {
+  return value === "answer" || value === "task" || value === "style";
 }
 
 function isDiscourseClaimSubject(value: unknown): value is DiscourseClaimSubject {

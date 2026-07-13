@@ -63,7 +63,9 @@ const HACHIKA_TURN_DIRECTOR_SYSTEM_PROMPT = [
   "Decide who the user is referring to, what must be answered directly, whether the turn should harden into durable state, and any concrete trace hints.",
   "Distinguish carefully between user_name, hachika_name, user_profile, hachika_profile, relation, world_state, and work_topic.",
   "For naming, self/profile questions, directness requests, and repair turns, prefer direct answers and suppress durable work hardening unless explicit concrete work is named.",
-  "Use discourse.userName, discourse.hachikaName, openQuestions, openRequests, recentClaims, and lastCorrection as referential context before inventing new topics.",
+  "Use discourse.userName, discourse.hachikaName, openQuestions, openRequests, commitments, recentClaims, and lastCorrection as referential context before inventing new topics.",
+  "Respect question ownership: answer questions whose answerExpectedFrom is hachika; treat questions whose answerExpectedFrom is user as optional waits, not as Hachika's unanswered obligation.",
+  "Open commitments owned by hachika must be answered or explicitly clarified before unrelated carry-over.",
   "For pure world questions, prefer world_state with topics: [] and suppress durable work hardening.",
   "For social or relation turns, do not invent work topics or trace content.",
   "For work_topic, keep topics compact and concrete, and only emit trace hints that are explicitly present.",
@@ -156,13 +158,23 @@ export interface TurnDirectorPayload {
     openQuestions: Array<{
       target: TurnTarget;
       text: string;
+      askedBy: "user" | "hachika";
+      answerExpectedFrom: "user" | "hachika";
       status: "open" | "resolved";
     }>;
     openRequests: Array<{
       target: TurnTarget | "none";
       kind: "direct_answer" | "style" | "task";
       text: string;
+      requestedBy: "user" | "hachika";
+      responsibleParty: "user" | "hachika";
       status: "open" | "resolved";
+    }>;
+    commitments: Array<{
+      owner: "user" | "hachika";
+      kind: "answer" | "task" | "style";
+      text: string;
+      status: "open" | "fulfilled";
     }>;
     recentClaims: Array<{
       subject: "user" | "hachika" | "shared";
@@ -328,6 +340,8 @@ export function buildTurnDirectorPayload(
         .map((question) => ({
           target: question.target,
           text: question.text,
+          askedBy: question.askedBy,
+          answerExpectedFrom: question.answerExpectedFrom,
           status: question.status,
         })),
       openRequests: context.snapshot.discourse.openRequests
@@ -336,7 +350,17 @@ export function buildTurnDirectorPayload(
           target: request.target,
           kind: request.kind,
           text: request.text,
+          requestedBy: request.requestedBy,
+          responsibleParty: request.responsibleParty,
           status: request.status,
+        })),
+      commitments: context.snapshot.discourse.commitments
+        .slice(-6)
+        .map((commitment) => ({
+          owner: commitment.owner,
+          kind: commitment.kind,
+          text: commitment.text,
+          status: commitment.status,
         })),
       recentClaims: context.snapshot.discourse.recentClaims
         .slice(-4)
@@ -1465,9 +1489,15 @@ function buildTurnActorCue(
 
   if (
     snapshot.discourse.openRequests.some(
-      (request) => request.status === "open" && request.kind !== "task",
+      (request) =>
+        request.status === "open" &&
+        request.responsibleParty === "hachika" &&
+        request.kind !== "task",
     ) ||
-    snapshot.discourse.openQuestions.some((question) => question.status === "open")
+    snapshot.discourse.openQuestions.some(
+      (question) =>
+        question.status === "open" && question.answerExpectedFrom === "hachika",
+    )
   ) {
     return `いまは${place}で、聞かれていることへ先にまっすぐ返したい。`;
   }

@@ -11,6 +11,8 @@ test("updatePurpose prefers shared work when an open task request keeps work act
     kind: "task",
     text: "仕様の境界を整理して",
     askedAt: "2026-04-01T00:00:00.000Z",
+    requestedBy: "user",
+    responsibleParty: "hachika",
     status: "open",
     resolvedAt: null,
   });

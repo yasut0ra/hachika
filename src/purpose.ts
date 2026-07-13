@@ -591,11 +591,13 @@ function shouldSuppressPurposeCandidateForDiscourseDemand(
   const hasOpenDirectQuestion = snapshot.discourse.openQuestions.some(
     (question) =>
       question.status === "open" &&
+      question.answerExpectedFrom === "hachika" &&
       question.target !== "work_topic",
   );
   const hasOpenDirectRequest = snapshot.discourse.openRequests.some(
     (request) =>
       request.status === "open" &&
+      request.responsibleParty === "hachika" &&
       request.kind !== "task" &&
       request.target !== "work_topic",
   );

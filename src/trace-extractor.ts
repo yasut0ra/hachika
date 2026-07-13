@@ -56,12 +56,16 @@ export interface TraceExtractionPayload {
     openQuestions: Array<{
       target: string;
       text: string;
+      askedBy: "user" | "hachika";
+      answerExpectedFrom: "user" | "hachika";
       status: string;
     }>;
     openRequests: Array<{
       target: string;
       kind: string;
       text: string;
+      requestedBy: "user" | "hachika";
+      responsibleParty: "user" | "hachika";
       status: string;
     }>;
     lastCorrection: {
@@ -202,6 +206,8 @@ export function buildTraceExtractionPayload(
         .map((question) => ({
           target: question.target,
           text: question.text,
+          askedBy: question.askedBy,
+          answerExpectedFrom: question.answerExpectedFrom,
           status: question.status,
         })),
       openRequests: context.snapshot.discourse.openRequests
@@ -210,6 +216,8 @@ export function buildTraceExtractionPayload(
           target: request.target,
           kind: request.kind,
           text: request.text,
+          requestedBy: request.requestedBy,
+          responsibleParty: request.responsibleParty,
           status: request.status,
         })),
       lastCorrection: context.snapshot.discourse.lastCorrection
