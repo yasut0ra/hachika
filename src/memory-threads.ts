@@ -378,6 +378,24 @@ function deriveThreadFrontier(
     return createFrontier(thread, "open_request", openRequest.text, thread.episodes.at(-1)?.traceTopic ?? null);
   }
 
+  const acceptedTask = [...snapshot.discourse.commitments]
+    .reverse()
+    .find(
+      (commitment) =>
+        commitment.owner === "hachika" &&
+        commitment.kind === "task" &&
+        commitment.status === "accepted" &&
+        textMentionsThread(thread, commitment.text),
+    );
+  if (acceptedTask) {
+    return createFrontier(
+      thread,
+      "open_request",
+      acceptedTask.text,
+      thread.episodes.at(-1)?.traceTopic ?? null,
+    );
+  }
+
   const latestEpisode = thread.episodes.at(-1) ?? null;
   const blocker = latestEpisode?.blocker ?? thread.blockers.at(-1) ?? null;
   if (blocker) {

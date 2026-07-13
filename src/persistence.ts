@@ -37,6 +37,7 @@ import type {
   DiscourseClaimSubject,
   DiscourseActor,
   DiscourseCommitment,
+  DiscourseCommitmentEvidence,
   DiscourseCommitmentKind,
   DiscourseCorrection,
   DiscourseCorrectionKind,
@@ -155,7 +156,7 @@ function hydrateSnapshot(raw: unknown): HachikaSnapshot {
   }
 
   return {
-    version: 28,
+    version: 29,
     revision:
       typeof raw.revision === "number" && Number.isFinite(raw.revision)
         ? Math.max(0, Math.round(raw.revision))
@@ -994,15 +995,51 @@ function hydrateDiscourseCommitment(raw: unknown): DiscourseCommitment | null {
     sourceAskedAt,
     target: isTurnTarget(raw.target) ? raw.target : "none",
     text,
-    status: raw.status === "fulfilled" ? "fulfilled" : "open",
+    status:
+      raw.status === "fulfilled"
+        ? "fulfilled"
+        : raw.status === "accepted"
+          ? "accepted"
+          : "open",
     createdAt:
       typeof raw.createdAt === "string" && raw.createdAt.trim().length > 0
         ? raw.createdAt
         : sourceAskedAt,
+    acceptedAt:
+      typeof raw.acceptedAt === "string" && raw.acceptedAt.trim().length > 0
+        ? raw.acceptedAt
+        : null,
     resolvedAt:
       typeof raw.resolvedAt === "string" && raw.resolvedAt.trim().length > 0
         ? raw.resolvedAt
         : null,
+    evidence: hydrateDiscourseCommitmentEvidence(raw.evidence),
+  };
+}
+
+function hydrateDiscourseCommitmentEvidence(
+  raw: unknown,
+): DiscourseCommitmentEvidence | null {
+  if (!isRecord(raw)) {
+    return null;
+  }
+
+  const summary = sanitizeDiscourseQuestionText(raw.summary);
+  if (!summary || !isDiscourseCommitmentEvidenceKind(raw.kind)) {
+    return null;
+  }
+
+  return {
+    kind: raw.kind,
+    topic:
+      typeof raw.topic === "string" && isMeaningfulTopic(raw.topic)
+        ? raw.topic.normalize("NFKC").trim()
+        : null,
+    summary,
+    recordedAt:
+      typeof raw.recordedAt === "string" && raw.recordedAt.trim().length > 0
+        ? raw.recordedAt
+        : new Date(0).toISOString(),
   };
 }
 
@@ -1086,6 +1123,16 @@ function isDiscourseActor(value: unknown): value is DiscourseActor {
 
 function isDiscourseCommitmentKind(value: unknown): value is DiscourseCommitmentKind {
   return value === "answer" || value === "task" || value === "style";
+}
+
+function isDiscourseCommitmentEvidenceKind(
+  value: unknown,
+): value is DiscourseCommitmentEvidence["kind"] {
+  return (
+    value === "user_completion" ||
+    value === "trace_resolution" ||
+    value === "trace_decision"
+  );
 }
 
 function isDiscourseClaimSubject(value: unknown): value is DiscourseClaimSubject {

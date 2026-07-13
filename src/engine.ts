@@ -36,7 +36,10 @@ import type {
   BehaviorDirector,
 } from "./behavior-director.js";
 import type { InitiativeDirector } from "./initiative-director.js";
-import { reconcileDiscourseCommitments } from "./discourse.js";
+import {
+  advanceTaskCommitments,
+  reconcileDiscourseCommitments,
+} from "./discourse.js";
 import {
   materializePreparedInitiative,
   materializePreparedOutwardAction,
@@ -940,6 +943,9 @@ export class HachikaEngine {
     replyDebug: GeneratedTextDebug,
   ): string {
     remember(nextSnapshot, "hachika", message, topics, "neutral");
+    advanceTaskCommitments(nextSnapshot, {
+      timestamp: nextSnapshot.initiative.lastProactiveAt ?? new Date().toISOString(),
+    });
     recordExplicitHachikaQuestion(
       nextSnapshot,
       message,
@@ -5657,6 +5663,11 @@ function updateDiscourseState(
     snapshot.discourse.openQuestions,
     snapshot.discourse.openRequests,
   );
+  advanceTaskCommitments(snapshot, {
+    input: normalized,
+    signals,
+    timestamp,
+  });
 }
 
 function resolveQuestionAwaitingUser(

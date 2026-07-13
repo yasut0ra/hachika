@@ -745,6 +745,14 @@ function collectDiscourseTraceCandidates(
   const openTaskRequest = [...snapshot.discourse.openRequests]
     .reverse()
     .find((request) => request.status === "open" && request.kind === "task");
+  const acceptedTaskCommitment = [...snapshot.discourse.commitments]
+    .reverse()
+    .find(
+      (commitment) =>
+        commitment.owner === "hachika" &&
+        commitment.kind === "task" &&
+        commitment.status === "accepted",
+    );
 
   if (
     recentWorkClaim &&
@@ -764,6 +772,16 @@ function collectDiscourseTraceCandidates(
       signals.memoryCue > 0.08)
   ) {
     sourceTexts.push(openTaskRequest.text);
+  }
+
+  if (
+    acceptedTaskCommitment &&
+    (signals.workCue > 0.16 ||
+      signals.expansionCue > 0.08 ||
+      signals.memoryCue > 0.08 ||
+      signals.completion > 0.08)
+  ) {
+    sourceTexts.push(acceptedTaskCommitment.text);
   }
 
   return unique(

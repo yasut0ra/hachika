@@ -406,6 +406,14 @@ test("loadSnapshot and saveSnapshot apply sanitation to persisted files", async 
               status: "open",
               resolvedAt: null,
             },
+            {
+              target: "work_topic",
+              kind: "task",
+              text: "設計を整理して",
+              askedAt: "2026-03-21T03:00:00.000Z",
+              status: "resolved",
+              resolvedAt: "2026-03-21T03:05:00.000Z",
+            },
           ],
         },
         lastInteractionAt: null,
@@ -433,6 +441,13 @@ test("loadSnapshot and saveSnapshot apply sanitation to persisted files", async 
     assert.equal(loaded.discourse.openRequests[0]?.responsibleParty, "hachika");
     assert.equal(loaded.discourse.commitments[0]?.kind, "answer");
     assert.equal(loaded.discourse.commitments[0]?.status, "open");
+    assert.equal(loaded.discourse.commitments[1]?.kind, "task");
+    assert.equal(loaded.discourse.commitments[1]?.status, "accepted");
+    assert.equal(
+      loaded.discourse.commitments[1]?.acceptedAt,
+      "2026-03-21T03:05:00.000Z",
+    );
+    assert.equal(loaded.discourse.commitments[1]?.evidence, null);
 
     await saveSnapshot(filePath, loaded);
     const raw = await readFile(filePath, "utf8");
@@ -558,6 +573,52 @@ test("sanitizeSnapshot can recover a declared user name from recent memory", () 
   assert.equal(snapshot.discourse.userName?.source, "user_assertion");
 });
 
+test("sanitizeSnapshot preserves accepted task state and fulfillment evidence", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.discourse.openRequests.push({
+    target: "work_topic",
+    kind: "task",
+    text: "設計を整理して",
+    askedAt: "2026-07-14T00:00:00.000Z",
+    requestedBy: "user",
+    responsibleParty: "hachika",
+    status: "resolved",
+    resolvedAt: "2026-07-14T00:10:00.000Z",
+  });
+  snapshot.discourse.commitments.push({
+    owner: "hachika",
+    kind: "task",
+    source: "request",
+    sourceAskedAt: "2026-07-14T00:00:00.000Z",
+    target: "work_topic",
+    text: "設計を整理して",
+    status: "fulfilled",
+    createdAt: "2026-07-14T00:00:00.000Z",
+    acceptedAt: "2026-07-14T00:10:00.000Z",
+    resolvedAt: "2026-07-14T01:00:00.000Z",
+    evidence: {
+      kind: "trace_resolution",
+      topic: "設計",
+      summary: "設計を整理した",
+      recordedAt: "2026-07-14T01:00:00.000Z",
+    },
+  });
+
+  sanitizeSnapshot(snapshot);
+
+  assert.equal(snapshot.discourse.commitments[0]?.status, "fulfilled");
+  assert.equal(
+    snapshot.discourse.commitments[0]?.acceptedAt,
+    "2026-07-14T00:10:00.000Z",
+  );
+  assert.deepEqual(snapshot.discourse.commitments[0]?.evidence, {
+    kind: "trace_resolution",
+    topic: "設計",
+    summary: "設計を整理した",
+    recordedAt: "2026-07-14T01:00:00.000Z",
+  });
+});
+
 test("loadSnapshot seeds latent dynamics from older visible-only snapshots", async () => {
   const tempDir = await mkdtemp(join(tmpdir(), "hachika-dynamics-seed-"));
   const filePath = join(tempDir, "snapshot.json");
@@ -606,7 +667,7 @@ test("loadSnapshot seeds latent dynamics from older visible-only snapshots", asy
 
     const loaded = await loadSnapshot(filePath);
 
-    assert.equal(loaded.version, 28);
+    assert.equal(loaded.version, 29);
     assert.equal(loaded.revision, 3);
     assert.equal(loaded.discourse.hachikaName?.value, "ハチカ");
     assert.ok(

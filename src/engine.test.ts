@@ -2109,6 +2109,22 @@ test("local fallback prioritizes unresolved direct-answer requests over stale tr
   assert.equal(result.snapshot.discourse.commitments[0]?.status, "fulfilled");
 });
 
+test("a task reply accepts the commitment without claiming the task is finished", () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+
+  const accepted = engine.respond("仕様の境界を整理して");
+  const commitment = accepted.snapshot.discourse.commitments.at(-1);
+
+  assert.equal(commitment?.kind, "task");
+  assert.equal(commitment?.status, "accepted");
+  assert.equal(commitment?.acceptedAt !== null, true);
+  assert.equal(commitment?.resolvedAt, null);
+  assert.equal(commitment?.evidence, null);
+
+  const unchanged = engine.respond("少し考えよう");
+  assert.equal(unchanged.snapshot.discourse.commitments.at(-1)?.status, "accepted");
+});
+
 test("response planner keeps unresolved direct-answer obligations ahead of stale work focus", async () => {
   const snapshot = createInitialSnapshot();
   snapshot.discourse.openRequests.push({

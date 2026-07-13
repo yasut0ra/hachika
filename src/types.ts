@@ -195,7 +195,19 @@ export interface DiscourseOpenRequest {
 
 export type DiscourseCommitmentKind = "answer" | "task" | "style";
 
-export type DiscourseCommitmentStatus = "open" | "fulfilled";
+export type DiscourseCommitmentStatus = "open" | "accepted" | "fulfilled";
+
+export type DiscourseCommitmentEvidenceKind =
+  | "user_completion"
+  | "trace_resolution"
+  | "trace_decision";
+
+export interface DiscourseCommitmentEvidence {
+  kind: DiscourseCommitmentEvidenceKind;
+  topic: string | null;
+  summary: string;
+  recordedAt: string;
+}
 
 export interface DiscourseCommitment {
   owner: DiscourseActor;
@@ -206,7 +218,9 @@ export interface DiscourseCommitment {
   text: string;
   status: DiscourseCommitmentStatus;
   createdAt: string;
+  acceptedAt: string | null;
   resolvedAt: string | null;
+  evidence: DiscourseCommitmentEvidence | null;
 }
 
 export interface DiscourseState {

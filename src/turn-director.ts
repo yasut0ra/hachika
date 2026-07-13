@@ -66,6 +66,7 @@ const HACHIKA_TURN_DIRECTOR_SYSTEM_PROMPT = [
   "Use discourse.userName, discourse.hachikaName, openQuestions, openRequests, commitments, recentClaims, and lastCorrection as referential context before inventing new topics.",
   "Respect question ownership: answer questions whose answerExpectedFrom is hachika; treat questions whose answerExpectedFrom is user as optional waits, not as Hachika's unanswered obligation.",
   "Open commitments owned by hachika must be answered or explicitly clarified before unrelated carry-over.",
+  "An accepted task is not fulfilled. Never claim completion unless its commitment includes fulfillment evidence.",
   "For pure world questions, prefer world_state with topics: [] and suppress durable work hardening.",
   "For social or relation turns, do not invent work topics or trace content.",
   "For work_topic, keep topics compact and concrete, and only emit trace hints that are explicitly present.",
@@ -174,7 +175,8 @@ export interface TurnDirectorPayload {
       owner: "user" | "hachika";
       kind: "answer" | "task" | "style";
       text: string;
-      status: "open" | "fulfilled";
+      status: "open" | "accepted" | "fulfilled";
+      evidenceKind: "user_completion" | "trace_resolution" | "trace_decision" | null;
     }>;
     recentClaims: Array<{
       subject: "user" | "hachika" | "shared";
@@ -361,6 +363,7 @@ export function buildTurnDirectorPayload(
           kind: commitment.kind,
           text: commitment.text,
           status: commitment.status,
+          evidenceKind: commitment.evidence?.kind ?? null,
         })),
       recentClaims: context.snapshot.discourse.recentClaims
         .slice(-4)

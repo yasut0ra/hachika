@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { reconcileDiscourseCommitments } from "./discourse.js";
 import {
   canAutonomouslySurfaceMemoryThread,
   deriveMemoryThreads,
@@ -317,4 +318,39 @@ test("frontier checkpoint suppresses repeats until thread content changes", () =
   snapshot.traces.設計!.lastUpdatedAt = "2026-07-01T02:00:00.000Z";
   assert.equal(hasNewMemoryThreadFrontier(snapshot, "設計"), true);
   assert.notEqual(deriveMemoryThreads(snapshot)[0]?.frontier.key, first.frontier.key);
+});
+
+test("an accepted task remains the thread frontier until evidence fulfills it", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.traces.設計 = trace("設計", "2026-07-14T00:00:00.000Z", {
+    nextSteps: ["公開インターフェースを決める"],
+  });
+  snapshot.discourse.openRequests.push({
+    target: "work_topic",
+    kind: "task",
+    text: "設計を整理して",
+    askedAt: "2026-07-14T01:00:00.000Z",
+    requestedBy: "user",
+    responsibleParty: "hachika",
+    status: "resolved",
+    resolvedAt: "2026-07-14T01:00:00.000Z",
+  });
+  snapshot.discourse.commitments = reconcileDiscourseCommitments(
+    [],
+    [],
+    snapshot.discourse.openRequests,
+  );
+
+  assert.equal(deriveMemoryThreads(snapshot)[0]?.frontier.kind, "open_request");
+
+  snapshot.discourse.commitments[0]!.status = "fulfilled";
+  snapshot.discourse.commitments[0]!.resolvedAt = "2026-07-14T02:00:00.000Z";
+  snapshot.discourse.commitments[0]!.evidence = {
+    kind: "trace_resolution",
+    topic: "設計",
+    summary: "設計を整理した",
+    recordedAt: "2026-07-14T02:00:00.000Z",
+  };
+
+  assert.equal(deriveMemoryThreads(snapshot)[0]?.frontier.kind, "next_step");
 });

@@ -39,6 +39,7 @@ const HACHIKA_PROACTIVE_DIRECTOR_SYSTEM_PROMPT = [
   "Prefer suppressing weak, repetitive, overly abstract, or socially intrusive proactive moves.",
   "Allow proactive moves when they are concretely grounded in a trace, blocker, relation continuity, or current world object context.",
   "Respect discourse ownership: only awaitingUserQuestions may be gently revisited; openHachikaCommitments are Hachika's own unfinished obligations and must never be pushed back onto the user as a question.",
+  "A task commitment with status accepted is unfinished. Do not imply it is complete without recorded evidence.",
   "Keep plan close to rulePlan unless there is a strong semantic reason to change act, focus, distance, or emphasis.",
   "topics are semantic topics for the utterance. stateTopics are the subset worth durable state hardening.",
   "When the move is mostly atmospheric or ephemeral, prefer topics: [] and stateTopics: [].",
@@ -156,6 +157,7 @@ export interface ProactiveDirectorPayload {
       target: string;
       text: string;
       createdAt: string;
+      status: "open" | "accepted";
     }>;
   };
   memoryThread: MemoryThread | null;
@@ -351,7 +353,8 @@ export function buildProactiveDirectorPayload(
       openHachikaCommitments: context.nextSnapshot.discourse.commitments
         .filter(
           (commitment) =>
-            commitment.owner === "hachika" && commitment.status === "open",
+            commitment.owner === "hachika" &&
+            (commitment.status === "open" || commitment.status === "accepted"),
         )
         .slice(-4)
         .map((commitment) => ({
@@ -359,6 +362,7 @@ export function buildProactiveDirectorPayload(
           target: commitment.target,
           text: commitment.text,
           createdAt: commitment.createdAt,
+          status: commitment.status === "accepted" ? "accepted" : "open",
         })),
     },
     memoryThread: selectMemoryThread(context.nextSnapshot, [
