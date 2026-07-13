@@ -8,6 +8,7 @@ import {
 } from "./memory.js";
 import { settleBodyAfterInitiative } from "./body.js";
 import {
+  absenceAccrualDelta,
   deriveVisibleStateFromDynamics,
   rewindDynamicsHours,
   settleDynamicsAfterInitiative,
@@ -483,13 +484,31 @@ export function materializePreparedOutwardAction(
   );
 }
 
-// autonomy v2: 長い idle を「一括の後処理 + 高々1つの action」ではなく、
-// 複数の静かな窓 (microstep) に割って internal action を評価する。
-// substrate の rewind は threshold 挙動 (>=12h の absence など) を保つため一括で行い、
-// autonomy の評価だけを窓ごとに回す。窓ごとに snapshot が変化するので、
-// 「思い出して保留する」「掘り返して pending を組む」のような連なりが1回の idle の中に生まれる。
+// v3 Phase 0: 長い idle は substrate の実時間 microstep として回す。
+// substrate は最大 6h 刻みで進み、閾値挙動 (>=12h の absence threat など) は
+// 累積 absence (idleClock) の前後差で効く。idle autonomy の評価も
+// 「absence が 6h に達したら最初の1回、以後 8h ごと」という累積の期日で起きる。
+// これにより、1回の大きな rewind と resident loop の細かい tick が
+// 同じ実時間で同じ軌跡を通る (分割不変)。
+const SUBSTRATE_MICROSTEP_HOURS = 6;
+const FIRST_IDLE_AUTONOMY_AT_HOURS = 6;
 const IDLE_AUTONOMY_WINDOW_HOURS = 8;
+// consolidation (睡眠中の再編成) は評価ごとではなく、absence 24h ごとに繰り返す
+const IDLE_CONSOLIDATION_SPACING_HOURS = 24;
+// 1回の呼び出しで評価する窓の上限 (substrate はその先も進み続ける)
 const MAX_IDLE_AUTONOMY_WINDOWS = 4;
+// 累積 absence が 12h を超えた分だけ、存在への不安が積み上がる (72h で 1、上限 0.18)
+const ABSENCE_THREAT_THRESHOLD_HOURS = 12;
+const ABSENCE_THREAT_DIVISOR_HOURS = 72;
+const ABSENCE_THREAT_CAP = 0.18;
+
+export interface IdleAutonomyEvaluationPlan {
+  prepared: PreparedIdleAutonomyAction;
+  // 記憶の再編成は評価ごとに、前回の評価からの増分 (windowHours) の重みで連続的に進む
+  windowHours: number;
+  // journal / voice の定着は「夜」に相当する 24h ごとの節目でだけ起きる
+  nightly: boolean;
+}
 
 export function advanceAutonomyHours(
   snapshot: HachikaSnapshot,
@@ -499,55 +518,119 @@ export function advanceAutonomyHours(
     return;
   }
 
-  rewindSnapshotBaseHours(snapshot, hours);
+  let remaining = hours;
+  let evaluations = 0;
 
-  // 最初の窓は従来どおり全時間で評価し、consolidation (睡眠中の再編成) もここで1回だけ行う
-  const first = prepareIdleAutonomyAction(snapshot, hours);
-  if (first) {
-    materializeIdleAutonomyAction(snapshot, first);
-    // v3 Phase 4: 声は静かな時間に定着する
-    distillVoiceProfile(snapshot, new Date().toISOString());
-    // v3: 静かな時間をどう過ごしたかを、自分の言葉で1行残す
-    appendJournalEntry(
-      snapshot,
-      buildIdleJournalEntry(
-        snapshot,
-        first.action,
-        first.prioritizedTopic,
-        new Date().toISOString(),
-      ),
-    );
-  }
+  while (remaining > 1e-6) {
+    // 期日を過ぎているなら (前回の呼び出しが評価上限で打ち切られた場合など)、進める前に評価する
+    if (evaluations < MAX_IDLE_AUTONOMY_WINDOWS) {
+      const plan = prepareDueIdleAutonomyEvaluation(snapshot);
 
-  // 追加の窓では行動評価だけを行う。窓ごとに snapshot が変化するので、
-  // 「掘り返して pending を組んだあと、別の断片を眺めて終える」ような連なりが生まれる
-  for (const windowHours of extraIdleAutonomyWindows(hours)) {
-    const prepared = prepareIdleAutonomyAction(snapshot, windowHours);
-
-    if (!prepared) {
-      continue;
+      if (plan) {
+        evaluations += 1;
+        materializeIdleAutonomyEvaluation(snapshot, plan);
+      }
     }
 
-    // すでに組んだ pending を同じ topic で組み直すだけなら、静かに抱えて終える
-    const redundantRecall =
-      prepared.action === "recall" &&
-      prepared.selected?.trace.topic === snapshot.initiative.pending?.topic;
-
-    materializeIdleAutonomyAction(
-      snapshot,
-      redundantRecall ? { ...prepared, action: "hold", selected: null } : prepared,
-      { consolidateImprints: false },
+    const untilEval =
+      nextIdleAutonomyEvalAbsence(snapshot) - snapshot.idleClock.absenceHours;
+    const step = Math.min(
+      remaining,
+      untilEval > 1e-6 ? untilEval : IDLE_AUTONOMY_WINDOW_HOURS,
     );
+    rewindSnapshotBaseHours(snapshot, step);
+    remaining -= step;
+  }
+
+  // 最後の step で評価期日に達していれば、ここで一度だけ評価する
+  if (evaluations < MAX_IDLE_AUTONOMY_WINDOWS) {
+    const plan = prepareDueIdleAutonomyEvaluation(snapshot);
+
+    if (plan) {
+      materializeIdleAutonomyEvaluation(snapshot, plan);
+    }
   }
 }
 
-function extraIdleAutonomyWindows(hours: number): number[] {
-  const extraCount = Math.min(
-    MAX_IDLE_AUTONOMY_WINDOWS - 1,
-    Math.max(0, Math.floor(hours / (IDLE_AUTONOMY_WINDOW_HOURS * 2))),
+function nextIdleAutonomyEvalAbsence(snapshot: HachikaSnapshot): number {
+  const lastEval = snapshot.idleClock.lastAutonomyEvalAbsenceHours;
+
+  return lastEval === null
+    ? FIRST_IDLE_AUTONOMY_AT_HOURS
+    : lastEval + IDLE_AUTONOMY_WINDOW_HOURS;
+}
+
+// 累積 absence が評価期日に達していれば、idle autonomy の評価を1回分準備する。
+// 期日の消化 (idleClock) はここで確定するので、評価の中身が director に
+// 差し替えられたり落とされたりしても cadence は乱れない
+export function prepareDueIdleAutonomyEvaluation(
+  snapshot: HachikaSnapshot,
+): IdleAutonomyEvaluationPlan | null {
+  const clock = snapshot.idleClock;
+
+  if (clock.absenceHours + 1e-6 < nextIdleAutonomyEvalAbsence(snapshot)) {
+    return null;
+  }
+
+  const firstOfAbsence = clock.lastAutonomyEvalAbsenceHours === null;
+  const windowHours = clock.absenceHours - (clock.lastAutonomyEvalAbsenceHours ?? 0);
+  const nightly =
+    clock.lastConsolidationAbsenceHours === null ||
+    clock.absenceHours - clock.lastConsolidationAbsenceHours >=
+      IDLE_CONSOLIDATION_SPACING_HOURS;
+  clock.lastAutonomyEvalAbsenceHours = clock.absenceHours;
+
+  const prepared = prepareIdleAutonomyAction(
+    snapshot,
+    windowHours,
+    clock.absenceHours,
   );
 
-  return Array.from({ length: extraCount }, () => IDLE_AUTONOMY_WINDOW_HOURS);
+  if (!prepared) {
+    return null;
+  }
+
+  // すでに組んだ pending を同じ topic で組み直すだけの窓は、静かに抱えて終える
+  const redundantRecall =
+    !firstOfAbsence &&
+    prepared.action === "recall" &&
+    prepared.selected?.trace.topic === snapshot.initiative.pending?.topic;
+
+  return {
+    prepared: redundantRecall
+      ? { ...prepared, action: "hold", selected: null }
+      : prepared,
+    windowHours,
+    nightly,
+  };
+}
+
+export function materializeIdleAutonomyEvaluation(
+  snapshot: HachikaSnapshot,
+  plan: IdleAutonomyEvaluationPlan,
+): void {
+  materializeIdleAutonomyAction(snapshot, plan.prepared, {
+    consolidateImprints: true,
+    consolidationHours: plan.windowHours,
+  });
+
+  if (!plan.nightly) {
+    return;
+  }
+
+  snapshot.idleClock.lastConsolidationAbsenceHours = snapshot.idleClock.absenceHours;
+  // v3 Phase 4: 声は静かな時間に定着する
+  distillVoiceProfile(snapshot, new Date().toISOString());
+  // v3: 静かな時間をどう過ごしたかを、自分の言葉で1行残す
+  appendJournalEntry(
+    snapshot,
+    buildIdleJournalEntry(
+      snapshot,
+      plan.prepared.action,
+      plan.prepared.prioritizedTopic,
+      new Date().toISOString(),
+    ),
+  );
 }
 
 export function rewindSnapshotHours(
@@ -572,16 +655,42 @@ export function rewindSnapshotBaseHours(
   );
   snapshot.preservation.lastThreatAt = shiftTimestamp(snapshot.preservation.lastThreatAt, hours);
 
-  if (hours >= 12) {
+  const absenceBefore = snapshot.idleClock.absenceHours;
+  const absenceAfter = absenceBefore + hours;
+  snapshot.idleClock.absenceHours = absenceAfter;
+
+  // 閾値挙動は「この呼び出しの hours」ではなく累積 absence で決まる。
+  // 前後差 (telescoping) なので、どんな窓割りでも合計は同じになる
+  const threatDelta = absenceAccrualDelta(
+    { before: absenceBefore, after: absenceAfter },
+    ABSENCE_THREAT_THRESHOLD_HOURS,
+    ABSENCE_THREAT_DIVISOR_HOURS,
+    ABSENCE_THREAT_CAP,
+  );
+
+  if (absenceAfter >= ABSENCE_THREAT_THRESHOLD_HOURS) {
     snapshot.preservation = {
-      threat: clamp01(snapshot.preservation.threat + Math.min(0.18, (hours - 12) / 72)),
+      threat: clamp01(snapshot.preservation.threat + threatDelta),
       concern: snapshot.preservation.concern ?? "absence",
       lastThreatAt: snapshot.preservation.lastThreatAt,
     };
   }
 
-  rewindDynamicsHours(snapshot, hours);
-  rewindTemperamentHours(snapshot, hours);
+  // substrate は最大 6h の microstep で回す。settle は実時間スケールなので、
+  // 刻み方によらず同じ実時間で同じだけ姿勢へ戻る
+  let stepped = 0;
+
+  while (stepped < hours - 1e-9) {
+    const step = Math.min(SUBSTRATE_MICROSTEP_HOURS, hours - stepped);
+    const absence = {
+      before: absenceBefore + stepped,
+      after: absenceBefore + stepped + step,
+    };
+    rewindDynamicsHours(snapshot, step, absence);
+    rewindTemperamentHours(snapshot, step, absence);
+    stepped += step;
+  }
+
   rewindAspirationsHours(snapshot, hours);
   deriveVisibleStateFromDynamics(snapshot);
 
@@ -593,24 +702,11 @@ export function rewindSnapshotBaseHours(
   }
 }
 
-
-
-function consolidateIdleSnapshot(
-  snapshot: HachikaSnapshot,
-  hours: number,
-): void {
-  const prepared = prepareIdleAutonomyAction(snapshot, hours);
-
-  if (!prepared) {
-    return;
-  }
-
-  materializeIdleAutonomyAction(snapshot, prepared);
-}
-
 export function prepareIdleAutonomyAction(
   snapshot: HachikaSnapshot,
   hours: number,
+  // Phase 0: 「どれだけ深い静けさの中にいるか」は窓の長さではなく累積 absence で測る
+  absenceDepthHours: number = hours,
 ): PreparedIdleAutonomyAction | null {
   if (!Number.isFinite(hours) || hours < 6) {
     return null;
@@ -686,7 +782,7 @@ export function prepareIdleAutonomyAction(
   const prioritizedMotive = selected?.motive ?? null;
   const action = selected?.shouldInstallPending
     ? "recall"
-    : selectIdleInternalAction(snapshot, hours, prioritizedTopic);
+    : selectIdleInternalAction(snapshot, absenceDepthHours, prioritizedTopic);
 
   return {
     action,
@@ -808,9 +904,11 @@ function shouldSuppressPendingCarryOver(
 export function materializeIdleAutonomyAction(
   snapshot: HachikaSnapshot,
   prepared: PreparedIdleAutonomyAction,
-  options: { consolidateImprints?: boolean } = {},
+  options: { consolidateImprints?: boolean; consolidationHours?: number } = {},
 ): void {
   const consolidateImprints = options.consolidateImprints ?? true;
+  // consolidation の重みは「前回の再編成からどれだけ静けさが経ったか」
+  const consolidationHours = options.consolidationHours ?? prepared.hours;
   if (shouldSuppressPendingCarryOver(prepared.attentionReasons)) {
     snapshot.initiative.pending = null;
   }
@@ -861,7 +959,7 @@ export function materializeIdleAutonomyAction(
     const report = consolidateImprints
       ? consolidateIdleMemoryImprints(
           snapshot,
-          prepared.hours,
+          consolidationHours,
           prepared.selected.trace.topic,
           prepared.selected.motive,
         )
@@ -895,7 +993,7 @@ export function materializeIdleAutonomyAction(
     const report = consolidateImprints
       ? consolidateIdleMemoryImprints(
           snapshot,
-          prepared.hours,
+          consolidationHours,
           prepared.prioritizedTopic,
           prepared.prioritizedMotive,
         )
@@ -907,7 +1005,7 @@ export function materializeIdleAutonomyAction(
   const report = consolidateImprints
     ? consolidateIdleMemoryImprints(
         snapshot,
-        prepared.hours,
+        consolidationHours,
         prepared.prioritizedTopic,
         prepared.prioritizedMotive,
       )
@@ -1329,7 +1427,9 @@ function rebalanceIdleRelationImprints(
     const nextSalience = clamp01(imprint.salience * salienceRetention);
     const nextCloseness = clamp01(imprint.closeness * closenessRetention);
 
-    if (nextSalience < 0.07 && nextCloseness < 0.07 && imprint.mentions <= 1) {
+    // Phase 0: 窓が細かくなった分、1回の nudge は小さい。芽生えたばかりの
+    // 関係の印象を同じ consolidation の中で刈らないよう、削除は本当に消えかけの時だけ
+    if (nextSalience < 0.02 && nextCloseness < 0.02 && imprint.mentions <= 1) {
       delete snapshot.relationImprints[kind];
       continue;
     }

@@ -116,11 +116,33 @@ v2 の境界をそのまま保つ。
 
 ## Migration Plan
 
-### Phase 0: substrate の実時間 microstep(v2 の残件)
+### Phase 0: substrate の実時間 microstep — 実装済み (2026-07-13)
 
-- `rewindSnapshotBaseHours` の閾値挙動(>=12h の absence など)を
-  累積時間ベースに再設計し、substrate 更新も窓ごとに回せるようにする
-- resident loop の 1 tick = 実時間の microstep として一貫させる
+中心不変条件: **同じ実時間なら、1回の大きな rewind と resident loop の
+細かい tick の連なりが同じ場所に着く(分割不変)。**
+
+- `snapshot.idleClock` を追加。`absenceHours` は最後の user turn からの
+  累積の生きられた時間で、rewind で進み、user turn でだけ 0 に戻る
+- 閾値挙動は累積 absence の**前後差(telescoping)**に再設計:
+  - >=12h の absence threat は `absenceAccrualDelta`(累積が閾値を超えた分だけ
+    cap まで積む)になり、8h+8h と 16h 一括が同じ threat になる
+  - legacy の `min(cap, hours/div)`(呼び出し1回あたりの飽和)は
+    「absence 1回あたりの飽和」に写した。これがないと microstep 化で cap が
+    効かなくなり、長い idle が trust などを数倍速で排出してしまう(実測)
+  - 呼び出し1回あたり定量だった bias は `absenceFlatShare`
+    (absence の最初の 12h で定量に達する)に写した
+- 緩和(settle)は実時間スケールの指数則(`settleTowardsBaselineHours`、
+  基準 24h)。刻み方によらず同じ実時間で同じだけ姿勢へ戻る。
+  基準を短くしすぎると turn で得た偏差が体質に吸収される前に洗い流されて
+  個体差(Phase 5)が育たないことを実測で確認し、24h に置いた
+- substrate は `rewindSnapshotBaseHours` 内部で最大 6h の microstep に割られる
+- idle autonomy の評価も累積の期日制: absence 6h で最初の評価、以後 8h ごと。
+  記憶の再編成(imprint consolidation)は評価ごとに増分の重みで連続的に進み、
+  journal / voice の定着は「夜」に相当する 24h ごとの節目でだけ起きる
+- これにより resident loop の 0.5h tick でも consolidation / journal / voice が
+  実時間で動く(従来は 6h 未満の tick では一切起きなかった)
+- 完了条件は達成: 分割不変・累積閾値・tick と一括の consolidation 同値・
+  turn による absence リセットを `substrate-invariants.test.ts` で恒久固定
 
 ### Phase 1: constitution(体質)— 実装済み (2026-07-12)
 
@@ -198,10 +220,10 @@ v2 の境界をそのまま保つ。
 
 ---
 
-**v3 は 5 フェーズ中 5 つ(Phase 1-5)が完了した。** 残るのは Phase 0
-(substrate 実時間 microstep)と、各フェーズに残した深化項目のみ。
-テーゼ「生きた時間が取り返しのつかない形で残る」は、
-体質・自己記述・向かい先・声の4層と、その定量的分離をもって成立している。
+**v3 は全フェーズ(Phase 0-5)が完了した。** 残るのは各フェーズに残した
+深化項目のみ。テーゼ「生きた時間が取り返しのつかない形で残る」は、
+体質・自己記述・向かい先・声の4層と、その定量的分離をもって成立し、
+Phase 0 により「生きられる時間」自体が刻み方に依存しない実時間になった。
 
 ## 研究上の注意 — 明文化済み (2026-07-13)
 

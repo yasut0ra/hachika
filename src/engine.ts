@@ -39,8 +39,8 @@ import type { InitiativeDirector } from "./initiative-director.js";
 import {
   materializePreparedInitiative,
   materializePreparedOutwardAction,
-  materializeIdleAutonomyAction,
-  prepareIdleAutonomyAction,
+  materializeIdleAutonomyEvaluation,
+  prepareDueIdleAutonomyEvaluation,
   prepareInitiativeEmission,
   prepareScheduledInitiative,
   rewindSnapshotBaseHours,
@@ -100,6 +100,7 @@ import type {
 import {
   clamp01,
   clampSigned,
+  createIdleClock,
   createInitialSnapshot,
   dominantDrive,
 } from "./state.js";
@@ -965,7 +966,10 @@ export class HachikaEngine {
   ): Promise<{ outwardMode: AutonomyOutwardMode }> {
     const nextSnapshot = structuredClone(this.#snapshot);
     rewindSnapshotBaseHours(nextSnapshot, hours);
-    let prepared = prepareIdleAutonomyAction(nextSnapshot, hours);
+    // Phase 0: 評価は tick の hours ではなく累積 absence の期日で起きる。
+    // resident loop の細かい tick でも、absence が期日に達した tick で評価が動く
+    const plan = prepareDueIdleAutonomyEvaluation(nextSnapshot);
+    let prepared = plan?.prepared ?? null;
     let outwardMode: AutonomyOutwardMode = "speak";
 
     if (prepared && options.autonomyDirector) {
@@ -992,8 +996,8 @@ export class HachikaEngine {
       }
     }
 
-    if (prepared) {
-      materializeIdleAutonomyAction(nextSnapshot, prepared);
+    if (plan && prepared) {
+      materializeIdleAutonomyEvaluation(nextSnapshot, { ...plan, prepared });
     }
 
     advanceWorldByIdle(nextSnapshot, hours);
@@ -4659,6 +4663,8 @@ function applySignals(
   const nextSnapshot = structuredClone(snapshot);
   nextSnapshot.conversationCount = snapshot.conversationCount + 1;
   nextSnapshot.lastInteractionAt = new Date().toISOString();
+  // Phase 0: user turn が absence を終わらせる。累積 absence の時計はここでだけ巻き戻る
+  nextSnapshot.idleClock = createIdleClock();
   updateDynamicsFromSignals(nextSnapshot, signals);
 
   const preferenceDelta =

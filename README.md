@@ -325,7 +325,7 @@ Hachika は、単に有用なだけでなく、
 - `docs/growth-metrics.md` に growth comparison 用の lightweight metrics と canonical scenario を整理している
   - 現在は saturation / motive diversity / identity drift / archive reopen / stress recovery に加えて、autonomous activity visibility / idle consolidation coverage / proactive maintenance rate も比較できる
   - autonomy v2 Phase 5 の live metrics として `silent internal action rate / outward action rate / world action diversity / initiative→action conversion` も `/metrics` と UI の Growth panel から見られる
-- 長い idle は autonomy v2 の microstep で処理され、最初の窓で consolidation を1回行った後、追加の窓ごとに internal action(observe / hold / drift / recall)が評価される。1回の放置の中に「掘り返してから、静かに抱えて終える」ような行動の連なりが残る
+- 長い idle は substrate の実時間 microstep(v3 Phase 0)で処理される。substrate は最大 6h 刻みで進み、閾値挙動(12h 超の absence 不安など)は累積 absence(`idleClock`)で決まるので、1回の大きな rewind と resident loop の細かい tick が同じ実時間で同じ軌跡を通る(分割不変)。idle autonomy の評価は absence 6h で初回、以後 8h ごとに起き、記憶の再編成は評価ごとに連続的に、journal / voice の定着は 24h ごとの「夜」の節目で起きる。1回の放置の中に「掘り返してから、静かに抱えて終える」ような行動の連なりが残る
 - v3 Phase 5 として個体差の実証が入っており、3種の canonical な人生(温かい生 / 傷の多い生 / 放置の多い生 × 30日相当)で育てた個体は constitution 距離で分離し、**同種の人生の個体同士は異種の人生の個体より近い**(盲検分類可能)ことをテストで固定している
 - v3 Phase 4 として `voice`(声)が入っており、自分の発話履歴から「身についた入り方」と「文の長さの癖」が静かな時間に蒸留され、以後の opener 選択と LLM wording に個体差として効く。同じ状態で同じ入力を受けても、生きてきた個体によって言い方が違う
 - v3 Phase 3 として `aspirations`(向かい先)が入っており、journal に書き残した決着が同じ主題で繰り返されると数週間スケールの長期目的として昇華する。向かい先は purpose の選好と archived trace の掘り返しに長期バイアスとして効き、養われなければ薄れて消える(消えたことも自己記述に残る)

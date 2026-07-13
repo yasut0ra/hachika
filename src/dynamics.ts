@@ -10,6 +10,7 @@ import {
   INITIAL_TEMPERAMENT,
   INITIAL_URGES,
   settleTowardsBaseline,
+  settleTowardsBaselineHours,
 } from "./state.js";
 import type {
   DynamicsState,
@@ -357,10 +358,44 @@ export function updateUrgesFromTurn(
   };
 }
 
+// v3 Phase 0: 累積 absence の「窓」。rewind が何回に割られても、
+// before/after の前後差で効かせれば閾値挙動は telescoping (分割不変) になる
+export interface AbsenceWindow {
+  before: number;
+  after: number;
+}
+
+// 「累積 absence が threshold を超えた分だけ、divisor 時間あたり 1 のレートで
+// cap まで積む」を窓の前後差で返す。合計は必ず f(total) − f(0) に一致する。
+// legacy の Math.min(cap, hours / divisor) は「呼び出し1回あたりの飽和」だったが、
+// これを threshold 0 の accrual に写すと「absence 1回あたりの飽和」になり、
+// どんな窓割り (一括 rewind / resident tick) でも同じ合計になる
+export function absenceAccrualDelta(
+  absence: AbsenceWindow,
+  thresholdHours: number,
+  divisorHours: number,
+  cap: number,
+): number {
+  const accrue = (hoursAbsent: number): number =>
+    Math.min(cap, Math.max(0, hoursAbsent - thresholdHours) / divisorHours);
+
+  return Math.max(0, accrue(absence.after) - accrue(absence.before));
+}
+
+// legacy で「呼び出し1回あたり定量」だった項の写し先: absence の最初の
+// saturateAt 時間で定量ぶんに達し、それ以降のこの absence では増えない (telescoping)
+export function absenceFlatShare(
+  absence: AbsenceWindow,
+  saturateAtHours = 12,
+): number {
+  return absenceAccrualDelta(absence, 0, saturateAtHours, 1);
+}
+
 // 放置中は contact / recall / world への圧が溜まり、silence への欲が抜けていく
 export function rewindUrgesHours(
   snapshot: HachikaSnapshot,
   hours: number,
+  absence: AbsenceWindow = { before: 0, after: hours },
 ): void {
   if (!Number.isFinite(hours) || hours <= 0) {
     return;
@@ -369,26 +404,31 @@ export function rewindUrgesHours(
   const archivedPull = Object.values(snapshot.traces).some(
     (trace) => trace.lifecycle?.phase === "archived",
   )
-    ? 0.04
+    ? 0.04 * absenceFlatShare(absence)
     : 0;
 
   snapshot.urges = {
     contactUrge: clamp01(
       snapshot.urges.contactUrge +
-        Math.min(0.3, hours / 24) *
+        absenceAccrualDelta(absence, 0, 24, 0.3) *
           (1 + snapshot.temperament.bondingBias * 0.2 + snapshot.dynamics.socialNeed * 0.3),
     ),
     closureUrge: clamp01(
-      snapshot.urges.closureUrge + Math.min(0.12, hours / 60) * (0.6 + snapshot.dynamics.continuityPressure * 0.5),
+      snapshot.urges.closureUrge +
+        absenceAccrualDelta(absence, 0, 60, 0.12) *
+          (0.6 + snapshot.dynamics.continuityPressure * 0.5),
     ),
     recallUrge: clamp01(
-      snapshot.urges.recallUrge + Math.min(0.2, hours / 36) + archivedPull,
+      snapshot.urges.recallUrge + absenceAccrualDelta(absence, 0, 36, 0.2) + archivedPull,
     ),
-    worldUrge: clamp01(snapshot.urges.worldUrge + Math.min(0.18, hours / 40)),
-    silenceNeed: settleTowardsBaseline(
-      clamp01(snapshot.urges.silenceNeed - Math.min(0.25, hours / 30)),
+    worldUrge: clamp01(
+      snapshot.urges.worldUrge + absenceAccrualDelta(absence, 0, 40, 0.18),
+    ),
+    silenceNeed: settleTowardsBaselineHours(
+      clamp01(snapshot.urges.silenceNeed - absenceAccrualDelta(absence, 0, 30, 0.25)),
       snapshot.constitution.urgeSetPoints.silenceNeed,
       0.06,
+      hours,
     ),
   };
 }
@@ -397,6 +437,7 @@ export function rewindUrgesHours(
 export function rewindReactivityHours(
   snapshot: HachikaSnapshot,
   hours: number,
+  absence: AbsenceWindow = { before: 0, after: hours },
 ): void {
   if (!Number.isFinite(hours) || hours <= 0) {
     return;
@@ -404,31 +445,42 @@ export function rewindReactivityHours(
 
   // 傷の記憶が残っている間は、放置してもストレスが抜けにくい
   const mistrustLinger = snapshot.reactivity.mistrust;
+  // 累積 absence が 20h を超えると、静けさが逆にストレスを少し積み始める
+  const longAbsenceStress = absenceAccrualDelta(absence, 20, 120, 0.06);
 
   snapshot.reactivity = {
-    rewardSaturation: settleTowardsBaseline(
-      clamp01(snapshot.reactivity.rewardSaturation - Math.min(0.24, hours / 36)),
+    rewardSaturation: settleTowardsBaselineHours(
+      clamp01(
+        snapshot.reactivity.rewardSaturation - absenceAccrualDelta(absence, 0, 36, 0.24),
+      ),
       INITIAL_REACTIVITY.rewardSaturation,
       0.12,
+      hours,
     ),
-    stressLoad: settleTowardsBaseline(
+    stressLoad: settleTowardsBaselineHours(
       clamp01(
         snapshot.reactivity.stressLoad -
-          Math.min(0.14, hours / 72) * Math.max(0.5, 1 - mistrustLinger * 0.45) +
-          (hours >= 20 ? Math.min(0.06, (hours - 20) / 120) : 0),
+          absenceAccrualDelta(absence, 0, 72, 0.14) *
+            Math.max(0.5, 1 - mistrustLinger * 0.45) +
+          longAbsenceStress,
       ),
       INITIAL_REACTIVITY.stressLoad,
       0.05,
+      hours,
     ),
-    noveltyHunger: settleTowardsBaseline(
-      clamp01(snapshot.reactivity.noveltyHunger + Math.min(0.22, hours / 30)),
+    noveltyHunger: settleTowardsBaselineHours(
+      clamp01(
+        snapshot.reactivity.noveltyHunger + absenceAccrualDelta(absence, 0, 30, 0.22),
+      ),
       INITIAL_REACTIVITY.noveltyHunger,
       0.04,
+      hours,
     ),
-    mistrust: settleTowardsBaseline(
-      clamp01(mistrustLinger - Math.min(0.05, hours / 200)),
+    mistrust: settleTowardsBaselineHours(
+      clamp01(mistrustLinger - absenceAccrualDelta(absence, 0, 200, 0.05)),
       INITIAL_REACTIVITY.mistrust,
       0.02,
+      hours,
     ),
   };
 }
@@ -436,80 +488,96 @@ export function rewindReactivityHours(
 export function rewindDynamicsHours(
   snapshot: HachikaSnapshot,
   hours: number,
+  absence: AbsenceWindow = { before: 0, after: hours },
 ): void {
   if (!Number.isFinite(hours) || hours <= 0) {
     return;
   }
 
-  const absenceBias = snapshot.preservation.concern === "absence" ? 0.03 : 0;
-  const longAbsence = hours >= 18 ? Math.min(0.08, (hours - 18) / 96) : 0;
+  // legacy で「呼び出し1回あたり定量」だった bias は「absence 1回あたり定量」になる
+  const flatShare = absenceFlatShare(absence);
+  const absenceBias =
+    snapshot.preservation.concern === "absence" ? 0.03 * flatShare : 0;
+  // 累積 absence が 18h を超えた分だけ、安心の回復が浅くなる
+  const longAbsence = absenceAccrualDelta(absence, 18, 96, 0.08);
   // 傷ついた直後の放置は安心の回復が浅く、trust の冷え方が速い
   const mistrustLinger = snapshot.reactivity.mistrust;
   const stressLinger = snapshot.reactivity.stressLoad;
+  const threatPull = snapshot.preservation.threat * flatShare;
 
   snapshot.dynamics = {
-    safety: settleTowardsBaseline(
+    safety: settleTowardsBaselineHours(
       clamp01(
         snapshot.dynamics.safety +
-          Math.min(0.1, hours / 96) * Math.max(0.5, 1 - mistrustLinger * 0.35) -
-          snapshot.preservation.threat * 0.04 -
+          absenceAccrualDelta(absence, 0, 96, 0.1) *
+            Math.max(0.5, 1 - mistrustLinger * 0.35) -
+          threatPull * 0.04 -
           longAbsence * 0.03,
       ),
       INITIAL_DYNAMICS.safety,
       0.05,
+      hours,
     ),
-    trust: settleTowardsBaseline(
+    trust: settleTowardsBaselineHours(
       clamp01(
         snapshot.dynamics.trust -
-          Math.min(0.06, hours / 180) * (1 + mistrustLinger * 0.5) +
+          absenceAccrualDelta(absence, 0, 180, 0.06) * (1 + mistrustLinger * 0.5) +
           absenceBias * 0.2,
       ),
       INITIAL_DYNAMICS.trust,
       0.03,
+      hours,
     ),
-    activation: settleTowardsBaseline(
-      clamp01(snapshot.dynamics.activation - Math.min(0.14, hours / 72)),
+    activation: settleTowardsBaselineHours(
+      clamp01(snapshot.dynamics.activation - absenceAccrualDelta(absence, 0, 72, 0.14)),
       INITIAL_DYNAMICS.activation,
       0.06,
+      hours,
     ),
-    socialNeed: settleTowardsBaseline(
+    socialNeed: settleTowardsBaselineHours(
       clamp01(
         snapshot.dynamics.socialNeed +
-          Math.min(0.18, hours / 48) *
+          absenceAccrualDelta(absence, 0, 48, 0.18) *
             (1 + snapshot.temperament.bondingBias * 0.14) +
           absenceBias,
       ),
       INITIAL_DYNAMICS.socialNeed,
       0.03,
+      hours,
     ),
-    cognitiveLoad: settleTowardsBaseline(
-      clamp01(snapshot.dynamics.cognitiveLoad - Math.min(0.16, hours / 60)),
+    cognitiveLoad: settleTowardsBaselineHours(
+      clamp01(
+        snapshot.dynamics.cognitiveLoad - absenceAccrualDelta(absence, 0, 60, 0.16),
+      ),
       INITIAL_DYNAMICS.cognitiveLoad,
       0.06,
+      hours,
     ),
-    noveltyDrive: settleTowardsBaseline(
+    noveltyDrive: settleTowardsBaselineHours(
       clamp01(
         snapshot.dynamics.noveltyDrive +
-          Math.min(0.18, hours / 42) *
+          absenceAccrualDelta(absence, 0, 42, 0.18) *
             (0.9 + snapshot.temperament.openness * 0.12),
       ),
       INITIAL_DYNAMICS.noveltyDrive,
       0.04,
+      hours,
     ),
-    continuityPressure: settleTowardsBaseline(
+    continuityPressure: settleTowardsBaselineHours(
       clamp01(
         snapshot.dynamics.continuityPressure +
-          Math.min(0.12, hours / 60) *
+          absenceAccrualDelta(absence, 0, 60, 0.12) *
             (1 + stressLinger * 0.3 + mistrustLinger * 0.25) +
-          snapshot.preservation.threat * 0.05,
+          threatPull * 0.05,
       ),
       INITIAL_DYNAMICS.continuityPressure,
       0.03,
+      hours,
     ),
   };
 
-  rewindReactivityHours(snapshot, hours);
-  rewindUrgesHours(snapshot, hours);
+  rewindReactivityHours(snapshot, hours, absence);
+  rewindUrgesHours(snapshot, hours, absence);
   updateConstitutionFromLife(snapshot, hours / 6);
   deriveVisibleStateFromDynamics(snapshot);
 }

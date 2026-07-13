@@ -4,6 +4,10 @@ import test from "node:test";
 import { HachikaEngine } from "./engine.js";
 import { aspirationPull, rewindAspirationsHours } from "./aspiration.js";
 import { updateIdentity } from "./identity.js";
+import {
+  advanceAutonomyHours,
+  rewindSnapshotBaseHours,
+} from "./initiative.js";
 import { distillVoiceProfile } from "./voice.js";
 import { createInitialSnapshot, INITIAL_BODY, INITIAL_STATE } from "./state.js";
 
@@ -124,6 +128,94 @@ test("constitution: different lives settle into different set points, bounded an
 
   // 生きた分だけ可塑性は下がる (加齢)
   assert.ok(warmConstitution.plasticity < 0.5);
+});
+
+// v3 Phase 0: substrate は実時間の microstep として回る。
+// 同じ実時間なら、1回の大きな rewind と細かい tick の連なりが同じ場所に着く
+
+function assertClose(actual: number, expected: number, eps: number, label: string) {
+  assert.ok(
+    Math.abs(actual - expected) <= eps,
+    `${label}: |${actual} - ${expected}| > ${eps}`,
+  );
+}
+
+test("phase 0: substrate rewind is split-invariant across microsteps", () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+  engine.respond("ありがとう。散歩の話は嬉しい。");
+
+  const bulk = engine.getSnapshot();
+  const fine = structuredClone(bulk);
+
+  rewindSnapshotBaseHours(bulk, 24);
+  for (let index = 0; index < 48; index += 1) {
+    rewindSnapshotBaseHours(fine, 0.5);
+  }
+
+  assertClose(fine.preservation.threat, bulk.preservation.threat, 0.005, "threat");
+  assert.equal(fine.preservation.concern, bulk.preservation.concern);
+
+  for (const key of Object.keys(bulk.dynamics) as Array<keyof typeof bulk.dynamics>) {
+    assertClose(fine.dynamics[key], bulk.dynamics[key], 0.03, `dynamics.${key}`);
+  }
+  for (const key of Object.keys(bulk.urges) as Array<keyof typeof bulk.urges>) {
+    assertClose(fine.urges[key], bulk.urges[key], 0.03, `urges.${key}`);
+  }
+  for (const key of Object.keys(bulk.body) as Array<keyof typeof bulk.body>) {
+    assertClose(fine.body[key], bulk.body[key], 0.05, `body.${key}`);
+  }
+  for (const key of Object.keys(bulk.temperament) as Array<keyof typeof bulk.temperament>) {
+    assertClose(fine.temperament[key], bulk.temperament[key], 0.03, `temperament.${key}`);
+  }
+});
+
+test("phase 0: absence threat depends on cumulative absence, not call size", () => {
+  const single = createInitialSnapshot();
+  const split = createInitialSnapshot();
+
+  rewindSnapshotBaseHours(single, 16);
+
+  rewindSnapshotBaseHours(split, 8);
+  // 8h ではまだ absence の不安は立たない (累積で判断される)
+  assert.equal(split.preservation.concern, null);
+  rewindSnapshotBaseHours(split, 8);
+
+  assertClose(split.preservation.threat, single.preservation.threat, 0.002, "threat");
+  assert.equal(split.preservation.concern, "absence");
+  assert.equal(single.preservation.concern, "absence");
+});
+
+test("phase 0: fine resident ticks reach idle consolidation like a bulk rewind", () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+  engine.respond("設計を一緒に進めて、記録として残したい。");
+
+  const ticked = engine.getSnapshot();
+  const bulk = structuredClone(ticked);
+
+  // resident loop 相当: 0.5h の tick を 16回 (= 8h)
+  for (let index = 0; index < 16; index += 1) {
+    advanceAutonomyHours(ticked, 0.5);
+  }
+  advanceAutonomyHours(bulk, 8);
+
+  // どちらの経路でも、absence 6h の期日で idle 評価と consolidation (journal) が起きる
+  assert.ok(ticked.idleClock.lastAutonomyEvalAbsenceHours !== null);
+  assert.ok(bulk.idleClock.lastAutonomyEvalAbsenceHours !== null);
+  assert.ok(ticked.journal.some((entry) => entry.source === "idle"));
+  assert.ok(bulk.journal.some((entry) => entry.source === "idle"));
+});
+
+test("phase 0: a user turn ends the absence and resets the idle clock", () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+
+  engine.rewindIdleHours(16);
+  assert.ok(engine.getSnapshot().idleClock.absenceHours >= 16);
+
+  engine.respond("ただいま。");
+  const clock = engine.getSnapshot().idleClock;
+  assert.equal(clock.absenceHours, 0);
+  assert.equal(clock.lastAutonomyEvalAbsenceHours, null);
+  assert.equal(clock.lastConsolidationAbsenceHours, null);
 });
 
 test("journal: quiet time and purpose resolutions leave self-authored entries", () => {

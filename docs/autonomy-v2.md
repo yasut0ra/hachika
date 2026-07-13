@@ -291,7 +291,11 @@ LLM に寄せるもの:
 > (相対シフトなので中立 urges では従来どおり)、「向き直りたい圧が高いと早く、
 > 黙っていたい圧が強いと 3.5h 経っても出ない」が成立する。
 > emission 後は contact / closure / recall の圧が解放され、silenceNeed が少し戻る。
-> 未実装: 時間割りでの substrate microstep 化 (threshold 挙動の再設計が必要)。
+> **substrate microstep 化も実装済み (2026-07-13, v3 Phase 0)**: threshold 挙動は
+> 累積 absence (`snapshot.idleClock`) の前後差に再設計され、substrate は最大 6h の
+> microstep で回る。idle autonomy の評価は「absence 6h で初回、以後 8h ごと」の
+> 累積期日制になり、resident loop の細かい tick と一括 rewind が同じ実時間で
+> 同じ軌跡を通る。詳細は [hachika-v3.md](./hachika-v3.md) の Phase 0。
 
 ### Phase 1
 

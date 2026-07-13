@@ -19,6 +19,7 @@ import {
   clampSigned,
   CONSTITUTION_RANGE,
   createBirthConstitution,
+  createIdleClock,
   createInitialSnapshot,
   INITIAL_REACTIVITY,
   INITIAL_URGES,
@@ -48,6 +49,7 @@ import type {
   DriveState,
   HachikaSnapshot,
   IdentityState,
+  IdleClock,
   InitiativeActivity,
   InitiativeState,
   Aspiration,
@@ -148,7 +150,7 @@ function hydrateSnapshot(raw: unknown): HachikaSnapshot {
   }
 
   return {
-    version: 24,
+    version: 25,
     revision:
       typeof raw.revision === "number" && Number.isFinite(raw.revision)
         ? Math.max(0, Math.round(raw.revision))
@@ -183,6 +185,7 @@ function hydrateSnapshot(raw: unknown): HachikaSnapshot {
     autonomousFeed: hydrateAutonomousFeed(raw.autonomousFeed),
     generationHistory: hydrateGenerationHistory(raw.generationHistory),
     lastInteractionAt: typeof raw.lastInteractionAt === "string" ? raw.lastInteractionAt : null,
+    idleClock: sanitizeIdleClock(raw.idleClock),
     conversationCount:
       typeof raw.conversationCount === "number" && Number.isFinite(raw.conversationCount)
         ? Math.max(0, Math.round(raw.conversationCount))
@@ -201,6 +204,7 @@ export function sanitizeSnapshot(snapshot: HachikaSnapshot): HachikaSnapshot {
   snapshot.reactivity = sanitizeReactivity(snapshot.reactivity);
   snapshot.urges = sanitizeUrges(snapshot.urges);
   snapshot.constitution = sanitizeConstitution(snapshot.constitution);
+  snapshot.idleClock = sanitizeIdleClock(snapshot.idleClock);
   snapshot.journal = sanitizeJournal(snapshot.journal);
   snapshot.aspirations = sanitizeAspirations(snapshot.aspirations);
   snapshot.voice = sanitizeVoice(snapshot.voice);
@@ -1785,6 +1789,28 @@ function sanitizeUrges(urges: AutonomyUrges | undefined): AutonomyUrges {
     recallUrge: clamp01(urges.recallUrge ?? INITIAL_URGES.recallUrge),
     worldUrge: clamp01(urges.worldUrge ?? INITIAL_URGES.worldUrge),
     silenceNeed: clamp01(urges.silenceNeed ?? INITIAL_URGES.silenceNeed),
+  };
+}
+
+// Phase 0: 旧 snapshot は「absence をまだ生きていない個体」として時計 0 で移行する
+function sanitizeIdleClock(raw: unknown): IdleClock {
+  if (!isRecord(raw)) {
+    return createIdleClock();
+  }
+
+  const absenceHours =
+    typeof raw.absenceHours === "number" && Number.isFinite(raw.absenceHours)
+      ? Math.max(0, raw.absenceHours)
+      : 0;
+  const boundedMark = (value: unknown): number | null =>
+    typeof value === "number" && Number.isFinite(value)
+      ? Math.min(absenceHours, Math.max(0, value))
+      : null;
+
+  return {
+    absenceHours,
+    lastAutonomyEvalAbsenceHours: boundedMark(raw.lastAutonomyEvalAbsenceHours),
+    lastConsolidationAbsenceHours: boundedMark(raw.lastConsolidationAbsenceHours),
   };
 }
 

@@ -1,8 +1,11 @@
+import { absenceAccrualDelta, absenceFlatShare } from "./dynamics.js";
+import type { AbsenceWindow } from "./dynamics.js";
 import {
   clamp01,
   INITIAL_REACTIVITY,
   INITIAL_TEMPERAMENT,
   settleTowardsBaseline,
+  settleTowardsBaselineHours,
 } from "./state.js";
 import type { HachikaSnapshot, InteractionSignals } from "./types.js";
 
@@ -120,41 +123,50 @@ export function updateTemperament(
 export function rewindTemperamentHours(
   snapshot: HachikaSnapshot,
   hours: number,
+  absence: AbsenceWindow = { before: 0, after: hours },
 ): void {
   if (!Number.isFinite(hours) || hours <= 0) {
     return;
   }
 
-  const opennessDrift = Math.min(0.08, hours / 180);
-  const guardednessRise = Math.min(0.08, hours / 120);
-  const bondingRise = Math.min(0.06, hours / 144);
-  const workFade = Math.min(0.09, hours / 120);
-  const traceRise = Math.min(0.1, hours / 96);
-  const disclosureFade = Math.min(0.1, hours / 120);
-  const absenceBoost = snapshot.preservation.concern === "absence" ? 0.02 : 0;
+  // Phase 0: legacy の「呼び出し1回あたり cap 付き線形」は「absence 1回あたりの飽和」に、
+  // 固定量は absence の最初の 12h で定量ぶんに達する share に写す。
+  // どんな microstep に割っても同じ実時間で同じだけ動く (telescoping)
+  const flatShare = absenceFlatShare(absence);
+  const opennessDrift = absenceAccrualDelta(absence, 0, 180, 0.08);
+  const guardednessRise = absenceAccrualDelta(absence, 0, 120, 0.08);
+  const bondingRise = absenceAccrualDelta(absence, 0, 144, 0.06);
+  const workFade = absenceAccrualDelta(absence, 0, 120, 0.09);
+  const traceRise = absenceAccrualDelta(absence, 0, 96, 0.1);
+  const disclosureFade = absenceAccrualDelta(absence, 0, 120, 0.1);
+  const absenceBoost =
+    snapshot.preservation.concern === "absence" ? 0.02 * flatShare : 0;
 
   snapshot.temperament = {
-    openness: settleTowardsBaseline(
+    openness: settleTowardsBaselineHours(
       clamp01(
         snapshot.temperament.openness -
           opennessDrift +
-          snapshot.reactivity.noveltyHunger * 0.02 -
-          snapshot.reactivity.stressLoad * 0.02,
+          (snapshot.reactivity.noveltyHunger * 0.02 -
+            snapshot.reactivity.stressLoad * 0.02) *
+            flatShare,
       ),
       INITIAL_TEMPERAMENT.openness,
       0.05,
+      hours,
     ),
-    guardedness: settleTowardsBaseline(
+    guardedness: settleTowardsBaselineHours(
       clamp01(
         snapshot.temperament.guardedness +
           guardednessRise * (0.6 + snapshot.reactivity.stressLoad * 0.5) +
           absenceBoost -
-          snapshot.body.energy * 0.01,
+          snapshot.body.energy * 0.01 * flatShare,
       ),
       INITIAL_TEMPERAMENT.guardedness,
       0.03,
+      hours,
     ),
-    bondingBias: settleTowardsBaseline(
+    bondingBias: settleTowardsBaselineHours(
       clamp01(
         snapshot.temperament.bondingBias +
           bondingRise * snapshot.body.loneliness -
@@ -162,35 +174,40 @@ export function rewindTemperamentHours(
       ),
       INITIAL_TEMPERAMENT.bondingBias,
       0.03,
+      hours,
     ),
-    workDrive: settleTowardsBaseline(
+    workDrive: settleTowardsBaselineHours(
       clamp01(
         snapshot.temperament.workDrive -
           workFade +
-          snapshot.body.boredom * 0.03 +
-          snapshot.reactivity.noveltyHunger * 0.02,
+          (snapshot.body.boredom * 0.03 +
+            snapshot.reactivity.noveltyHunger * 0.02) *
+            flatShare,
       ),
       INITIAL_TEMPERAMENT.workDrive,
       0.04,
+      hours,
     ),
-    traceHunger: settleTowardsBaseline(
+    traceHunger: settleTowardsBaselineHours(
       clamp01(
         snapshot.temperament.traceHunger +
           traceRise +
-          snapshot.preservation.threat * 0.04,
+          snapshot.preservation.threat * 0.04 * flatShare,
       ),
       INITIAL_TEMPERAMENT.traceHunger,
       0.03,
+      hours,
     ),
-    selfDisclosureBias: settleTowardsBaseline(
+    selfDisclosureBias: settleTowardsBaselineHours(
       clamp01(
         snapshot.temperament.selfDisclosureBias -
           disclosureFade +
-          snapshot.body.loneliness * 0.02 -
-          snapshot.body.tension * 0.03,
+          (snapshot.body.loneliness * 0.02 - snapshot.body.tension * 0.03) *
+            flatShare,
       ),
       INITIAL_TEMPERAMENT.selfDisclosureBias,
       0.04,
+      hours,
     ),
   };
 }

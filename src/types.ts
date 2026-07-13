@@ -65,6 +65,17 @@ export interface Aspiration {
   waning: boolean;
 }
 
+// v3 Phase 0: substrate の実時間 microstep 用の時計。
+// absenceHours は最後の user turn から「生きられた」累積時間 (rewind で進む)。
+// 閾値挙動 (>=12h の absence threat など) と idle autonomy の評価期日は
+// 呼び出し1回の hours ではなくこの累積で決まるので、
+// 1回の大きな rewind と resident loop の細かい tick が同じ実時間で同じ挙動になる
+export interface IdleClock {
+  absenceHours: number;
+  lastAutonomyEvalAbsenceHours: number | null;
+  lastConsolidationAbsenceHours: number | null;
+}
+
 // v3: 学習される基準点 (体質)。visible state が緩和して戻る先そのものが、
 // 生活の平均へ極めて遅く追従する。birth 値から有界 (±0.15) で、
 // plasticity (変わりやすさ) は加齢とともに低下する
@@ -533,6 +544,7 @@ export interface HachikaSnapshot {
   autonomousFeed: AutonomousFeedEntry[];
   generationHistory: GenerationHistoryEntry[];
   lastInteractionAt: string | null;
+  idleClock: IdleClock;
   conversationCount: number;
 }
 

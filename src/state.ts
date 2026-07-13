@@ -6,6 +6,7 @@ import type {
   DriveName,
   DriveState,
   HachikaSnapshot,
+  IdleClock,
   LearnedTemperament,
   ReactivityState,
 } from "./types.js";
@@ -102,6 +103,34 @@ export function settleTowardsBaseline(
   return clamp01(value + (baseline - value) * rate);
 }
 
+// v3 Phase 0: idle 中の緩和は「まる1日 (24h) の静けさでこの割合だけ姿勢へ戻る」を基準にする。
+// 指数則なので、どんな刻み (microstep) で呼ばれても同じ実時間で同じだけ戻る (分割不変)。
+// 基準を短くしすぎると、turn で得た偏差が体質に吸収される前に洗い流されて
+// 個体差 (Phase 5) が育たなくなる
+export const SETTLE_REFERENCE_HOURS = 24;
+
+export function settleTowardsBaselineHours(
+  value: number,
+  baseline: number,
+  ratePerReference: number,
+  hours: number,
+): number {
+  if (!Number.isFinite(hours) || hours <= 0) {
+    return clamp01(value);
+  }
+
+  const rate = 1 - Math.pow(1 - ratePerReference, hours / SETTLE_REFERENCE_HOURS);
+  return settleTowardsBaseline(value, baseline, rate);
+}
+
+export function createIdleClock(): IdleClock {
+  return {
+    absenceHours: 0,
+    lastAutonomyEvalAbsenceHours: null,
+    lastConsolidationAbsenceHours: null,
+  };
+}
+
 export function blendVisibleValue(
   current: number,
   target: number,
@@ -112,7 +141,7 @@ export function blendVisibleValue(
 
 export function createInitialSnapshot(): HachikaSnapshot {
   return {
-    version: 24,
+    version: 25,
     revision: 0,
     state: { ...INITIAL_STATE },
     body: { ...INITIAL_BODY },
@@ -177,6 +206,7 @@ export function createInitialSnapshot(): HachikaSnapshot {
     autonomousFeed: [],
     generationHistory: [],
     lastInteractionAt: null,
+    idleClock: createIdleClock(),
     conversationCount: 0,
   };
 }
