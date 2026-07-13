@@ -23,6 +23,15 @@ test("buildReplyGenerationPayload surfaces fallback intent and concrete actor cu
   nextSnapshot.identity.currentArc = "今は設計を目印のままにせず、もう一段具体化したい。";
   nextSnapshot.identity.anchors = ["設計"];
   nextSnapshot.lastInteractionAt = "2026-03-23T12:00:00.000Z";
+  nextSnapshot.presence.residue = {
+    action: "recall",
+    focus: "設計",
+    rationale: "trace_pull",
+    place: "archive",
+    objectId: "shelf",
+    intensity: 0.54,
+    formedAt: "2026-03-23T11:59:00.000Z",
+  };
   nextSnapshot.discourse.commitments.push({
     owner: "hachika",
     kind: "task",
@@ -36,6 +45,21 @@ test("buildReplyGenerationPayload surfaces fallback intent and concrete actor cu
     resolvedAt: null,
     evidence: null,
     events: [],
+    progress: {
+      items: [{
+        id: "root",
+        text: "設計を整理して",
+        source: "request",
+        status: "pending",
+        createdAt: "2026-03-19T12:00:00.000Z",
+        updatedAt: "2026-03-19T12:00:00.000Z",
+        completedAt: null,
+      }],
+      blockers: [],
+      events: [],
+      observedTraceAt: null,
+      observedArtifacts: [],
+    },
   });
   nextSnapshot.purpose.active = {
     kind: "continue_shared_work",
@@ -227,12 +251,15 @@ test("buildReplyGenerationPayload surfaces fallback intent and concrete actor cu
   assert.equal(payload.replySelection.currentTopic, "設計");
   assert.equal(payload.replySelection.relevantTraceTopic, "設計");
   assert.equal(payload.state.attachment, 0.63);
+  assert.equal(payload.presence.residue?.action, "recall");
+  assert.equal(payload.presence.residue?.focus, "設計");
   assert.match(payload.identity.summary, /studio|threshold|archive/);
   assert.match(payload.identity.currentArc, /次に/);
   assert.match(payload.selfModel.narrative, /いまの一歩|前へ進める/);
   assert.equal(payload.purpose.active?.kind, "continue_shared_work");
   assert.equal(payload.activeCommitments[0]?.status, "accepted");
   assert.equal(payload.activeCommitments[0]?.stalled, true);
+  assert.equal(payload.activeCommitments[0]?.progress.currentItem, "設計を整理して");
   assert.equal(payload.traces[0]?.topic, "設計");
   assert.equal(payload.traces[0]?.tending, "deepen");
   assert.ok(payload.traces[0]?.blockers.includes("責務が未定"));

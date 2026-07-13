@@ -2,6 +2,9 @@ import { extractTopics, isMeaningfulTopic, topicsLooselyMatch } from "./memory.j
 import type {
   DiscourseCommitment,
   DiscourseCommitmentEvidence,
+  DiscourseCommitmentProgress,
+  DiscourseCommitmentProgressEvent,
+  DiscourseCommitmentWorkItem,
   DiscourseOpenQuestion,
   DiscourseOpenRequest,
   HachikaSnapshot,
@@ -18,6 +21,7 @@ export function reconcileDiscourseCommitments(
     ...commitment,
     evidence: commitment.evidence ? { ...commitment.evidence } : null,
     events: commitment.events.map((event) => ({ ...event })),
+    progress: cloneCommitmentProgress(commitment),
   }));
   const userRequests = requests.filter(
     (request) =>
@@ -112,6 +116,12 @@ export function reconcileDiscourseCommitments(
         status === "fulfilled" && source.kind !== "task" ? source.resolvedAt : null,
       evidence: null,
       events: [],
+      progress: createCommitmentProgress(
+        source.kind,
+        source.text,
+        source.sourceAskedAt,
+        status,
+      ),
     });
   }
 
@@ -127,6 +137,10 @@ export function advanceTaskCommitments(
     timestamp: string;
   },
 ): void {
+  for (const commitment of activeTaskCommitments(snapshot)) {
+    synchronizeTaskCommitmentProgress(snapshot, commitment);
+  }
+
   const transitioned = new Set<DiscourseCommitment>();
   const activeTasks = activeTaskCommitments(snapshot);
   const userRelease = context.input && isUserWithdrawal(context.input)
@@ -161,6 +175,7 @@ export function advanceTaskCommitments(
     commitment.resolvedAt = evidence.recordedAt;
     commitment.evidence = evidence;
     appendCommitmentEvent(commitment, evidence);
+    completeTaskProgress(commitment, evidence.recordedAt);
     transitioned.add(commitment);
   }
 
@@ -229,6 +244,65 @@ export interface TaskCommitmentTiming {
   lastProgressAt: string;
 }
 
+export interface TaskCommitmentProgressSummary {
+  phase: "pending" | "working" | "blocked" | "paused" | "completed" | "released";
+  completedItems: number;
+  totalItems: number;
+  completionRatio: number;
+  currentItem: string | null;
+  nextSteps: string[];
+  blockers: string[];
+  latestEvent: DiscourseCommitmentProgressEvent | null;
+}
+
+export function summarizeTaskCommitmentProgress(
+  commitment: DiscourseCommitment,
+): TaskCommitmentProgressSummary {
+  const items = commitment.progress.items;
+  const completedItems = items.filter((item) => item.status === "completed").length;
+  const actionableItems = items.filter(
+    (item) => item.status !== "completed" && item.status !== "cancelled",
+  );
+  const currentItem =
+    actionableItems.find(
+      (item) => item.source === "trace_next_step" && item.status === "in_progress",
+    ) ??
+    actionableItems.find(
+      (item) => item.source === "trace_next_step" && item.status === "pending",
+    ) ??
+    actionableItems.find((item) => item.status === "in_progress") ??
+    actionableItems[0] ??
+    null;
+  const phase: TaskCommitmentProgressSummary["phase"] =
+    commitment.status === "fulfilled"
+      ? "completed"
+      : commitment.status === "released"
+        ? "released"
+        : commitment.status === "renegotiated" ||
+            actionableItems.some((item) => item.status === "paused")
+          ? "paused"
+          : commitment.progress.blockers.length > 0
+            ? "blocked"
+            : actionableItems.some((item) => item.status === "in_progress")
+              ? "working"
+              : "pending";
+
+  return {
+    phase,
+    completedItems,
+    totalItems: items.length,
+    completionRatio:
+      items.length === 0 ? 0 : Math.round((completedItems / items.length) * 1000) / 1000,
+    currentItem: currentItem?.text ?? null,
+    nextSteps: actionableItems
+      .filter((item) => item.source === "trace_next_step")
+      .map((item) => item.text)
+      .slice(0, 4),
+    blockers: commitment.progress.blockers.slice(-4),
+    latestEvent: commitment.progress.events.at(-1) ?? null,
+  };
+}
+
 export function describeTaskCommitmentTiming(
   snapshot: HachikaSnapshot,
   commitment: DiscourseCommitment,
@@ -240,7 +314,13 @@ export function describeTaskCommitmentTiming(
     .filter((trace) => topics.length > 0 && traceMatchesCommitment(trace, topics))
     .map((trace) => trace.lastUpdatedAt);
   const eventTimes = commitment.events.map((event) => event.recordedAt);
-  const lastProgressAt = [acceptedAt, ...matchingTraceTimes, ...eventTimes]
+  const progressTimes = commitment.progress.events.map((event) => event.recordedAt);
+  const lastProgressAt = [
+    acceptedAt,
+    ...matchingTraceTimes,
+    ...eventTimes,
+    ...progressTimes,
+  ]
     .filter(isValidTimestamp)
     .sort((left, right) => right.localeCompare(left))[0] ?? acceptedAt;
   const ageHours = elapsedHours(acceptedAt, observedAt);
@@ -292,6 +372,310 @@ function activeTaskCommitments(snapshot: HachikaSnapshot): DiscourseCommitment[]
   );
 }
 
+function createCommitmentProgress(
+  kind: DiscourseCommitment["kind"],
+  text: string,
+  createdAt: string,
+  status: DiscourseCommitment["status"],
+): DiscourseCommitmentProgress {
+  if (kind !== "task") {
+    return {
+      items: [],
+      blockers: [],
+      events: [],
+      observedTraceAt: null,
+      observedArtifacts: [],
+    };
+  }
+
+  const itemStatus: DiscourseCommitmentWorkItem["status"] =
+    status === "fulfilled"
+      ? "completed"
+      : status === "released"
+        ? "cancelled"
+        : status === "renegotiated"
+          ? "paused"
+          : "pending";
+  return {
+    items: [
+      {
+        id: "root",
+        text,
+        source: "request",
+        status: itemStatus,
+        createdAt,
+        updatedAt: createdAt,
+        completedAt:
+          itemStatus === "completed" || itemStatus === "cancelled"
+            ? createdAt
+            : null,
+      },
+    ],
+    blockers: [],
+    events: [],
+    observedTraceAt: null,
+    observedArtifacts: [],
+  };
+}
+
+function cloneCommitmentProgress(
+  commitment: DiscourseCommitment,
+): DiscourseCommitmentProgress {
+  const progress = commitment.progress as DiscourseCommitmentProgress | undefined;
+  if (!progress) {
+    return createCommitmentProgress(
+      commitment.kind,
+      commitment.text,
+      commitment.createdAt,
+      commitment.status,
+    );
+  }
+  return {
+    items: progress.items.map((item) => ({ ...item })),
+    blockers: [...progress.blockers],
+    events: progress.events.map((event) => ({ ...event })),
+    observedTraceAt: progress.observedTraceAt,
+    observedArtifacts: [...progress.observedArtifacts],
+  };
+}
+
+function synchronizeTaskCommitmentProgress(
+  snapshot: HachikaSnapshot,
+  commitment: DiscourseCommitment,
+): void {
+  const topics = commitmentTopics(commitment.text);
+  if (topics.length === 0) {
+    return;
+  }
+  const trace = Object.values(snapshot.traces)
+    .filter((candidate) => traceMatchesCommitment(candidate, topics))
+    .sort((left, right) => right.lastUpdatedAt.localeCompare(left.lastUpdatedAt))[0];
+  if (!trace) {
+    return;
+  }
+
+  const progress = commitment.progress;
+  const acceptedAt = commitment.acceptedAt ?? commitment.createdAt;
+  const traceAdvanced =
+    timestampAfter(trace.lastUpdatedAt, acceptedAt) &&
+    (!progress.observedTraceAt ||
+      timestampAfter(trace.lastUpdatedAt, progress.observedTraceAt));
+  const artifactTexts = uniqueTopics([
+    ...trace.artifact.memo,
+    ...trace.artifact.fragments,
+    ...trace.artifact.decisions,
+    ...trace.artifact.nextSteps,
+  ]);
+  const observed = new Set(progress.observedArtifacts);
+  const newArtifacts = artifactTexts.filter((item) => !observed.has(item));
+  const createdItems: DiscourseCommitmentWorkItem[] = [];
+
+  for (const nextStep of trace.artifact.nextSteps) {
+    if (progress.items.length >= 16) {
+      break;
+    }
+    const normalized = nextStep.normalize("NFKC").trim();
+    if (
+      !normalized ||
+      progress.items.some(
+        (item) => item.text.normalize("NFKC").trim() === normalized,
+      )
+    ) {
+      continue;
+    }
+    let sequence = 1;
+    while (progress.items.some((item) => item.id === `step-${sequence}`)) {
+      sequence += 1;
+    }
+    const item: DiscourseCommitmentWorkItem = {
+      id: `step-${sequence}`,
+      text: normalized,
+      source: "trace_next_step",
+      status: commitment.status === "renegotiated" ? "paused" : "pending",
+      createdAt: trace.lastUpdatedAt,
+      updatedAt: trace.lastUpdatedAt,
+      completedAt: null,
+    };
+    progress.items.push(item);
+    createdItems.push(item);
+  }
+
+  const nextBlockers = uniqueTopics(trace.work.blockers).slice(-6);
+  const blockersChanged =
+    JSON.stringify(progress.blockers) !== JSON.stringify(nextBlockers);
+
+  if (traceAdvanced) {
+    const root = progress.items.find((item) => item.source === "request") ?? null;
+    const resuming = progress.items.some((item) => item.status === "paused");
+    for (const item of progress.items) {
+      if (item.status === "paused") {
+        item.status = item.source === "request" ? "in_progress" : "pending";
+        item.updatedAt = trace.lastUpdatedAt;
+      }
+    }
+    if (root && root.status === "pending") {
+      root.status = "in_progress";
+      root.updatedAt = trace.lastUpdatedAt;
+    }
+
+    const hasStarted = progress.events.some(
+      (event) => event.kind === "work_started",
+    );
+    if (!hasStarted || resuming) {
+      appendProgressEvent(progress, {
+        kind: resuming ? "work_resumed" : "work_started",
+        topic: trace.topic,
+        summary: resuming
+          ? `${trace.topic}の作業を再開した`
+          : `${trace.topic}の作業に着手した`,
+        recordedAt: trace.lastUpdatedAt,
+      });
+    }
+
+    for (const item of createdItems) {
+      appendProgressEvent(progress, {
+        kind: "next_step_added",
+        topic: trace.topic,
+        summary: item.text,
+        recordedAt: trace.lastUpdatedAt,
+      });
+    }
+
+    const completionArtifacts = [
+      ...trace.artifact.decisions,
+      ...trace.artifact.fragments,
+    ].filter((item) => newArtifacts.includes(item.normalize("NFKC").trim()));
+    for (const item of progress.items) {
+      if (
+        item.source !== "trace_next_step" ||
+        item.status === "completed" ||
+        item.status === "cancelled"
+      ) {
+        continue;
+      }
+      const completedBy = completionArtifacts.find(
+        (artifact) =>
+          artifact.normalize("NFKC").trim() !==
+            item.text.normalize("NFKC").trim() &&
+          workItemMatchesArtifact(item.text, artifact),
+      );
+      if (!completedBy) {
+        continue;
+      }
+      item.status = "completed";
+      item.updatedAt = trace.lastUpdatedAt;
+      item.completedAt = trace.lastUpdatedAt;
+      appendProgressEvent(progress, {
+        kind: "work_item_completed",
+        topic: trace.topic,
+        summary: item.text,
+        recordedAt: trace.lastUpdatedAt,
+      });
+    }
+
+    const substantiveArtifact = [...trace.artifact.decisions, ...trace.artifact.fragments]
+      .reverse()
+      .find((item) => newArtifacts.includes(item.normalize("NFKC").trim()));
+    if (substantiveArtifact) {
+      appendProgressEvent(progress, {
+        kind: "artifact_recorded",
+        topic: trace.topic,
+        summary: substantiveArtifact,
+        recordedAt: trace.lastUpdatedAt,
+      });
+    }
+
+    if (blockersChanged) {
+      appendProgressEvent(progress, {
+        kind: "blocker_changed",
+        topic: trace.topic,
+        summary:
+          nextBlockers.at(-1) ?? `${trace.topic}のblockerが解消した`,
+        recordedAt: trace.lastUpdatedAt,
+      });
+    }
+  }
+
+  progress.blockers = nextBlockers;
+  progress.observedTraceAt =
+    !progress.observedTraceAt ||
+    timestampAfter(trace.lastUpdatedAt, progress.observedTraceAt)
+      ? trace.lastUpdatedAt
+      : progress.observedTraceAt;
+  progress.observedArtifacts = uniqueTopics([
+    ...progress.observedArtifacts,
+    ...artifactTexts,
+  ]).slice(-32);
+}
+
+function workItemMatchesArtifact(item: string, artifact: string): boolean {
+  const normalizedItem = item.normalize("NFKC").trim();
+  const normalizedArtifact = artifact.normalize("NFKC").trim();
+  return (
+    topicsLooselyMatch(normalizedItem, normalizedArtifact) ||
+    normalizedArtifact.includes(normalizedItem) ||
+    normalizedItem.includes(normalizedArtifact)
+  );
+}
+
+function appendProgressEvent(
+  progress: DiscourseCommitmentProgress,
+  event: DiscourseCommitmentProgressEvent,
+): void {
+  if (
+    progress.events.some(
+      (current) =>
+        current.kind === event.kind &&
+        current.summary === event.summary &&
+        current.recordedAt === event.recordedAt,
+    )
+  ) {
+    return;
+  }
+  progress.events.push(event);
+  progress.events = progress.events.slice(-24);
+}
+
+function completeTaskProgress(
+  commitment: DiscourseCommitment,
+  timestamp: string,
+): void {
+  for (const item of commitment.progress.items) {
+    if (item.status === "cancelled") {
+      continue;
+    }
+    item.status = "completed";
+    item.updatedAt = timestamp;
+    item.completedAt = timestamp;
+  }
+}
+
+function cancelTaskProgress(
+  commitment: DiscourseCommitment,
+  timestamp: string,
+): void {
+  for (const item of commitment.progress.items) {
+    if (item.status === "completed") {
+      continue;
+    }
+    item.status = "cancelled";
+    item.updatedAt = timestamp;
+    item.completedAt = timestamp;
+  }
+}
+
+function pauseTaskProgress(
+  commitment: DiscourseCommitment,
+  timestamp: string,
+): void {
+  for (const item of commitment.progress.items) {
+    if (item.status === "pending" || item.status === "in_progress") {
+      item.status = "paused";
+      item.updatedAt = timestamp;
+    }
+  }
+}
+
 function releaseCommitment(
   commitment: DiscourseCommitment,
   evidence: DiscourseCommitmentEvidence,
@@ -300,6 +684,7 @@ function releaseCommitment(
   commitment.resolvedAt = evidence.recordedAt;
   commitment.evidence = evidence;
   appendCommitmentEvent(commitment, evidence);
+  cancelTaskProgress(commitment, evidence.recordedAt);
 }
 
 function renegotiateCommitment(
@@ -310,6 +695,7 @@ function renegotiateCommitment(
   commitment.resolvedAt = null;
   commitment.evidence = null;
   appendCommitmentEvent(commitment, evidence);
+  pauseTaskProgress(commitment, evidence.recordedAt);
 }
 
 function appendCommitmentEvent(

@@ -276,6 +276,20 @@ test("idle simulation increases boredom and loneliness while recovering energy",
   assert.ok(after.loneliness > before.loneliness);
 });
 
+test("a user return interrupts the ongoing idle presence without erasing its residue", () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+  engine.rewindIdleHours(8);
+  const beforeReturn = engine.getSnapshot().presence;
+
+  assert.notEqual(beforeReturn.action, "rest");
+
+  const result = engine.respond("戻ったよ");
+
+  assert.equal(result.snapshot.presence.action, "rest");
+  assert.equal(result.snapshot.presence.residue?.action, beforeReturn.action);
+  assert.equal(result.snapshot.presence.residue?.place, beforeReturn.place);
+});
+
 test("idle consolidation can preselect a dormant archived trace as the next initiative", () => {
   const snapshot = createInitialSnapshot();
   snapshot.lastInteractionAt = "2026-03-19T10:00:00.000Z";
@@ -2120,9 +2134,33 @@ test("a task reply accepts the commitment without claiming the task is finished"
   assert.equal(commitment?.acceptedAt !== null, true);
   assert.equal(commitment?.resolvedAt, null);
   assert.equal(commitment?.evidence, null);
+  assert.equal(commitment?.progress.items[0]?.status, "pending");
+  assert.equal(commitment?.progress.events.length, 0);
 
   const unchanged = engine.respond("少し考えよう");
   assert.equal(unchanged.snapshot.discourse.commitments.at(-1)?.status, "accepted");
+});
+
+test("proactive maintenance turns an accepted task into visible execution progress", () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+
+  engine.respond("仕様の境界を整理して");
+  engine.rewindIdleHours(8);
+  const message = engine.emitInitiative({ force: true });
+  const commitment = engine.getSnapshot().discourse.commitments.at(-1);
+
+  assert.ok(message !== null);
+  assert.equal(commitment?.status, "accepted");
+  assert.equal(commitment?.progress.items[0]?.status, "in_progress");
+  assert.ok(
+    commitment?.progress.items.some(
+      (item) => item.source === "trace_next_step" && item.status === "pending",
+    ),
+  );
+  assert.deepEqual(
+    commitment?.progress.events.slice(-2).map((event) => event.kind),
+    ["work_started", "next_step_added"],
+  );
 });
 
 test("a user can renegotiate and later withdraw an accepted task", () => {

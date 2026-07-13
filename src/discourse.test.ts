@@ -5,6 +5,7 @@ import {
   advanceTaskCommitments,
   describeTaskCommitmentTiming,
   reconcileDiscourseCommitments,
+  summarizeTaskCommitmentProgress,
 } from "./discourse.js";
 import { createInitialSnapshot } from "./state.js";
 import type {
@@ -43,6 +44,7 @@ test("task commitments become accepted on reply but require later trace evidence
 
   assert.equal(snapshot.discourse.commitments[0]?.status, "accepted");
   assert.equal(snapshot.discourse.commitments[0]?.evidence, null);
+  assert.equal(snapshot.discourse.commitments[0]?.progress.items[0]?.status, "pending");
 
   snapshot.traces["仕様の境界"]!.lastUpdatedAt = "2026-07-14T01:00:00.000Z";
   advanceTaskCommitments(snapshot, {
@@ -58,6 +60,7 @@ test("task commitments become accepted on reply but require later trace evidence
     snapshot.discourse.commitments[0]?.resolvedAt,
     "2026-07-14T01:00:00.000Z",
   );
+  assert.equal(snapshot.discourse.commitments[0]?.progress.items[0]?.status, "completed");
 });
 
 test("an explicit matching user completion can fulfill an accepted task without a trace", () => {
@@ -158,6 +161,7 @@ test("a user can release the matching task without a generic topic shift releasi
   assert.deepEqual(commitment?.events.map((event) => event.kind), [
     "user_withdrawal",
   ]);
+  assert.equal(commitment?.progress.items[0]?.status, "cancelled");
 });
 
 test("renegotiation stays active and remains in history after later fulfillment", () => {
@@ -175,6 +179,7 @@ test("renegotiation stays active and remains in history after later fulfillment"
     snapshot.discourse.commitments[0]?.events[0]?.kind,
     "user_renegotiation",
   );
+  assert.equal(snapshot.discourse.commitments[0]?.progress.items[0]?.status, "paused");
 
   advanceTaskCommitments(snapshot, {
     input: "仕様の境界の整理が完了した",
@@ -191,6 +196,7 @@ test("renegotiation stays active and remains in history after later fulfillment"
     snapshot.discourse.commitments[0]?.events.map((event) => event.kind),
     ["user_renegotiation", "user_completion"],
   );
+  assert.equal(snapshot.discourse.commitments[0]?.progress.items[0]?.status, "completed");
 });
 
 test("Hachika must use explicit matching language to release its own task", () => {
@@ -261,6 +267,66 @@ test("task timing surfaces stalled work without releasing it automatically", () 
   assert.equal(afterProgress.ageHours, 120);
   assert.equal(afterProgress.inactiveHours, 24);
   assert.equal(afterProgress.stalled, false);
+});
+
+test("later trace work creates execution items and records concrete progress", () => {
+  const snapshot = acceptedTaskSnapshot("仕様の境界を整理して");
+  const trace = resolvedTrace("仕様の境界", "2026-07-14T00:00:00.000Z");
+  trace.status = "active";
+  trace.kind = "spec_fragment";
+  trace.lastAction = "captured";
+  trace.artifact.nextSteps = ["API schemaを固定する"];
+  snapshot.traces[trace.topic] = trace;
+
+  advanceTaskCommitments(snapshot, {
+    timestamp: "2026-07-14T00:00:00.000Z",
+  });
+  let commitment = snapshot.discourse.commitments[0]!;
+  assert.deepEqual(
+    commitment.progress.items.map((item) => [item.text, item.status]),
+    [
+      ["仕様の境界を整理して", "pending"],
+      ["API schemaを固定する", "pending"],
+    ],
+  );
+  assert.deepEqual(commitment.progress.events, []);
+
+  trace.lastUpdatedAt = "2026-07-14T01:00:00.000Z";
+  trace.lastAction = "expanded";
+  trace.artifact.fragments.push("API schemaを固定する作業を完了した");
+  trace.work.blockers = ["認証境界が未定"];
+  advanceTaskCommitments(snapshot, {
+    timestamp: "2026-07-14T01:00:00.000Z",
+  });
+
+  commitment = snapshot.discourse.commitments[0]!;
+  assert.equal(commitment.status, "accepted");
+  assert.equal(commitment.progress.items[0]?.status, "in_progress");
+  assert.equal(commitment.progress.items[1]?.status, "completed");
+  assert.deepEqual(
+    commitment.progress.events.map((event) => event.kind),
+    [
+      "work_started",
+      "work_item_completed",
+      "artifact_recorded",
+      "blocker_changed",
+    ],
+  );
+  assert.deepEqual(summarizeTaskCommitmentProgress(commitment), {
+    phase: "blocked",
+    completedItems: 1,
+    totalItems: 2,
+    completionRatio: 0.5,
+    currentItem: "仕様の境界を整理して",
+    nextSteps: [],
+    blockers: ["認証境界が未定"],
+    latestEvent: {
+      kind: "blocker_changed",
+      topic: "仕様の境界",
+      summary: "認証境界が未定",
+      recordedAt: "2026-07-14T01:00:00.000Z",
+    },
+  });
 });
 
 function acceptedTaskSnapshot(text: string) {

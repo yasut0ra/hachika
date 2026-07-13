@@ -449,6 +449,14 @@ test("loadSnapshot and saveSnapshot apply sanitation to persisted files", async 
     );
     assert.equal(loaded.discourse.commitments[1]?.evidence, null);
     assert.deepEqual(loaded.discourse.commitments[1]?.events, []);
+    assert.deepEqual(
+      loaded.discourse.commitments[1]?.progress.items.map((item) => ({
+        source: item.source,
+        text: item.text,
+        status: item.status,
+      })),
+      [{ source: "request", text: "設計を整理して", status: "pending" }],
+    );
 
     await saveSnapshot(filePath, loaded);
     const raw = await readFile(filePath, "utf8");
@@ -604,6 +612,21 @@ test("sanitizeSnapshot preserves accepted task state and fulfillment evidence", 
       recordedAt: "2026-07-14T01:00:00.000Z",
     },
     events: [],
+    progress: {
+      items: [{
+        id: "root",
+        text: "設計を整理して",
+        source: "request",
+        status: "completed",
+        createdAt: "2026-07-14T00:00:00.000Z",
+        updatedAt: "2026-07-14T01:00:00.000Z",
+        completedAt: "2026-07-14T01:00:00.000Z",
+      }],
+      blockers: [],
+      events: [],
+      observedTraceAt: null,
+      observedArtifacts: [],
+    },
   });
 
   sanitizeSnapshot(snapshot);
@@ -622,6 +645,10 @@ test("sanitizeSnapshot preserves accepted task state and fulfillment evidence", 
   assert.deepEqual(
     snapshot.discourse.commitments[0]?.events.map((event) => event.kind),
     ["trace_resolution"],
+  );
+  assert.equal(
+    snapshot.discourse.commitments[0]?.progress.items[0]?.status,
+    "completed",
   );
 });
 
@@ -664,6 +691,26 @@ test("sanitizeSnapshot preserves renegotiation history and released task evidenc
       },
       withdrawal,
     ],
+    progress: {
+      items: [{
+        id: "root",
+        text: "設計を整理して",
+        source: "request",
+        status: "cancelled",
+        createdAt: "2026-07-14T00:00:00.000Z",
+        updatedAt: "2026-07-14T02:00:00.000Z",
+        completedAt: "2026-07-14T02:00:00.000Z",
+      }],
+      blockers: [],
+      events: [{
+        kind: "work_started",
+        topic: "設計",
+        summary: "設計の作業に着手した",
+        recordedAt: "2026-07-14T01:00:00.000Z",
+      }],
+      observedTraceAt: "2026-07-14T01:00:00.000Z",
+      observedArtifacts: ["設計を整理する"],
+    },
   });
 
   sanitizeSnapshot(snapshot);
@@ -675,6 +722,12 @@ test("sanitizeSnapshot preserves renegotiation history and released task evidenc
     "user_renegotiation",
     "user_withdrawal",
   ]);
+  assert.deepEqual(
+    commitment?.progress.events.map((event) => event.kind),
+    ["work_started"],
+  );
+  assert.equal(commitment?.progress.observedTraceAt, "2026-07-14T01:00:00.000Z");
+  assert.deepEqual(commitment?.progress.observedArtifacts, ["設計を整理する"]);
 });
 
 test("loadSnapshot seeds latent dynamics from older visible-only snapshots", async () => {
@@ -725,7 +778,7 @@ test("loadSnapshot seeds latent dynamics from older visible-only snapshots", asy
 
     const loaded = await loadSnapshot(filePath);
 
-    assert.equal(loaded.version, 30);
+    assert.equal(loaded.version, 32);
     assert.equal(loaded.revision, 3);
     assert.equal(loaded.discourse.hachikaName?.value, "ハチカ");
     assert.ok(
@@ -739,6 +792,8 @@ test("loadSnapshot seeds latent dynamics from older visible-only snapshots", asy
     assert.deepEqual(loaded.aspirations, []);
     assert.deepEqual(loaded.voice, createInitialSnapshot().voice);
     assert.deepEqual(loaded.memoryThreadEvents, []);
+    assert.deepEqual(loaded.presence, createInitialSnapshot().presence);
+    assert.equal(loaded.world.objects.lamp?.familiarity, 0);
     assert.ok(loaded.dynamics.safety < 0.5);
     assert.ok(loaded.dynamics.trust > 0.5);
     assert.ok(loaded.dynamics.activation > 0.5);

@@ -13,6 +13,7 @@ const identityNode = document.getElementById("identity-panel");
 const diagnosticsNode = document.getElementById("diagnostics-panel");
 const growthNode = document.getElementById("growth-metrics");
 const tracesNode = document.getElementById("traces-panel");
+const commitmentsNode = document.getElementById("commitments-panel");
 const artifactsNode = document.getElementById("artifacts-panel");
 const connectionNode = document.getElementById("connection-status");
 const flashNode = document.getElementById("flash");
@@ -89,6 +90,7 @@ function render(ui, options = {}) {
   renderIdentity(ui.summary, ui.selfModel);
   renderDiagnostics(ui.diagnostics, ui.summary.residentLoop, ui.summary.residentLoopHealth);
   renderGrowth(ui.growth);
+  renderCommitments(ui.commitments ?? []);
   renderTraces(ui.traces);
   renderArtifacts(ui.artifacts);
 
@@ -667,6 +669,42 @@ function renderTraces(traces) {
       <div class="chips">${trace.blockers.map((item) => `<span>${escapeHtml(item)}</span>`).join("")}</div>
     `;
     tracesNode.append(card);
+  }
+}
+
+function renderCommitments(commitments) {
+  commitmentsNode.innerHTML = "";
+
+  if (commitments.length === 0) {
+    commitmentsNode.innerHTML = '<p class="empty">引き受けているtaskはありません。</p>';
+    return;
+  }
+
+  for (const commitment of [...commitments].reverse()) {
+    const card = document.createElement("article");
+    card.className = "trace-card";
+    const progress = commitment.progress;
+    const itemChips = progress.nextSteps
+      .map((item) => `<span>${escapeHtml(item)}</span>`)
+      .join("");
+    const blockerChips = progress.blockers
+      .map((item) => `<span>blocker · ${escapeHtml(item)}</span>`)
+      .join("");
+    card.innerHTML = `
+      <header>
+        <strong>${escapeHtml(commitment.text)}</strong>
+        <span>${commitment.status} / ${progress.phase}${commitment.stalled ? " / stalled" : ""}</span>
+      </header>
+      <p>${escapeHtml(progress.currentItem ?? "現在の実行項目はまだありません")}</p>
+      <div class="mini-grid">
+        <span>items: ${progress.completedItems} / ${progress.totalItems}</span>
+        <span>inactive: ${formatNumber(commitment.inactiveHours)}h</span>
+        <span>latest: ${escapeHtml(progress.latestEvent?.kind ?? "none")}</span>
+        <span>progress: ${Math.round(progress.completionRatio * 100)}%</span>
+      </div>
+      <div class="chips">${itemChips}${blockerChips}</div>
+    `;
+    commitmentsNode.append(card);
   }
 }
 

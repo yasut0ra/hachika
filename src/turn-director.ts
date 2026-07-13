@@ -31,7 +31,11 @@ import type {
   ResponseVariation,
 } from "./response-planner.js";
 import { clamp01 } from "./state.js";
-import { describeTaskCommitmentTiming } from "./discourse.js";
+import {
+  describeTaskCommitmentTiming,
+  summarizeTaskCommitmentProgress,
+  type TaskCommitmentProgressSummary,
+} from "./discourse.js";
 import { sortedTraces } from "./traces.js";
 import {
   describeWorldPlaceJa,
@@ -72,6 +76,7 @@ const HACHIKA_TURN_DIRECTOR_SYSTEM_PROMPT = [
   "An accepted task is not fulfilled. Never claim completion unless its commitment includes fulfillment evidence.",
   "A renegotiated task is still unfinished. A released task is closed without fulfillment and must not be presented as completed.",
   "When an active task is stalled, either make concrete progress or state a specific renegotiation/release plainly; age alone never releases it.",
+  "Use commitment.progress.currentItem, nextSteps, blockers, and latestEvent to continue from actual execution state instead of repeating the original request.",
   "For pure world questions, prefer world_state with topics: [] and suppress durable work hardening.",
   "For social or relation turns, do not invent work topics or trace content.",
   "For work_topic, keep topics compact and concrete, and only emit trace hints that are explicitly present.",
@@ -186,6 +191,7 @@ export interface TurnDirectorPayload {
       ageHours: number | null;
       inactiveHours: number | null;
       stalled: boolean;
+      progress: TaskCommitmentProgressSummary | null;
     }>;
     recentClaims: Array<{
       subject: "user" | "hachika" | "shared";
@@ -382,6 +388,10 @@ export function buildTurnDirectorPayload(
             ageHours: timing?.ageHours ?? null,
             inactiveHours: timing?.inactiveHours ?? null,
             stalled: timing?.stalled ?? false,
+            progress:
+              commitment.kind === "task"
+                ? summarizeTaskCommitmentProgress(commitment)
+                : null,
           };
         }),
       recentClaims: context.snapshot.discourse.recentClaims

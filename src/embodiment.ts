@@ -231,6 +231,13 @@ function deriveCurrentAction(
     };
   }
 
+  if (snapshot.presence.action !== "rest") {
+    return {
+      action: snapshot.presence.action,
+      id: `presence:${snapshot.presence.action}:${snapshot.presence.startedAt ?? "ongoing"}`,
+    };
+  }
+
   const latestActivity = snapshot.initiative.history.at(-1);
   if (
     latestActivity?.autonomyAction &&
@@ -355,6 +362,19 @@ function deriveGazeTarget(
     case "touch":
       return objectForPlace(snapshot.world.currentPlace);
     case "rest":
+      if (snapshot.presence.residue?.intensity && snapshot.presence.residue.intensity >= 0.2) {
+        switch (snapshot.presence.residue.action) {
+          case "recall":
+            return "shelf";
+          case "hold":
+            return "down";
+          case "drift":
+            return "distance";
+          case "observe":
+          case "touch":
+            return objectForPlace(snapshot.presence.residue.place);
+        }
+      }
       if (snapshot.dynamics.socialNeed >= 0.68 && snapshot.reactivity.mistrust < 0.5) {
         return "viewer";
       }

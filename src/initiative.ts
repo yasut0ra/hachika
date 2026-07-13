@@ -6,6 +6,7 @@ import {
   sortedPreferenceImprints,
   topPreferredTopics,
 } from "./memory.js";
+import { summarizeTaskCommitmentProgress } from "./discourse.js";
 import { settleBodyAfterInitiative } from "./body.js";
 import {
   absenceAccrualDelta,
@@ -17,6 +18,7 @@ import { pickFreshText, recentAssistantReplies } from "./expression.js";
 import { buildSelfModel } from "./self-model.js";
 import { aspirationPull, rewindAspirationsHours } from "./aspiration.js";
 import { appendJournalEntry, buildIdleJournalEntry } from "./journal.js";
+import { materializePresenceAction } from "./presence.js";
 import { distillVoiceProfile } from "./voice.js";
 import {
   canAutonomouslySurfaceMemoryThread,
@@ -944,6 +946,20 @@ export function materializeIdleAutonomyAction(
   const consolidateImprints = options.consolidateImprints ?? true;
   // consolidation の重みは「前回の再編成からどれだけ静けさが経ったか」
   const consolidationHours = options.consolidationHours ?? prepared.hours;
+  const traceWorld = prepared.selected?.trace.worldContext;
+  materializePresenceAction(snapshot, {
+    action: prepared.action,
+    hours: prepared.hours,
+    focus: prepared.prioritizedTopic,
+    rationale: prepared.attentionReasons?.[0] ?? null,
+    place: traceWorld?.place ?? snapshot.world.currentPlace,
+    objectId: traceWorld?.objectId ?? null,
+    worldAction:
+      prepared.action === "observe" ||
+      (prepared.action === "recall" && traceWorld?.objectId)
+        ? "observe"
+        : null,
+  });
   if (shouldSuppressPendingCarryOver(prepared.attentionReasons)) {
     snapshot.initiative.pending = null;
   }
@@ -3020,6 +3036,8 @@ function collectInitiativeDiscourseTopics(
     acceptedTaskCommitment &&
     (signals.workCue > 0.12 || signals.memoryCue > 0.08 || signals.expansionCue > 0.08)
   ) {
+    const progress = summarizeTaskCommitmentProgress(acceptedTaskCommitment);
+    sourceTexts.push(progress.currentItem ?? acceptedTaskCommitment.text);
     sourceTexts.push(acceptedTaskCommitment.text);
   }
 

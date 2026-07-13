@@ -17,7 +17,11 @@ import {
   OpenAIChatClient,
 } from "./llm-client.js";
 import { resolveOpenAICompatibleConfig } from "./llm-env.js";
-import { describeTaskCommitmentTiming } from "./discourse.js";
+import {
+  describeTaskCommitmentTiming,
+  summarizeTaskCommitmentProgress,
+  type TaskCommitmentProgressSummary,
+} from "./discourse.js";
 import { summarizeWorldForPrompt } from "./world.js";
 import {
   canAutonomouslySurfaceMemoryThread,
@@ -44,6 +48,7 @@ const HACHIKA_PROACTIVE_DIRECTOR_SYSTEM_PROMPT = [
   "A task commitment with status accepted is unfinished. Do not imply it is complete without recorded evidence.",
   "A renegotiated task remains unfinished. A released task is no longer active and is not a success.",
   "When an active task is stalled, prefer concrete progress; if it cannot continue, use explicit renegotiation or release language. Never release it from age alone.",
+  "When commitment progress exists, continue from its currentItem or blocker and do not present planning as completed work.",
   "Keep plan close to rulePlan unless there is a strong semantic reason to change act, focus, distance, or emphasis.",
   "topics are semantic topics for the utterance. stateTopics are the subset worth durable state hardening.",
   "When the move is mostly atmospheric or ephemeral, prefer topics: [] and stateTopics: [].",
@@ -166,6 +171,7 @@ export interface ProactiveDirectorPayload {
       ageHours: number | null;
       inactiveHours: number | null;
       stalled: boolean;
+      progress: TaskCommitmentProgressSummary | null;
     }>;
   };
   memoryThread: MemoryThread | null;
@@ -394,6 +400,10 @@ export function buildProactiveDirectorPayload(
             ageHours: timing?.ageHours ?? null,
             inactiveHours: timing?.inactiveHours ?? null,
             stalled: timing?.stalled ?? false,
+            progress:
+              commitment.kind === "task"
+                ? summarizeTaskCommitmentProgress(commitment)
+                : null,
           };
         }),
     },

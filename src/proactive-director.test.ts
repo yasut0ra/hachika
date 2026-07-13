@@ -128,6 +128,21 @@ test("buildProactiveDirectorPayload keeps candidate topics grounded", () => {
     resolvedAt: null,
     evidence: null,
     events: [],
+    progress: {
+      items: [{
+        id: "root",
+        text: "仕様の境界を整理して",
+        source: "request",
+        status: "pending",
+        createdAt: "2026-03-29T00:00:00.000Z",
+        updatedAt: "2026-03-29T00:05:00.000Z",
+        completedAt: null,
+      }],
+      blockers: [],
+      events: [],
+      observedTraceAt: null,
+      observedArtifacts: [],
+    },
   });
 
   const payload = buildProactiveDirectorPayload({
@@ -172,6 +187,14 @@ test("buildProactiveDirectorPayload keeps candidate topics grounded", () => {
   assert.equal(payload.discourse.openHachikaCommitments[0]?.status, "accepted");
   assert.equal(payload.discourse.openHachikaCommitments[0]?.kind, "task");
   assert.equal(payload.discourse.openHachikaCommitments[0]?.stalled, false);
+  assert.equal(
+    payload.discourse.openHachikaCommitments[0]?.progress?.currentItem,
+    "仕様の境界を整理して",
+  );
+  assert.equal(
+    payload.discourse.openHachikaCommitments[0]?.progress?.phase,
+    "pending",
+  );
 });
 
 test("normalizeProactiveDirective can parse semantic-director v2 proactive contract", () => {

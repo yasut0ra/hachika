@@ -6,6 +6,7 @@ import {
   requiresConcreteTopicSupport,
   topicsLooselyMatch,
 } from "./memory.js";
+import { summarizeTaskCommitmentProgress } from "./discourse.js";
 import type {
   HachikaSnapshot,
   InteractionSignals,
@@ -781,6 +782,8 @@ function collectDiscourseTraceCandidates(
       signals.memoryCue > 0.08 ||
       signals.completion > 0.08)
   ) {
+    const progress = summarizeTaskCommitmentProgress(acceptedTaskCommitment);
+    sourceTexts.push(progress.currentItem ?? acceptedTaskCommitment.text);
     sourceTexts.push(acceptedTaskCommitment.text);
   }
 

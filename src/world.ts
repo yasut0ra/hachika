@@ -74,18 +74,24 @@ export function createInitialWorldState(): WorldState {
         place: "threshold",
         state: "灯りはまだ落ち着いている。",
         lastChangedAt: null,
+        familiarity: 0,
+        lastEngagedAt: null,
         linkedTraceTopics: [],
       },
       desk: {
         place: "studio",
         state: "机は静かで、まだ散っていない。",
         lastChangedAt: null,
+        familiarity: 0,
+        lastEngagedAt: null,
         linkedTraceTopics: [],
       },
       shelf: {
         place: "archive",
         state: "棚は閉じていて静かだ。",
         lastChangedAt: null,
+        familiarity: 0,
+        lastEngagedAt: null,
         linkedTraceTopics: [],
       },
     },
@@ -153,7 +159,7 @@ export function formatWorldObjectState(id: string, object: WorldObjectState): st
     object.linkedTraceTopics && object.linkedTraceTopics.length > 0
       ? ` traces:${object.linkedTraceTopics.join("/")}`
       : "";
-  return `${id}@${PLACE_LABELS[object.place]} ${object.state}${linked}`;
+  return `${id}@${PLACE_LABELS[object.place]} ${object.state} familiarity:${object.familiarity.toFixed(2)}${linked}`;
 }
 
 export function getCurrentWorldLinkedTraceTopics(
@@ -335,6 +341,10 @@ export function performWorldAction(
 
   const object = findCurrentWorldObject(world);
   if (object) {
+    const familiarityGain =
+      action === "touch" ? 0.08 : action === "leave" ? 0.06 : 0.035;
+    object.familiarity = clamp01(object.familiarity + familiarityGain);
+    object.lastEngagedAt = now;
     updateObject(object, buildWorldObjectActionState(place, action, focusTopic), now);
   }
 
@@ -404,6 +414,10 @@ function chooseInteractionPlace(
 }
 
 function chooseIdlePlace(snapshot: HachikaSnapshot): WorldPlaceId {
+  if (snapshot.presence.action !== "rest") {
+    return snapshot.presence.place;
+  }
+
   const thresholdPull =
     snapshot.body.loneliness * 0.9 +
     snapshot.temperament.bondingBias * 0.44 +
@@ -540,33 +554,41 @@ function updateWorldObjects(
   world: WorldState,
   now: string,
 ): void {
-  updateObject(
-    world.objects.lamp!,
-    world.currentPlace === "threshold"
-      ? world.phase === "night"
-        ? "灯りが入口に低く残っている。"
-        : "灯りがthresholdを淡く照らしている。"
-      : world.phase === "dusk"
-        ? "灯りが少しだけ琥珀色に寄る。"
-        : "灯りは遠くで静かだ。",
-    now,
-  );
-  updateObject(
-    world.objects.desk!,
-    world.currentPlace === "studio"
-      ? snapshot.body.energy > 0.42
-        ? "机に断片が開いている。"
-        : "机には途中の形だけが残っている。"
-      : "机はまだ整っている。",
-    now,
-  );
-  updateObject(
-    world.objects.shelf!,
-    world.currentPlace === "archive" || snapshot.preservation.threat > 0.24
-      ? "棚が少しだけざわついている。"
-      : "棚は閉じたまま静かだ。",
-    now,
-  );
+  const engagedObjectId =
+    snapshot.presence.action === "rest" ? null : snapshot.presence.objectId;
+  if (engagedObjectId !== "lamp") {
+    updateObject(
+      world.objects.lamp!,
+      world.currentPlace === "threshold"
+        ? world.phase === "night"
+          ? "灯りが入口に低く残っている。"
+          : "灯りがthresholdを淡く照らしている。"
+        : world.phase === "dusk"
+          ? "灯りが少しだけ琥珀色に寄る。"
+          : "灯りは遠くで静かだ。",
+      now,
+    );
+  }
+  if (engagedObjectId !== "desk") {
+    updateObject(
+      world.objects.desk!,
+      world.currentPlace === "studio"
+        ? snapshot.body.energy > 0.42
+          ? "机に断片が開いている。"
+          : "机には途中の形だけが残っている。"
+        : "机はまだ整っている。",
+      now,
+    );
+  }
+  if (engagedObjectId !== "shelf") {
+    updateObject(
+      world.objects.shelf!,
+      world.currentPlace === "archive" || snapshot.preservation.threat > 0.24
+        ? "棚が少しだけざわついている。"
+        : "棚は閉じたまま静かだ。",
+      now,
+    );
+  }
 }
 
 function updateObject(object: WorldObjectState, nextState: string, now: string): void {

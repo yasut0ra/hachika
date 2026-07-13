@@ -218,6 +218,46 @@ export interface DiscourseCommitmentEvidence {
   recordedAt: string;
 }
 
+export type DiscourseCommitmentWorkItemStatus =
+  | "pending"
+  | "in_progress"
+  | "paused"
+  | "completed"
+  | "cancelled";
+
+export interface DiscourseCommitmentWorkItem {
+  id: string;
+  text: string;
+  source: "request" | "trace_next_step";
+  status: DiscourseCommitmentWorkItemStatus;
+  createdAt: string;
+  updatedAt: string;
+  completedAt: string | null;
+}
+
+export type DiscourseCommitmentProgressEventKind =
+  | "work_started"
+  | "work_resumed"
+  | "artifact_recorded"
+  | "next_step_added"
+  | "work_item_completed"
+  | "blocker_changed";
+
+export interface DiscourseCommitmentProgressEvent {
+  kind: DiscourseCommitmentProgressEventKind;
+  topic: string | null;
+  summary: string;
+  recordedAt: string;
+}
+
+export interface DiscourseCommitmentProgress {
+  items: DiscourseCommitmentWorkItem[];
+  blockers: string[];
+  events: DiscourseCommitmentProgressEvent[];
+  observedTraceAt: string | null;
+  observedArtifacts: string[];
+}
+
 export interface DiscourseCommitment {
   owner: DiscourseActor;
   kind: DiscourseCommitmentKind;
@@ -231,6 +271,7 @@ export interface DiscourseCommitment {
   resolvedAt: string | null;
   evidence: DiscourseCommitmentEvidence | null;
   events: DiscourseCommitmentEvidence[];
+  progress: DiscourseCommitmentProgress;
 }
 
 export interface DiscourseState {
@@ -350,6 +391,8 @@ export interface WorldObjectState {
   place: WorldPlaceId;
   state: string;
   lastChangedAt: string | null;
+  familiarity: number;
+  lastEngagedAt: string | null;
   linkedTraceTopics?: string[];
 }
 
@@ -571,6 +614,37 @@ export interface PurposeState {
   lastShiftAt: string | null;
 }
 
+export type PresenceAction =
+  | "rest"
+  | "observe"
+  | "hold"
+  | "drift"
+  | "recall"
+  | "touch";
+
+export interface PresenceResidue {
+  action: Exclude<PresenceAction, "rest">;
+  focus: string | null;
+  rationale: AttentionRationale | null;
+  place: WorldPlaceId;
+  objectId: string | null;
+  intensity: number;
+  formedAt: string;
+}
+
+export interface PresenceState {
+  action: PresenceAction;
+  focus: string | null;
+  rationale: AttentionRationale | null;
+  place: WorldPlaceId;
+  objectId: string | null;
+  intensity: number;
+  startedAt: string | null;
+  updatedAt: string | null;
+  dwellHours: number;
+  residue: PresenceResidue | null;
+}
+
 export interface HachikaSnapshot {
   version: number;
   revision: number;
@@ -586,6 +660,7 @@ export interface HachikaSnapshot {
   temperament: LearnedTemperament;
   attachment: number;
   world: WorldState;
+  presence: PresenceState;
   discourse: DiscourseState;
   preferences: Record<string, number>;
   topicCounts: Record<string, number>;

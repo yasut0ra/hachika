@@ -8,6 +8,7 @@ import type {
   HachikaSnapshot,
   IdleClock,
   LearnedTemperament,
+  PresenceState,
   ReactivityState,
 } from "./types.js";
 import { createInitialWorldState } from "./world.js";
@@ -131,6 +132,21 @@ export function createIdleClock(): IdleClock {
   };
 }
 
+export function createInitialPresenceState(): PresenceState {
+  return {
+    action: "rest",
+    focus: null,
+    rationale: null,
+    place: "threshold",
+    objectId: "lamp",
+    intensity: 0,
+    startedAt: null,
+    updatedAt: null,
+    dwellHours: 0,
+    residue: null,
+  };
+}
+
 export function blendVisibleValue(
   current: number,
   target: number,
@@ -141,7 +157,7 @@ export function blendVisibleValue(
 
 export function createInitialSnapshot(): HachikaSnapshot {
   return {
-    version: 30,
+    version: 32,
     revision: 0,
     state: { ...INITIAL_STATE },
     body: { ...INITIAL_BODY },
@@ -159,6 +175,7 @@ export function createInitialSnapshot(): HachikaSnapshot {
     temperament: { ...INITIAL_TEMPERAMENT },
     attachment: INITIAL_ATTACHMENT,
     world: createInitialWorldState(),
+    presence: createInitialPresenceState(),
     discourse: {
       userName: null,
       hachikaName: {

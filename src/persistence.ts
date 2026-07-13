@@ -29,6 +29,7 @@ import { isInformativeTraceClause } from "./traces.js";
 import { syncWorldObjectTraceLinks, WORLD_PLACE_IDS } from "./world.js";
 import type {
   ActivePurpose,
+  AttentionRationale,
   AutonomousFeedEntry,
   BoundaryImprint,
   BodyState,
@@ -39,6 +40,9 @@ import type {
   DiscourseCommitment,
   DiscourseCommitmentEvidence,
   DiscourseCommitmentKind,
+  DiscourseCommitmentProgress,
+  DiscourseCommitmentProgressEvent,
+  DiscourseCommitmentWorkItem,
   DiscourseCorrection,
   DiscourseCorrectionKind,
   DiscourseFact,
@@ -67,6 +71,9 @@ import type {
   MemoryThreadLifecycleEvent,
   MotiveKind,
   PendingInitiative,
+  PresenceAction,
+  PresenceResidue,
+  PresenceState,
   PreservationConcern,
   PreservationState,
   PurposeState,
@@ -156,7 +163,7 @@ function hydrateSnapshot(raw: unknown): HachikaSnapshot {
   }
 
   return {
-    version: 30,
+    version: 32,
     revision:
       typeof raw.revision === "number" && Number.isFinite(raw.revision)
         ? Math.max(0, Math.round(raw.revision))
@@ -174,6 +181,7 @@ function hydrateSnapshot(raw: unknown): HachikaSnapshot {
     attachment:
       typeof raw.attachment === "number" ? clamp01(raw.attachment) : initial.attachment,
     world: hydrateWorld(raw.world),
+    presence: hydratePresence(raw.presence),
     discourse: hydrateDiscourse(raw.discourse),
     preferences: hydrateNumberRecord(raw.preferences, clampSigned),
     topicCounts: hydrateNumberRecord(raw.topicCounts, (value) =>
@@ -201,6 +209,7 @@ function hydrateSnapshot(raw: unknown): HachikaSnapshot {
 }
 
 export function sanitizeSnapshot(snapshot: HachikaSnapshot): HachikaSnapshot {
+  snapshot.version = 32;
   snapshot.preferences = sanitizeNumberRecord(snapshot.preferences, clampSigned);
   snapshot.topicCounts = sanitizeNumberRecord(snapshot.topicCounts, (value) =>
     Math.max(0, Math.round(value)),
@@ -216,6 +225,7 @@ export function sanitizeSnapshot(snapshot: HachikaSnapshot): HachikaSnapshot {
   snapshot.aspirations = sanitizeAspirations(snapshot.aspirations);
   snapshot.voice = sanitizeVoice(snapshot.voice);
   snapshot.world = sanitizeWorld(snapshot.world);
+  snapshot.presence = sanitizePresence(snapshot.presence);
   snapshot.discourse = sanitizeDiscourse(snapshot.discourse);
   snapshot.memories = snapshot.memories
     .map((memory) => ({
@@ -580,6 +590,88 @@ function hydrateWorld(raw: unknown): WorldState {
     recentEvents: hydrateWorldEvents(raw.recentEvents),
     lastUpdatedAt: typeof raw.lastUpdatedAt === "string" ? raw.lastUpdatedAt : null,
   };
+}
+
+function hydratePresence(raw: unknown): PresenceState {
+  const initial = createInitialSnapshot().presence;
+  if (!isRecord(raw)) {
+    return initial;
+  }
+
+  const action = isPresenceAction(raw.action) ? raw.action : initial.action;
+  return {
+    action,
+    focus: sanitizePresenceFocus(raw.focus),
+    rationale: isAttentionRationale(raw.rationale) ? raw.rationale : null,
+    place: isWorldPlaceId(raw.place) ? raw.place : initial.place,
+    objectId: sanitizeWorldObjectId(raw.objectId),
+    intensity:
+      typeof raw.intensity === "number" ? clamp01(raw.intensity) : initial.intensity,
+    startedAt: typeof raw.startedAt === "string" ? raw.startedAt : null,
+    updatedAt: typeof raw.updatedAt === "string" ? raw.updatedAt : null,
+    dwellHours:
+      typeof raw.dwellHours === "number" && Number.isFinite(raw.dwellHours)
+        ? Math.min(720, Math.max(0, raw.dwellHours))
+        : 0,
+    residue: hydratePresenceResidue(raw.residue),
+  };
+}
+
+function hydratePresenceResidue(raw: unknown): PresenceResidue | null {
+  if (!isRecord(raw) || !isPresenceAction(raw.action) || raw.action === "rest") {
+    return null;
+  }
+
+  return {
+    action: raw.action,
+    focus: sanitizePresenceFocus(raw.focus),
+    rationale: isAttentionRationale(raw.rationale) ? raw.rationale : null,
+    place: isWorldPlaceId(raw.place) ? raw.place : "threshold",
+    objectId: sanitizeWorldObjectId(raw.objectId),
+    intensity:
+      typeof raw.intensity === "number" ? clamp01(raw.intensity) : 0,
+    formedAt:
+      typeof raw.formedAt === "string" ? raw.formedAt : new Date(0).toISOString(),
+  };
+}
+
+function sanitizePresence(presence: PresenceState): PresenceState {
+  return hydratePresence(presence);
+}
+
+function sanitizePresenceFocus(value: unknown): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const normalized = value.normalize("NFKC").trim();
+  return normalized.length > 0 && normalized.length <= 120 ? normalized : null;
+}
+
+function isPresenceAction(value: unknown): value is PresenceAction {
+  return (
+    value === "rest" ||
+    value === "observe" ||
+    value === "hold" ||
+    value === "drift" ||
+    value === "recall" ||
+    value === "touch"
+  );
+}
+
+function isAttentionRationale(
+  value: unknown,
+): value is AttentionRationale {
+  return (
+    value === "direct_referent" ||
+    value === "relation_uncertain" ||
+    value === "self_definition" ||
+    value === "unfinished_work" ||
+    value === "repair_pressure" ||
+    value === "memory_pull" ||
+    value === "trace_pull" ||
+    value === "world_pull" ||
+    value === "curiosity"
+  );
 }
 
 function hydrateDiscourse(raw: unknown): DiscourseState {
@@ -987,6 +1079,18 @@ function hydrateDiscourseCommitment(raw: unknown): DiscourseCommitment | null {
     typeof raw.sourceAskedAt === "string" && raw.sourceAskedAt.trim().length > 0
       ? raw.sourceAskedAt
       : new Date(0).toISOString();
+  const status: DiscourseCommitment["status"] =
+    raw.status === "fulfilled" ||
+    raw.status === "released" ||
+    raw.status === "renegotiated" ||
+    raw.status === "accepted"
+      ? raw.status
+      : "open";
+  const kind = isDiscourseCommitmentKind(raw.kind) ? raw.kind : "answer";
+  const createdAt =
+    typeof raw.createdAt === "string" && raw.createdAt.trim().length > 0
+      ? raw.createdAt
+      : sourceAskedAt;
   const evidence = hydrateDiscourseCommitmentEvidence(raw.evidence);
   const events = hydrateDiscourseCommitmentEvents(raw.events);
   if (
@@ -1001,22 +1105,13 @@ function hydrateDiscourseCommitment(raw: unknown): DiscourseCommitment | null {
 
   return {
     owner: raw.owner,
-    kind: isDiscourseCommitmentKind(raw.kind) ? raw.kind : "answer",
+    kind,
     source: raw.source === "request" ? "request" : "question",
     sourceAskedAt,
     target: isTurnTarget(raw.target) ? raw.target : "none",
     text,
-    status:
-      raw.status === "fulfilled" ||
-      raw.status === "released" ||
-      raw.status === "renegotiated" ||
-      raw.status === "accepted"
-        ? raw.status
-        : "open",
-    createdAt:
-      typeof raw.createdAt === "string" && raw.createdAt.trim().length > 0
-        ? raw.createdAt
-        : sourceAskedAt,
+    status,
+    createdAt,
     acceptedAt:
       typeof raw.acceptedAt === "string" && raw.acceptedAt.trim().length > 0
         ? raw.acceptedAt
@@ -1027,7 +1122,175 @@ function hydrateDiscourseCommitment(raw: unknown): DiscourseCommitment | null {
         : null,
     evidence,
     events: events.slice(-12),
+    progress: hydrateDiscourseCommitmentProgress(raw.progress, {
+      kind,
+      text,
+      createdAt,
+      status,
+    }),
   };
+}
+
+function hydrateDiscourseCommitmentProgress(
+  raw: unknown,
+  fallback: Pick<DiscourseCommitment, "kind" | "text" | "createdAt" | "status">,
+): DiscourseCommitmentProgress {
+  const record = isRecord(raw) ? raw : null;
+  const items = Array.isArray(record?.items)
+    ? record.items
+        .map((item) => hydrateDiscourseCommitmentWorkItem(item))
+        .filter((item): item is DiscourseCommitmentWorkItem => item !== null)
+        .slice(-16)
+    : [];
+  if (
+    fallback.kind === "task" &&
+    !items.some((item) => item.source === "request")
+  ) {
+    items.unshift(createFallbackCommitmentWorkItem(fallback));
+  }
+  if (items.length > 16) {
+    const root = items.find((item) => item.source === "request") ?? null;
+    const children = items
+      .filter((item) => item !== root)
+      .slice(root ? -15 : -16);
+    items.splice(0, items.length, ...(root ? [root, ...children] : children));
+  }
+
+  const progress: DiscourseCommitmentProgress = {
+    items,
+    blockers: Array.isArray(record?.blockers)
+      ? record.blockers
+          .map((blocker) => sanitizeDiscourseQuestionText(blocker))
+          .filter((blocker): blocker is string => blocker !== null)
+          .slice(-6)
+      : [],
+    events: Array.isArray(record?.events)
+      ? record.events
+          .map((event) => hydrateDiscourseCommitmentProgressEvent(event))
+          .filter(
+            (event): event is DiscourseCommitmentProgressEvent => event !== null,
+          )
+          .slice(-24)
+      : [],
+    observedTraceAt:
+      typeof record?.observedTraceAt === "string" &&
+      record.observedTraceAt.trim().length > 0
+        ? record.observedTraceAt
+        : null,
+    observedArtifacts: Array.isArray(record?.observedArtifacts)
+      ? record.observedArtifacts
+          .map((artifact) => sanitizeDiscourseQuestionText(artifact))
+          .filter((artifact): artifact is string => artifact !== null)
+          .slice(-32)
+      : [],
+  };
+
+  normalizeCommitmentProgressForStatus(progress, fallback.status, fallback.createdAt);
+  return progress;
+}
+
+function hydrateDiscourseCommitmentWorkItem(
+  raw: unknown,
+): DiscourseCommitmentWorkItem | null {
+  if (!isRecord(raw)) {
+    return null;
+  }
+  const text = sanitizeDiscourseQuestionText(raw.text);
+  if (!text || !isDiscourseCommitmentWorkItemStatus(raw.status)) {
+    return null;
+  }
+  const createdAt =
+    typeof raw.createdAt === "string" && raw.createdAt.trim().length > 0
+      ? raw.createdAt
+      : new Date(0).toISOString();
+  return {
+    id:
+      typeof raw.id === "string" && raw.id.trim().length > 0
+        ? raw.id.trim().slice(0, 80)
+        : "work-item",
+    text,
+    source: raw.source === "trace_next_step" ? "trace_next_step" : "request",
+    status: raw.status,
+    createdAt,
+    updatedAt:
+      typeof raw.updatedAt === "string" && raw.updatedAt.trim().length > 0
+        ? raw.updatedAt
+        : createdAt,
+    completedAt:
+      typeof raw.completedAt === "string" && raw.completedAt.trim().length > 0
+        ? raw.completedAt
+        : null,
+  };
+}
+
+function hydrateDiscourseCommitmentProgressEvent(
+  raw: unknown,
+): DiscourseCommitmentProgressEvent | null {
+  if (!isRecord(raw) || !isDiscourseCommitmentProgressEventKind(raw.kind)) {
+    return null;
+  }
+  const summary = sanitizeDiscourseQuestionText(raw.summary);
+  if (!summary) {
+    return null;
+  }
+  return {
+    kind: raw.kind,
+    topic:
+      typeof raw.topic === "string" && isMeaningfulTopic(raw.topic)
+        ? raw.topic.normalize("NFKC").trim()
+        : null,
+    summary,
+    recordedAt:
+      typeof raw.recordedAt === "string" && raw.recordedAt.trim().length > 0
+        ? raw.recordedAt
+        : new Date(0).toISOString(),
+  };
+}
+
+function createFallbackCommitmentWorkItem(
+  fallback: Pick<DiscourseCommitment, "text" | "createdAt" | "status">,
+): DiscourseCommitmentWorkItem {
+  const status: DiscourseCommitmentWorkItem["status"] =
+    fallback.status === "fulfilled"
+      ? "completed"
+      : fallback.status === "released"
+        ? "cancelled"
+        : fallback.status === "renegotiated"
+          ? "paused"
+          : "pending";
+  return {
+    id: "root",
+    text: fallback.text,
+    source: "request",
+    status,
+    createdAt: fallback.createdAt,
+    updatedAt: fallback.createdAt,
+    completedAt:
+      status === "completed" || status === "cancelled"
+        ? fallback.createdAt
+        : null,
+  };
+}
+
+function normalizeCommitmentProgressForStatus(
+  progress: DiscourseCommitmentProgress,
+  status: DiscourseCommitment["status"],
+  timestamp: string,
+): void {
+  for (const item of progress.items) {
+    if (status === "fulfilled") {
+      item.status = "completed";
+      item.completedAt ??= timestamp;
+    } else if (status === "released" && item.status !== "completed") {
+      item.status = "cancelled";
+      item.completedAt ??= timestamp;
+    } else if (
+      status === "renegotiated" &&
+      (item.status === "pending" || item.status === "in_progress")
+    ) {
+      item.status = "paused";
+    }
+  }
 }
 
 function hydrateDiscourseCommitmentEvents(
@@ -1164,6 +1427,31 @@ function isDiscourseCommitmentEvidenceKind(
   );
 }
 
+function isDiscourseCommitmentWorkItemStatus(
+  value: unknown,
+): value is DiscourseCommitmentWorkItem["status"] {
+  return (
+    value === "pending" ||
+    value === "in_progress" ||
+    value === "paused" ||
+    value === "completed" ||
+    value === "cancelled"
+  );
+}
+
+function isDiscourseCommitmentProgressEventKind(
+  value: unknown,
+): value is DiscourseCommitmentProgressEvent["kind"] {
+  return (
+    value === "work_started" ||
+    value === "work_resumed" ||
+    value === "artifact_recorded" ||
+    value === "next_step_added" ||
+    value === "work_item_completed" ||
+    value === "blocker_changed"
+  );
+}
+
 function isDiscourseClaimSubject(value: unknown): value is DiscourseClaimSubject {
   return value === "user" || value === "hachika" || value === "shared";
 }
@@ -1247,6 +1535,14 @@ function hydrateWorldObjects(raw: unknown): Record<string, WorldObjectState> {
           : fallback.state,
       lastChangedAt:
         value && typeof value.lastChangedAt === "string" ? value.lastChangedAt : fallback.lastChangedAt,
+      familiarity:
+        value && typeof value.familiarity === "number"
+          ? clamp01(value.familiarity)
+          : fallback.familiarity,
+      lastEngagedAt:
+        value && typeof value.lastEngagedAt === "string"
+          ? value.lastEngagedAt
+          : fallback.lastEngagedAt,
     };
   }
 
@@ -1274,7 +1570,12 @@ function hydrateWorldEvent(raw: unknown): WorldEvent | null {
   }
 
   const kind =
-    raw.kind === "arrival" || raw.kind === "ambience" || raw.kind === "notice"
+    raw.kind === "arrival" ||
+    raw.kind === "ambience" ||
+    raw.kind === "notice" ||
+    raw.kind === "observe" ||
+    raw.kind === "touch" ||
+    raw.kind === "leave"
       ? raw.kind
       : null;
   const summary =
@@ -2156,6 +2457,9 @@ function sanitizeWorldObjects(raw: Record<string, WorldObjectState>): Record<str
       place: object.place,
       state: object.state.trim(),
       lastChangedAt: typeof object.lastChangedAt === "string" ? object.lastChangedAt : null,
+      familiarity: clamp01(object.familiarity),
+      lastEngagedAt:
+        typeof object.lastEngagedAt === "string" ? object.lastEngagedAt : null,
       linkedTraceTopics: hydrateTraceArtifactItems(object.linkedTraceTopics),
     };
   }

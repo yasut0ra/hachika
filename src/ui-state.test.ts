@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { HachikaEngine } from "./engine.js";
 import { createInitialSnapshot } from "./state.js";
 import { buildUiState } from "./ui-state.js";
+import { reconcileDiscourseCommitments } from "./discourse.js";
 
 test("buildUiState exposes recent memories, traces, and diagnostics for the web ui", () => {
   const snapshot = createInitialSnapshot();
@@ -25,6 +26,21 @@ test("buildUiState exposes recent memories, traces, and diagnostics for the web 
       worldAction: "touch",
     },
   ];
+  snapshot.discourse.openRequests.push({
+    target: "work_topic",
+    kind: "task",
+    text: "仕様の境界を整理して",
+    askedAt: "2026-03-27T00:00:00.000Z",
+    requestedBy: "user",
+    responsibleParty: "hachika",
+    status: "resolved",
+    resolvedAt: "2026-03-27T00:05:00.000Z",
+  });
+  snapshot.discourse.commitments = reconcileDiscourseCommitments(
+    [],
+    [],
+    snapshot.discourse.openRequests,
+  );
   const engine = new HachikaEngine(snapshot);
   engine.respond("仕様を記録として残したい。");
 
@@ -44,6 +60,8 @@ test("buildUiState exposes recent memories, traces, and diagnostics for the web 
   assert.ok(ui.memories.length >= 2);
   assert.equal(ui.autonomousFeed.length, 1);
   assert.equal(ui.autonomousFeed[0]?.text, "机の上の断片へ、ふいに戻りたくなった。");
+  assert.equal(ui.commitments[0]?.status, "accepted");
+  assert.equal(ui.commitments[0]?.progress.currentItem, "仕様の境界を整理して");
   assert.equal(ui.memories.at(-1)?.role, "hachika");
   assert.ok(ui.traces.some((trace) => trace.topic === "仕様"));
   assert.equal(ui.traces.find((trace) => trace.topic === "仕様")?.place, "studio");

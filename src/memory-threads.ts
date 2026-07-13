@@ -1,4 +1,5 @@
 import { extractTopics, topicsLooselyMatch } from "./memory.js";
+import { summarizeTaskCommitmentProgress } from "./discourse.js";
 import { pickPrimaryArtifactItem, readTraceLifecycle } from "./traces.js";
 import type {
   HachikaSnapshot,
@@ -388,10 +389,13 @@ function deriveThreadFrontier(
         textMentionsThread(thread, commitment.text),
     );
   if (activeTask) {
+    const progress = summarizeTaskCommitmentProgress(activeTask);
     return createFrontier(
       thread,
       "open_request",
-      activeTask.text,
+      progress.currentItem
+        ? `次の実行項目: ${progress.currentItem}`
+        : activeTask.text,
       thread.episodes.at(-1)?.traceTopic ?? null,
     );
   }

@@ -2,6 +2,11 @@ import { describeArtifactFiles } from "./artifacts.js";
 import type { ArtifactFile } from "./artifacts.js";
 import { HachikaEngine } from "./engine.js";
 import { deriveEmbodimentState } from "./embodiment.js";
+import {
+  describeTaskCommitmentTiming,
+  summarizeTaskCommitmentProgress,
+  type TaskCommitmentProgressSummary,
+} from "./discourse.js";
 import type { EmbodimentState } from "./embodiment.js";
 import { summarizeLiveGrowthMetrics } from "./growth-metrics.js";
 import type { LiveGrowthMetrics } from "./growth-metrics.js";
@@ -41,6 +46,13 @@ export interface UiStatePayload {
   growth: LiveGrowthMetrics;
   memories: MemoryEntry[];
   autonomousFeed: AutonomousFeedEntry[];
+  commitments: Array<{
+    text: string;
+    status: "open" | "accepted" | "renegotiated" | "fulfilled" | "released";
+    stalled: boolean;
+    inactiveHours: number;
+    progress: TaskCommitmentProgressSummary;
+  }>;
   traces: Array<{
     topic: TraceEntry["topic"];
     kind: TraceEntry["kind"];
@@ -78,6 +90,10 @@ export function buildUiState(
     ? loadResidentLoopStatusSync(residentStatusPath)
     : null;
   const residentLoopHealth = deriveResidentLoopHealth(residentLoop, now);
+  const observedAt =
+    now?.toISOString() ??
+    snapshot.lastInteractionAt ??
+    new Date().toISOString();
 
   return {
     embodiment: deriveEmbodimentState(snapshot, now),
@@ -100,6 +116,26 @@ export function buildUiState(
     growth: summarizeLiveGrowthMetrics(snapshot),
     memories: snapshot.memories.slice(-18),
     autonomousFeed: snapshot.autonomousFeed.slice(-12),
+    commitments: snapshot.discourse.commitments
+      .filter(
+        (commitment) =>
+          commitment.owner === "hachika" && commitment.kind === "task",
+      )
+      .slice(-8)
+      .map((commitment) => {
+        const timing = describeTaskCommitmentTiming(
+          snapshot,
+          commitment,
+          observedAt,
+        );
+        return {
+          text: commitment.text,
+          status: commitment.status,
+          stalled: timing.stalled,
+          inactiveHours: timing.inactiveHours,
+          progress: summarizeTaskCommitmentProgress(commitment),
+        };
+      }),
     traces: sortedTraces(snapshot, 10).map((trace) => ({
       topic: trace.topic,
       kind: trace.kind,

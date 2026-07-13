@@ -79,6 +79,7 @@ import type {
   TraceExtractor,
 } from "./trace-extractor.js";
 import { abandonActivePurpose, updatePurpose } from "./purpose.js";
+import { interruptPresenceForUserTurn } from "./presence.js";
 import { buildResponsePlan, isSocialTurnSignals } from "./response-planner.js";
 import type {
   ResponsePlan,
@@ -4731,6 +4732,7 @@ function applySignals(
   const nextSnapshot = structuredClone(snapshot);
   nextSnapshot.conversationCount = snapshot.conversationCount + 1;
   nextSnapshot.lastInteractionAt = new Date().toISOString();
+  interruptPresenceForUserTurn(nextSnapshot, nextSnapshot.lastInteractionAt);
   // Phase 0: user turn が absence を終わらせる。累積 absence の時計はここでだけ巻き戻る
   nextSnapshot.idleClock = createIdleClock();
   updateDynamicsFromSignals(nextSnapshot, signals);

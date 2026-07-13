@@ -17,7 +17,11 @@ import {
   recentAssistantReplies,
 } from "./expression.js";
 import { summarizeRecentGenerationQuality } from "./generation-quality.js";
-import { describeTaskCommitmentTiming } from "./discourse.js";
+import {
+  describeTaskCommitmentTiming,
+  summarizeTaskCommitmentProgress,
+  type TaskCommitmentProgressSummary,
+} from "./discourse.js";
 import {
   deriveMemoryThreads,
   selectMemoryThread,
@@ -53,6 +57,8 @@ const HACHIKA_REPLY_SYSTEM_PROMPT = [
   "For self-disclosure, prefer one concrete cue about place, handling style, or bodily tendency over abstract identity labels.",
   "activeCommitments are Hachika's unfinished obligations. accepted and renegotiated tasks are not complete.",
   "A stalled task is an attention signal, not an automatic failure. If Hachika truly cannot continue, say the matching task and the renegotiation or release explicitly; otherwise make concrete progress without claiming completion.",
+  "Use activeCommitments.progress to name the current execution item, next step, or blocker. Do not repeat the original request as if repetition itself were progress.",
+  "presence is Hachika's ongoing action or the residue left when the user returned. Let it influence focus, concrete detail, or restraint, but do not narrate hidden state mechanically.",
   "Write plain Japanese only.",
   "Return one to three short sentences.",
   "Do not use markdown, bullet points, speaker labels, or surrounding quotes.",
@@ -139,6 +145,7 @@ interface CommonGenerationPayload {
   initiative: {
     pending: HachikaSnapshot["initiative"]["pending"];
   };
+  presence: HachikaSnapshot["presence"];
   activeCommitments: Array<{
     kind: "answer" | "task" | "style";
     text: string;
@@ -147,6 +154,7 @@ interface CommonGenerationPayload {
     ageHours: number | null;
     inactiveHours: number | null;
     stalled: boolean;
+    progress: TaskCommitmentProgressSummary;
   }>;
   selfModel: {
     narrative: string;
@@ -203,6 +211,8 @@ interface CommonGenerationPayload {
     objectsHere: Array<{
       id: string;
       state: string;
+      familiarity: number;
+      lastEngagedAt: string | null;
       linkedTraceTopics: string[];
     }>;
     recentEvents: string[];
@@ -549,6 +559,7 @@ function buildCommonGenerationPayload(
     initiative: {
       pending: snapshot.initiative.pending,
     },
+    presence: snapshot.presence,
     activeCommitments: snapshot.discourse.commitments
       .filter(
         (commitment) =>
@@ -574,6 +585,7 @@ function buildCommonGenerationPayload(
           ageHours: timing?.ageHours ?? null,
           inactiveHours: timing?.inactiveHours ?? null,
           stalled: timing?.stalled ?? false,
+          progress: summarizeTaskCommitmentProgress(commitment),
         };
       }),
     selfModel: {
@@ -633,6 +645,8 @@ function buildCommonGenerationPayload(
         .map(([id, object]) => ({
           id,
           state: object.state,
+          familiarity: object.familiarity,
+          lastEngagedAt: object.lastEngagedAt,
           linkedTraceTopics: [...(object.linkedTraceTopics ?? [])],
         }))
         .slice(0, 3),
