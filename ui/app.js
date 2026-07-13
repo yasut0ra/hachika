@@ -5,6 +5,8 @@ const avatarSummaryNode = document.getElementById("avatar-summary");
 const avatarPlaceNode = document.getElementById("avatar-place");
 const avatarPostureNode = document.getElementById("avatar-posture");
 const avatarGazeNode = document.getElementById("avatar-gaze");
+const conversationPlaceNode = document.getElementById("conversation-place");
+const conversationCountNode = document.getElementById("conversation-count");
 const stateNode = document.getElementById("state-metrics");
 const worldNode = document.getElementById("world-panel");
 const identityNode = document.getElementById("identity-panel");
@@ -19,11 +21,16 @@ const messageInput = document.getElementById("message-input");
 const proactiveButton = document.getElementById("proactive-button");
 const idleButton = document.getElementById("idle-button");
 const idleHoursInput = document.getElementById("idle-hours");
+const observeButton = document.getElementById("observe-button");
+const closeObserveButton = document.getElementById("close-observe-button");
+const observatoryNode = document.getElementById("observatory");
 const resetButton = document.getElementById("reset-button");
 const UI_POLL_INTERVAL_MS = 4000;
 
 let currentUi = null;
 let knownAutonomousIds = new Set();
+let flashTimer = null;
+let renderedMessageKeys = null;
 
 async function request(path, options = {}) {
   const response = await fetch(path, {
@@ -40,15 +47,28 @@ async function request(path, options = {}) {
 }
 
 function setFlash(text, kind = "info") {
+  if (flashTimer !== null) {
+    window.clearTimeout(flashTimer);
+    flashTimer = null;
+  }
+
   flashNode.textContent = text;
   flashNode.dataset.kind = kind;
+
+  if (text) {
+    flashTimer = window.setTimeout(() => {
+      flashNode.textContent = "";
+      flashTimer = null;
+    }, kind === "error" ? 8000 : 4000);
+  }
 }
 
 function render(ui, options = {}) {
   const announceAutonomy = options.announceAutonomy === true;
   const newAutonomous = syncAutonomousFeed(ui.autonomousFeed, announceAutonomy);
   currentUi = ui;
-  connectionNode.textContent = `Local UI online · auto ${Math.round(UI_POLL_INTERVAL_MS / 1000)}s`;
+  setConnectionState(true);
+  conversationCountNode.textContent = `${ui.summary.conversationCount} turns`;
   renderAvatar(ui.embodiment);
   renderMessages(ui.memories);
   renderState(ui.summary);
@@ -60,7 +80,7 @@ function render(ui, options = {}) {
   renderArtifacts(ui.artifacts);
 
   if (newAutonomous.length > 0) {
-    setFlash(`hachika* ${newAutonomous.at(-1).text}`);
+    setFlash("Hachikaが話しかけました");
   }
 }
 
@@ -98,36 +118,107 @@ function renderAvatar(embodiment) {
   avatarActionNode.textContent = embodiment.action;
   avatarSummaryNode.textContent = embodiment.summary;
   avatarPlaceNode.textContent = `${embodiment.place} · ${embodiment.phase}`;
+  conversationPlaceNode.textContent = `${embodiment.place} · ${embodiment.phase}`;
   avatarPostureNode.textContent = embodiment.posture;
   avatarGazeNode.textContent = `gaze · ${embodiment.gazeTarget}`;
 }
 
 function renderMessages(memories) {
-  messagesNode.innerHTML = "";
+  const visibleMemories = memories.slice(-14);
+  const nextKeys = buildMessageKeys(visibleMemories);
 
-  if (memories.length === 0) {
-    messagesNode.innerHTML = '<p class="empty">まだ会話はありません。</p>';
+  // Polling で同じ state が返った時は、チャット DOM と scroll に一切触れない。
+  if (
+    renderedMessageKeys !== null &&
+    renderedMessageKeys.length === nextKeys.length &&
+    renderedMessageKeys.every((key, index) => key === nextKeys[index])
+  ) {
     return;
   }
 
-  for (const memory of memories.slice(-14)) {
-    const card = document.createElement("article");
-    card.className = `message ${memory.role}`;
+  const initialRender = renderedMessageKeys === null;
+  const wasNearBottom =
+    messagesNode.scrollHeight - messagesNode.scrollTop - messagesNode.clientHeight < 48;
+  const existingCards = new Map(
+    [...messagesNode.querySelectorAll("[data-message-key]")].map((card) => [
+      card.dataset.messageKey,
+      card,
+    ]),
+  );
+  const desiredKeys = new Set(nextKeys);
 
-    const meta = document.createElement("div");
-    meta.className = "message-meta";
-    meta.textContent = `${memory.role === "hachika" ? "hachika" : "you"}${
-      memory.topics.length ? ` · ${memory.topics.join(", ")}` : ""
-    }`;
-
-    const body = document.createElement("p");
-    body.textContent = memory.text;
-
-    card.append(meta, body);
-    messagesNode.append(card);
+  for (const [key, card] of existingCards) {
+    if (!desiredKeys.has(key)) {
+      card.remove();
+      existingCards.delete(key);
+    }
   }
 
-  messagesNode.scrollTop = messagesNode.scrollHeight;
+  if (visibleMemories.length === 0) {
+    messagesNode.replaceChildren(createEmptyConversation());
+    renderedMessageKeys = nextKeys;
+    return;
+  }
+
+  messagesNode.querySelector(".empty")?.remove();
+
+  let cursor = messagesNode.firstElementChild;
+  for (let index = 0; index < visibleMemories.length; index += 1) {
+    const memory = visibleMemories[index];
+    const key = nextKeys[index];
+    const card = existingCards.get(key) ?? createMessageCard(memory, key);
+
+    if (card !== cursor) {
+      messagesNode.insertBefore(card, cursor);
+    }
+    cursor = card.nextElementSibling;
+  }
+
+  renderedMessageKeys = nextKeys;
+
+  if (initialRender || wasNearBottom) {
+    messagesNode.scrollTop = messagesNode.scrollHeight;
+  }
+}
+
+function buildMessageKeys(memories) {
+  const occurrences = new Map();
+
+  return memories.map((memory) => {
+    const base = JSON.stringify([
+      memory.timestamp,
+      memory.role,
+      memory.text,
+      memory.topics,
+    ]);
+    const occurrence = occurrences.get(base) ?? 0;
+    occurrences.set(base, occurrence + 1);
+    return `${base}::${occurrence}`;
+  });
+}
+
+function createMessageCard(memory, key) {
+  const card = document.createElement("article");
+  card.className = `message ${memory.role}`;
+  card.dataset.messageKey = key;
+
+  const meta = document.createElement("div");
+  meta.className = "message-meta";
+  meta.textContent = `${memory.role === "hachika" ? "hachika" : "you"}${
+    memory.topics.length ? ` · ${memory.topics.join(", ")}` : ""
+  }`;
+
+  const body = document.createElement("p");
+  body.textContent = memory.text;
+  card.append(meta, body);
+  return card;
+}
+
+function createEmptyConversation() {
+  const empty = document.createElement("p");
+  empty.className = "empty";
+  empty.textContent = "まだ会話はありません。";
+  return empty;
 }
 
 function renderState(summary) {
@@ -148,7 +239,11 @@ function renderState(summary) {
     for (const [key, value] of Object.entries(values)) {
       const row = document.createElement("div");
       row.className = "metric-row";
-      row.innerHTML = `<span>${key}</span><strong>${formatNumber(value)}</strong>`;
+      row.innerHTML = `
+        <span>${key}</span>
+        <span class="metric-track"><i style="width:${(clamp01(value) * 100).toFixed(1)}%"></i></span>
+        <strong>${formatNumber(value)}</strong>
+      `;
       block.append(row);
     }
 
@@ -159,10 +254,10 @@ function renderState(summary) {
   footer.className = "metric-block";
   footer.innerHTML = `
     <h3>Frame</h3>
-    <div class="metric-row"><span>attachment</span><strong>${formatNumber(summary.attachment)}</strong></div>
-    <div class="metric-row"><span>conversations</span><strong>${summary.conversationCount}</strong></div>
-    <div class="metric-row"><span>last interaction</span><strong>${summary.lastInteractionAt ?? "none"}</strong></div>
-    <div class="metric-row"><span>resident loop</span><strong>${formatResidentLoop(summary.residentLoop, summary.residentLoopHealth)}</strong></div>
+    <div class="metric-row simple"><span>attachment</span><strong>${formatNumber(summary.attachment)}</strong></div>
+    <div class="metric-row simple"><span>conversations</span><strong>${summary.conversationCount}</strong></div>
+    <div class="metric-row simple"><span>last interaction</span><strong>${summary.lastInteractionAt ?? "none"}</strong></div>
+    <div class="metric-row simple"><span>resident loop</span><strong>${formatResidentLoop(summary.residentLoop, summary.residentLoopHealth)}</strong></div>
   `;
   stateNode.append(footer);
 }
@@ -277,7 +372,7 @@ function renderGrowth(growth) {
 
   for (const [label, value] of rows) {
     const row = document.createElement("div");
-    row.className = "metric-row";
+    row.className = "metric-row simple";
     row.innerHTML = `<span>${label}</span><strong>${value}</strong>`;
     block.append(row);
   }
@@ -466,6 +561,24 @@ function clamp01(value) {
   return Math.min(1, Math.max(0, Number(value) || 0));
 }
 
+function setConnectionState(online) {
+  connectionNode.dataset.state = online ? "online" : "offline";
+  const label = connectionNode.querySelector("span");
+  if (label) {
+    label.textContent = online ? "local" : "offline";
+  }
+}
+
+function setObservatoryOpen(open) {
+  observatoryNode.hidden = !open;
+  observeButton.setAttribute("aria-expanded", String(open));
+  observeButton.classList.toggle("is-active", open);
+
+  if (open) {
+    observatoryNode.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+}
+
 function formatDurationMs(ms) {
   if (ms < 1000) {
     return `${ms}ms`;
@@ -505,7 +618,7 @@ composer.addEventListener("submit", async (event) => {
     return;
   }
 
-  setFlash("Sending…");
+  setFlash("送信中…");
 
   try {
     const payload = await request("/api/message", {
@@ -514,14 +627,30 @@ composer.addEventListener("submit", async (event) => {
     });
     render(payload.ui);
     messageInput.value = "";
-    setFlash(`hachika> ${payload.reply}`);
+    setFlash("");
   } catch (error) {
     setFlash(error instanceof Error ? error.message : "send_failed", "error");
   }
 });
 
+messageInput.addEventListener("keydown", (event) => {
+  if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
+    event.preventDefault();
+    composer.requestSubmit();
+  }
+});
+
+observeButton.addEventListener("click", () => {
+  setObservatoryOpen(observatoryNode.hidden);
+});
+
+closeObserveButton.addEventListener("click", () => {
+  setObservatoryOpen(false);
+  document.getElementById("top")?.scrollIntoView({ behavior: "smooth", block: "start" });
+});
+
 proactiveButton.addEventListener("click", async () => {
-  setFlash("Emitting proactive line…");
+  setFlash("呼びかけを待っています…");
 
   try {
     const payload = await request("/api/proactive", {
@@ -529,7 +658,7 @@ proactiveButton.addEventListener("click", async () => {
       body: JSON.stringify({ force: true }),
     });
     render(payload.ui);
-    setFlash(payload.message ? `hachika* ${payload.message}` : "no proactive line");
+    setFlash(payload.message ? "Hachikaが話しかけました" : "今は静かなままです");
   } catch (error) {
     setFlash(error instanceof Error ? error.message : "proactive_failed", "error");
   }
@@ -537,7 +666,7 @@ proactiveButton.addEventListener("click", async () => {
 
 idleButton.addEventListener("click", async () => {
   const hours = Number(idleHoursInput.value);
-  setFlash("Applying idle time…");
+  setFlash("時間を進めています…");
 
   try {
     const payload = await request("/api/idle", {
@@ -545,18 +674,18 @@ idleButton.addEventListener("click", async () => {
       body: JSON.stringify({ hours }),
     });
     render(payload.ui);
-    setFlash(
-      payload.proactive
-        ? `idled ${payload.hours}h · hachika* ${payload.proactive}`
-        : `idled ${payload.hours}h`,
-    );
+    setFlash(payload.proactive ? `${payload.hours}h · Hachikaが話しかけました` : `${payload.hours}h進めました`);
   } catch (error) {
     setFlash(error instanceof Error ? error.message : "idle_failed", "error");
   }
 });
 
 resetButton.addEventListener("click", async () => {
-  setFlash("Resetting state…");
+  if (!window.confirm("Hachikaの状態と記憶をResetしますか？")) {
+    return;
+  }
+
+  setFlash("Resetしています…");
 
   try {
     const payload = await request("/api/reset", {
@@ -564,7 +693,8 @@ resetButton.addEventListener("click", async () => {
       body: JSON.stringify({}),
     });
     render(payload.ui);
-    setFlash("state reset");
+    setObservatoryOpen(false);
+    setFlash("Resetしました");
   } catch (error) {
     setFlash(error instanceof Error ? error.message : "reset_failed", "error");
   }
@@ -576,7 +706,7 @@ request("/api/state")
     startPolling();
   })
   .catch((error) => {
-    connectionNode.textContent = "Offline";
+    setConnectionState(false);
     setFlash(error instanceof Error ? error.message : "initial_load_failed", "error");
   });
 
@@ -586,7 +716,7 @@ function startPolling() {
       const ui = await request("/api/state");
       render(ui, { announceAutonomy: true });
     } catch (error) {
-      connectionNode.textContent = "Offline";
+      setConnectionState(false);
       setFlash(error instanceof Error ? error.message : "poll_failed", "error");
     }
   }, UI_POLL_INTERVAL_MS);

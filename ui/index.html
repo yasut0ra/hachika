@@ -3,39 +3,45 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Hachika Console</title>
+    <title>Hachika</title>
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
-    <div class="backdrop"></div>
-    <main class="shell">
-      <header class="hero">
-        <div>
-          <p class="eyebrow">Hachika Console</p>
-          <h1>内面を見ながら会話する。</h1>
-          <p class="lede">CLI の代わりではなく、状態と痕跡を観測しながら触るための最小 UI。</p>
-        </div>
-        <div class="status" id="connection-status">Loading…</div>
-      </header>
-
-      <section class="toolbar">
-        <button id="proactive-button" class="accent">Proactive</button>
-        <label class="idle-control">
-          <span>Idle</span>
-          <input id="idle-hours" type="number" min="1" step="1" value="8" />
-          <button id="idle-button">Run</button>
+    <header class="topbar">
+      <a class="brand" href="#top" aria-label="Hachika">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <span>hachika</span>
+      </a>
+      <div class="topbar-actions">
+        <button id="proactive-button" class="quiet-button" title="Hachikaから声をかけてもらう">
+          呼びかけ
+        </button>
+        <label class="time-control" title="静かな時間を進める">
+          <span>+</span>
+          <input id="idle-hours" aria-label="進める時間" type="number" min="1" step="1" value="8" />
+          <span>h</span>
+          <button id="idle-button" aria-label="時間を進める">進める</button>
         </label>
-        <button id="reset-button" class="danger">Reset</button>
-        <div class="flash" id="flash"></div>
-      </section>
+        <button
+          id="observe-button"
+          class="observe-button"
+          type="button"
+          aria-expanded="false"
+          aria-controls="observatory"
+        >
+          内面
+        </button>
+      </div>
+      <div class="connection" id="connection-status"><i></i><span>接続中</span></div>
+    </header>
 
-      <section class="layout">
+    <div class="flash" id="flash" aria-live="polite"></div>
+
+    <main class="shell" id="top">
+      <section class="presence-layout">
         <article class="panel panel-avatar">
           <div class="panel-head avatar-head">
-            <div>
-              <p class="eyebrow">Embodiment</p>
-              <h2>Hachika</h2>
-            </div>
+            <h1>Hachika</h1>
             <span class="presence-state" id="avatar-action">rest</span>
           </div>
           <div
@@ -81,69 +87,74 @@
           </div>
         </article>
 
-        <article class="panel panel-chat">
-          <div class="panel-head">
-            <h2>Conversation</h2>
+        <article class="panel panel-chat" aria-label="Hachikaとの会話">
+          <div class="conversation-head">
+            <div>
+              <span class="conversation-name">会話</span>
+              <span class="conversation-place" id="conversation-place">threshold</span>
+            </div>
+            <span class="conversation-count" id="conversation-count">0 turns</span>
           </div>
           <div class="messages" id="messages"></div>
           <form id="composer" class="composer">
             <textarea
               id="message-input"
-              rows="3"
-              placeholder="Hachika に話しかける"
+              rows="2"
+              placeholder="話しかける"
             ></textarea>
-            <button type="submit" class="accent">Send</button>
+            <button type="submit" class="send-button" aria-label="送信">送る</button>
           </form>
         </article>
+      </section>
 
-        <article class="panel">
-          <div class="panel-head">
-            <h2>State</h2>
+      <section class="observatory" id="observatory" hidden>
+        <div class="observatory-head">
+          <div>
+            <span class="section-kicker">Observe</span>
+            <h2>内面</h2>
           </div>
+          <div class="observatory-actions">
+            <button id="close-observe-button" class="quiet-button" type="button">閉じる</button>
+            <button id="reset-button" class="danger-button" type="button">Reset</button>
+          </div>
+        </div>
+
+        <div class="inspector-grid">
+          <details class="inspector-card" open>
+            <summary>State <span>drive · body · reactivity</span></summary>
           <div class="metrics" id="state-metrics"></div>
-        </article>
+          </details>
 
-        <article class="panel">
-          <div class="panel-head">
-            <h2>World</h2>
-          </div>
+          <details class="inspector-card" open>
+            <summary>World <span>place · object · event</span></summary>
           <div class="stack" id="world-panel"></div>
-        </article>
+          </details>
 
-        <article class="panel">
-          <div class="panel-head">
-            <h2>Identity</h2>
-          </div>
+          <details class="inspector-card">
+            <summary>Identity <span>arc · purpose · narrative</span></summary>
           <div class="stack" id="identity-panel"></div>
-        </article>
+          </details>
 
-        <article class="panel">
-          <div class="panel-head">
-            <h2>Diagnostics</h2>
-          </div>
-          <div class="stack" id="diagnostics-panel"></div>
-        </article>
-
-        <article class="panel">
-          <div class="panel-head">
-            <h2>Growth</h2>
-          </div>
+          <details class="inspector-card">
+            <summary>Growth <span>life · autonomy · generation</span></summary>
           <div class="metrics" id="growth-metrics"></div>
-        </article>
+          </details>
 
-        <article class="panel panel-wide">
-          <div class="panel-head">
-            <h2>Traces</h2>
-          </div>
+          <details class="inspector-card inspector-wide">
+            <summary>Traces <span>記憶から残ったもの</span></summary>
           <div class="trace-list" id="traces-panel"></div>
-        </article>
+          </details>
 
-        <article class="panel panel-wide">
-          <div class="panel-head">
-            <h2>Artifacts</h2>
-          </div>
+          <details class="inspector-card inspector-wide">
+            <summary>Artifacts <span>外へ残した痕跡</span></summary>
           <div class="artifact-list" id="artifacts-panel"></div>
-        </article>
+          </details>
+
+          <details class="inspector-card inspector-wide">
+            <summary>Diagnostics <span>runtime · LLM · fallback</span></summary>
+            <div class="stack" id="diagnostics-panel"></div>
+          </details>
+        </div>
       </section>
     </main>
 
