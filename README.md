@@ -21,12 +21,14 @@ npm run ui
 
 CLI で試す場合は `npm run dev`、UI なしで常在 loop だけ動かす場合は `npm run loop` です。
 
-複数の個体を並走させる場合は、個体ごとに `HACHIKA_DATA_DIR` と UI port を分けます。snapshot、artifact、resident lock / status、日次metricsはすべて指定したrootの下へ保存されます。
+複数の個体を並走させる場合は、個体ごとに `HACHIKA_DATA_DIR` と UI port を分けます。snapshot、artifact、resident lock / status、日次metricsとarchiveはすべて指定したrootの下へ保存されます。
 
 ```bash
 HACHIKA_DATA_DIR=individuals/a HACHIKA_UI_PORT=3042 npm run ui
 HACHIKA_DATA_DIR=individuals/b HACHIKA_UI_PORT=3043 npm run ui
 ```
+
+長期運用では、個体ごとに`HACHIKA_DATA_DIR=individuals/a npm run maintain`をcronまたはlaunchdから1日1回実行します。日次snapshotを固定し、resident heartbeatがstale・inactive・欠損なら非0で終了します。
 
 ### 2. 五つの会話を試す（10分）
 

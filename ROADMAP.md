@@ -47,7 +47,7 @@ Sprint 0 進捗:
 
 - [x] **`HACHIKA_DATA_DIR`**: CLI / Web UI / resident daemonのsnapshot・artifact・lock・statusを個体root単位で分離。`individuals/a`と`individuals/b`の同時resident起動まで確認（2026-07-17）
 - [x] **metrics 時系列ログ**: resident loopの正常commit後、個体rootの`metrics-log.jsonl`へ一日一度だけconstitution・plasticity・attachment・urge・aspiration・voice・journal・turn数・snapshot/実装revisionを記録。timezone境界と破損行からの回復を固定（2026-07-17）
-- [ ] 日次アーカイブ + heartbeat監視
+- [x] **日次アーカイブ + heartbeat監視**: `npm run maintain`で日付別snapshotを上書きせず原子的に保存し、resident heartbeatのfresh/stale/inactive/missingを判定。異常時はstderr・非0終了・任意Webhookで通知（2026-07-17）
 - [ ] `npm run report`
 - [ ] 凍結準備とbirth記録
 
