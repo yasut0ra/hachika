@@ -1,6 +1,11 @@
 import { syncArtifacts } from "./artifacts.js";
 import type { AutonomyDirector } from "./autonomy-director.js";
 import { runWithConflictRetry } from "./conflict-retry.js";
+import {
+  appendDailyLifeMetrics,
+  resolveImplementationRevision,
+  resolveMetricsTimeZone,
+} from "./life-metrics.js";
 import { commitSnapshot, loadSnapshot } from "./persistence.js";
 import type { ProactiveDirector } from "./proactive-director.js";
 import type { ReplyGenerator } from "./reply-generator.js";
@@ -16,12 +21,14 @@ import {
   runResidentLoopTick,
   type ResidentLoopConfig,
 } from "./resident-loop.js";
+import type { HachikaSnapshot } from "./types.js";
 
 export interface ResidentLoopRuntimeOptions {
   snapshotPath: string;
   artifactsDir: string;
   lockPath: string;
   statusPath: string;
+  metricsLogPath: string;
   config: ResidentLoopConfig;
   replyDescription: string;
   replyGenerator?: ReplyGenerator | null;
@@ -29,6 +36,8 @@ export interface ResidentLoopRuntimeOptions {
   proactiveDirector?: ProactiveDirector | null;
   pid?: number;
   now?: () => Date;
+  implementationRevision?: string;
+  metricsTimeZone?: string;
   log?: (message: string) => void;
   error?: (message: string) => void;
 }
@@ -36,6 +45,8 @@ export interface ResidentLoopRuntimeOptions {
 export class ResidentLoopRuntime {
   private readonly options: ResidentLoopRuntimeOptions;
   private readonly status: ResidentLoopStatus;
+  private readonly implementationRevision: string;
+  private readonly metricsTimeZone: string;
   private lock: ResidentLoopLock | null = null;
   private timer: NodeJS.Timeout | null = null;
   private tickPromise: Promise<void> | null = null;
@@ -45,6 +56,9 @@ export class ResidentLoopRuntime {
 
   constructor(options: ResidentLoopRuntimeOptions) {
     this.options = options;
+    this.implementationRevision =
+      options.implementationRevision?.trim() || resolveImplementationRevision();
+    this.metricsTimeZone = resolveMetricsTimeZone(options.metricsTimeZone);
     const startedAtDate = this.nowDate();
     const startedAt = startedAtDate.toISOString();
     this.lastWallAdvanceAtMs = startedAtDate.getTime();
@@ -165,6 +179,7 @@ export class ResidentLoopRuntime {
     this.status.heartbeatAt = tickStartedAt.toISOString();
 
     try {
+      let committedSnapshot: HachikaSnapshot | null = null;
       const outcome = await runWithConflictRetry({
         operate: async () => {
           const snapshot = await loadSnapshot(this.options.snapshotPath);
@@ -185,6 +200,7 @@ export class ResidentLoopRuntime {
           }
 
           await syncArtifacts(committed.snapshot, this.options.artifactsDir);
+          committedSnapshot = committed.snapshot;
           return true;
         },
       });
@@ -200,8 +216,17 @@ export class ResidentLoopRuntime {
       }
 
       const result = outcome.result;
-      const tickAt = this.isoNow();
       this.lastWallAdvanceAtMs = tickStartedAt.getTime();
+      const metrics = await appendDailyLifeMetrics(
+        this.options.metricsLogPath,
+        committedSnapshot ?? result.snapshot,
+        {
+          now: tickStartedAt,
+          timeZone: this.metricsTimeZone,
+          implementationRevision: this.implementationRevision,
+        },
+      );
+      const tickAt = this.isoNow();
       this.status.active = true;
       this.status.heartbeatAt = tickAt;
       this.status.lastTickAt = tickAt;
@@ -225,6 +250,12 @@ export class ResidentLoopRuntime {
       }
 
       await this.flushStatus();
+
+      if (metrics.appended) {
+        this.options.log?.(
+          `[loop/metrics] ${metrics.record.date} revision:${metrics.record.implementationRevision}`,
+        );
+      }
 
       for (const activity of result.internalActivities) {
         this.options.log?.(`[loop/internal] ${formatResidentActivity(activity)}`);

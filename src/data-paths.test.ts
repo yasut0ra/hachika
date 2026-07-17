@@ -58,7 +58,7 @@ test("absolute HACHIKA_DATA_DIR remains outside the process cwd", () => {
   assert.equal(paths.artifactsDir, resolve(absolute, "artifacts"));
 });
 
-test("two individual roots separate snapshot, artifacts, lock, and status", () => {
+test("two individual roots separate all persistent and operational paths", () => {
   const a = resolveHachikaDataPaths({ cwd: CWD, dataDir: "individuals/a" });
   const b = resolveHachikaDataPaths({ cwd: CWD, dataDir: "individuals/b" });
 
@@ -67,6 +67,8 @@ test("two individual roots separate snapshot, artifacts, lock, and status", () =
     "artifactsDir",
     "residentLockPath",
     "residentStatusPath",
+    "metricsLogPath",
+    "archiveSnapshotsDir",
   ] as const) {
     assert.notEqual(a[key], b[key]);
   }

@@ -32,6 +32,7 @@ const {
   artifactsDir,
   residentLockPath,
   residentStatusPath,
+  metricsLogPath,
 } = resolveHachikaDataPaths();
 const uiDir = resolve(process.cwd(), "ui");
 const host = process.env.HACHIKA_UI_HOST?.trim() || "127.0.0.1";
@@ -52,6 +53,7 @@ const residentLoop = new ResidentLoopRuntime({
   artifactsDir,
   lockPath: residentLockPath,
   statusPath: residentStatusPath,
+  metricsLogPath,
   config: readResidentLoopConfigFromEnv(),
   replyDescription: describeReplyGenerator(replyGenerator),
   replyGenerator,

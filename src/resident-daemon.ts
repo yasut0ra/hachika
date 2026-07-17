@@ -23,6 +23,7 @@ const {
   artifactsDir,
   residentLockPath,
   residentStatusPath,
+  metricsLogPath,
 } = resolveHachikaDataPaths();
 
 const config = readResidentLoopConfigFromEnv();
@@ -34,6 +35,7 @@ const runtime = new ResidentLoopRuntime({
   artifactsDir,
   lockPath: residentLockPath,
   statusPath: residentStatusPath,
+  metricsLogPath,
   config,
   replyDescription: describeReplyGenerator(replyGenerator),
   replyGenerator,

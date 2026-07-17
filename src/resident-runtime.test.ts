@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
+import { readLifeMetricsLog } from "./life-metrics.js";
 import { commitSnapshot, loadSnapshot } from "./persistence.js";
 import { loadResidentLoopStatus } from "./resident-monitor.js";
 import {
@@ -19,7 +20,14 @@ test("resident runtime owns the loop lifecycle and writes a live heartbeat", asy
   const artifactsDir = join(rootDir, "artifacts");
   const lockPath = join(rootDir, "resident-lock.json");
   const statusPath = join(rootDir, "resident-status.json");
-  const runtime = createRuntime({ snapshotPath, artifactsDir, lockPath, statusPath });
+  const metricsLogPath = join(rootDir, "metrics-log.jsonl");
+  const runtime = createRuntime({
+    snapshotPath,
+    artifactsDir,
+    lockPath,
+    statusPath,
+    metricsLogPath,
+  });
 
   try {
     await commitSnapshot(snapshotPath, createInitialSnapshot());
@@ -31,6 +39,10 @@ test("resident runtime owns the loop lifecycle and writes a live heartbeat", asy
     assert.equal(activeStatus?.pid, process.pid);
     assert.ok(activeStatus?.lastTickAt);
     assert.equal(existsSync(lockPath), true);
+    const metrics = await readLifeMetricsLog(metricsLogPath);
+    assert.equal(metrics.length, 1);
+    assert.equal(metrics[0]?.implementationRevision, "test-revision");
+    assert.equal(metrics[0]?.snapshot.revision, 2);
 
     await runtime.stop("test");
 
@@ -51,6 +63,7 @@ test("resident runtime refuses to replace a live loop owned by another runtime",
     artifactsDir: join(rootDir, "artifacts"),
     lockPath: join(rootDir, "resident-lock.json"),
     statusPath: join(rootDir, "resident-status.json"),
+    metricsLogPath: join(rootDir, "metrics-log.jsonl"),
   };
   const first = createRuntime(paths);
   const second = createRuntime(paths);
@@ -77,6 +90,7 @@ test("resident runtime advances the substrate by actual wall-clock elapsed time"
     artifactsDir: join(rootDir, "artifacts"),
     lockPath: join(rootDir, "resident-lock.json"),
     statusPath: join(rootDir, "resident-status.json"),
+    metricsLogPath: join(rootDir, "metrics-log.jsonl"),
   };
   let now = new Date("2026-04-01T00:00:00.000Z");
   const initial = createInitialSnapshot();
@@ -89,6 +103,8 @@ test("resident runtime advances the substrate by actual wall-clock elapsed time"
     },
     replyDescription: "local",
     now: () => now,
+    implementationRevision: "test-revision",
+    metricsTimeZone: "UTC",
   });
 
   try {
@@ -113,6 +129,7 @@ function createRuntime(paths: {
   artifactsDir: string;
   lockPath: string;
   statusPath: string;
+  metricsLogPath: string;
 }): ResidentLoopRuntime {
   return new ResidentLoopRuntime({
     ...paths,
@@ -121,5 +138,7 @@ function createRuntime(paths: {
       idleHoursPerTick: 0.5,
     },
     replyDescription: "local",
+    implementationRevision: "test-revision",
+    metricsTimeZone: "UTC",
   });
 }
