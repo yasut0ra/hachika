@@ -3,6 +3,7 @@ import test from "node:test";
 
 import { createInitialSnapshot } from "./state.js";
 import {
+  appendDailyWorldEventIfDue,
   advanceWorldByIdle,
   advanceWorldFromInteraction,
   formatWorldObjectState,
@@ -12,6 +13,88 @@ import {
   performWorldActionFromTurn,
   syncWorldObjectTraceLinks,
 } from "./world.js";
+
+test("daily world event makes one deterministic local-day check", () => {
+  const quietDay = createInitialSnapshot();
+  assert.equal(
+    appendDailyWorldEventIfDue(quietDay, {
+      individualId: "individual-a",
+      now: new Date("2026-08-01T12:00:00.000Z"),
+      timeZone: "UTC",
+    }),
+    null,
+  );
+  assert.equal(quietDay.world.lastDailyEventCheckDate, "2026-08-01");
+  assert.deepEqual(quietDay.world.recentEvents, []);
+
+  assert.equal(
+    appendDailyWorldEventIfDue(quietDay, {
+      individualId: "individual-a",
+      now: new Date("2026-08-01T20:00:00.000Z"),
+      timeZone: "UTC",
+    }),
+    null,
+  );
+});
+
+test("daily world event is reproducible per individual and leaves a local reaction", () => {
+  const first = createInitialSnapshot();
+  first.world.currentPlace = "studio";
+  const repeated = structuredClone(first);
+  const options = {
+    individualId: "individual-a",
+    now: new Date("2026-08-01T15:30:00.000Z"),
+    timeZone: "Asia/Tokyo",
+  };
+
+  const firstEvent = appendDailyWorldEventIfDue(first, options);
+  const repeatedEvent = appendDailyWorldEventIfDue(repeated, options);
+
+  assert.ok(firstEvent);
+  assert.deepEqual(repeatedEvent, firstEvent);
+  assert.equal(firstEvent.kind, "occurrence");
+  assert.equal(firstEvent.place, "studio");
+  assert.equal(first.world.lastDailyEventCheckDate, "2026-08-02");
+  assert.equal(first.world.objects.desk?.familiarity, 0.01);
+  assert.equal(first.world.objects.desk?.lastEngagedAt, options.now.toISOString());
+  assert.match(first.world.objects.desk?.state ?? "", /机/);
+
+  assert.equal(
+    appendDailyWorldEventIfDue(first, {
+      ...options,
+      now: new Date("2026-08-02T01:00:00.000Z"),
+    }),
+    null,
+  );
+
+  assert.equal(
+    appendDailyWorldEventIfDue(first, {
+      ...options,
+      now: new Date("2026-08-02T15:30:00.000Z"),
+    }),
+    null,
+  );
+  const recurringEvent = appendDailyWorldEventIfDue(first, {
+    ...options,
+    now: new Date("2026-08-03T15:30:00.000Z"),
+  });
+  assert.ok(recurringEvent);
+  assert.equal(
+    first.world.recentEvents.filter((event) => event.kind === "occurrence").length,
+    2,
+  );
+
+  const otherIndividual = createInitialSnapshot();
+  otherIndividual.world.currentPlace = "studio";
+  assert.equal(
+    appendDailyWorldEventIfDue(otherIndividual, {
+      ...options,
+      individualId: "individual-b",
+    }),
+    null,
+  );
+  assert.equal(otherIndividual.world.lastDailyEventCheckDate, "2026-08-02");
+});
 
 test("interaction can move the world toward the studio on focused work cues", () => {
   const snapshot = createInitialSnapshot();

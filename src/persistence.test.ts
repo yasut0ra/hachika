@@ -34,6 +34,28 @@ test("persistence preserves dream journal entries", async () => {
   }
 });
 
+test("persistence preserves daily world event state", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "hachika-world-event-persistence-"));
+  const filePath = join(dir, "hachika-state.json");
+  const snapshot = createInitialSnapshot();
+  snapshot.world.lastDailyEventCheckDate = "2026-08-02";
+  snapshot.world.recentEvents.push({
+    timestamp: "2026-08-02T00:00:00.000Z",
+    kind: "occurrence",
+    place: "threshold",
+    summary: "灯りが一度だけ小さく瞬いた。",
+  });
+
+  try {
+    await saveSnapshot(filePath, snapshot);
+    const loaded = await loadSnapshot(filePath);
+    assert.equal(loaded.world.lastDailyEventCheckDate, "2026-08-02");
+    assert.deepEqual(loaded.world.recentEvents, snapshot.world.recentEvents);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("sanitizeSnapshot removes low-information topics and repairs polluted traces", () => {
   const snapshot = createInitialSnapshot();
   snapshot.preferences = {
@@ -799,7 +821,7 @@ test("loadSnapshot seeds latent dynamics from older visible-only snapshots", asy
 
     const loaded = await loadSnapshot(filePath);
 
-    assert.equal(loaded.version, 33);
+    assert.equal(loaded.version, 34);
     assert.equal(loaded.revision, 3);
     assert.equal(loaded.discourse.hachikaName?.value, "ハチカ");
     assert.ok(

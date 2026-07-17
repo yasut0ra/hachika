@@ -27,7 +27,7 @@ body / urges
 - embodimentは5分だけのactivity表示ではなくongoing presenceを演じ、return residueも視線に残す
 - wording generatorはpresenceを参照できるが、隠れた内部状態を機械的に説明しない
 
-Snapshot versionは33。旧snapshotには静かな`rest` presence、world objectのfamiliarity初期値、residueの経過時間を補う。
+Snapshot versionは34。旧snapshotには静かな`rest` presence、world objectのfamiliarity初期値、residueの経過時間、日次world eventの未評価markerを補う。
 
 ## Phase 2: continuous lived time
 

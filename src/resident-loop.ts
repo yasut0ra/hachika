@@ -1,15 +1,22 @@
 import { HachikaEngine } from "./engine.js";
 import { appendDailyDreamIfDue } from "./journal.js";
+import { appendDailyWorldEventIfDue } from "./world.js";
 import type { AutonomyDirector } from "./autonomy-director.js";
 import type { ProactiveDirector } from "./proactive-director.js";
 import type { ReplyGenerator } from "./reply-generator.js";
-import type { AutonomousFeedEntry, HachikaSnapshot, InitiativeActivity } from "./types.js";
+import type {
+  AutonomousFeedEntry,
+  HachikaSnapshot,
+  InitiativeActivity,
+  WorldEvent,
+} from "./types.js";
 
 export interface ResidentLoopTickOptions {
   idleHours: number;
   clockMode?: "simulated" | "wall";
   now?: Date;
   timeZone?: string;
+  individualId?: string;
   autonomyDirector?: AutonomyDirector | null;
   replyGenerator?: ReplyGenerator | null;
   proactiveDirector?: ProactiveDirector | null;
@@ -21,6 +28,7 @@ export interface ResidentLoopTickResult {
   internalActivities: InitiativeActivity[];
   outwardActivities: InitiativeActivity[];
   activities: InitiativeActivity[];
+  worldEvent: WorldEvent | null;
 }
 
 export interface ResidentLoopConfig {
@@ -82,6 +90,13 @@ export async function runResidentLoopTick(
     ...(options.now ? { now: options.now } : {}),
     ...(options.timeZone ? { timeZone: options.timeZone } : {}),
   });
+  const worldEvent = options.individualId
+    ? appendDailyWorldEventIfDue(nextSnapshot, {
+        individualId: options.individualId,
+        ...(options.now ? { now: options.now } : {}),
+        ...(options.timeZone ? { timeZone: options.timeZone } : {}),
+      })
+    : null;
   const outwardActivities = diffInitiativeHistory(
     historyBeforeOutward,
     nextSnapshot.initiative.history ?? [],
@@ -97,6 +112,7 @@ export async function runResidentLoopTick(
     internalActivities,
     outwardActivities,
     activities,
+    worldEvent,
   };
 }
 

@@ -261,7 +261,7 @@ test("version 32 residue migrates with a zero elapsed-time baseline", () => {
 
   const migrated = sanitizeSnapshot(legacy);
 
-  assert.equal(migrated.version, 33);
+  assert.equal(migrated.version, 34);
   assert.equal(migrated.presence.residue?.ageHours, 0);
 });
 

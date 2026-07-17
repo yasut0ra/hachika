@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "experimentId": "hachika-life-2026",
+  "implementation": {
+    "tag": "v3-life-1"
+  },
+  "schedule": {
+    "birthDate": "2026-08-01",
+    "endDate": "2026-10-30",
+    "timeZone": "Asia/Tokyo"
+  },
+  "runtime": {
+    "host": "<always-on-host-name>",
+    "nodeVersion": "<node-version-on-host>",
+    "loopIntervalMs": 15000,
+    "fixedIdleHoursPerTick": null
+  },
+  "llm": {
+    "provider": "openai",
+    "baseUrl": "https://api.openai.com/v1",
+    "defaultModel": "gpt-5-mini",
+    "roleModels": {}
+  },
+  "fork": {
+    "enabled": true,
+    "day": 45
+  },
+  "publication": "repository lab notes",
+  "individuals": [
+    {
+      "id": "A",
+      "name": "<choose-name-a>",
+      "dataDir": "individuals/a",
+      "seed": "hachika-life-a",
+      "condition": "warm"
+    },
+    {
+      "id": "B",
+      "name": "<choose-name-b>",
+      "dataDir": "individuals/b",
+      "seed": "hachika-life-b",
+      "condition": "quiet"
+    }
+  ]
+}

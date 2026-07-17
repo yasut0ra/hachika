@@ -401,6 +401,7 @@ export type WorldEventKind =
   | "arrival"
   | "ambience"
   | "notice"
+  | "occurrence"
   | WorldActionKind;
 
 export interface WorldEvent {
@@ -417,6 +418,7 @@ export interface WorldState {
   places: Record<WorldPlaceId, WorldPlaceState>;
   objects: Record<string, WorldObjectState>;
   recentEvents: WorldEvent[];
+  lastDailyEventCheckDate: string | null;
   lastUpdatedAt: string | null;
 }
 

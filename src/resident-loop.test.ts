@@ -120,6 +120,32 @@ test("resident loop writes at most one deterministic dream per local day", async
   );
 });
 
+test("resident loop evaluates one seeded world occurrence per local day", async () => {
+  const first = await runResidentLoopTick(createInitialSnapshot(), {
+    idleHours: 0,
+    now: new Date("2026-08-02T12:00:00.000Z"),
+    timeZone: "UTC",
+    individualId: "individual-a",
+  });
+  const duplicate = await runResidentLoopTick(first.snapshot, {
+    idleHours: 0,
+    now: new Date("2026-08-02T20:00:00.000Z"),
+    timeZone: "UTC",
+    individualId: "individual-a",
+  });
+
+  assert.ok(first.worldEvent);
+  assert.equal(first.worldEvent.kind, "occurrence");
+  assert.equal(first.snapshot.world.lastDailyEventCheckDate, "2026-08-02");
+  assert.equal(duplicate.worldEvent, null);
+  assert.equal(
+    duplicate.snapshot.world.recentEvents.filter(
+      (event) => event.kind === "occurrence",
+    ).length,
+    1,
+  );
+});
+
 test("resident loop can reactivate a current world object trace after quiet observation", async () => {
   const snapshot = createInitialSnapshot();
   snapshot.lastInteractionAt = "2026-03-20T10:00:00.000Z";

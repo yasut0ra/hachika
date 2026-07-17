@@ -29,6 +29,7 @@ test("migration fixtures hydrate representative historical snapshots into the cu
     assert.equal(snapshot.revision, 7);
     assert.equal(snapshot.world.currentPlace, "studio");
     assert.equal(snapshot.world.clockHour, 14.5);
+    assert.equal(snapshot.world.lastDailyEventCheckDate, null);
     assert.equal(snapshot.dynamics.trust, 0.62);
     assert.equal(snapshot.discourse.userName?.value, "やすとら");
     assert.equal(snapshot.discourse.recentClaims[0]?.text, "私は静かな場所が好き");

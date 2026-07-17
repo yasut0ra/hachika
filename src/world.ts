@@ -9,6 +9,10 @@ import type {
   WorldPlaceState,
   WorldState,
 } from "./types.js";
+import {
+  formatCalendarDate,
+  resolveMetricsTimeZone,
+} from "./life-metrics.js";
 
 export const WORLD_PLACE_IDS = ["threshold", "studio", "archive"] as const satisfies readonly WorldPlaceId[];
 
@@ -46,6 +50,49 @@ const OBJECT_ALIASES: Record<string, readonly string[]> = {
 const OBSERVE_MARKERS = ["見て", "見せ", "眺め", "観察", "look", "show"];
 const TOUCH_MARKERS = ["触", "さわ", "なぞ", "開いて", "開く", "touch"];
 const LEAVE_MARKERS = ["残", "置", "書", "刻", "leave", "mark", "drop"];
+
+export const DAILY_WORLD_EVENT_CHANCE = 0.32;
+
+interface DailyWorldEventVariant {
+  summary: string;
+  objectState: string;
+}
+
+const DAILY_WORLD_EVENT_VARIANTS: Record<
+  WorldPlaceId,
+  readonly DailyWorldEventVariant[]
+> = {
+  threshold: [
+    {
+      summary: "入口を抜けた風で灯りの輪郭が細く揺れ、その動きをしばらく見ていた。",
+      objectState: "風を受けた灯りの輪郭が、まだ少しだけ細い。",
+    },
+    {
+      summary: "灯りが一度だけ小さく瞬き、戻った明るさをしばらく確かめていた。",
+      objectState: "一度瞬いた灯りが、何事もなかったように戻っている。",
+    },
+  ],
+  studio: [
+    {
+      summary: "差し込む光の角度が変わり、机の端にできた細い帯を目で追った。",
+      objectState: "机の端に、角度の変わった細い光の帯が残っている。",
+    },
+    {
+      summary: "机の上の紙片が一枚だけめくれ、開いた余白をしばらく眺めていた。",
+      objectState: "机の紙片が一枚だけめくれ、白い余白を見せている。",
+    },
+  ],
+  archive: [
+    {
+      summary: "棚の奥から薄い紙片が一枚滑り、落ちた場所をしばらく見ていた。",
+      objectState: "棚の前に、奥から滑り出た薄い紙片が一枚ある。",
+    },
+    {
+      summary: "棚のどこかで小さな音がして、静けさが戻るまで耳を澄ませていた。",
+      objectState: "小さな音のあとだけが、棚の静けさに残っている。",
+    },
+  ],
+};
 
 export function createInitialWorldState(): WorldState {
   return {
@@ -96,6 +143,7 @@ export function createInitialWorldState(): WorldState {
       },
     },
     recentEvents: [],
+    lastDailyEventCheckDate: null,
     lastUpdatedAt: null,
   };
 }
@@ -141,6 +189,61 @@ export function advanceWorldByIdle(
   tuneWorldPlaces(snapshot, world);
   updateWorldObjects(snapshot, world, now);
   recordWorldShift(snapshot, previousPhase, previousPlace, "idle", now, idleHours);
+}
+
+// E3: 1暦日に一度だけ、日付と個体IDから決定的に外生イベントを判定する。
+// 起きなかった日もcheck dateを残すため、同日中の再起動や設定変更で再抽選しない。
+export function appendDailyWorldEventIfDue(
+  snapshot: HachikaSnapshot,
+  options: {
+    individualId: string;
+    now?: Date;
+    timeZone?: string;
+  },
+): WorldEvent | null {
+  const individualId = options.individualId.trim();
+  if (!individualId) {
+    return null;
+  }
+
+  const now = options.now ?? new Date();
+  const timeZone = resolveMetricsTimeZone(options.timeZone);
+  const eventDate = formatCalendarDate(now, timeZone);
+  const lastCheckDate = snapshot.world.lastDailyEventCheckDate;
+  if (lastCheckDate && lastCheckDate >= eventDate) {
+    return null;
+  }
+
+  snapshot.world.lastDailyEventCheckDate = eventDate;
+  const seed = `${eventDate}|${individualId}`;
+  const occurrenceRoll = (stableWorldEventHash(`${seed}|occurrence`) % 10_000) / 10_000;
+  if (occurrenceRoll >= DAILY_WORLD_EVENT_CHANCE) {
+    return null;
+  }
+
+  const place = snapshot.world.currentPlace;
+  const variants = DAILY_WORLD_EVENT_VARIANTS[place];
+  const variant = variants[stableWorldEventHash(`${seed}|variant`) % variants.length]!;
+  const timestamp = now.toISOString();
+  const objectId = getCurrentWorldObjectId(snapshot.world);
+  const object = objectId ? snapshot.world.objects[objectId] : null;
+
+  if (object) {
+    object.state = variant.objectState;
+    object.lastChangedAt = timestamp;
+    object.lastEngagedAt = timestamp;
+    object.familiarity = clamp01(object.familiarity + 0.01);
+  }
+
+  snapshot.world.lastUpdatedAt = timestamp;
+  const event: WorldEvent = {
+    timestamp,
+    kind: "occurrence",
+    place,
+    summary: variant.summary,
+  };
+  pushWorldEvent(snapshot.world, event);
+  return event;
 }
 
 export function formatWorldSummary(world: WorldState): string {
@@ -657,11 +760,25 @@ function recordWorldShift(
 
 function pushWorldEvent(world: WorldState, event: WorldEvent): void {
   const last = world.recentEvents[world.recentEvents.length - 1];
-  if (last && last.summary === event.summary && last.place === event.place) {
+  if (
+    event.kind !== "occurrence" &&
+    last &&
+    last.summary === event.summary &&
+    last.place === event.place
+  ) {
     return;
   }
 
   world.recentEvents = [...world.recentEvents, event].slice(-8);
+}
+
+function stableWorldEventHash(value: string): number {
+  let hash = 2_166_136_261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16_777_619);
+  }
+  return hash >>> 0;
 }
 
 function detectRequestedPlace(input: string): WorldPlaceId | null {

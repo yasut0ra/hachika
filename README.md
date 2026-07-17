@@ -21,7 +21,7 @@ npm run ui
 
 CLI で試す場合は `npm run dev`、UI なしで常在 loop だけ動かす場合は `npm run loop` です。
 
-複数の個体を並走させる場合は、個体ごとに `HACHIKA_DATA_DIR` と UI port を分けます。snapshot、artifact、resident lock / status、日次metricsとarchiveはすべて指定したrootの下へ保存されます。
+複数の個体を並走させる場合は、個体ごとに `HACHIKA_DATA_DIR` と UI port を分けます。snapshot、artifact、resident lock / status、日次metricsとarchiveはすべて指定したrootの下へ保存されます。小さなworld eventの再現seedにもこのdata rootを使います。
 
 ```bash
 HACHIKA_DATA_DIR=individuals/a HACHIKA_UI_PORT=3042 npm run ui
@@ -31,6 +31,8 @@ HACHIKA_DATA_DIR=individuals/b HACHIKA_UI_PORT=3043 npm run ui
 長期運用では、個体ごとに`HACHIKA_DATA_DIR=individuals/a npm run maintain`をcronまたはlaunchdから1日1回実行します。日次snapshotを固定し、resident heartbeatがstale・inactive・欠損なら非0で終了します。
 
 蓄積した日次metricsは`npm run report`でMarkdown要約と自己完結HTMLグラフにできます。複数個体の比較も1コマンドです。
+
+長期実験の凍結前には、[experiment config example](docs/experiment-config.example.json)を`docs/lab-notes/experiment-config.json`へ確定し、tag・dirty worktree・Node.js・wall-clock設定・個体ID重複を`npm run experiment:check`で検査します。API keyはmanifestへ書きません。
 
 ```bash
 npm run report -- --individual A=individuals/a --individual B=individuals/b
@@ -120,7 +122,7 @@ Web UI の State、World、Growth、Embodiment panel で、会話の裏側にあ
 - 記憶、関係、境界、共同作業、外部 artifact
 - purpose、initiative、presence、日々の夢を含むjournal、aspiration、voice
 - 質問、依頼、約束、訂正を追う discourse ownership
-- 場所、物、時刻、行動履歴を持つ小さな world
+- 場所、物、時刻、行動履歴、日々の小さな外生イベントを持つ world
 
 ## 五つの原初的な駆動
 

@@ -164,7 +164,7 @@ function hydrateSnapshot(raw: unknown): HachikaSnapshot {
   }
 
   return {
-    version: 33,
+    version: 34,
     revision:
       typeof raw.revision === "number" && Number.isFinite(raw.revision)
         ? Math.max(0, Math.round(raw.revision))
@@ -210,7 +210,7 @@ function hydrateSnapshot(raw: unknown): HachikaSnapshot {
 }
 
 export function sanitizeSnapshot(snapshot: HachikaSnapshot): HachikaSnapshot {
-  snapshot.version = 33;
+  snapshot.version = 34;
   snapshot.preferences = sanitizeNumberRecord(snapshot.preferences, clampSigned);
   snapshot.topicCounts = sanitizeNumberRecord(snapshot.topicCounts, (value) =>
     Math.max(0, Math.round(value)),
@@ -591,6 +591,7 @@ function hydrateWorld(raw: unknown): WorldState {
     places: hydrateWorldPlaces(raw.places),
     objects: hydrateWorldObjects(raw.objects),
     recentEvents: hydrateWorldEvents(raw.recentEvents),
+    lastDailyEventCheckDate: hydrateCalendarDate(raw.lastDailyEventCheckDate),
     lastUpdatedAt: typeof raw.lastUpdatedAt === "string" ? raw.lastUpdatedAt : null,
   };
 }
@@ -1581,6 +1582,7 @@ function hydrateWorldEvent(raw: unknown): WorldEvent | null {
     raw.kind === "arrival" ||
     raw.kind === "ambience" ||
     raw.kind === "notice" ||
+    raw.kind === "occurrence" ||
     raw.kind === "observe" ||
     raw.kind === "touch" ||
     raw.kind === "leave"
@@ -2444,6 +2446,7 @@ function sanitizeWorld(world: WorldState): WorldState {
     },
     objects: sanitizeWorldObjects(world.objects),
     recentEvents: hydrateWorldEvents(world.recentEvents),
+    lastDailyEventCheckDate: hydrateCalendarDate(world.lastDailyEventCheckDate),
     lastUpdatedAt: typeof world.lastUpdatedAt === "string" ? world.lastUpdatedAt : null,
   };
 }
@@ -3260,6 +3263,27 @@ function unique(values: string[]): string[] {
 
 function buildAutonomousFeedId(timestamp: string, text: string, index: number): string {
   return `${timestamp}:${index}:${text.slice(0, 24)}`;
+}
+
+function hydrateCalendarDate(value: unknown): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/u.exec(value);
+  if (!match) {
+    return null;
+  }
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCFullYear() === year &&
+      date.getUTCMonth() === month - 1 &&
+      date.getUTCDate() === day
+    ? value
+    : null;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

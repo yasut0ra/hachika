@@ -105,6 +105,7 @@ test("resident runtime advances the substrate by actual wall-clock elapsed time"
     now: () => now,
     implementationRevision: "test-revision",
     metricsTimeZone: "UTC",
+    individualId: "test-individual",
   });
 
   try {
@@ -140,5 +141,6 @@ function createRuntime(paths: {
     replyDescription: "local",
     implementationRevision: "test-revision",
     metricsTimeZone: "UTC",
+    individualId: "test-individual",
   });
 }

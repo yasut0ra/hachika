@@ -59,6 +59,7 @@ const residentLoop = new ResidentLoopRuntime({
   replyGenerator,
   autonomyDirector,
   proactiveDirector,
+  individualId: process.env.HACHIKA_INDIVIDUAL_ID?.trim() || dataDir,
   log: console.log,
   error: console.error,
 });

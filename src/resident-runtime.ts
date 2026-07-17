@@ -38,6 +38,7 @@ export interface ResidentLoopRuntimeOptions {
   now?: () => Date;
   implementationRevision?: string;
   metricsTimeZone?: string;
+  individualId?: string;
   log?: (message: string) => void;
   error?: (message: string) => void;
 }
@@ -47,6 +48,7 @@ export class ResidentLoopRuntime {
   private readonly status: ResidentLoopStatus;
   private readonly implementationRevision: string;
   private readonly metricsTimeZone: string;
+  private readonly individualId: string;
   private lock: ResidentLoopLock | null = null;
   private timer: NodeJS.Timeout | null = null;
   private tickPromise: Promise<void> | null = null;
@@ -59,6 +61,7 @@ export class ResidentLoopRuntime {
     this.implementationRevision =
       options.implementationRevision?.trim() || resolveImplementationRevision();
     this.metricsTimeZone = resolveMetricsTimeZone(options.metricsTimeZone);
+    this.individualId = options.individualId?.trim() || options.snapshotPath;
     const startedAtDate = this.nowDate();
     const startedAt = startedAtDate.toISOString();
     this.lastWallAdvanceAtMs = startedAtDate.getTime();
@@ -188,6 +191,7 @@ export class ResidentLoopRuntime {
             clockMode,
             now: tickStartedAt,
             timeZone: this.metricsTimeZone,
+            individualId: this.individualId,
             autonomyDirector: this.options.autonomyDirector ?? null,
             replyGenerator: this.options.replyGenerator ?? null,
             proactiveDirector: this.options.proactiveDirector ?? null,
@@ -238,7 +242,7 @@ export class ResidentLoopRuntime {
         .slice(-6);
       this.status.lastActivities = result.activities.map(formatResidentActivity).slice(-6);
 
-      if (result.activities.length > 0) {
+      if (result.activities.length > 0 || result.worldEvent) {
         this.status.lastActivityAt = tickAt;
       }
 
@@ -264,6 +268,12 @@ export class ResidentLoopRuntime {
 
       for (const activity of result.outwardActivities) {
         this.options.log?.(`[loop/outward] ${formatResidentActivity(activity)}`);
+      }
+
+      if (result.worldEvent) {
+        this.options.log?.(
+          `[loop/world] ${result.worldEvent.kind}/${result.worldEvent.place} ${result.worldEvent.summary}`,
+        );
       }
 
       if (result.proactiveMessage) {

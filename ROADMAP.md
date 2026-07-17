@@ -50,7 +50,9 @@ Sprint 0 進捗:
 - [x] **日次アーカイブ + heartbeat監視**: `npm run maintain`で日付別snapshotを上書きせず原子的に保存し、resident heartbeatのfresh/stale/inactive/missingを判定。異常時はstderr・非0終了・任意Webhookで通知（2026-07-17）
 - [x] **`npm run report`**: metrics JSONLから観測範囲・欠測・破損行・revision・全指標の初日差分をMarkdown化し、日付軸を揃えたinline SVG折れ線グラフを自己完結HTMLへ生成。複数個体の比較入力に対応（2026-07-17）
 - [x] **E1 夢**: resident loopの暦日境界で前日以前のmemory断片を決定的に再結合し、1日最大1件のdream journalを生成。人格・aspirationの力学から分離したまま、毎朝読める履歴を追加（2026-07-17）
+- [x] **E3 世界の小さな出来事**: 暦日ごとに一度、日付と個体IDから決定的に低確率イベントを判定。現在地のworld event・object反応として残し、再起動時の再抽選と同日重複を抑止（2026-07-17）
 - [ ] 凍結準備とbirth記録
+  - 2026-07-17: secret-free manifest例、birth記録テンプレート、config fingerprint・dirty worktree・tag・Node.js・wall-clock・個体seedを検査する`npm run experiment:check`を追加。個体名・host・LLM構成の確定と実タグは未完了
 
 - resident loop で1個体を **30〜90日、実時間で生かす**。理想は2体並走:
   - 毎日少し話しかける個体（温かい生）
