@@ -51,11 +51,20 @@ Snapshot versionは33。旧snapshotには静かな`rest` presence、world object
 - familiarなobjectへの`touch`は、未知のobjectより認知costが低く、安全を少し回復させる
 - internal `touch`はworld eventとobject stateを一度だけ変え、その後はpresenceのdwellとして続く
 
+## Phase 4: journal from lived episodes
+
+実装済み。
+
+- nightly consolidationは、新しいactionを選ぶ前に直前まで続いたpresenceをepisodeとして捕捉する
+- journalは`action / focus / rationale / place / object / dwell`から、その時間に実際にしていたことを書く
+- 前episodeのresidueが残っていれば、現在のepisodeへ持ち越された余韻として1行に接続する
+- 2時間未満の未成熟なepisodeは書かず、同じongoing episodeをnightlyごとに重複記録しない
+- purpose resolution由来のjournalは従来どおり別系統で残す
+
 ## Next
 
-1. journalをrule templateではなく、実際に続いたpresence episodeから書く
-2. 同じ不在でも生活史の違う個体が異なるepisodeを辿るscenario testを厚くする
-3. familiarityを単一値から、安心・作業・記憶など質の異なる関係へ育てる
+1. 同じ不在でも生活史の違う個体が異なるepisodeを辿るscenario testを厚くする
+2. familiarityを単一値から、安心・作業・記憶など質の異なる関係へ育てる
 
 ## Non-goals
 

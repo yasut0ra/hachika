@@ -17,7 +17,7 @@ import {
 import { pickFreshText, recentAssistantReplies } from "./expression.js";
 import { buildSelfModel } from "./self-model.js";
 import { aspirationPull, rewindAspirationsHours } from "./aspiration.js";
-import { appendJournalEntry, buildIdleJournalEntry } from "./journal.js";
+import { appendJournalEntry, buildPresenceJournalEntry } from "./journal.js";
 import { advancePresenceHours, materializePresenceAction } from "./presence.js";
 import { distillVoiceProfile } from "./voice.js";
 import {
@@ -662,6 +662,14 @@ export function materializeIdleAutonomyEvaluation(
   plan: IdleAutonomyEvaluationPlan,
   timestamp: string = new Date().toISOString(),
 ): void {
+  const journalEntry = plan.nightly
+    ? buildPresenceJournalEntry(
+        snapshot,
+        structuredClone(snapshot.presence),
+        timestamp,
+      )
+    : null;
+
   materializeIdleAutonomyAction(snapshot, plan.prepared, {
     consolidateImprints: true,
     consolidationHours: plan.windowHours,
@@ -675,16 +683,10 @@ export function materializeIdleAutonomyEvaluation(
   snapshot.idleClock.lastConsolidationAbsenceHours = snapshot.idleClock.absenceHours;
   // v3 Phase 4: 声は静かな時間に定着する
   distillVoiceProfile(snapshot, timestamp);
-  // v3: 静かな時間をどう過ごしたかを、自分の言葉で1行残す
-  appendJournalEntry(
-    snapshot,
-    buildIdleJournalEntry(
-      snapshot,
-      plan.prepared.action,
-      plan.prepared.prioritizedTopic,
-      timestamp,
-    ),
-  );
+  // 選ばれたばかりの action ではなく、直前まで実際に続いた episode を残す
+  if (journalEntry) {
+    appendJournalEntry(snapshot, journalEntry);
+  }
 }
 
 export function rewindSnapshotHours(

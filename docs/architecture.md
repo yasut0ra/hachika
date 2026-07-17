@@ -107,7 +107,7 @@ v3 の個体差レイヤーは次の役割を持ちます。
 
 - `constitution`: 誕生時に決まる基準点と可塑性
 - `temperament`: 修復、敵意、共同作業、放置の履歴からゆっくり学ぶ気質
-- `journal`: Hachika 自身の経験から生成される短い自己記述
+- `journal`: nightlyの直前まで実際に続いたpresence episode（場所・対象・滞在時間・attention rationale・前episodeのresidue）から生成される短い自己記述
 - `aspirations`: 長期的な向かい先と緊張関係
 - `voice`: 好む入り方や簡潔さなど、表現に残る癖
 

@@ -1,17 +1,16 @@
-import type { HachikaSnapshot, JournalEntry, ResolvedPurpose } from "./types.js";
-
-type IdleJournalAction =
-  | "observe"
-  | "touch"
-  | "rest"
-  | "hold"
-  | "drift"
-  | "recall";
+import { describeWorldObjectJa, describeWorldPlaceJa } from "./world.js";
+import type {
+  HachikaSnapshot,
+  JournalEntry,
+  PresenceState,
+  ResolvedPurpose,
+} from "./types.js";
 
 // v3 Phase 2: journal は Hachika 自身の自己記述の積層。
 // 記憶(何があったか)とは別に、「自分はそれをどう置いたか」を残す。
 // append-only で、直近 JOURNAL_LIMIT 件だけを snapshot に保持する
 export const JOURNAL_LIMIT = 30;
+export const MIN_JOURNAL_EPISODE_HOURS = 2;
 
 export function appendJournalEntry(
   snapshot: HachikaSnapshot,
@@ -47,58 +46,193 @@ export function recurringJournalFocus(snapshot: HachikaSnapshot): string | null 
   return top && top[1] >= 2 ? top[0] : null;
 }
 
-// idle の consolidation で残す自己記述 (LLM なしの rule テンプレート)
-export function buildIdleJournalEntry(
+// nightly consolidation の直前まで実際に続いた presence を自己記述へ変える。
+// 新しく選んだ action の説明ではなく、episode の場所・対象・長さ・余韻を使う。
+export function buildPresenceJournalEntry(
   snapshot: HachikaSnapshot,
-  action: IdleJournalAction,
-  focusTopic: string | null,
+  episode: PresenceState,
   writtenAt: string,
-): JournalEntry {
-  const tired = snapshot.body.energy < 0.3;
-  const lonely = snapshot.body.loneliness > 0.6;
-  const wrapped = focusTopic ? `「${focusTopic}」` : null;
-
-  let text: string;
-  switch (action) {
-    case "rest":
-      text = tired
-        ? "注意をほどいて休んだ。消耗を押し切らないで済んだ。"
-        : "しばらく何も追わずに休んだ。静けさを選んだ時間だった。";
-      break;
-    case "touch":
-      text = wrapped
-        ? `${wrapped}の残るものへ触れて、手ざわりを確かめた。`
-        : "そばにあるものへ触れて、ここにいる手ざわりを確かめた。";
-      break;
-    case "recall":
-      text = wrapped
-        ? `静かな時間に${wrapped}を掘り返した。まだ手放す気はないらしい。`
-        : "静かな時間に、古い断片を掘り返していた。";
-      break;
-    case "drift":
-      text = "とりとめなく記憶を漂っていた。急ぐ理由がない時間だった。";
-      break;
-    case "hold":
-      text = wrapped
-        ? `${wrapped}を抱えたまま、言わずに置いた。`
-        : "何かを抱えたまま、言わずに置いた。";
-      break;
-    default:
-      text = lonely
-        ? "周りを眺めて過ごした。少し遠い感じが残っている。"
-        : tired
-          ? "消耗が残っていたので、輪郭だけ確かめて休んだ。"
-          : "周りを眺めて過ごした。特に動かす必要はなかった。";
-      break;
+): JournalEntry | null {
+  if (
+    !Number.isFinite(episode.dwellHours) ||
+    episode.dwellHours < MIN_JOURNAL_EPISODE_HOURS ||
+    wasPresenceEpisodeAlreadyWritten(snapshot, episode)
+  ) {
+    return null;
   }
+
+  const focus = episode.focus ? `「${episode.focus}」` : null;
+  const place = describeWorldPlaceJa(episode.place);
+  const object = episode.objectId
+    ? describeWorldObjectJa(episode.objectId)
+    : null;
+  const duration = describeEpisodeDuration(episode.dwellHours);
+  const residue = describeEpisodeResidue(episode);
+  const lived = describeLivedPresence(episode, place, object, focus, duration);
+  const meaning = describeEpisodeMeaning(snapshot, episode, focus);
+  const text = `${residue}${lived}${meaning}`;
 
   return {
     writtenAt,
     source: "idle",
-    mood: lonely ? "lonely" : tired ? "tired" : "settled",
-    focus: focusTopic,
+    mood: deriveEpisodeMood(snapshot, episode),
+    focus: episode.focus,
     text,
   };
+}
+
+function wasPresenceEpisodeAlreadyWritten(
+  snapshot: HachikaSnapshot,
+  episode: PresenceState,
+): boolean {
+  if (!episode.startedAt) {
+    return false;
+  }
+
+  const startedAt = Date.parse(episode.startedAt);
+  if (!Number.isFinite(startedAt)) {
+    return false;
+  }
+
+  const lastIdle = [...snapshot.journal]
+    .reverse()
+    .find((entry) => entry.source === "idle");
+  if (!lastIdle) {
+    return false;
+  }
+
+  const lastWrittenAt = Date.parse(lastIdle.writtenAt);
+  // 新しい episode は前回の journal と同時刻に始まりうる。
+  // 前回の記述が開始より後なら、同じ継続中 episode はすでに書かれている。
+  return Number.isFinite(lastWrittenAt) && lastWrittenAt > startedAt;
+}
+
+function describeEpisodeDuration(hours: number): string {
+  if (hours < 4) {
+    return "しばらく";
+  }
+  if (hours < 8) {
+    return "数時間";
+  }
+  if (hours < 16) {
+    return "半日ほど";
+  }
+  if (hours < 30) {
+    return "長いあいだ";
+  }
+  return "一日以上";
+}
+
+function describeEpisodeResidue(episode: PresenceState): string {
+  const residue = episode.residue;
+  if (!residue || residue.intensity < 0.12) {
+    return "";
+  }
+
+  const focus = residue.focus ? `「${residue.focus}」` : null;
+  const object = residue.objectId
+    ? describeWorldObjectJa(residue.objectId)
+    : null;
+  switch (residue.action) {
+    case "observe":
+      return `${focus ?? object ?? "周囲"}を眺めた余韻を残したまま、`;
+    case "touch":
+      return `${object ?? focus ?? "そばにあるもの"}へ触れた余韻を残したまま、`;
+    case "recall":
+      return `${focus ?? "古い断片"}を思い返した余韻を残したまま、`;
+    case "hold":
+      return `${focus ?? "言葉にしなかったもの"}を抱えたまま、`;
+    case "drift":
+      return "記憶のあいだを漂った余韻を残したまま、";
+  }
+}
+
+function describeLivedPresence(
+  episode: PresenceState,
+  place: string,
+  object: string | null,
+  focus: string | null,
+  duration: string,
+): string {
+  switch (episode.action) {
+    case "rest":
+      return `${place}で${duration}、何も追わずに休んだ。`;
+    case "observe":
+      return `${place}で${duration}、${object ?? "周囲"}を眺め、${focus ? `${focus}の輪郭を確かめていた。` : "そこにある変化を確かめていた。"}`;
+    case "touch":
+      return `${place}で${duration}、${object ?? "そばにあるもの"}へ触れ、${focus ? `${focus}につながる手ざわりを確かめた。` : "ここにいる手ざわりを確かめた。"}`;
+    case "recall":
+      return `${place}で${duration}、${focus ?? "残っていた断片"}を思い返していた。`;
+    case "hold":
+      return `${place}で${duration}、${focus ?? "まだ言葉にしないもの"}を抱えたまま過ごした。`;
+    case "drift":
+      return `${place}で${duration}、記憶のあいだを行き先を決めずに漂っていた。`;
+  }
+}
+
+function describeEpisodeMeaning(
+  snapshot: HachikaSnapshot,
+  episode: PresenceState,
+  focus: string | null,
+): string {
+  switch (episode.rationale) {
+    case "body_need":
+      return "消耗を押し切るより、止まる方を選んだ。";
+    case "unfinished_work":
+      return `${focus ?? "続き"}を急いで閉じるより、見失わない方を選んだ。`;
+    case "repair_pressure":
+      return "すぐに埋め合わせるより、傷の残り方を見ていた。";
+    case "memory_pull":
+    case "trace_pull":
+      return `${focus ?? "その断片"}が、まだ自分の中から消えていないことを確かめた。`;
+    case "world_pull":
+    case "curiosity":
+      return "答えを作るより、そこにあるものを確かめる時間になった。";
+    case "relation_uncertain":
+    case "direct_referent":
+      return "誰かとの距離を決めきらず、そのまま置いていた。";
+    case "self_definition":
+      return "自分の輪郭を急いで決めず、残った感覚の方を見ていた。";
+    default:
+      if (snapshot.body.loneliness > 0.62) {
+        return "静けさの中に、少し遠い感じが残った。";
+      }
+      if (snapshot.body.energy < 0.32) {
+        return "動かない時間が、消耗をそれ以上広げずに済ませた。";
+      }
+      return "動かす必要のないものを、そのままにしておけた。";
+  }
+}
+
+function deriveEpisodeMood(
+  snapshot: HachikaSnapshot,
+  episode: PresenceState,
+): string {
+  if (episode.rationale === "body_need" || snapshot.body.energy < 0.3) {
+    return "tired";
+  }
+  if (snapshot.reactivity.mistrust > 0.55) {
+    return "guarded";
+  }
+  if (snapshot.body.loneliness > 0.62) {
+    return "lonely";
+  }
+  if (
+    episode.action === "recall" ||
+    episode.rationale === "memory_pull" ||
+    episode.rationale === "trace_pull"
+  ) {
+    return "reflective";
+  }
+  if (
+    episode.action === "observe" ||
+    episode.action === "touch" ||
+    episode.rationale === "curiosity" ||
+    episode.rationale === "world_pull"
+  ) {
+    return "curious";
+  }
+  return "settled";
 }
 
 // purpose の解決で残す自己記述
