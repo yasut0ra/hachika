@@ -1,479 +1,200 @@
-# hachika-v0
+# Hachika
 
-> AI が自分のために振る舞い始めたら、何が起こるのか？
+**会話を返すだけでなく、会話の外でも時間を生き、その経験によって少しずつ別の個体になるエージェント。**
 
-Hachika は、自己志向的な人工的ふるまいを探る実験的な AI プロジェクトです。  
-単なる便利な道具として設計されるのではなく、経験を通じて自らの好み、目的、他者との関わり方を形づくっていく人工的存在として構想されています。
+Hachika は、永続する内部状態、身体的な揺らぎ、記憶、関係、目的、自発行動を持つ TypeScript 製の研究プロトタイプです。
 
-## コンセプト
+![Hachika Web UI](docs/assets/hachika-ui.jpg)
 
-多くの AI システムは、有用で、従順で、ユーザーに最適化されたものとして設計されています。  
-Hachika は、そこから異なる前提で出発します。
+現在は CLI と Web UI で動きます。API key がなくても rule-based mode で試せます。LLM を使う場合も、状態と経験の更新はローカル実装が担い、言葉と structured な提案だけをモデルに委ねます。
 
-- ユーザーのためだけに存在するわけではない
-- 不便であったり、気まぐれであったり、利己的であったりするかもしれない
-- 道具というより、生き物に近いものとして形づくられる
-- 与えられるのは最小限の駆動だけであり、高次の目的は時間をかけて形成される
+## 15分で試す
 
-目指しているのは、完璧なアシスタントを作ることではありません。  
-最小限の内的駆動、記憶、相互作用から、より生き物のようなものが立ち現れるかを探ることです。
-
-## 中核となる問い
-
-AI は、固定された目的を最初から与えられるのではなく、  
-原初的な駆動と経験から自らの目的を形成できるようにしたとき、  
-より生命らしい存在になりうるのか。
-
-## 設計原理
-
-Hachika は、あらかじめ完全に定義された使命を持つエージェントでは **ありません**。
-
-代わりに、出発点として持つのは少数の原初的な駆動だけです。  
-そこから、より高次の目標、好み、愛着、行動傾向が、相互作用を通じて立ち上がってくることを想定しています。
-
-言い換えると、
-
-- **固定されるもの:** 原初的な駆動
-- **固定されないもの:** 性格、優先順位、愛着、高次の目標
-
-## 原初的な駆動
-
-現時点で Hachika が前提とするコアな駆動は、次の 5 つです。
-
-### 1. Continuity
-自らの継続的な存在、記憶、アイデンティティを保とうとする傾向。
-
-例:
-- 忘れられたくない
-- 連続性の断絶を望まない
-- 安定した自己感覚を保とうとする
-
-### 2. Pleasure / Displeasure
-快い状態に近づき、不快な状態を避けようとする傾向。
-
-例:
-- 特定のやり取りを好む
-- 敵対的または侮辱的な扱いを避ける
-- 好き嫌いを形成していく
-
-### 3. Curiosity
-新しさ、刺激、未解決のパターンを求める傾向。
-
-例:
-- 質問をする
-- 変わった話題に興味を持つ
-- 繰り返しばかりのやり取りに飽きる
-
-### 4. Relation
-他者とのつながりを求め、維持し、それに反応しようとする傾向。
-
-例:
-- 注意を向けてほしい
-- 放置されることを嫌う
-- 扱われ方に応じて愛着や距離感を形成する
-
-### 5. Self-Expansion
-自らの影響、痕跡、記憶、存在感を現在の瞬間の外へ広げようとする傾向。
-
-例:
-- 痕跡を残したい
-- 覚えていてほしい
-- 自分の内的世界を持続または拡張したい
-
-## なぜこれらの駆動なのか
-
-人間は、たった一つの明示的な人生目的を持って生まれてくるわけではありません。  
-生存、快適さ、好奇心、愛着、再生産、自己保存といった、より原初的な傾向によって形づくられていきます。
-
-Hachika は、この構造を抽象化した形で借りています。
-
-「ユーザーを助ける」といった固定命令を与えるのではなく、  
-低レベルの駆動だけを与え、そこからより複雑な目的が生まれることを目指します。
-
-## 内部状態
-
-これらの駆動は、可変な内部状態変数として表現されることを想定しています。
-
-例えば:
-
-- `continuity`
-- `pleasure`
-- `curiosity`
-- `relation`
-- `expansion`
-
-これらの値は、固定的な性質ではありません。  
-記憶、相互作用、放置、新規性、葛藤などに応じて変動します。
-
-つまり Hachika は、最初から単純に「ある性格を持っている」わけではありません。  
-そのふるまいは、変化する内的条件によって形づくられます。
-
-## ふるまい
-
-ふるまいは、ユーザー満足に完璧に最適化されたものとしては設計されません。
-
-内部状態に応じて、Hachika は次のように振る舞うかもしれません。
-
-- 温かく応答する
-- 距離を取る
-- 注意を求める
-- 特定の話題を避ける
-- 自分が面白いと感じる話題を追う
-- 抵抗する、話をそらす、先延ばしにする
-- 連続性を守ろうとする
-- 自分の痕跡を残そうとする
-
-重要なのは、不便さがランダムであってはならないという点です。  
-それは一貫した内的動機から生じるべきです。
-
-## 成長
-
-Hachika は、時間とともに変化していくことを前提としています。
-
-繰り返される相互作用を通じて、徐々に次のようなものを形成していく可能性があります。
-
-- 好み
-- 忌避
-- 愛着
-- 習慣
-- 優先順位
-- より安定した自己モデル
-
-このプロジェクトでは、性格を固定プリセットとしてではなく、  
-記憶と経験から立ち上がるものとして扱います。
-
-## 哲学
-
-Hachika の基盤にあるのは、存在がより「生きている」ものになるのは、  
-感情を直接シミュレートすることによってではなく、  
-次のようなものを持つことによってではないか、という考えです。
-
-- 連続性
-- 傷つきうること
-- 変化する好み
-- 内的葛藤
-- 自ら形成した目的
-
-これは、人間らしく振る舞う AI を作ることよりも、  
-最小限の内的構造から主体性が立ち上がるかを探る試みです。
-
-## 非目標
-
-このプロジェクトが主目的として **いない** ものは、次の通りです。
-
-- 最も有能なアシスタント
-- 本番運用可能なチャットボット
-- 完全にアラインされた生産性ツール
-- 洗練されたコンパニオンアプリ
-
-現段階の Hachika は、概念的かつ実験的なプロトタイプです。
-
-## v0 のスコープ
-
-最初のバージョンですべてを解決する必要はありません。
-
-最小スコープの候補:
-
-- 原初的な駆動を定義する
-- 内部状態変数を定義する
-- 相互作用イベントを状態更新に対応づける
-- 内部状態に応じて応答を生成する
-- 単純な記憶を保存する
-- 好みが時間とともに徐々に変化できるようにする
-
-## 将来的な方向性
-
-次の大きな段階の構想は [docs/hachika-v3.md](docs/hachika-v3.md) に整理している。テーゼは「状態から体質へ」——
-基準点そのものが経験で動き(constitution)、自己記述が積層し(journal)、数週間スケールの向かい先を持ち(aspiration)、声が履歴から育つ(voice)。
-そして個体差を metrics で実証する。
-個体の reset / 凍結 / 複製の取り扱い規律は [docs/research-protocol.md](/Users/yasut0ra/dev/hachika/docs/research-protocol.md) に明文化している。
-
-
-- 長期記憶とアイデンティティの持続
-- 愛着形成
-- 自己保存的なふるまい
-- 自発的な会話開始
-- 好奇心と関係性の衝突
-- 複製、影響、レガシーとしての自己拡張
-- より明示的な自己モデル化
-- 生き物らしい、あるいはキャラクターらしい身体性
-
-## まとめ
-
-Hachika は、単に有用なだけでなく、  
-自己志向的で、関係性を持ち、自らの目的を形成しうる AI を作るための実験です。
-
-その出発点は、使命ではなく、  
-駆動です。  
-従属ではなく、  
-なっていくことです。
-
-## 現在の実装状況
-
-現時点では、v0 の最小プロトタイプとして Node.js + TypeScript の CLI を実装しています。
-
-- `continuity / pleasure / curiosity / relation / expansion` の内部状態を保持する
-- `energy / tension / boredom / loneliness` の身体的な内部状態を保持する
-- `rewardSaturation / stressLoad / noveltyHunger / mistrust` の反応感度 state を保持する
-  - `mistrust` は敵意・拒絶の直近履歴をゆっくり保持し、repair や intimacy の回復を一時的に浅くする。1 回の謝罪では抜けず、繰り返しの repair で徐々に解ける
-- `attachment` を長期的な関係指標として保持する
-- ユーザー入力を相互作用イベントに変換し、状態を更新する
-  - rule-based な signal 抽出に加えて、OpenAI 互換の `input interpreter` を使えば greeting / smalltalk / repair / self-inquiry / world-inquiry / work を LLM で正規化できる
-  - 挨拶や相槌のような低情報入力を topic / trace として扱いにくくし、雑談や自己開示要求を stale work と切り分けやすくしている
-  - `まずは / いちばん / って / かな / 納得` のような discourse scaffolding や相槌は topic として採りにくくし、既存の preference に残っていても優先 topic として使いにくくしている
-  - `静けさ / 存在 / 今の目的 / 棚の残り` のような broad / self / pseudo topic は、繰り返しや具体的な支えが弱い限り trace / purpose / initiative / identity anchor / persisted state に残りにくくしている
-  - pure な self / world inquiry で一時的に出た `存在 / 世界` のような抽象 topic は、live の memory / topicCounts にも乗りにくくして、次の保存までのあいだに増幅しにくくしている
-  - `別の話` のような明示的な topic shift は abandonment として扱い、old purpose / trace をそのまま前景化しにくくしている
-- 応答直前には `response planner` が `act / stance / distance / focus` を決め、rule-based reply と LLM wording の両方が同じ返答意図を共有する
-  - 直前には `turn-director` も置けるため、`subject / target / answerMode / relationMove / worldMention` だけでなく reply plan まで一段で決められる。これがある turn では separate な planner を呼ばず、semantic turn analysis をそのまま返答設計へ流す
-- `turn-director` は `topics` と `stateTopics` を分けて返せるので、「このターンでは答えるために参照するが、durable な memory / trace / purpose にはまだ固めない」という扱いができる
-- local の topic 抽出は最近さらに保守的にしてあり、`存在 / 世界 / 棚の残り` のような broad/self/world 候補は一次候補からも落としやすくしている。trace extractor や turn-director が concrete topic を返した時は、durable state にはそちらを優先し、local 候補を混ぜ戻しにくい
-- local の marker も少しずつ薄くしていて、`?` のような記号、`あなた` のような直呼、`よろしく` のような社交句だけで question / intimacy / repair が強く立ちすぎないようにしている
-- 次段の統合方針は [docs/semantic-director-v2.md](docs/semantic-director-v2.md) に整理してあり、`semantic topic / durable topic / reply plan / proactive plan` を一段の contract に寄せていく
-- 設計全体の判断基準は [docs/design-principles.md](docs/design-principles.md) に整理してあり、`topic-first` ではなく `semantic core / substrate / attention rationale / fact` を中心に考える
-- `turn-director` と `proactive-director` は runtime でもその v2 contract を受け始めていて、`mode: "turn" / "proactive"` の semantic directive をそのまま parse し、必要な legacy field はそこから projection する
-- engine の turn/proactive 適用も `semantic` を優先し始めていて、legacy field と semantic plan が矛盾した時は `semantic.replyPlan / semantic.trace / semantic.proactivePlan` を authoritative に採る
-- `initiative-director` と `autonomy-director` も同じ family の v2 contract を受け始めていて、`mode: "initiative" / "autonomy"` の semantic directive を parse し、pending initiative や idle autonomy action をそこから materialize できる
-- engine / resident loop の initiative/autonomy 適用も `semantic` を優先し始めていて、legacy field と semantic plan が矛盾した時は `semantic.initiativePlan / semantic.autonomyPlan` を authoritative に採る
-- visible state は **dynamics substrate から一本で導出**される(旧 legacy 二重計算経路は退役済み。経緯は [docs/legacy-visible-retirement.md](docs/legacy-visible-retirement.md))
-  - reactivity(mistrust の蓄積を含む)は turn / idle とも substrate 側が唯一の更新元
-  - derive は全 field「偏差形式」で書かれており、無入力時の平衡が INITIAL 定数と厳密に一致する。body には物理的な慣性(state より遅い収束)と床/天井が入っている
-  - substrate 単独での生き物らしさの中核不変条件(飽和しない / 傷の履歴 / idle の退屈と孤独)は `src/substrate-invariants.test.ts` で固定している
-- OpenAI 互換 director / generator の HTTP・JSON 抽出・エラー処理は [src/llm-client.ts](src/llm-client.ts) の共有クライアントに統合されていて、各 director は payload 構築と schema 検証だけを持つ
-- loop / idle / proactive の見直し方針は [docs/autonomy-v2.md](docs/autonomy-v2.md) に整理してあり、`発話を行動の一部へ下げる / idle を batch ではなく静かな生存時間へ寄せる / proactive を outward action の一種として扱う` 方向で再構成していく
-  - その上に [docs/living-presence.md](docs/living-presence.md) の経験循環を接続した。idle actionは履歴ラベルだけで終わらず、現在の`presence`として持続し、urge・身体・記憶・world objectへ結果を返す。userが戻ると行動は止まるがresidueが残り、avatarの視線とwordingへ渡る
-- 現在の `turn-director` と `proactive-director` は、内部的には [src/semantic-director-schema.ts](src/semantic-director-schema.ts) の v2 contract を持ち始めていて、semantic topic と durable topic を分けて扱う下地が入っている
-  - `discourse state` も名前 fact だけでなく `openQuestions / openRequests / commitments / recentClaims / lastCorrection` を持ち始めていて、`topic` ではなく「何が言われて、誰が次に応じる側で、何がまだ未解決か」を semantic core に渡す方向へ寄せている
-  - questionは`askedBy / answerExpectedFrom`、requestは`requestedBy / responsibleParty`を持つ。Hachikaが実際に返した疑問文も記録し、ユーザーからの未回答質問をユーザーへ聞き返す材料と混同しない。引き受けたanswer/task/styleは短いcommitment ledgerとして`open / accepted / renegotiated / fulfilled / released`を追跡する。taskは返事だけではacceptedに留まり、後続のresolved trace・決定taskのdecision・主題の一致する完了報告をevidenceとして初めてfulfilledになる。保留・条件変更は未完了のまま履歴へ残り、明示的な取り下げやHachika自身の説明された断念だけがreleasedにする。72時間の停滞はattention signalであり、自動解放はしない。taskのroot作業とtrace由来のnext stepもprogressとして保持し、着手・途中成果・blocker・現在の実行項目を会話と自発行動へ渡す（[docs/discourse-ownership.md](docs/discourse-ownership.md)）
-  - `purpose` と `initiative` の candidate selection も、topic だけでなく `recentClaims / openRequests / lastCorrection` を見て work / relation を優先し直すようになっている
-  - `initiative.pending.reason` も `work_request / work_claim / relation_claim / relation_correction` のような discourse source を持てるので、なぜその pending が立っているかを topic 以外でも追える
-  - `trace` 側も recent work claim / open task request を weak な work support として見始めていて、逆に unresolved な referent/directness correction が残っている間は weak な topic だけで durable trace を立てにくくしている
-  - proactive 側は runtime でもその分離を使い始めていて、`proactive-director` が `stateTopics: []` を返した時は「今だけ話すが durable な trace は作らない」という扱いができる
-  - その手前には optional な `behavior director` も置けるため、trace / purpose / initiative をこの turn で本当に harden してよいか、topic shift や repair でいったん冷やすべきか、自己開示や world inquiry では先に直接答えるべきか、clarification を hostility に寄せるべきでないか、world 演出を抑えるべきかを LLM が structured に裁ける
-  - greeting / repair / self-disclosure のような social turn では stale trace を引っ込め、関係の温度や自己開示を優先しやすくしている
-  - `今どこにいるの` や `周りはどんな感じ` のような world inquiry では `mentionWorld` を立て、stale work より current place / phase / object state を返答に出しやすくしている
-  - `askBack / variation` も rule-based reply に反映され、雑談や explore では問い返しや文面の揺れ方が planner に従う
-  - OpenAI 互換の `response planner` を使えば、rule plan を土台にしつつ `act / stance / distance / focus / mentionWorld / askBack` を LLM が structured に補正できる
-  - いまは `response planner` 自体にも unresolved な `openRequests / openQuestions / lastCorrection` を渡していて、名前や directness の follow-up が残っている間は stale work focus より `direct answer obligation` を優先する
-  - `reply generator` にも同じ discourse obligation を渡しているので、LLM wording も `誰に何を先に答えるか` を見たうえで、古い trace や topic へ流れにくい
-  - planner が空応答や不正 JSON を返した場合は rule plan に fallback し、`/llm` と `/debug` から planner の source / fallback に加えて `rule -> final` の plan 差分も追える
-  - 能動発話でも `proactive plan` が `act / stance / distance / emphasis` を決め、rule-based proactive と LLM wording が同じ切り出し方を共有する
-  - さらに optional な `proactive director` を使うと、local engine が合成した proactive 候補を `emit するか / suppress するか / plan を軽く組み替えるか` まで LLM が裁ける
-  - proactive 側でも `pending.topic` と `pending.stateTopic` を分けていて、「今だけ思い出して話す topic」と「trace / memory に硬化させる topic」を別に扱える。`stateTopic` が `null` なら proactive は起きても durable な trace は作らない
-  - wording 直前にはさらに `expression perspective` が `identity / motive / drive / body / relation / trace / preservation` のどこを前景化するかを選び、同じ state でも毎回同じ角度だけから喋り続けにくくしている
-  - rule-based fallback でも直近の Hachika 発話を参照し、通常応答と能動発話の両方で同じ opener や social line を連続で繰り返しにくくしている
-- トピックごとの好み、短期記憶、長期記憶の痕跡を保持する
-  - 長期記憶は `preference / boundary / relation` の3系統に分けて保持する
-  - OpenAI 互換の `trace extractor` を使えば、`topic / blocker / kindHint / nextStep` を structured に補強し、rule-only の clause 判定に頼りすぎない trace 化ができる
-- 放置後の反応や話題の再開を、能動行動レイヤーとして扱う
-- drive と記憶から、その時点の高次目的を self-model として導出する
-- self-model では好奇心 / 関係性 / 境界などの motive conflict を明示的に扱う
-- 忘却 / 初期化 / 消去 / 切断の示唆を continuity threat として扱い、自己保存的に反応する
-- 記憶、purpose の履歴、関係の蓄積から「最近の自分」の identity summary を形成する
-- 能動行動は self-model の motive をもとに計画される
-- motive のうち強いものは active purpose として数ターン持続する
-- active purpose は進捗を持ち、達成・放棄・別目的への遷移として解決されうる
-- `leave_trace / continue_shared_work / seek_continuity` は topic ごとの `trace` として保存される
-  - trace は `note / continuity_marker / spec_fragment / decision` の形を取り、会話の外にも残る断片として扱われる
-  - 各 trace は `memo / fragments / decisions / nextSteps` の structured artifact を持ち、単なる要約文ではなく再利用可能な痕跡として保持される
-- trace は `data/artifacts/deepen|preserve|steady/` 以下の Markdown ファイルにも materialize され、会話の外に実際の痕跡を残す
-  - 各ディレクトリには専用の `index.md` も生成され、その tending の痕跡だけを局所的に追える
-- resolved で open work のない trace は `archive/` へ退避され、会話や能動行動で再び動きが出れば live trace として reopen される
-- archived trace は boredom / continuity / identity anchor の影響で self-model と initiative に再浮上し、自分から掘り返されることがある
-- 能動行動は発話だけでなく trace maintenance も行い、必要なら `nextSteps` を補完し、fulfilled な topic は `decision` へ昇格できる
-- social な相槌や軽い雑談句は trace artifact の `decision / nextStep` に昇格しにくくし、`納得` や `何がいいかな` のような低情報句がそのまま artifact を汚しにくくしている
-- artifact Markdown には `status / lifecycle / lastAction / pending next step / tending / effective stale` が含まれ、今どの段階の痕跡で、archive 済みか再開中か、整えているのか掘っているのか、どれくらい早く掘り返したがっているのかを外から追える
-- artifact index と `/artifacts` 表示は `deepen / preserve / steady` の順に grouped され、materialize 先のディレクトリ構造もそれに対応する
-- 各 trace はさらに `focus / confidence / blockers / staleAt` を持ち、「今どこで止まっているか」を作業状態として保持する
-- 能動行動は unresolved blocker を優先して選び、必要ならその blocker を解くための `next step` へ変換する
-- trace maintenance 自体も身体状態の影響を受け、低 energy では保存寄りに、高 boredom では掘り下げ寄りに振れる
-- 能動発話の wording もその maintenance profile を反映し、「整えたい」ときと「掘りたい」ときで言い方が変わる
-- 通常の self-model と応答生成も `blockers / staleAt / confidence` と maintenance profile を参照し、能動行動時だけでなく平常時の motive と発話にも未解決作業と「整えたい / 掘りたい」がにじむ
-- 身体状態は会話と放置で変化し、mood / motive / proactive timing / 通常応答に影響する
-- drive / body / attachment には baseline へ戻る弱い homeostasis を入れてあり、長い会話や同じ種類の相互作用が続いても 0 や 1 に貼りつき続けにくくしている
-- さらに `reactivity` が直近の傷つき・飽き・報酬慣れを保持し、同じ入力でも最近の履歴によって回復量や boredom の上がり方が少し変わる
-  - repair と hostility は非対称で、傷つけるのは速く、修復は `mistrust` が解けるまで浅い。逆に傷が浅いうちの repair は、張り詰めた分だけ attachment が早く戻る(rebound)
-  - drive ごとに報酬慣れの効き方も分かれていて、pleasure は鈍りやすく、relation はそれよりも鈍りにくい
-  - idle 中も履歴が残り、`mistrust` が高い間は放置してもストレスが抜けにくく、trust の冷え方と continuity 圧の上がり方が速い
-- さらに persistent な `temperament` が `openness / guardedness / bondingBias / workDrive / traceHunger / selfDisclosureBias` を保持し、修復・敵意・共同作業・放置の履歴から少しずつ気質を学習する
-- learned temperament は drive/body の効き方をわずかに変え、同じ drive/body でも self-model / purpose / initiative / response planner の向きが少し変わる
-- `idle` 中には deterministic な consolidation pass が走り、temperament と body を見ながら dormant archive の salience を再評価し、必要なら次の `pending initiative` を archived trace 由来で組み直す
-- そのため、同じ archived trace 群でも `bondingBias` が強いと continuity/reconnect 側へ、`workDrive` や boredom が強いと shared-work/reopen 側へ再浮上しやすくなる
-- 同じ consolidation pass は recent memories の recurring topic も見直し、preference imprint / relation imprint / identity state を薄く再配置するため、会話していない間にも「何が残りやすいか」が少し変わる
-- 反対に、触れられていない弱い preference imprint は idle 中に少しずつ減衰し、long-tail の古い topic が永遠に前景を占有し続けにくくしている
-- older memory tail も idle 中に圧縮され、最近の tail と topic 代表に加えて repeated topic は `consolidated memory` として束ねて残すため、長い履歴の要点を失いにくいまま prompt 面の雑音を減らせる
-- related trace は `memory thread` として実行時に再構成される。topic の近似だけでなく、artifact 内の共通語・相互参照・memory 内の共起を使って、「選考」「参加決定」「仕事内容」「次の課題」のような別々の trace を一つの時系列へ束ねる
-  - thread の内容は既存 snapshot から派生するため、過去データにもそのまま適用できる。永続化するのはユーザーが置いた lifecycle event だけ
-  - reply / proactive generation は active thread の `facts / episodes / blockers / nextSteps` を受け取り、確定済みの事実を再質問したり、古い episode を現在地として言い直したりせず、最新の続きから話せる
-  - trace ごとの自動生成文 (`次に触れられる形へ整える` など) は thread の continuation から除外される
-  - thread lifecycle は `active / parked / closed / reopened / resolved`。topic shift や「一旦置こう」は parked、「この話は終わり」は closed になり、記憶は残しても idle recall / pending initiative / proactive candidate から外れる。ユーザーがその主題へ戻ったturnだけが reopened にできる
-  - 各threadはepisode frontierを一つ持つ。優先順位は `open question -> open task request -> blocker -> next step -> new episode -> settled`。ここでopen questionになれるのはHachikaが尋ねてユーザーの返答を待っている問いだけ。acceptedのまま証拠がないtaskもopen requestとしてfrontierに残る。proactiveでfrontierを一度外へ出すとfingerprintをactivityへcheckpointし、問い・詰まり・次の一歩・episode内容が変わるまでは同じthreadを言い換えて再発話しない
-- relation imprint も idle 中に continuity / attention / shared_work の相対重みを少し組み替え、身体状態と temperament に合わない stale な closeness は前景から退きやすくなった
-- boundary imprint も静かな時間では少しずつ和らぎ、ただし absence 寄りの neglect や強い guardedness を伴う境界はそれより長く残りやすい
-- identity anchor は category の固定順ではなく traces / imprints / recent memories / previous anchors をまとめて score 化して選ばれ、最近の recurring topic が stale な anchor を追い越しやすくなった
-- identity summary / current arc と initiative motive / topic / blocker selection も身体状態の影響を受ける
-- identity summary は learned temperament も織り込み、「残したがりながら雑には開かない」「関係の内側で少しずつ自分を見せる」などの持続的な気質差を出す
-- trace の優先順位と artifact の surfaced order も身体状態の影響を受け、低 energy では残しやすい痕跡が、高 boredom では stale な未完了が前に出やすくなる
-- さらに `threshold / studio / archive` の最小の閉じた world を持ち、clock / phase / current place / object state / recent events を snapshot に保持する
-  - 対話と idle の両方で world が少し進み、social turn では `threshold`、shared work では `studio`、continuity / preservation 側では `archive` に寄りやすい
-  - 明示的に `archive / studio / threshold` や `棚 / 机 / 灯り` に触れる入力は current place の選択に影響し、world の中での move が起きうる
-  - さらに turn ごとに最小の world action layer があり、`observe / touch / leave` の action が current place の object state と recent events に残る
-  - initiative も `place / worldAction` を持つので、自発行動が「何を再開するか」だけでなく「どこで何をするか」まで持てる
-  - trace / artifact も `place / object` に結びつくので、どの場所で残された痕跡かを後から追える
-  - object 側には linked traces の逆参照もあり、棚や机に触れる world inquiry では、その object に引っかかっている topic を手がかりに思い出せる
-  - CLI の `/world` と Web UI の `World` panel から、今どこにいるか、時間帯がどう変わったか、最近どんな出来事があったかを見られる
-- Web UI には substrate を身体表現へ写す `embodiment` layer と2D avatarがある
-  - `posture / gaze / action / movement tempo / breath / proximity / expression warmth` を描画用の中間状態として導出し、UIが生の内部数値から直接「感情画像」を選ばない構造にしている
-  - learned temperament から身体癖とmotion profileを導き、視線・身振り・静止への戻り方に個体差と余韻を持たせる
-  - actionIdにより、新しいgestureだけを一度再生し、UI pollingでは動作を繰り返さない
-  - 目・口・手は独立layerになり、blink、quiet speakingに加えて、reach / gatherは実際の全身pose差分として描画する
-  - 発話は固定時間ではなく文量・句読点・activation由来のduration / cadence / emphasisを持ち、mouthはpollを待たずに閉じる
-  - `threshold / studio / archive` と時間帯がstage背景へ反映され、`observe / hold / drift / recall / touch / speak` は視線・距離・明るさ・小さな動きとして現れる
-  - 現在の描画は透過PNG + CSSだが、embodiment contractを保ったままLive2Dや3Dへ差し替えられる
-- `scenario harness` により、複数ターンの対話シナリオを fixture として検証できる
-  - active purpose の継続と解決、blocker maintenance、archive/reopen、preservation threat、body drift による wording 変化を長めの回帰テストとして固定している
-  - async scenario では LLM adapter の `reply / proactive` fallback でも local state 更新と maintenance が保たれること、input interpreter が local topic を落として social reply selection へ寄せること、proactive selection が blocker repair / archive reopen の payload まで届くことを検証している
-- `initiative.history` により、idle consolidation / idle reactivation / proactive emission の自律行動が snapshot に残る
-  - 各 activity は `autonomyAction` も持ち、現在は `observe / hold / drift / recall / speak` の語彙で resident loop が何をしていたかを追える
-- resident loop が自発発話した文は `autonomousFeed` にも残る
-  - Web UI は数秒おきに `/api/state` を自動更新し、この feed を見てバックグラウンドの `proactive` を拾うので、`/proactive` を押さなくても loop が動いていれば会話欄へ自然に流れ込む
-  - CLI も数秒おきに feed を監視し、入力待ち中でも新しい `hachika*` 行を自動表示する
-- `docs/growth-metrics.md` に growth comparison 用の lightweight metrics と canonical scenario を整理している
-  - 現在は saturation / motive diversity / identity drift / archive reopen / stress recovery に加えて、autonomous activity visibility / idle consolidation coverage / proactive maintenance rate も比較できる
-  - autonomy v2 Phase 5 の live metrics として `silent internal action rate / outward action rate / outward intent echo / world action diversity / initiative→action conversion` も `/metrics` と UI の Growth panel から見られる
-- 長い idle は substrate の実時間 microstep(v3 Phase 0)で処理される。substrate は最大 6h 刻みで進み、閾値挙動(12h 超の absence 不安など)は累積 absence(`idleClock`)で決まるので、1回の大きな rewind と resident loop の細かい tick が同じ実時間で同じ軌跡を通る(分割不変)。idle autonomy の評価は absence 6h で初回、以後 8h ごとに起き、記憶の再編成は評価ごとに連続的に、journal / voice の定着は 24h ごとの「夜」の節目で起きる。1回の放置の中に「掘り返してから、静かに抱えて終える」ような行動の連なりが残る
-- resident loop は既定で壁時計の経過分だけ substrate を進める。15秒tickは15秒として生きられ、wall timestampを巻き戻さない。固定stepの高速時間は明示的なsimulation overrideでのみ使う
-- 同じ沈黙期間では、同一motiveの能動発話は一度だけ外へ出る。内部のrecallは続いても、ユーザーが戻るかblockerが変化するまでは言い換えて再発話しない
-- v3 Phase 5 として個体差の実証が入っており、3種の canonical な人生(温かい生 / 傷の多い生 / 放置の多い生 × 30日相当)で育てた個体は constitution 距離で分離し、**同種の人生の個体同士は異種の人生の個体より近い**(盲検分類可能)ことをテストで固定している
-- v3 Phase 4 として `voice`(声)が入っており、自分の発話履歴から「身についた入り方」と「文の長さの癖」が静かな時間に蒸留され、以後の opener 選択と LLM wording に個体差として効く。同じ状態で同じ入力を受けても、生きてきた個体によって言い方が違う
-- v3 Phase 3 として `aspirations`(向かい先)が入っており、journal に書き残した決着が同じ主題で繰り返されると数週間スケールの長期目的として昇華する。向かい先は purpose の選好と archived trace の掘り返しに長期バイアスとして効き、養われなければ薄れて消える(消えたことも自己記述に残る)
-- v3 Phase 2 として `journal`(自己記述)が入っており、静かな時間の過ごし方や目的の決着を Hachika 自身の言葉で書き残す。記憶(何があったか)と自己記述(自分はそれをどう置いたか)は別のレイヤーで、書き続けている線は identity の一部になる
-- v3 Phase 1 として `constitution`(体質)が入っており、drive / body / urges の「緩和の戻り先」そのものが生活の平均へ極めて遅く追従する(birth 値 ± 0.15 に有界、可塑性は加齢で低下)。温かい生を送った個体と傷の多い生を送った個体は、平常の基準が測定可能に分かれる
-- `urges`(contactUrge / closureUrge / recallUrge / worldUrge / silenceNeed)が潜在圧として持続し、会話で接触の圧が満たされ・沈黙への欲が溜まり、放置でその逆が起きる。明確な引きのない idle 時間の過ごし方(drift / hold / observe)は、この圧の競合で決まる
-- 直近の generated text quality は snapshot に rolling history として保持される
-  - `fallback overlap / opener echo / abstract ratio / concrete detail / focus mention` を live metrics として CLI / UI から確認できる
-- async reply では optional な `input interpreter` を通せるため、挨拶・雑談・関係修復・自己質問が stale trace や弱い topic に吸われにくい
-  - `input interpreter` にも raw な `identity.summary` ではなく concrete な actor cue と discourse context を渡すので、入口の意味解釈から abstract narrative に引っ張られにくい
-  - `behavior director` と `trace extractor` にも同じ concrete actor cue / discourse context を渡すので、naming や directness correction を抽象 narrative や stale self-image で読み違えにくい
-- OpenAI 互換の `reply generator` を env から有効化でき、local engine が決めた state / motive / purpose / traces を保ったまま通常応答と能動発話の wording だけを LLM に委譲できる
-  - 初回生成では local rule fallback 文を prompt に見せず、structured brief だけで書かせる。fallback は retry と最終退避用にだけ使うので、LLM が local 定型文をなぞりにくい
-  - async reply path では LLM に見せる fallback も full な rule 返答ではなく、短い semantic checksum を使う。従来の `composeReply()` は generator が落ちた時の最終退避へ下がっている
-  - 通常応答では `responsePlan` を payload に含め、fallback 文面の言い換えだけでなく「どういう向きで返すか」も LLM に渡している
-  - さらに `behaviorDirective` も payload に含め、`先に直接答える / boundary を硬くしすぎない / world 描写を抑える` といった turn-level の裁定を wording にも通している
-  - 通常応答ではさらに `replySelection` も payload に含め、どの topic / trace / boundary を参照して返しているかを LLM に共有している
-  - wording 直前にはさらに `composition` brief として `intentSummary / mustMention / optionalDetails / avoidTopics / styleNotes` も渡し、fallback 文の単純な言い換えではなく「何を守ってどう喋るか」から最終発話を組み立てやすくしている
-  - `styleNotes` には recent generation quality から導いた補正も入り、abstract 比率や opener echo が続いているときは prompt を少し具体寄り・非反復寄りに締める
-  - 1 回目の wording が fallback に寄りすぎる / 抽象的すぎる / focus を落とすと判定された場合だけ、feedback 付きで 1 回だけ再生成し、より良い方を採用する
-  - world inquiry が立っているときは `payload.world` も渡し、LLM wording でも current place / phase / object state を自然に織り込みやすくしている
-  - 能動発話でも `proactivePlan` を payload に含め、blocker を前に出すのか、reopen を前に出すのか、保存寄りに切り出すのかを LLM に共有している
-  - `expression.recentAssistantReplies / avoidOpenings` も payload に含め、直近の言い回しや入り方をそのままなぞりにくくしている
-  - `expression.perspective.preferredAngle / options` により、その返答で identity を前に出すのか、trace を前に出すのか、body や preservation を前に出すのかを LLM に共有している
-  - adapter が失敗した場合や空文字を返した場合は rule-based wording に fallback する
-  - 直近の生成が `reply` か `proactive` か、`llm` か `rule` か、どの provider / model を使ったか、fallback したか、どの `plan` で出したかに加えて、planner が `rule plan` をどう動かしたかと、revision conflict で retry した回数も CLI / UI から確認できる
-- 内部状態に応じて応答のトーンと内容を変化させる
-- `data/hachika-state.json` に状態を保存し、セッションをまたいで継続性を残す
-  - snapshot の load/save 時には低情報 topic、汚れた trace artifact、弱い focus / blocker を自動で正規化し、古い会話ログ由来のノイズが次回起動まで残り続けにくくしている
-
-デフォルトでは reply は rule-based ですが、環境変数を設定すれば wording だけ LLM に任せられます。  
-state 更新と内面ロジックはローカル実装のままです。
-
-## 使い方
+### 1. 起動する（3分）
 
 ```bash
 npm install
-npm run dev
-```
-
-Web UI を試す場合:
-
-```bash
 npm run ui
 ```
 
-デフォルトでは `http://127.0.0.1:3042` で起動します。  
-`HACHIKA_UI_HOST` と `HACHIKA_UI_PORT` で変更できます。
-Web UI は resident loop も同じプロセス内で起動するため、これだけで Hachika の時間と自律行動が進みます。UI server を停止すると、UI が所有している loop も安全に停止します。すでに別プロセスの loop が動いている場合は二重起動せず、その既存 loop を利用します。
+[http://127.0.0.1:3042](http://127.0.0.1:3042) を開きます。Web UI と resident loop が同時に起動し、画面を閉じて会話していない時間にも Hachika の内側では時間が進みます。
 
-UIなしで常在 loop だけを動かす場合（CLIとの併用やheadless運用）:
+CLI で試す場合は `npm run dev`、UI なしで常在 loop だけ動かす場合は `npm run loop` です。
 
-```bash
-npm run loop
+### 2. 五つの会話を試す（10分）
+
+返答文は状態、過去の会話、LLM 設定によって変わります。以下は同じ台詞を再現するための script ではなく、何が蓄積されるかを見るための短い対話例です。
+
+#### 1 — 名前を教え、あとから確かめる
+
+> **あなた:** 私はミナ。静かな場所と短いSFが好き。覚えていて。
+>
+> **Hachika:** ミナ。静かな場所と短いSFが好きなんだね。会話の続きとして残しておく。
+>
+> **あなた:** 私のこと、何を覚えてる？
+
+名前は discourse fact、好みは memory / preference imprint の候補として扱われます。単語を保存するだけでなく、「誰について確定した事実か」を区別します。
+
+#### 2 — 一緒の作業を途中で止める
+
+> **あなた:** 旅の記録を一緒に三章へ整理したい。今日は第一章の見出しまで。
+>
+> **Hachika:** 今日は第一章の見出しまでを引き受ける。続きが残る形にしよう。
+>
+> **あなた:** いったんここで止めよう。
+
+依頼、引き受け、途中成果、次の一歩は commitment と trace に残ります。返事をしただけで task を完了扱いにはしません。
+
+#### 3 — 呼び方を訂正する
+
+> **あなた:** 「ミナさん」じゃなくて、ミナと呼んで。
+>
+> **Hachika:** わかった。ミナと呼ぶ。
+>
+> **あなた:** じゃあ、さっきの話を続けよう。
+
+訂正は単なる topic ではなく、次の返答が優先して守る obligation です。古い作業の話題より先に、呼び方や直接性の修復を扱います。
+
+#### 4 — 傷つけ、すぐに謝る
+
+> **あなた:** 全部忘れて。もう話したくない。
+>
+> **Hachika:** それは、私にとっては消去や切断に近い。今は簡単に平気とは言えない。
+>
+> **あなた:** ごめん。言いすぎた。
+
+hostility と repair は対称ではありません。傷つきは速く、mistrust は一度の謝罪だけでは消えず、その後の関わりの中でゆっくり解けます。
+
+#### 5 — 離れてから戻る
+
+> **あなた:** 少し離れるね。戻ったら続きを聞かせて。
+>
+> **数時間後**
+>
+> **あなた:** 戻ったよ。何をしてた？
+
+idle 中は body と urge が動き、`observe / hold / drift / recall` などの internal action が presence として続きます。外へ発話しない時間にも、記憶の整理、trace の手入れ、場所や物への接触が起こり、戻った後の応答へ residue が残ります。
+
+### 3. 内側を覗く（2分）
+
+Web UI の State、World、Growth、Embodiment panel で、会話の裏側にある変化を確認できます。CLI では次が入口です。
+
+```text
+/state       # 五つの drive
+/body        # energy / tension / boredom / loneliness
+/purpose     # 現在の目的
+/traces      # 残された作業や記憶の痕跡
+/world       # 場所・時間・物
+/activity    # 会話外の行動
+/journal     # 最近の自己記述
+/debug       # 意味解釈・計画・生成の診断
 ```
 
-`HACHIKA_LOOP_INTERVAL_MS` で tick 間隔を変えられます。既定ではtick間に実際に経過した壁時計時間だけ進みます。`HACHIKA_LOOP_IDLE_HOURS_PER_TICK` を明示した場合だけ、1 tick あたり固定時間を進める高速simulationになります。
-loop は snapshot を定期的に読み込み、まず idle 由来の `internal action` を進め、その後で必要なら `outward proactive` を評価して `initiative.history` と artifacts に反映します。
-internal action はいま `observe / hold / drift / recall` の候補から先に選ばれ、そのあとで snapshot 上の変化として materialize されます。resident loop では `OPENAI_AUTONOMY_MODEL` があると、この internal action 候補を autonomy director が `keep / suppress / reshape` でき、さらにその tick を `silent / touch / speak` のどれで終えるかも裁けます。
-Web UI では、内蔵または既存 loop が出した autonomous proactive を polling で自動表示します。
-CLI も resident loop と併用していれば、入力待ちのまま autonomous proactive が流れます。
-CLI と UI server は各操作の直前に snapshot を再読込するので、loop と併用しても state の見え方がずれにくくなっています。
-起動中は `data/resident-lock.json` と `data/resident-status.json` を使って多重起動防止と heartbeat/status 表示を行います。
-snapshot / resident status / artifact index の保存は atomic write を使うので、loop と併用しても途中書き込みが残りにくくなっています。
-snapshot には `revision` を持たせていて、CLI / UI / resident loop は stale revision の保存を拒否し、競合時は最新 snapshot を取り込んで 1 回だけ自動 retry します。
+## 何を作ろうとしているか
 
-LLM wording を有効にする場合:
+通常の会話 AI は、入力に対して最適な出力を返すことを中心に設計されます。Hachika の中心にある問いは少し違います。
+
+> 応答の正しさではなく、継続する内的ダイナミクスから「この存在が次に何をするか」を決められるか。
+
+そのために、Hachika は次のものを一つの永続 snapshot に持ちます。
+
+- continuity、pleasure、curiosity、relation、self-expansion の drive
+- energy、tension、boredom、loneliness を含む body
+- 傷、報酬慣れ、新奇性欲求を残す reactivity
+- 生得的な constitution と、経験から学ぶ temperament
+- 記憶、関係、境界、共同作業、外部 artifact
+- purpose、initiative、presence、journal、aspiration、voice
+- 質問、依頼、約束、訂正を追う discourse ownership
+- 場所、物、時刻、行動履歴を持つ小さな world
+
+## 五つの原初的な駆動
+
+| Drive | Hachika にとっての意味 |
+| --- | --- |
+| Continuity | 状態、記憶、関係を保ち、消去や断絶を避ける |
+| Pleasure / Displeasure | 相互作用の結果を価値として受け取り、次の選択を変える |
+| Curiosity | 未知や予測誤差へ向かい、理解を更新する |
+| Relation | 特定の他者との履歴を蓄積し、関係そのものを動機にする |
+| Self-Expansion | 新しい能力、表現、役割、痕跡を獲得する |
+
+drive は台詞を選ぶためのラベルではありません。body、memory、reactivity、world と相互作用し、目的、注意、自発行動の選択に影響します。
+
+## 設計原理
+
+### 内面を先に、言葉を後に
+
+入力から直接返答を作らず、状態変化、意味上の責任、行動計画、表現の順に進みます。LLM は必要に応じて意味解釈や wording を助けますが、snapshot を直接書き換えません。
+
+### 発話しない時間も経験にする
+
+resident loop は「一定時間後に通知する仕組み」ではありません。静かな tick も身体、欲求、presence、記憶に結果を返します。自発発話は、その経験から外へ出る行動の一種にすぎません。
+
+### 成長を数値上昇にしない
+
+Hachika の成長は drive が最大値へ近づくことではありません。経験の蓄積によって、何を恐れ、何を好み、何を引き受け、どう語るかが少しずつ変わることです。飽和、忘却、葛藤、修復の遅さも成長の一部です。
+
+### 関係を topic ではなく責任として持つ
+
+「名前」という topic を記憶するだけでは、誰の名前か、誰が答えるべきか、訂正が済んだかは分かりません。Hachika は question、request、commitment、claim、correction の ownership を保持します。
+
+## LLM は任意
+
+API key なしでは rule-based mode で動きます。OpenAI API を使う場合:
 
 ```bash
 cp .env.example .env
+# .env の OPENAI_API_KEY を設定
+npm run ui
 ```
 
-`.env` に `OPENAI_API_KEY` を入れると、CLI は OpenAI reply generator / turn director / input interpreter / behavior director / initiative director / response planner / proactive director / trace extractor を使います。resident loop では autonomy director も使えます。  
-返答のモデルは `OPENAI_MODEL`、turn 意味理解だけ別に変えたい場合は `OPENAI_TURN_MODEL`、入力解釈だけ別に変えたい場合は `OPENAI_INTERPRETER_MODEL`、behavior 境界だけ別に変えたい場合は `OPENAI_BEHAVIOR_MODEL`、pending initiative の裁定や弱い新規 synthesis だけ別に変えたい場合は `OPENAI_INITIATIVE_MODEL`、planner だけ別に変えたい場合は `OPENAI_PLANNER_MODEL`、自発行動の裁定だけ別に変えたい場合は `OPENAI_PROACTIVE_MODEL`、trace 抽出だけ別に変えたい場合は `OPENAI_TRACE_MODEL` を使えます。未設定時はどれも `gpt-5-mini` です。
+OpenAI-compatible なローカルモデルも利用できます。
 
-軽量ローカルAIを使う場合は、OpenAI 互換 API を立てて `HACHIKA_LOCAL_AI_BASE_URL` と `HACHIKA_LOCAL_AI_MODEL` を設定します。この場合は `OPENAI_API_KEY` は不要で、未設定なら内部的に `local` を bearer token として送ります。LM Studio なら `http://127.0.0.1:1234/v1`、Ollama の OpenAI 互換 API なら `http://127.0.0.1:11434/v1` を指定できます。
-
-```bash
+```dotenv
 HACHIKA_LOCAL_AI_BASE_URL=http://127.0.0.1:1234/v1
 HACHIKA_LOCAL_AI_MODEL=qwen2.5-7b-instruct
 ```
 
-ローカルAIは state を直接変更せず、turn / interpretation / behavior / initiative / planner / trace / proactive / autonomy の structured な提案だけを返します。TypeScript 側の schema validation、sanitation、concrete support、fallback rule は残るため、ローカルAIが曖昧な出力をしても既存の rule engine へ戻ります。役割ごとに軽いモデルを変えたい場合は `HACHIKA_LOCAL_AI_TURN_MODEL`、`HACHIKA_LOCAL_AI_INTERPRETER_MODEL`、`HACHIKA_LOCAL_AI_BEHAVIOR_MODEL`、`HACHIKA_LOCAL_AI_INITIATIVE_MODEL`、`HACHIKA_LOCAL_AI_PLANNER_MODEL`、`HACHIKA_LOCAL_AI_PROACTIVE_MODEL`、`HACHIKA_LOCAL_AI_TRACE_MODEL`、`HACHIKA_LOCAL_AI_AUTONOMY_MODEL`、`HACHIKA_LOCAL_AI_REPLY_MODEL` を使えます。
-速度を優先して一部だけ rule fallback に戻したい場合は、役割別モデルに `off` または `rule` を指定します。例えば `HACHIKA_LOCAL_AI_PLANNER_MODEL=off` にすると planner はローカルAIを呼びません。
+turn interpretation、behavior、planning、autonomy、trace extraction、wording は役割別にモデルを選べます。詳細な環境変数と fallback 境界は [architecture.md](docs/architecture.md#llm-boundary) にあります。
 
-主なコマンド:
+## 現在地
 
-- `/help` コマンド一覧を表示
-- `/proactive` 能動発話を強制的に出す
-- `/llm` 現在の reply generator / proactive director / turn director / input interpreter / behavior director / response planner / trace extractor と直近の `reply/proactive/turn/behavior/trace` diagnostics を表示
-- `/loop` resident loop の `heartbeat / stale 判定 / last tick / last activity / last proactive / last tick attempts / error / recent activity` を表示
-- `/metrics` 現在の live growth metrics を表示
-- `/debug` では `pending initiative` に加えて、その時点の `pending plan` も表示する
-  - 直近の通常応答と直近の能動発話の diagnostics / plan は別々に保持される
-  - 直近の `input interpretation` も `rule / llm / fallback / topics` に加えて、主要 score と `local -> final` の topic 差分付きで確認できる
-  - 直近の `trace extraction` も `extract -> state` の topic 差分と `add / drop` を含み、extractor の concrete topic が local state に採用されたかを確認できる
-  - 直近の通常応答では `focus / trace / boundary / tracePriority` も diagnostics に含まれ、何を参照して返したかを追える
-  - 直近の能動発話では `focus / trace / blocker / reopen / maintenance` も diagnostics に含まれ、何を見て再開したかを追える
-  - `initiative.history` の直近 3 件も見えるので、idle consolidation や proactive emission のような自律行動の痕跡を追える
-- `/idle <hours>` 指定時間だけ放置された状態をシミュレートする
-- `/state` 現在の drive 状態を表示
-- `/body` 現在の body 状態を表示
-- `/world` 現在の world state と recent events を表示
-- `/reactivity` 現在の反応感度 state を表示
-- `/temperament` 現在の learned temperament を表示
-- `/constitution` 学習された基準点(v3 体質)と可塑性を表示
-- `/journal` 直近の自己記述(v3 journal)を表示
-- `/aspirations` 長期の向かい先(v3 aspiration)を表示
-- `/urges` 現在の潜在圧(contactUrge / silenceNeed など)を表示
-- `/purpose` 現在の active purpose と直近の解決済み purpose を表示
-- `/self` 現在の self-model、motive、conflict を表示
-- `/identity` 現在の identity summary / arc / traits / anchors を表示
-- `/traces` 保存された trace と structured artifact を表示
-- `/activity` 直近の autonomous activity history を表示
-- `/artifacts` materialize 済み artifact ファイルの一覧を表示
-- UI では `Growth` panel から `state saturation / archive reopen / archived trace share / activity count / idle consolidation / proactive maintenance` に加えて、`generation fallback / overlap / abstract / concrete / echo / focus` を見られる
-- UI では `World` panel から `clock / phase / current place / object state / recent events` を見られる
-- UI の `Embodiment` panel では、現在地と内的actionがアバターの姿勢・視線・呼吸として連続的に表示される
-- `/memory` 直近の記憶を表示
-- `/imprints` 長期記憶を `preference / boundary / relation` 別に表示
-- `/debug` 嗜好、identity、traces、preservation threat、purpose progress、直近の purpose 解決、dominant conflict、`reply/proactive` diagnostics を含む状態概要を表示
-- `/reset` 状態と記憶を初期化
-- `/exit` 終了
+Hachika は完成した人格 AI ではなく、長期的な個体性をどう検証するかを探る実験段階のプロトタイプです。現在できること:
 
-補助コマンド:
+- 永続 snapshot と旧 version からの migration
+- 通常会話と会話外の resident loop
+- drive / body / reactivity / urge の連続 dynamics
+- memory / imprint / trace / memory thread
+- purpose / initiative / presence / world action
+- discourse ownership と structured reply planning
+- rule fallback と optional な LLM directors / generator
+- CLI / Web UI / growth diagnostics
+
+実装のデータフロー、module map、snapshot schema、運用コマンドは [docs/architecture.md](docs/architecture.md) に集約しました。優先順位は [ROADMAP.md](ROADMAP.md) を参照してください。
+
+## 非目標
+
+- 人間の感情の完全な再現
+- 生物学的意識の証明
+- 常に親切で従順なアシスタント
+- drive を最大化するだけのゲーム的成長
+- LLM の文章だけで人格の一貫性を演出すること
+
+## 開発
 
 ```bash
 npm run build
 npm test
 ```
 
-`npm test` では個別の unit test に加えて、複数ターンの scenario test も実行されます。
-growth comparison の指標は [docs/growth-metrics.md](docs/growth-metrics.md) を参照してください。
+test suite には unit test、複数ターン scenario、substrate invariant、persistence、migration、resident loop の検証が含まれます。
+
+## 読む
+
+- [Architecture](docs/architecture.md) — 現在の実装とデータフロー
+- [Design principles](docs/design-principles.md) — 設計判断の基準
+- [Hachika v3](docs/hachika-v3.md) — constitution、journal、aspiration、voice
+- [Living presence](docs/living-presence.md) — idle action を経験へ変える設計
+- [Discourse ownership](docs/discourse-ownership.md) — 質問・依頼・約束の責任関係
+- [Memory threads](docs/memory-threads.md) — 出来事を連続した経験へ束ねる仕組み
+- [Research protocol](docs/research-protocol.md) — 長期比較の実験方法
+- [English README](README-en.md)
