@@ -9,6 +9,7 @@ import {
   buildDailyLifeMetricsRecord,
   formatCalendarDate,
   readLifeMetricsLog,
+  readLifeMetricsLogWithDiagnostics,
   resolveImplementationRevision,
 } from "./life-metrics.js";
 import { createInitialSnapshot } from "./state.js";
@@ -141,6 +142,10 @@ test("metrics log appends once per local day and recovers after a partial line",
         ["2026-07-18", "c"],
       ],
     );
+    const diagnostics = await readLifeMetricsLogWithDiagnostics(filePath);
+    assert.equal(diagnostics.nonEmptyLines, 3);
+    assert.equal(diagnostics.invalidLines, 1);
+    assert.equal(diagnostics.records.length, 2);
   } finally {
     await rm(rootDir, { recursive: true, force: true });
   }

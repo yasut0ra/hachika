@@ -60,6 +60,12 @@ export interface AppendLifeMetricsResult {
   record: LifeMetricsRecord;
 }
 
+export interface LifeMetricsLogReadResult {
+  records: LifeMetricsRecord[];
+  nonEmptyLines: number;
+  invalidLines: number;
+}
+
 export function buildDailyLifeMetricsRecord(
   snapshot: HachikaSnapshot,
   options: BuildLifeMetricsOptions = {},
@@ -132,7 +138,7 @@ export async function appendDailyLifeMetrics(
 ): Promise<AppendLifeMetricsResult> {
   const record = buildDailyLifeMetricsRecord(snapshot, options);
   const source = await readMetricsSource(filePath);
-  const records = parseLifeMetricsSource(source);
+  const records = parseLifeMetricsSource(source).records;
   const existing = records.find((entry) => entry.date === record.date);
 
   if (existing) {
@@ -155,6 +161,12 @@ export async function appendDailyLifeMetrics(
 export async function readLifeMetricsLog(
   filePath: string,
 ): Promise<LifeMetricsRecord[]> {
+  return (await readLifeMetricsLogWithDiagnostics(filePath)).records;
+}
+
+export async function readLifeMetricsLogWithDiagnostics(
+  filePath: string,
+): Promise<LifeMetricsLogReadResult> {
   return parseLifeMetricsSource(await readMetricsSource(filePath));
 }
 
@@ -262,26 +274,36 @@ async function readMetricsSource(filePath: string): Promise<string> {
   }
 }
 
-function parseLifeMetricsSource(source: string): LifeMetricsRecord[] {
+function parseLifeMetricsSource(source: string): LifeMetricsLogReadResult {
   const records: LifeMetricsRecord[] = [];
+  let nonEmptyLines = 0;
+  let invalidLines = 0;
 
   for (const line of source.split(/\r?\n/)) {
     const trimmed = line.trim();
     if (!trimmed) {
       continue;
     }
+    nonEmptyLines += 1;
 
     try {
       const parsed = JSON.parse(trimmed) as unknown;
       if (isLifeMetricsRecord(parsed)) {
         records.push(parsed);
+      } else {
+        invalidLines += 1;
       }
     } catch {
       // A partial final line can be followed by a valid recovery record.
+      invalidLines += 1;
     }
   }
 
-  return records;
+  return {
+    records,
+    nonEmptyLines,
+    invalidLines,
+  };
 }
 
 function isLifeMetricsRecord(value: unknown): value is LifeMetricsRecord {

@@ -30,6 +30,12 @@ HACHIKA_DATA_DIR=individuals/b HACHIKA_UI_PORT=3043 npm run ui
 
 長期運用では、個体ごとに`HACHIKA_DATA_DIR=individuals/a npm run maintain`をcronまたはlaunchdから1日1回実行します。日次snapshotを固定し、resident heartbeatがstale・inactive・欠損なら非0で終了します。
 
+蓄積した日次metricsは`npm run report`でMarkdown要約と自己完結HTMLグラフにできます。複数個体の比較も1コマンドです。
+
+```bash
+npm run report -- --individual A=individuals/a --individual B=individuals/b
+```
+
 ### 2. 五つの会話を試す（10分）
 
 返答文は状態、過去の会話、LLM 設定によって変わります。以下は同じ台詞を再現するための script ではなく、何が蓄積されるかを見るための短い対話例です。

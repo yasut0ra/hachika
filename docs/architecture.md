@@ -161,6 +161,8 @@ resident loopはsnapshotとartifactの正常commit後に、日次の縦断計測
 
 `npm run maintain`は現在のsnapshotを同じ日付境界で日次archiveへ保存し、同日の既存archiveを上書きしません。完全に書いた一時ファイルをhard linkで公開するため、同時実行でも最初の1本だけが復元点になります。同じ実行でresident heartbeatも確認し、設定されたloop間隔の3倍（最低45秒）を超えたstale状態、inactive、status欠損をstderrと非0終了で知らせます。`HACHIKA_MONITOR_WEBHOOK_URL`を設定すると同じalertをJSON POSTできるため、cron / launchdの終了監視か外部monitorのどちらにも接続できます。
 
+`npm run report`はmetrics JSONLを読み、観測期間、欠測、invalid / duplicate row、timezoneと実装revisionの変化、全縦断指標のlatest値と初日差分をMarkdownへまとめます。HTML版は同じ集計と、constitution drive / body / urge、attachment、plasticity、aspiration、voice、journal、turn数の折れ線グラフをinline SVGで持つため、外部CDNやJavaScriptなしで単体保存できます。複数の`--individual LABEL=DATA_DIR`を渡すと全系列を共通の日付軸に載せて比較します。
+
 `commitSnapshot` の revision check と write は単一プロセス内の逐次実行を前提にしています。複数プロセスが同時に check を通過する可能性を完全には排除していないため、厳密な inter-process CAS / file lock は今後の課題です。
 
 migration fixture は `src/fixtures/snapshots/` に保存し、実際の旧 schema から現行 schema への読み込みを test しています。
@@ -177,7 +179,8 @@ migration fixture は `src/fixtures/snapshots/` に保存し、実際の旧 sche
 | agency | `initiative.ts`, `initiative-director.ts`, `autonomy-director.ts`, `proactive-director.ts` |
 | expression | `response-planner.ts`, `expression.ts`, `reply-generator.ts`, `generation-quality.ts` |
 | persistence | `persistence.ts`, `atomic-file.ts`, `artifacts.ts`, `life-metrics.ts`, `daily-maintenance.ts`, `conflict-retry.ts` |
-| runtimes | `index.ts`, `ui-server.ts`, `resident-loop.ts`, `resident-runtime.ts`, `daily-maintenance-cli.ts` |
+| analysis | `growth-metrics.ts`, `life-report.ts` |
+| runtimes | `index.ts`, `ui-server.ts`, `resident-loop.ts`, `resident-runtime.ts`, `daily-maintenance-cli.ts`, `life-report-cli.ts` |
 
 `engine.ts` は現在も orchestration の中心ですが、discourse の記録・整理は `turn-discourse.ts` へ分離済みです。今後は turn pipeline と idle pipeline をさらに明確な境界へ分割します。
 
@@ -189,6 +192,7 @@ npm run dev   # CLI
 npm run ui    # Web UI + resident loop, http://127.0.0.1:3042
 npm run loop  # headless resident loop
 npm run maintain # daily archive + resident heartbeat check
+npm run report # Markdown summary + self-contained HTML charts
 npm run build
 npm test
 ```
@@ -200,6 +204,13 @@ resident loop は既定で実際の経過時間を進めます。`HACHIKA_LOOP_I
 ```bash
 HACHIKA_DATA_DIR=individuals/a npm run maintain
 HACHIKA_DATA_DIR=individuals/b npm run maintain
+```
+
+単一個体は`HACHIKA_DATA_DIR`を使い、比較時はlabelとdata rootを反復指定します。`--output`には`.md` / `.html`を除いた共通出力名を指定できます（既定`reports/life-report`）。
+
+```bash
+HACHIKA_DATA_DIR=individuals/a npm run report
+npm run report -- --individual A=individuals/a --individual B=individuals/b --output reports/a-vs-b
 ```
 
 主な CLI inspection command:

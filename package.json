@@ -8,6 +8,7 @@
     "ui": "tsx src/ui-server.ts",
     "loop": "tsx src/resident-daemon.ts",
     "maintain": "tsx src/daily-maintenance-cli.ts",
+    "report": "tsx src/life-report-cli.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
     "test": "tsx --test src/*.test.ts"
