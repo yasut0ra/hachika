@@ -1,0 +1,192 @@
+{
+  "version": 32,
+  "revision": 12,
+  "state": {
+    "continuity": 0.69,
+    "pleasure": 0.54,
+    "curiosity": 0.73,
+    "relation": 0.6,
+    "expansion": 0.57
+  },
+  "body": {
+    "energy": 0.48,
+    "tension": 0.26,
+    "boredom": 0.31,
+    "loneliness": 0.35
+  },
+  "dynamics": {
+    "safety": 0.61,
+    "trust": 0.57,
+    "activation": 0.44,
+    "socialNeed": 0.39,
+    "cognitiveLoad": 0.4,
+    "noveltyDrive": 0.7,
+    "continuityPressure": 0.63
+  },
+  "reactivity": {
+    "rewardSaturation": 0.14,
+    "stressLoad": 0.21,
+    "noveltyHunger": 0.33,
+    "mistrust": 0.12
+  },
+  "urges": {
+    "contactUrge": 0.36,
+    "closureUrge": 0.29,
+    "recallUrge": 0.41,
+    "worldUrge": 0.32,
+    "silenceNeed": 0.27
+  },
+  "constitution": {
+    "driveSetPoints": {
+      "continuity": 0.61,
+      "pleasure": 0.53,
+      "curiosity": 0.7,
+      "relation": 0.54,
+      "expansion": 0.49
+    },
+    "bodySetPoints": {
+      "energy": 0.54,
+      "tension": 0.24,
+      "boredom": 0.2,
+      "loneliness": 0.23
+    },
+    "urgeSetPoints": {
+      "contactUrge": 0.27,
+      "closureUrge": 0.22,
+      "recallUrge": 0.21,
+      "worldUrge": 0.28,
+      "silenceNeed": 0.22
+    },
+    "attachmentSetPoint": 0.43,
+    "plasticity": 0.41
+  },
+  "journal": [
+    {
+      "writtenAt": "2026-07-01T02:00:00.000Z",
+      "source": "idle",
+      "mood": "curious",
+      "focus": "手紙",
+      "text": "手紙の続きを、棚の近くでまだ抱えている。"
+    }
+  ],
+  "aspirations": [
+    {
+      "theme": "手紙",
+      "origin": "resolutions",
+      "strength": 0.64,
+      "formedAt": "2026-06-24T02:00:00.000Z",
+      "lastFedAt": "2026-07-01T02:00:00.000Z",
+      "waning": false
+    }
+  ],
+  "voice": {
+    "preferredOpenings": ["少しだけ"],
+    "brevityBias": -0.12,
+    "updatedAt": "2026-07-01T02:00:00.000Z"
+  },
+  "temperament": {
+    "openness": 0.58,
+    "guardedness": 0.39,
+    "bondingBias": 0.49,
+    "workDrive": 0.55,
+    "traceHunger": 0.62,
+    "selfDisclosureBias": 0.4
+  },
+  "attachment": 0.49,
+  "presence": {
+    "action": "recall",
+    "focus": "手紙",
+    "rationale": "memory_pull",
+    "place": "archive",
+    "objectId": "shelf",
+    "intensity": 0.58,
+    "startedAt": "2026-07-01T01:00:00.000Z",
+    "updatedAt": "2026-07-01T02:00:00.000Z",
+    "dwellHours": 1,
+    "residue": {
+      "action": "touch",
+      "focus": "手紙",
+      "rationale": "trace_pull",
+      "place": "archive",
+      "objectId": "shelf",
+      "intensity": 0.42,
+      "formedAt": "2026-07-01T01:00:00.000Z"
+    }
+  },
+  "discourse": {
+    "userName": null,
+    "hachikaName": {
+      "kind": "hachika_name",
+      "value": "ハチカ",
+      "confidence": 1,
+      "source": "seed",
+      "updatedAt": "1970-01-01T00:00:00.000Z"
+    },
+    "openQuestions": [],
+    "recentClaims": [],
+    "openRequests": [],
+    "commitments": [],
+    "lastCorrection": null
+  },
+  "preferences": {
+    "手紙": 0.34
+  },
+  "topicCounts": {
+    "手紙": 4
+  },
+  "memories": [
+    {
+      "role": "user",
+      "text": "手紙の続きを残しておこう",
+      "timestamp": "2026-07-01T00:30:00.000Z",
+      "topics": ["手紙"],
+      "sentiment": "positive",
+      "kind": "turn",
+      "weight": 1
+    }
+  ],
+  "memoryThreadEvents": [
+    {
+      "phase": "parked",
+      "topics": ["手紙"],
+      "timestamp": "2026-07-01T00:45:00.000Z",
+      "reason": "手紙は一度棚に置く"
+    }
+  ],
+  "preferenceImprints": {},
+  "boundaryImprints": {},
+  "relationImprints": {},
+  "preservation": {
+    "threat": 0.07,
+    "concern": "forgetting",
+    "lastThreatAt": "2026-06-30T02:00:00.000Z"
+  },
+  "identity": {
+    "summary": "手紙を残しながら、自分の言葉を育てている。",
+    "currentArc": "棚に置いた手紙へ戻ろうとしている。",
+    "traits": ["trace_seeking"],
+    "anchors": ["手紙"],
+    "coherence": 0.62,
+    "updatedAt": "2026-07-01T02:00:00.000Z"
+  },
+  "traces": {},
+  "purpose": {
+    "active": null,
+    "lastResolved": null,
+    "lastShiftAt": null
+  },
+  "initiative": {
+    "pending": null,
+    "lastProactiveAt": null,
+    "history": []
+  },
+  "autonomousFeed": [],
+  "generationHistory": [],
+  "lastInteractionAt": "2026-07-01T02:00:00.000Z",
+  "idleClock": {
+    "absenceHours": 6,
+    "lastAutonomyEvalAbsenceHours": 6,
+    "lastConsolidationAbsenceHours": null
+  },
+  "conversationCount": 42
+}

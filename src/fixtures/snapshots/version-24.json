@@ -1,0 +1,131 @@
+{
+  "version": 24,
+  "revision": 7,
+  "state": {
+    "continuity": 0.66,
+    "pleasure": 0.56,
+    "curiosity": 0.72,
+    "relation": 0.61,
+    "expansion": 0.49
+  },
+  "body": {
+    "energy": 0.51,
+    "tension": 0.29,
+    "boredom": 0.24,
+    "loneliness": 0.33
+  },
+  "dynamics": {
+    "safety": 0.64,
+    "trust": 0.62,
+    "activation": 0.38,
+    "socialNeed": 0.41,
+    "cognitiveLoad": 0.36,
+    "noveltyDrive": 0.69,
+    "continuityPressure": 0.58
+  },
+  "reactivity": {
+    "rewardSaturation": 0.11,
+    "stressLoad": 0.18,
+    "noveltyHunger": 0.27,
+    "mistrust": 0.08
+  },
+  "temperament": {
+    "openness": 0.61,
+    "guardedness": 0.31,
+    "bondingBias": 0.53,
+    "workDrive": 0.58,
+    "traceHunger": 0.55,
+    "selfDisclosureBias": 0.43
+  },
+  "attachment": 0.52,
+  "world": {
+    "clockHour": 14.5,
+    "phase": "day",
+    "currentPlace": "studio",
+    "places": {},
+    "objects": {},
+    "recentEvents": [],
+    "lastUpdatedAt": "2026-03-12T05:30:00.000Z"
+  },
+  "discourse": {
+    "userName": {
+      "kind": "user_name",
+      "value": "やすとら",
+      "confidence": 0.94,
+      "source": "user_assertion",
+      "updatedAt": "2026-03-12T05:20:00.000Z"
+    },
+    "hachikaName": {
+      "kind": "hachika_name",
+      "value": "ハチカ",
+      "confidence": 1,
+      "source": "seed",
+      "updatedAt": "1970-01-01T00:00:00.000Z"
+    },
+    "openQuestions": [
+      {
+        "target": "world_state",
+        "text": "今はどこにいるの？",
+        "askedAt": "2026-03-12T05:29:00.000Z",
+        "status": "open",
+        "resolvedAt": null
+      }
+    ],
+    "recentClaims": [
+      {
+        "subject": "user",
+        "kind": "preference",
+        "text": "私は静かな場所が好き",
+        "updatedAt": "2026-03-12T05:25:00.000Z"
+      }
+    ],
+    "openRequests": [],
+    "lastCorrection": null
+  },
+  "preferences": {
+    "静かな場所": 0.22
+  },
+  "topicCounts": {
+    "静かな場所": 2
+  },
+  "memories": [
+    {
+      "role": "user",
+      "text": "私は静かな場所が好き",
+      "timestamp": "2026-03-12T05:25:00.000Z",
+      "topics": ["静かな場所"],
+      "sentiment": "positive"
+    }
+  ],
+  "preferenceImprints": {},
+  "boundaryImprints": {},
+  "relationImprints": {},
+  "preservation": {
+    "threat": 0,
+    "concern": null,
+    "lastThreatAt": null
+  },
+  "identity": {
+    "summary": "静かな場所で関係を育てている。",
+    "currentArc": "studioで話を続けている。",
+    "traits": ["attached"],
+    "anchors": ["静かな場所"],
+    "coherence": 0.51,
+    "updatedAt": "2026-03-12T05:30:00.000Z"
+  },
+  "traces": {},
+  "purpose": {
+    "active": null,
+    "lastResolved": null,
+    "lastShiftAt": null
+  },
+  "initiative": {
+    "pending": null,
+    "lastProactiveAt": null,
+    "history": []
+  },
+  "autonomousFeed": [],
+  "generationHistory": [],
+  "lastInteractionAt": "2026-03-12T05:30:00.000Z",
+  "conversationCount": 18
+}

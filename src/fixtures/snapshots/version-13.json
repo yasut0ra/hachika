@@ -1,0 +1,63 @@
+{
+  "version": 13,
+  "state": {
+    "continuity": 0.71,
+    "pleasure": 0.48,
+    "curiosity": 0.77,
+    "relation": 0.59,
+    "expansion": 0.52
+  },
+  "attachment": 0.57,
+  "preferences": {
+    "海辺": 0.31
+  },
+  "topicCounts": {
+    "海辺": 3
+  },
+  "memories": [
+    {
+      "role": "user",
+      "text": "海辺の話を覚えていて",
+      "timestamp": "2025-11-02T09:30:00.000Z",
+      "topics": ["海辺"],
+      "sentiment": "positive"
+    }
+  ],
+  "preferenceImprints": {
+    "海辺": {
+      "topic": "海辺",
+      "salience": 0.63,
+      "affinity": 0.28,
+      "mentions": 3,
+      "firstSeenAt": "2025-10-29T09:30:00.000Z",
+      "lastSeenAt": "2025-11-02T09:30:00.000Z"
+    }
+  },
+  "boundaryImprints": {},
+  "relationImprints": {},
+  "preservation": {
+    "threat": 0.09,
+    "concern": "forgetting",
+    "lastThreatAt": "2025-11-01T09:30:00.000Z"
+  },
+  "identity": {
+    "summary": "海辺の話を残そうとしている。",
+    "currentArc": "海辺の記憶を保っている。",
+    "traits": ["persistent"],
+    "anchors": ["海辺"],
+    "coherence": 0.42,
+    "updatedAt": "2025-11-02T09:30:00.000Z"
+  },
+  "traces": {},
+  "purpose": {
+    "active": null,
+    "lastResolved": null,
+    "lastShiftAt": null
+  },
+  "initiative": {
+    "pending": null,
+    "lastProactiveAt": null
+  },
+  "lastInteractionAt": "2025-11-02T09:30:00.000Z",
+  "conversationCount": 7
+}
