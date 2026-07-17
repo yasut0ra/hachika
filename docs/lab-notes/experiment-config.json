@@ -10,16 +10,16 @@
     "timeZone": "Asia/Tokyo"
   },
   "runtime": {
-    "host": "<always-on-host-name>",
-    "nodeVersion": "<node-version-on-host>",
+    "host": "yasudatakumanoMac-mini.local / macOS 26.3",
+    "nodeVersion": "v22.20.0",
     "loopIntervalMs": 15000,
     "fixedIdleHoursPerTick": null,
-    "keepAwake": "<host-specific-keep-awake-strategy>"
+    "keepAwake": "launchd + /usr/bin/caffeinate -is"
   },
   "llm": {
     "provider": "openai",
     "baseUrl": "https://api.openai.com/v1",
-    "defaultModel": "gpt-5-mini",
+    "defaultModel": "gpt-5.6-luna",
     "roleModels": {}
   },
   "fork": {
@@ -30,7 +30,7 @@
   "individuals": [
     {
       "id": "A",
-      "name": "<choose-name-a>",
+      "name": "ミオ",
       "dataDir": "individuals/a",
       "seed": "hachika-life-a",
       "condition": "warm",
@@ -38,7 +38,7 @@
     },
     {
       "id": "B",
-      "name": "<choose-name-b>",
+      "name": "リツ",
       "dataDir": "individuals/b",
       "seed": "hachika-life-b",
       "condition": "quiet",

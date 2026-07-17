@@ -32,6 +32,7 @@
 - Time zone: `<IANA-time-zone>`
 - Loop interval: `<milliseconds>`
 - Clock mode: `wall-clock`
+- Keep awake: `<host-specific-strategy>`
 - LLM provider/base URL: `<provider-and-non-secret-base-url>`
 - Default model: `<model>`
 - Role overrides: `<none-or-map>`
@@ -42,7 +43,8 @@
 
 ## Day 0 verification
 
-- [ ] `npm run experiment:check` succeeded
+- [ ] freeze manifest, tag, revision, and Node.js validated before birth
+- [ ] revision-0 snapshot created with the configured internal name
 - [ ] resident lock is owned by exactly one process
 - [ ] heartbeat is fresh
 - [ ] first metrics row uses the frozen revision and time zone

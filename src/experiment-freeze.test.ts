@@ -99,6 +99,7 @@ function validConfig() {
       nodeVersion: "v24.6.0",
       loopIntervalMs: 15_000,
       fixedIdleHoursPerTick: null as number | null,
+      keepAwake: "launchd + caffeinate -is",
     },
     llm: {
       provider: "openai",
@@ -119,6 +120,7 @@ function validConfig() {
         dataDir: "individuals/a",
         seed: "hachika-life-a",
         condition: "warm",
+        protocol: "週5日以上、1回5ターン以上。週2日以上は共有作業。",
       },
       {
         id: "B",
@@ -126,6 +128,7 @@ function validConfig() {
         dataDir: "individuals/b",
         seed: "hachika-life-b",
         condition: "quiet",
+        protocol: "週1回、2〜3ターンの中立的な接触のみ。",
       },
     ],
   };

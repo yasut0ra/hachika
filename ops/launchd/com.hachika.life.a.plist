@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.hachika.life.a</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/caffeinate</string>
+    <string>-is</string>
+    <string>/Users/yasut0ra/.nvm/versions/node/v22.20.0/bin/npm</string>
+    <string>run</string>
+    <string>ui</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/yasut0ra/dev/hachika</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/Users/yasut0ra/.nvm/versions/node/v22.20.0/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>HACHIKA_DATA_DIR</key>
+    <string>/Users/yasut0ra/dev/hachika/individuals/a</string>
+    <key>HACHIKA_INDIVIDUAL_ID</key>
+    <string>hachika-life-a</string>
+    <key>HACHIKA_LOOP_INTERVAL_MS</key>
+    <string>15000</string>
+    <key>HACHIKA_METRICS_TIME_ZONE</key>
+    <string>Asia/Tokyo</string>
+    <key>HACHIKA_UI_PORT</key>
+    <string>3042</string>
+  </dict>
+
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ProcessType</key>
+  <string>Background</string>
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
+
+  <key>StandardOutPath</key>
+  <string>/Users/yasut0ra/dev/hachika/individuals/a/resident.stdout.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/yasut0ra/dev/hachika/individuals/a/resident.stderr.log</string>
+</dict>
+</plist>

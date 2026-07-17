@@ -5,6 +5,40 @@ import { resolve } from "node:path";
 export const EXPERIMENT_CONFIG_SCHEMA_VERSION = 1;
 export const EXPERIMENT_IMPLEMENTATION_TAG = "v3-life-1";
 
+export interface ExperimentConfig {
+  schemaVersion: number;
+  experimentId: string;
+  implementation: { tag: string };
+  schedule: {
+    birthDate: string;
+    endDate: string;
+    timeZone: string;
+  };
+  runtime: {
+    host: string;
+    nodeVersion: string;
+    loopIntervalMs: number;
+    fixedIdleHoursPerTick: null;
+    keepAwake: string;
+  };
+  llm: {
+    provider: "openai" | "openai-compatible" | "rule";
+    baseUrl?: string;
+    defaultModel?: string;
+    roleModels: Record<string, string>;
+  };
+  fork: { enabled: boolean; day: number };
+  publication: string;
+  individuals: Array<{
+    id: string;
+    name: string;
+    dataDir: string;
+    seed: string;
+    condition: "warm" | "quiet";
+    protocol: string;
+  }>;
+}
+
 export interface ExperimentRepositoryState {
   dirty: boolean;
   headRevision: string;
@@ -24,6 +58,14 @@ export interface ExperimentCheckCliOptions {
 
 export async function loadExperimentConfig(filePath: string): Promise<unknown> {
   return JSON.parse(await readFile(filePath, "utf8")) as unknown;
+}
+
+export function parseExperimentConfig(raw: unknown): ExperimentConfig {
+  const result = validateExperimentFreeze(raw);
+  if (result.errors.length > 0) {
+    throw new Error(`experiment_config_invalid:${result.errors.join("; ")}`);
+  }
+  return raw as ExperimentConfig;
 }
 
 export function validateExperimentFreeze(
@@ -79,6 +121,7 @@ export function validateExperimentFreeze(
     : null;
   if (runtime) {
     requiredString(runtime.host, "runtime.host", errors);
+    requiredString(runtime.keepAwake, "runtime.keepAwake", errors);
     if (
       typeof runtime.loopIntervalMs !== "number" ||
       !Number.isFinite(runtime.loopIntervalMs) ||
@@ -232,6 +275,7 @@ function validateIndividuals(raw: unknown, errors: string[]): void {
       `${path}.condition`,
       errors,
     );
+    requiredString(individual.protocol, `${path}.protocol`, errors);
     if (condition && condition !== "warm" && condition !== "quiet") {
       errors.push(`${path}.condition must be warm or quiet`);
     }
