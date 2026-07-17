@@ -90,7 +90,7 @@ constitution:            // 学習される基準点 (birth 値から ±0.15 程
   plasticity             // 変わりやすさ自体も加齢で低下する (若いほど動く)
 
 journal:                 // 自己記述の積層 (append-only)
-  entries[]              // { writtenAt, mood, focus, text, source: idle|resolution }
+  entries[]              // { writtenAt, mood, focus, text, source: idle|resolution|dream }
 
 aspiration:              // 長期の向かい先 (0..2 個)
   { theme, origin, strength, formedAt, lastFedAt, waning }
@@ -178,6 +178,9 @@ snapshotに残し、parked / closed threadはautonomy候補から除外し、ユ
   LLM による文章化は将来の差し替え点として残る)
 - journal は append-only で直近 30 件を snapshot に保持。
   旧 snapshot は空の journal として hydrate される
+- resident loopは暦日ごとに、前日以前のmemory断片を決定的に再結合した夢を最大1件追記する。
+  夢は`source: dream`、`focus: null`としてidentityのrecurring focusとaspiration形成から除外し、
+  読み物を追加すること自体が人格力学を変えないようにする
 - identity は直近 journal の recurring focus を読み、
   「書き留めてきた線」を summary に取り込む
 - 完了条件は達成: journal の有無で identity.summary が分岐する

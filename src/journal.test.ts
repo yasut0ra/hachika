@@ -3,8 +3,11 @@ import test from "node:test";
 
 import {
   appendJournalEntry,
+  buildDailyDreamEntry,
   buildPresenceJournalEntry,
+  DREAM_MIN_FRAGMENTS,
   MIN_JOURNAL_EPISODE_HOURS,
+  recurringJournalFocus,
 } from "./journal.js";
 import { materializeIdleAutonomyEvaluation } from "./initiative.js";
 import { createInitialSnapshot } from "./state.js";
@@ -151,3 +154,102 @@ test("nightly consolidation journals the previous presence before selecting a ne
   assert.equal(snapshot.presence.action, "hold");
   assert.equal(snapshot.presence.focus, "新しい候補");
 });
+
+test("daily dream deterministically recombines fragments from before the local day", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.memories = [
+    memory("海の話をした", "2026-07-16T09:00:00.000Z", ["海"]),
+    memory("設計を棚へ置いた", "2026-07-16T10:00:00.000Z", ["設計"]),
+    memory("灯りを眺めた", "2026-07-16T11:00:00.000Z", ["灯り"]),
+    memory("今日はまだ夢に入らない", "2026-07-17T08:00:00.000Z", ["今日"]),
+  ];
+  const options = {
+    now: new Date("2026-07-17T12:00:00.000Z"),
+    timeZone: "UTC",
+  };
+
+  const first = buildDailyDreamEntry(snapshot, options);
+  const repeated = buildDailyDreamEntry(structuredClone(snapshot), options);
+
+  assert.ok(first);
+  assert.deepEqual(repeated, first);
+  assert.equal(first.source, "dream");
+  assert.equal(first.mood, "dreaming");
+  assert.equal(first.focus, null);
+  assert.doesNotMatch(first.text, /今日/);
+  assert.ok(["海", "設計", "灯り"].filter((fragment) => first.text.includes(fragment)).length >= 2);
+});
+
+test("daily dream is idempotent per local date and waits for enough older fragments", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.memories = [
+    memory("一つ目", "2026-07-16T09:00:00.000Z", ["一つ目"]),
+  ];
+  const options = {
+    now: new Date("2026-07-17T15:30:00.000Z"),
+    timeZone: "Asia/Tokyo",
+  };
+
+  assert.equal(buildDailyDreamEntry(snapshot, options), null);
+
+  snapshot.memories.push(
+    memory("二つ目", "2026-07-16T10:00:00.000Z", ["二つ目"]),
+  );
+  assert.equal(DREAM_MIN_FRAGMENTS, 2);
+  const first = buildDailyDreamEntry(snapshot, options);
+  assert.ok(first);
+  appendJournalEntry(snapshot, first);
+
+  assert.equal(
+    buildDailyDreamEntry(snapshot, {
+      now: new Date("2026-07-17T20:00:00.000Z"),
+      timeZone: "Asia/Tokyo",
+    }),
+    null,
+  );
+  assert.ok(
+    buildDailyDreamEntry(snapshot, {
+      now: new Date("2026-07-18T15:30:00.000Z"),
+      timeZone: "Asia/Tokyo",
+    }),
+  );
+});
+
+test("dream entries do not displace recurring identity focus", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.journal = [
+    journalEntry("idle", "設計", "2026-07-10T00:00:00.000Z"),
+    journalEntry("resolution", "設計", "2026-07-11T00:00:00.000Z"),
+    journalEntry("dream", "海", "2026-07-12T00:00:00.000Z"),
+    journalEntry("dream", "海", "2026-07-13T00:00:00.000Z"),
+    journalEntry("dream", "海", "2026-07-14T00:00:00.000Z"),
+    journalEntry("dream", "海", "2026-07-15T00:00:00.000Z"),
+  ];
+
+  assert.equal(recurringJournalFocus(snapshot), "設計");
+});
+
+function memory(text: string, timestamp: string, topics: string[]) {
+  return {
+    role: "user" as const,
+    text,
+    timestamp,
+    topics,
+    sentiment: "neutral" as const,
+    kind: "turn" as const,
+  };
+}
+
+function journalEntry(
+  source: "idle" | "resolution" | "dream",
+  focus: string,
+  writtenAt: string,
+) {
+  return {
+    writtenAt,
+    source,
+    mood: null,
+    focus,
+    text: `${focus}について書いた。`,
+  };
+}

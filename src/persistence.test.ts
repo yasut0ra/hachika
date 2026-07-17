@@ -13,6 +13,27 @@ import {
 import { createInitialSnapshot } from "./state.js";
 import type { TraceEntry } from "./types.js";
 
+test("persistence preserves dream journal entries", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "hachika-dream-persistence-"));
+  const filePath = join(dir, "hachika-state.json");
+  const snapshot = createInitialSnapshot();
+  snapshot.journal.push({
+    writtenAt: "2026-07-17T00:00:00.000Z",
+    source: "dream",
+    mood: "dreaming",
+    focus: null,
+    text: "「海」と「灯り」の位置が入れ替わっていた。",
+  });
+
+  try {
+    await saveSnapshot(filePath, snapshot);
+    const loaded = await loadSnapshot(filePath);
+    assert.deepEqual(loaded.journal, snapshot.journal);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("sanitizeSnapshot removes low-information topics and repairs polluted traces", () => {
   const snapshot = createInitialSnapshot();
   snapshot.preferences = {

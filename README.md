@@ -118,7 +118,7 @@ Web UI の State、World、Growth、Embodiment panel で、会話の裏側にあ
 - 傷、報酬慣れ、新奇性欲求を残す reactivity
 - 生得的な constitution と、経験から学ぶ temperament
 - 記憶、関係、境界、共同作業、外部 artifact
-- purpose、initiative、presence、journal、aspiration、voice
+- purpose、initiative、presence、日々の夢を含むjournal、aspiration、voice
 - 質問、依頼、約束、訂正を追う discourse ownership
 - 場所、物、時刻、行動履歴を持つ小さな world
 

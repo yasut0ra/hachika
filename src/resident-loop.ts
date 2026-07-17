@@ -1,4 +1,5 @@
 import { HachikaEngine } from "./engine.js";
+import { appendDailyDreamIfDue } from "./journal.js";
 import type { AutonomyDirector } from "./autonomy-director.js";
 import type { ProactiveDirector } from "./proactive-director.js";
 import type { ReplyGenerator } from "./reply-generator.js";
@@ -8,6 +9,7 @@ export interface ResidentLoopTickOptions {
   idleHours: number;
   clockMode?: "simulated" | "wall";
   now?: Date;
+  timeZone?: string;
   autonomyDirector?: AutonomyDirector | null;
   replyGenerator?: ReplyGenerator | null;
   proactiveDirector?: ProactiveDirector | null;
@@ -76,6 +78,10 @@ export async function runResidentLoopTick(
     });
   }
   const nextSnapshot = engine.getSnapshot();
+  appendDailyDreamIfDue(nextSnapshot, {
+    ...(options.now ? { now: options.now } : {}),
+    ...(options.timeZone ? { timeZone: options.timeZone } : {}),
+  });
   const outwardActivities = diffInitiativeHistory(
     historyBeforeOutward,
     nextSnapshot.initiative.history ?? [],

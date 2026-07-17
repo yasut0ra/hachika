@@ -69,6 +69,57 @@ test("resident loop can surface idle reactivation activity", async () => {
   assert.notEqual(result.snapshot.world.clockHour, snapshot.world.clockHour);
 });
 
+test("resident loop writes at most one deterministic dream per local day", async () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.memories = [
+    {
+      role: "user",
+      text: "海の話をした",
+      timestamp: "2026-07-16T09:00:00.000Z",
+      topics: ["海"],
+      sentiment: "neutral",
+      kind: "turn",
+    },
+    {
+      role: "hachika",
+      text: "棚へ設計を置いた",
+      timestamp: "2026-07-16T09:01:00.000Z",
+      topics: ["設計"],
+      sentiment: "neutral",
+      kind: "turn",
+    },
+  ];
+
+  const first = await runResidentLoopTick(snapshot, {
+    idleHours: 0,
+    now: new Date("2026-07-17T12:00:00.000Z"),
+    timeZone: "UTC",
+  });
+  const duplicate = await runResidentLoopTick(first.snapshot, {
+    idleHours: 0,
+    now: new Date("2026-07-17T20:00:00.000Z"),
+    timeZone: "UTC",
+  });
+  const nextDay = await runResidentLoopTick(duplicate.snapshot, {
+    idleHours: 0,
+    now: new Date("2026-07-18T12:00:00.000Z"),
+    timeZone: "UTC",
+  });
+
+  assert.equal(
+    first.snapshot.journal.filter((entry) => entry.source === "dream").length,
+    1,
+  );
+  assert.equal(
+    duplicate.snapshot.journal.filter((entry) => entry.source === "dream").length,
+    1,
+  );
+  assert.equal(
+    nextDay.snapshot.journal.filter((entry) => entry.source === "dream").length,
+    2,
+  );
+});
+
 test("resident loop can reactivate a current world object trace after quiet observation", async () => {
   const snapshot = createInitialSnapshot();
   snapshot.lastInteractionAt = "2026-03-20T10:00:00.000Z";

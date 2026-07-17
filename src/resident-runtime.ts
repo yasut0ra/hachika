@@ -187,6 +187,7 @@ export class ResidentLoopRuntime {
             idleHours,
             clockMode,
             now: tickStartedAt,
+            timeZone: this.metricsTimeZone,
             autonomyDirector: this.options.autonomyDirector ?? null,
             replyGenerator: this.options.replyGenerator ?? null,
             proactiveDirector: this.options.proactiveDirector ?? null,

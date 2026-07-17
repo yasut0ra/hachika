@@ -386,11 +386,13 @@ function hydrateJournal(raw: unknown): JournalEntry[] {
       (entry) =>
         typeof entry.writtenAt === "string" &&
         typeof entry.text === "string" &&
-        (entry.source === "idle" || entry.source === "resolution"),
+        (entry.source === "idle" ||
+          entry.source === "resolution" ||
+          entry.source === "dream"),
     )
     .map((entry) => ({
       writtenAt: entry.writtenAt as string,
-      source: entry.source as "idle" | "resolution",
+      source: entry.source as "idle" | "resolution" | "dream",
       mood: typeof entry.mood === "string" ? entry.mood : null,
       focus: typeof entry.focus === "string" ? entry.focus : null,
       text: (entry.text as string).trim(),

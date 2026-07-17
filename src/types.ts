@@ -42,7 +42,7 @@ export interface AutonomyUrges {
 // v3 Phase 2: 自己記述。記憶とは別に「自分はそれをどう置いたか」を積層する
 export interface JournalEntry {
   writtenAt: string;
-  source: "idle" | "resolution";
+  source: "idle" | "resolution" | "dream";
   mood: string | null;
   focus: string | null;
   text: string;

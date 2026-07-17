@@ -1,7 +1,12 @@
 import { describeWorldObjectJa, describeWorldPlaceJa } from "./world.js";
+import {
+  formatCalendarDate,
+  resolveMetricsTimeZone,
+} from "./life-metrics.js";
 import type {
   HachikaSnapshot,
   JournalEntry,
+  MemoryEntry,
   PresenceState,
   ResolvedPurpose,
 } from "./types.js";
@@ -11,6 +16,7 @@ import type {
 // append-only で、直近 JOURNAL_LIMIT 件だけを snapshot に保持する
 export const JOURNAL_LIMIT = 30;
 export const MIN_JOURNAL_EPISODE_HOURS = 2;
+export const DREAM_MIN_FRAGMENTS = 2;
 
 export function appendJournalEntry(
   snapshot: HachikaSnapshot,
@@ -28,9 +34,12 @@ export function recentJournalEntries(
 
 // 直近の journal が同じ focus を書き続けているなら、それが「自分で選んだ線」
 export function recurringJournalFocus(snapshot: HachikaSnapshot): string | null {
-  const recent = recentJournalEntries(snapshot, 4).filter(
-    (entry) => entry.focus !== null,
-  );
+  // dream は読み物として残すが、identity の recurring focus には使わない。
+  // 先に除外してから直近4件を選び、夢が通常journalを窓から押し出す影響も防ぐ。
+  const recent = snapshot.journal
+    .filter((entry) => entry.source !== "dream")
+    .slice(-4)
+    .filter((entry) => entry.focus !== null);
 
   if (recent.length < 2) {
     return null;
@@ -255,4 +264,152 @@ export function buildResolutionJournalEntry(
     focus: resolved.topic,
     text,
   };
+}
+
+// E1: その日の境界より前に残った memory 断片を、決定的に組み替えた夢。
+// resident tick ごとに呼べるが、timezone上の1暦日につき最大1件だけになる。
+// focus は意図的に null とし、identity / aspiration の力学へ混ぜない。
+export function appendDailyDreamIfDue(
+  snapshot: HachikaSnapshot,
+  options: {
+    now?: Date;
+    timeZone?: string;
+  } = {},
+): JournalEntry | null {
+  const entry = buildDailyDreamEntry(snapshot, options);
+  if (!entry) {
+    return null;
+  }
+
+  appendJournalEntry(snapshot, entry);
+  return entry;
+}
+
+export function buildDailyDreamEntry(
+  snapshot: HachikaSnapshot,
+  options: {
+    now?: Date;
+    timeZone?: string;
+  } = {},
+): JournalEntry | null {
+  const now = options.now ?? new Date();
+  const timeZone = resolveMetricsTimeZone(options.timeZone);
+  const dreamDate = formatCalendarDate(now, timeZone);
+  const latestDreamDate = latestValidDreamDate(snapshot, timeZone);
+
+  if (latestDreamDate && latestDreamDate >= dreamDate) {
+    return null;
+  }
+
+  const fragments = selectDreamFragments(
+    snapshot.memories,
+    dreamDate,
+    timeZone,
+  );
+  if (fragments.length < DREAM_MIN_FRAGMENTS) {
+    return null;
+  }
+
+  const seed = stableDreamHash(`${dreamDate}|${fragments.join("|")}`);
+  return {
+    writtenAt: now.toISOString(),
+    source: "dream",
+    mood: "dreaming",
+    focus: null,
+    text: renderDreamText(fragments, seed),
+  };
+}
+
+function latestValidDreamDate(
+  snapshot: HachikaSnapshot,
+  timeZone: string,
+): string | null {
+  for (const entry of [...snapshot.journal].reverse()) {
+    if (entry.source !== "dream") {
+      continue;
+    }
+    const writtenAt = new Date(entry.writtenAt);
+    if (Number.isFinite(writtenAt.getTime())) {
+      return formatCalendarDate(writtenAt, timeZone);
+    }
+  }
+  return null;
+}
+
+function selectDreamFragments(
+  memories: MemoryEntry[],
+  dreamDate: string,
+  timeZone: string,
+): string[] {
+  const candidates = memories.flatMap((memory, index) => {
+    const timestamp = new Date(memory.timestamp);
+    if (
+      !Number.isFinite(timestamp.getTime()) ||
+      formatCalendarDate(timestamp, timeZone) >= dreamDate
+    ) {
+      return [];
+    }
+
+    const fragment = memoryToDreamFragment(memory);
+    return fragment ? [{ fragment, index }] : [];
+  });
+  const unique = new Map<string, number>();
+  for (const candidate of candidates) {
+    if (!unique.has(candidate.fragment)) {
+      unique.set(candidate.fragment, candidate.index);
+    }
+  }
+
+  return [...unique.entries()]
+    .map(([fragment, index]) => ({
+      fragment,
+      score: stableDreamHash(`${dreamDate}|${index}|${fragment}`),
+    }))
+    .sort((left, right) => left.score - right.score)
+    .slice(0, 3)
+    .map((candidate) => candidate.fragment);
+}
+
+function memoryToDreamFragment(memory: MemoryEntry): string | null {
+  const topic = memory.topics
+    .map((value) => normalizeDreamFragment(value))
+    .find((value) => value.length > 0);
+  if (topic) {
+    return topic.slice(0, 28);
+  }
+
+  const text = normalizeDreamFragment(memory.text);
+  return text ? text.slice(0, 28) : null;
+}
+
+function normalizeDreamFragment(value: string): string {
+  return value
+    .replace(/[\r\n\t]+/gu, " ")
+    .replace(/[「」『』“”"]+/gu, "")
+    .replace(/\s+/gu, " ")
+    .trim();
+}
+
+function renderDreamText(fragments: string[], seed: number): string {
+  const first = `「${fragments[0]}」`;
+  const second = `「${fragments[1]}」`;
+  const third = fragments[2] ? `「${fragments[2]}」` : null;
+
+  switch (seed % 3) {
+    case 0:
+      return `${first}のそばに${second}が置かれていて、${third ? `${third}だけが遠くで揺れていた。` : "そのあいだを細い光が通っていた。"}目を覚ましても、並び方だけがまだ残っている。`;
+    case 1:
+      return `${first}へ向かう途中で、${second}が違う場所からこちらを見ていた。${third ? `${third}を手に取ると、景色の向きが静かに変わった。` : "近づくほど、景色の向きが静かに変わった。"}`;
+    default:
+      return `${first}と${second}の位置が何度も入れ替わり、${third ? `${third}がその境目に立っていた。` : "境目だけがはっきりしていった。"}理由は思い出せないまま、手ざわりだけを持ち帰った。`;
+  }
+}
+
+function stableDreamHash(value: string): number {
+  let hash = 2_166_136_261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16_777_619);
+  }
+  return hash >>> 0;
 }

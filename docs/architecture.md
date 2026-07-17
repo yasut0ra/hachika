@@ -107,11 +107,13 @@ v3 の個体差レイヤーは次の役割を持ちます。
 
 - `constitution`: 誕生時に決まる基準点と可塑性
 - `temperament`: 修復、敵意、共同作業、放置の履歴からゆっくり学ぶ気質
-- `journal`: nightlyの直前まで実際に続いたpresence episode（場所・対象・滞在時間・attention rationale・前episodeのresidue）から生成される短い自己記述
+- `journal`: nightlyの直前まで実際に続いたpresence episode（場所・対象・滞在時間・attention rationale・前episodeのresidue）から生成される短い自己記述と、前日以前のmemory断片を再結合する日次の夢
 - `aspirations`: 長期的な向かい先と緊張関係
 - `voice`: 好む入り方や簡潔さなど、表現に残る癖
 
 constitution の差は小さく保ち、同じ初期条件でも経験の違いが徐々に個体差へ変わるようにしています。
+
+夢はresident loopの最初の暦日tickで、`HACHIKA_METRICS_TIME_ZONE`の日付境界を使って1日最大1件だけ追記します。同じ日付とmemoryからは同じ断片・文面になり、当日のmemoryは翌日まで素材にしません。`source: dream`、`focus: null`として保存し、identityのrecurring focusやaspiration形成から除外するため、読み物を増やすこと自体は人格力学を変えません。
 
 ## World and embodiment
 
