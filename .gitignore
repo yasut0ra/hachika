@@ -5,6 +5,7 @@ data/backups/
 data/hachika-state.json
 data/resident-lock.json
 data/resident-status.json
+individuals/
 .env
 .env.*
 !.env.example

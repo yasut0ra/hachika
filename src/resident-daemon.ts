@@ -1,9 +1,8 @@
-import { resolve } from "node:path";
-
 import {
   createAutonomyDirectorFromEnv,
   describeAutonomyDirector,
 } from "./autonomy-director.js";
+import { resolveHachikaDataPaths } from "./data-paths.js";
 import { loadDotEnv } from "./env.js";
 import {
   createProactiveDirectorFromEnv,
@@ -17,12 +16,14 @@ import {
 } from "./resident-loop.js";
 import { ResidentLoopRuntime } from "./resident-runtime.js";
 
-const snapshotPath = resolve(process.cwd(), "data/hachika-state.json");
-const artifactsDir = resolve(process.cwd(), "data/artifacts");
-const residentLockPath = resolve(process.cwd(), "data/resident-lock.json");
-const residentStatusPath = resolve(process.cwd(), "data/resident-status.json");
-
 loadDotEnv();
+const {
+  dataDir,
+  snapshotPath,
+  artifactsDir,
+  residentLockPath,
+  residentStatusPath,
+} = resolveHachikaDataPaths();
 
 const config = readResidentLoopConfigFromEnv();
 const replyGenerator = createReplyGeneratorFromEnv();
@@ -53,6 +54,7 @@ process.on("SIGTERM", () => {
 try {
   await runtime.start();
   console.log("Hachika resident loop");
+  console.log(`data:${dataDir}`);
   console.log(describeResidentLoopConfig(config));
   console.log(`reply:${describeReplyGenerator(replyGenerator)}`);
   console.log(`autonomy:${describeAutonomyDirector(autonomyDirector)}`);

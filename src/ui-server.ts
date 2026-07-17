@@ -6,6 +6,7 @@ import { syncArtifacts } from "./artifacts.js";
 import { createAutonomyDirectorFromEnv } from "./autonomy-director.js";
 import { createBehaviorDirectorFromEnv } from "./behavior-director.js";
 import { runWithConflictRetry } from "./conflict-retry.js";
+import { resolveHachikaDataPaths } from "./data-paths.js";
 import { HachikaEngine } from "./engine.js";
 import { loadDotEnv } from "./env.js";
 import { createInputInterpreterFromEnv } from "./input-interpreter.js";
@@ -24,12 +25,15 @@ import { createTurnDirectorFromEnv } from "./turn-director.js";
 import { createInitialSnapshot } from "./state.js";
 import { buildUiState } from "./ui-state.js";
 
-const snapshotPath = resolve(process.cwd(), "data/hachika-state.json");
-const artifactsDir = resolve(process.cwd(), "data/artifacts");
-const residentLockPath = resolve(process.cwd(), "data/resident-lock.json");
-const residentStatusPath = resolve(process.cwd(), "data/resident-status.json");
-const uiDir = resolve(process.cwd(), "ui");
 loadDotEnv();
+const {
+  dataDir,
+  snapshotPath,
+  artifactsDir,
+  residentLockPath,
+  residentStatusPath,
+} = resolveHachikaDataPaths();
+const uiDir = resolve(process.cwd(), "ui");
 const host = process.env.HACHIKA_UI_HOST?.trim() || "127.0.0.1";
 const port = Number(process.env.HACHIKA_UI_PORT?.trim() || "3042");
 const snapshot = await loadSnapshot(snapshotPath);
@@ -212,6 +216,7 @@ process.on("SIGTERM", () => {
 
 await listenServer(server, port, host);
 console.log(`Hachika UI listening on http://${host}:${port}`);
+console.log(`Hachika data: ${dataDir}`);
 
 try {
   await residentLoop.start();

@@ -4,7 +4,6 @@ import {
   cursorTo,
   type Interface,
 } from "node:readline";
-import { resolve } from "node:path";
 import { stdin as input, stdout as output } from "node:process";
 
 import { describeArtifactFiles, syncArtifacts } from "./artifacts.js";
@@ -13,6 +12,7 @@ import {
   describeBehaviorDirector,
 } from "./behavior-director.js";
 import { runWithConflictRetry } from "./conflict-retry.js";
+import { resolveHachikaDataPaths } from "./data-paths.js";
 import { HachikaEngine } from "./engine.js";
 import { loadDotEnv } from "./env.js";
 import { summarizeLiveGrowthMetrics } from "./growth-metrics.js";
@@ -65,9 +65,13 @@ import {
   formatWorldSummary,
 } from "./world.js";
 
-const snapshotPath = resolve(process.cwd(), "data/hachika-state.json");
-const artifactsDir = resolve(process.cwd(), "data/artifacts");
-const residentStatusPath = resolve(process.cwd(), "data/resident-status.json");
+loadDotEnv();
+const {
+  dataDir,
+  snapshotPath,
+  artifactsDir,
+  residentStatusPath,
+} = resolveHachikaDataPaths();
 const CLI_AUTONOMOUS_POLL_INTERVAL_MS = 4000;
 const CLI_CAN_STYLE = output.isTTY && process.env.NO_COLOR !== "1";
 
@@ -160,7 +164,6 @@ function buildPrompt(): string {
 
   return `${style("hachika", ANSI.cyan)}${style("::", ANSI.gray)}${style(">", ANSI.magenta)} `;
 }
-loadDotEnv();
 const snapshot = await loadSnapshot(snapshotPath);
 const engine = new HachikaEngine(snapshot);
 const replyGenerator = createReplyGeneratorFromEnv();
@@ -395,6 +398,7 @@ async function printIntro(currentEngine: HachikaEngine): Promise<void> {
   printKeyValue("attachment", currentEngine.getSnapshot().attachment.toFixed(2));
   printKeyValue("world", formatWorldSummary(currentEngine.getSnapshot().world));
   printKeyValue("identity", currentEngine.getIdentity().summary);
+  printKeyValue("data", dataDir);
   printSection("DIRECTORS");
   printKeyValue("reply", describeReplyGenerator(replyGenerator));
   printKeyValue("proactive", describeProactiveDirector(proactiveDirector));
