@@ -22,6 +22,7 @@ import {
 import { createResponsePlannerFromEnv } from "./response-planner.js";
 import { createTraceExtractorFromEnv } from "./trace-extractor.js";
 import { createTurnDirectorFromEnv } from "./turn-director.js";
+import { createUiRequestGuard, parseAllowedUiHosts } from "./ui-request-guard.js";
 import { createInitialSnapshot } from "./state.js";
 import { buildUiState } from "./ui-state.js";
 
@@ -37,6 +38,11 @@ const {
 const uiDir = resolve(process.cwd(), "ui");
 const host = process.env.HACHIKA_UI_HOST?.trim() || "127.0.0.1";
 const port = Number(process.env.HACHIKA_UI_PORT?.trim() || "3042");
+const requestGuard = createUiRequestGuard({
+  host,
+  port,
+  allowedHosts: parseAllowedUiHosts(process.env.HACHIKA_UI_ALLOWED_HOSTS),
+});
 const snapshot = await loadSnapshot(snapshotPath);
 const engine = new HachikaEngine(snapshot);
 const replyGenerator = createReplyGeneratorFromEnv();
@@ -70,6 +76,11 @@ await persistState(engine);
 
 const server = createServer(async (request, response) => {
   try {
+    const guarded = requestGuard.check(request);
+    if (!guarded.ok) {
+      return sendJson(response, guarded.status, { error: guarded.error });
+    }
+
     const url = new URL(request.url ?? "/", `http://${host}:${port}`);
     const isApiRequest = url.pathname.startsWith("/api/");
 
