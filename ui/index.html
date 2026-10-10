@@ -13,6 +13,9 @@
         <span>hachika</span>
       </a>
       <div class="topbar-actions">
+        <button id="welcome-button" class="quiet-button welcome-button" type="button" hidden>
+          留守中
+        </button>
         <button id="proactive-button" class="quiet-button" title="Hachikaから声をかけてもらう">
           呼びかけ
         </button>
@@ -36,6 +39,26 @@
     </header>
 
     <div class="flash" id="flash" aria-live="polite"></div>
+
+    <dialog class="welcome" id="welcome-dialog" aria-labelledby="welcome-title">
+      <form method="dialog" class="welcome-card">
+        <header class="welcome-head">
+          <span class="section-kicker">Welcome back</span>
+          <h2 id="welcome-title">おかえり</h2>
+          <p class="welcome-away" id="welcome-away"></p>
+        </header>
+        <ol class="welcome-timeline" id="welcome-timeline"></ol>
+        <p class="welcome-omitted" id="welcome-omitted" hidden></p>
+        <section class="welcome-now" aria-label="いまの様子">
+          <span>いま</span>
+          <p id="welcome-now"></p>
+        </section>
+        <footer class="welcome-actions">
+          <button class="quiet-button" value="close">あとで</button>
+          <button class="send-button" value="talk" autofocus>話しかける</button>
+        </footer>
+      </form>
+    </dialog>
 
     <main class="shell" id="top">
       <section class="presence-layout">

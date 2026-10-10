@@ -90,7 +90,7 @@ hostility と repair は対称ではありません。傷つきは速く、mistr
 >
 > **あなた:** 戻ったよ。何をしてた？
 
-idle 中は body と urge が動き、`observe / hold / drift / recall` などの internal action が presence として続きます。外へ発話しない時間にも、記憶の整理、trace の手入れ、場所や物への接触が起こり、戻った後の応答へ residue が残ります。
+idle 中は body と urge が動き、`observe / hold / drift / recall` などの internal action が presence として続きます。外へ発話しない時間にも、記憶の整理、trace の手入れ、場所や物への接触が起こり、戻った後の応答へ residue が残ります。Web UI を開き直すと、話していないあいだの夢・日誌・小さな出来事・話しかけようとした言葉が「おかえり」としてまとまって表示されます。
 
 ### 3. 内側を覗く（2分）
 

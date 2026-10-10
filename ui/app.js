@@ -26,7 +26,22 @@ const observeButton = document.getElementById("observe-button");
 const closeObserveButton = document.getElementById("close-observe-button");
 const observatoryNode = document.getElementById("observatory");
 const resetButton = document.getElementById("reset-button");
+const welcomeButton = document.getElementById("welcome-button");
+const welcomeDialog = document.getElementById("welcome-dialog");
+const welcomeAwayNode = document.getElementById("welcome-away");
+const welcomeTimelineNode = document.getElementById("welcome-timeline");
+const welcomeOmittedNode = document.getElementById("welcome-omitted");
+const welcomeNowNode = document.getElementById("welcome-now");
 const UI_POLL_INTERVAL_MS = 4000;
+const WELCOME_SEEN_KEY = "hachika:welcome-seen";
+const WELCOME_KIND_LABELS = {
+  message: "話しかけた",
+  aspiration: "願い",
+  dream: "夢",
+  event: "出来事",
+  journal: "日誌",
+  activity: "過ごし方",
+};
 
 let currentUi = null;
 let knownAutonomousIds = new Set();
@@ -45,6 +60,7 @@ let avatarBlinkEndTimer = null;
 let currentBlinkIntervalMs = null;
 let avatarMouthTimer = null;
 let activeAvatarSpeechId = null;
+let shownWelcomeDigest = null;
 
 async function request(path, options = {}) {
   const response = await fetch(path, {
@@ -93,6 +109,7 @@ function render(ui, options = {}) {
   renderCommitments(ui.commitments ?? []);
   renderTraces(ui.traces);
   renderArtifacts(ui.artifacts);
+  welcomeButton.hidden = !ui.welcomeBack;
 
   if (newAutonomous.length > 0) {
     setFlash("Hachikaが話しかけました");
@@ -999,9 +1016,159 @@ resetButton.addEventListener("click", async () => {
   }
 });
 
+function maybeShowWelcome() {
+  const digest = currentUi?.welcomeBack;
+
+  if (digest && !welcomeDialog.open && hasUnseenWelcome(digest)) {
+    openWelcome(digest);
+  }
+}
+
+function openWelcome(digest) {
+  shownWelcomeDigest = digest;
+  welcomeAwayNode.textContent = `${digest.awayLabel}ぶり · 話していないあいだのこと`;
+  welcomeTimelineNode.replaceChildren(
+    ...(digest.moments.length > 0
+      ? digest.moments.map(createWelcomeMoment)
+      : [createQuietWelcomeMoment()]),
+  );
+  welcomeOmittedNode.hidden = digest.omittedCount === 0;
+  welcomeOmittedNode.textContent = `ほかにも${digest.omittedCount}つ、静かな時間があった。`;
+  welcomeNowNode.textContent = currentUi?.embodiment?.summary ?? "";
+  welcomeDialog.returnValue = "";
+  welcomeDialog.showModal();
+}
+
+function createWelcomeMoment(moment) {
+  const item = document.createElement("li");
+  item.className = "welcome-moment";
+  item.dataset.kind = moment.kind;
+
+  const meta = document.createElement("div");
+  meta.className = "welcome-moment-meta";
+  const time = document.createElement("time");
+  time.dateTime = moment.at;
+  time.textContent = formatWelcomeTime(moment.at);
+  const kind = document.createElement("span");
+  kind.className = "welcome-kind";
+  kind.textContent = WELCOME_KIND_LABELS[moment.kind] ?? moment.kind;
+  meta.append(time, kind);
+
+  if (moment.place) {
+    const place = document.createElement("span");
+    place.textContent = moment.place;
+    meta.append(place);
+  }
+
+  const text = document.createElement("p");
+  text.textContent = moment.text;
+  item.append(meta, text);
+  return item;
+}
+
+function createQuietWelcomeMoment() {
+  const item = document.createElement("li");
+  item.className = "welcome-moment";
+  item.dataset.kind = "activity";
+  const text = document.createElement("p");
+  text.textContent = "大きな出来事はなく、静かに過ごしていた。";
+  item.append(text);
+  return item;
+}
+
+function formatWelcomeTime(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  const time = date.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
+  const startOfDay = (target) =>
+    new Date(target.getFullYear(), target.getMonth(), target.getDate()).getTime();
+  const dayDiff = Math.round((startOfDay(new Date()) - startOfDay(date)) / 86_400_000);
+
+  if (dayDiff === 0) {
+    return `今日 ${time}`;
+  }
+
+  if (dayDiff === 1) {
+    return `昨日 ${time}`;
+  }
+
+  return `${date.getMonth() + 1}/${date.getDate()} ${time}`;
+}
+
+// 同じ留守のあいだに新しい出来事がなければ、閉じたおかえりをもう一度は開かない
+function hasUnseenWelcome(digest) {
+  const seen = readWelcomeSeen();
+
+  if (!seen || seen.since !== digest.since) {
+    return true;
+  }
+
+  return digest.moments.some((moment) => moment.at > seen.seenUntil);
+}
+
+function markWelcomeSeen(digest) {
+  const seenUntil = digest.moments.reduce(
+    (latest, moment) => (moment.at > latest ? moment.at : latest),
+    digest.since,
+  );
+
+  try {
+    window.localStorage.setItem(
+      WELCOME_SEEN_KEY,
+      JSON.stringify({ since: digest.since, seenUntil }),
+    );
+  } catch {
+    // 保存できなくても、次に開いたときにもう一度見せるだけ
+  }
+}
+
+function readWelcomeSeen() {
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(WELCOME_SEEN_KEY) ?? "null");
+    return parsed && typeof parsed.since === "string" && typeof parsed.seenUntil === "string"
+      ? parsed
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+welcomeDialog.addEventListener("close", () => {
+  if (shownWelcomeDigest) {
+    markWelcomeSeen(shownWelcomeDigest);
+  }
+
+  if (welcomeDialog.returnValue === "talk") {
+    messageInput.focus();
+  }
+});
+
+welcomeButton.addEventListener("click", () => {
+  if (currentUi?.welcomeBack) {
+    openWelcome(currentUi.welcomeBack);
+  }
+});
+
+document.addEventListener("visibilitychange", async () => {
+  if (document.visibilityState !== "visible") {
+    return;
+  }
+
+  try {
+    render(await request("/api/state"), { announceAutonomy: true });
+    maybeShowWelcome();
+  } catch {
+    setConnectionState(false);
+  }
+});
+
 request("/api/state")
   .then((ui) => {
     render(ui);
+    maybeShowWelcome();
     startPolling();
   })
   .catch((error) => {

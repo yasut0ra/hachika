@@ -1555,3 +1555,171 @@ body {
     display: none;
   }
 }
+
+/* おかえり: 話していないあいだのこと */
+.welcome {
+  width: min(560px, calc(100vw - 32px));
+  max-height: none;
+  overflow: hidden;
+  padding: 0;
+  border: 1px solid rgba(61, 43, 32, 0.12);
+  border-radius: 22px;
+  color: var(--ink);
+  background: #fbf6ef;
+  box-shadow: 0 30px 80px rgba(42, 24, 14, 0.28);
+}
+
+.welcome[open] {
+  animation: rise 220ms ease;
+}
+
+.welcome::backdrop {
+  background: rgba(39, 27, 20, 0.38);
+  backdrop-filter: blur(3px);
+}
+
+.welcome-card {
+  display: flex;
+  flex-direction: column;
+  max-height: min(760px, calc(100dvh - 48px));
+  padding: 26px 26px 20px;
+}
+
+.welcome-head h2 {
+  margin: 4px 0 0;
+  font-family: "Iowan Old Style", "Hiragino Mincho ProN", serif;
+  font-size: 30px;
+  font-weight: 500;
+}
+
+.welcome-away {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.welcome-timeline {
+  flex: 1;
+  min-height: 0;
+  margin: 20px 0 0;
+  padding: 0 4px 0 0;
+  overflow: auto;
+  list-style: none;
+}
+
+.welcome-moment {
+  position: relative;
+  padding: 0 0 16px 22px;
+}
+
+.welcome-moment::before {
+  position: absolute;
+  top: 6px;
+  left: 4px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--moment-color, #b9a796);
+  content: "";
+}
+
+.welcome-moment:not(:last-child)::after {
+  position: absolute;
+  top: 17px;
+  bottom: 2px;
+  left: 7px;
+  width: 1px;
+  background: rgba(72, 47, 31, 0.14);
+  content: "";
+}
+
+.welcome-moment[data-kind="message"],
+.welcome-moment[data-kind="aspiration"] {
+  --moment-color: #a9462f;
+}
+
+.welcome-moment[data-kind="dream"] {
+  --moment-color: #5b6f8f;
+}
+
+.welcome-moment[data-kind="event"] {
+  --moment-color: #c08a2e;
+}
+
+.welcome-moment[data-kind="journal"] {
+  --moment-color: #2f5e52;
+}
+
+.welcome-moment-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 4px;
+  color: var(--muted);
+  font: 11px/1.4 ui-monospace, "SFMono-Regular", monospace;
+}
+
+.welcome-kind {
+  color: var(--moment-color, var(--muted));
+}
+
+.welcome-moment p {
+  margin: 0;
+  line-height: 1.65;
+}
+
+.welcome-moment[data-kind="dream"] p {
+  font-family: "Iowan Old Style", "Hiragino Mincho ProN", serif;
+}
+
+.welcome-omitted {
+  margin: 10px 0 0 22px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.welcome-now {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: rgba(181, 72, 46, 0.07);
+}
+
+.welcome-now span {
+  color: #a9462f;
+  font-size: 11px;
+}
+
+.welcome-now p {
+  margin: 3px 0 0;
+  line-height: 1.55;
+}
+
+.welcome-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.welcome-actions button {
+  min-height: 40px;
+  padding: 8px 16px;
+  font-size: 13px;
+}
+
+@media (max-width: 640px) {
+  .welcome {
+    width: calc(100vw - 16px);
+    border-radius: 18px;
+  }
+
+  .welcome-card {
+    max-height: calc(100dvh - 24px);
+    padding: 20px 16px 14px;
+  }
+
+  .welcome-actions button {
+    flex: 1;
+  }
+}

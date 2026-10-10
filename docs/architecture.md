@@ -117,7 +117,7 @@ constitution の差は小さく保ち、同じ初期条件でも経験の違い�
 
 ## World and embodiment
 
-world state は clock、phase、current place、object state、recent events を持ちます。presence と world action はアバターの姿勢、視線、呼吸へ投影されます。Web UI は会話、内部状態、world、growth metrics、embodiment を同じ snapshot から表示します。
+world state は clock、phase、current place、object state、recent events を持ちます。presence と world action はアバターの姿勢、視線、呼吸へ投影されます。Web UI は会話、内部状態、world、growth metrics、embodiment を同じ snapshot から表示します。最後の会話から1時間以上経っていれば、その間の自発的な言葉・aspiration・夢・日誌・日次の出来事・idle の過ごし方を `src/welcome-back.ts` が時系列に最大8件まとめ、UI が「おかえり」として表示します。snapshot を読むだけの観測系で、状態の力学には触れません。
 
 resident loopは`HACHIKA_METRICS_TIME_ZONE`の暦日ごとに一度、32%の確率で小さな外生イベントを判定します。発生と種類は日付 + `HACHIKA_INDIVIDUAL_ID`（未指定時はdata root）から決定されるため再現可能で、発生しなかった日も`lastDailyEventCheckDate`を保存して同日中の再抽選を防ぎます。発生時は`occurrence`としてrecent eventsへ加え、現在地のobject state・familiarity・last engagedにも小さな反応を残します。
 

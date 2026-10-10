@@ -16,6 +16,7 @@ import {
 } from "./resident-monitor.js";
 import type { ResidentLoopHealth, ResidentLoopStatus } from "./resident-monitor.js";
 import { sortedTraces } from "./traces.js";
+import { buildWelcomeBackDigest, type WelcomeBackDigest } from "./welcome-back.js";
 import type {
   AutonomousFeedEntry,
   GeneratedTextDebug,
@@ -43,6 +44,7 @@ export interface UiStatePayload {
     residentLoopHealth: ResidentLoopHealth | null;
   };
   selfModel: ReturnType<HachikaEngine["getSelfModel"]>;
+  welcomeBack: WelcomeBackDigest | null;
   growth: LiveGrowthMetrics;
   memories: MemoryEntry[];
   autonomousFeed: AutonomousFeedEntry[];
@@ -113,6 +115,7 @@ export function buildUiState(
       residentLoopHealth,
     },
     selfModel: engine.getSelfModel(),
+    welcomeBack: buildWelcomeBackDigest(snapshot, now),
     growth: summarizeLiveGrowthMetrics(snapshot),
     memories: snapshot.memories.slice(-18),
     autonomousFeed: snapshot.autonomousFeed.slice(-12),
