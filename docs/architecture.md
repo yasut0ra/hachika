@@ -117,7 +117,7 @@ v3 の個体差レイヤーは次の役割を持ちます。
 
 constitution の差は小さく保ち、同じ初期条件でも経験の違いが徐々に個体差へ変わるようにしています。
 
-夢はresident loopの最初の暦日tickで、`HACHIKA_METRICS_TIME_ZONE`の日付境界を使って1日最大1件だけ追記します。同じ日付とmemoryからは同じ断片・文面になり、当日のmemoryは翌日まで素材にしません。`source: dream`、`focus: null`として保存し、identityのrecurring focusやaspiration形成から除外するため、読み物を増やすこと自体は人格力学を変えません。
+夢はresident loopの最初の暦日tickで、`HACHIKA_METRICS_TIME_ZONE`の日付境界を使って1日最大1件だけ追記します。同じ日付とmemoryからは同じ断片・文面になり、当日のmemoryは翌日まで素材にしません。素材はmemoryに残った話題だけで、発言そのものは使いません。会話で閉じた話題や、closed / parkedのmemory threadの話題も夢には戻しません。話題が一つもない日は夢を見ず、素材が少ない日は灯り・机・棚のような身のまわりの物で補い、前の晩と同じ文面にはしません。`source: dream`、`focus: null`として保存し、identityのrecurring focusやaspiration形成から除外するため、読み物を増やすこと自体は人格力学を変えません。
 
 ## World and embodiment
 

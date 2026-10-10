@@ -1,4 +1,7 @@
 import { describeWorldObjectJa, describeWorldPlaceJa } from "./world.js";
+import { isMeaningfulTopic, topicsLooselyMatch } from "./memory.js";
+import { canAutonomouslySurfaceMemoryThread } from "./memory-threads.js";
+import { extractClosedTopics } from "./topic-extraction.js";
 import {
   formatCalendarDate,
   resolveMetricsTimeZone,
@@ -17,6 +20,9 @@ import type {
 export const JOURNAL_LIMIT = 30;
 export const MIN_JOURNAL_EPISODE_HOURS = 2;
 export const DREAM_MIN_FRAGMENTS = 2;
+// 夢には少なくともこれだけの記憶の話題が要る。足りない分は世界の物で補う
+export const DREAM_MIN_MEMORY_FRAGMENTS = 1;
+const DREAM_MAX_FRAGMENTS = 3;
 
 export function appendJournalEntry(
   snapshot: HachikaSnapshot,
@@ -301,22 +307,24 @@ export function buildDailyDreamEntry(
     return null;
   }
 
-  const fragments = selectDreamFragments(
-    snapshot.memories,
-    dreamDate,
-    timeZone,
-  );
+  const memoryFragments = selectDreamFragments(snapshot, dreamDate, timeZone);
+  if (memoryFragments.length < DREAM_MIN_MEMORY_FRAGMENTS) {
+    return null;
+  }
+
+  const fragments = fillDreamWithWorld(snapshot, memoryFragments, dreamDate);
   if (fragments.length < DREAM_MIN_FRAGMENTS) {
     return null;
   }
 
   const seed = stableDreamHash(`${dreamDate}|${fragments.join("|")}`);
+  const previousDream = [...snapshot.journal].reverse().find((entry) => entry.source === "dream");
   return {
     writtenAt: now.toISOString(),
     source: "dream",
     mood: "dreaming",
     focus: null,
-    text: renderDreamText(fragments, seed),
+    text: renderFreshDreamText(fragments, seed, previousDream?.text ?? null),
   };
 }
 
@@ -337,11 +345,11 @@ function latestValidDreamDate(
 }
 
 function selectDreamFragments(
-  memories: MemoryEntry[],
+  snapshot: HachikaSnapshot,
   dreamDate: string,
   timeZone: string,
 ): string[] {
-  const candidates = memories.flatMap((memory, index) => {
+  const candidates = snapshot.memories.flatMap((memory, index) => {
     const timestamp = new Date(memory.timestamp);
     if (
       !Number.isFinite(timestamp.getTime()) ||
@@ -350,7 +358,7 @@ function selectDreamFragments(
       return [];
     }
 
-    const fragment = memoryToDreamFragment(memory);
+    const fragment = memoryToDreamFragment(snapshot, memory);
     return fragment ? [{ fragment, index }] : [];
   });
   const unique = new Map<string, number>();
@@ -366,20 +374,54 @@ function selectDreamFragments(
       score: stableDreamHash(`${dreamDate}|${index}|${fragment}`),
     }))
     .sort((left, right) => left.score - right.score)
-    .slice(0, 3)
+    .slice(0, DREAM_MAX_FRAGMENTS)
     .map((candidate) => candidate.fragment);
 }
 
-function memoryToDreamFragment(memory: MemoryEntry): string | null {
+// 夢の素材は記憶に残った話題だけ。発言そのものは使わない (途中で切れた文や、
+// 打ち切った話がそのまま夢に出てしまうため)。会話で閉じた話題も夢には戻さない
+function memoryToDreamFragment(
+  snapshot: HachikaSnapshot,
+  memory: MemoryEntry,
+): string | null {
+  const closedInTurn = extractClosedTopics(memory.text);
   const topic = memory.topics
     .map((value) => normalizeDreamFragment(value))
-    .find((value) => value.length > 0);
-  if (topic) {
-    return topic.slice(0, 28);
+    .find(
+      (value) =>
+        value.length > 0 &&
+        isMeaningfulTopic(value) &&
+        !closedInTurn.some((closed) => topicsLooselyMatch(closed, value)) &&
+        canAutonomouslySurfaceMemoryThread(snapshot, value),
+    );
+
+  return topic ? topic.slice(0, 28) : null;
+}
+
+// 記憶の話題が少ない日は、いつも身のまわりにある物 (灯り・机・棚) で夢を補う
+function fillDreamWithWorld(
+  snapshot: HachikaSnapshot,
+  memoryFragments: string[],
+  dreamDate: string,
+): string[] {
+  const fragments = [...memoryFragments];
+  const worldFragments = Object.keys(snapshot.world.objects)
+    .map((objectId) => describeWorldObjectJa(objectId))
+    .filter((label) => !fragments.includes(label))
+    .sort(
+      (left, right) =>
+        stableDreamHash(`${dreamDate}|world|${left}`) -
+        stableDreamHash(`${dreamDate}|world|${right}`),
+    );
+
+  for (const label of worldFragments) {
+    if (fragments.length >= DREAM_MIN_FRAGMENTS) {
+      break;
+    }
+    fragments.push(label);
   }
 
-  const text = normalizeDreamFragment(memory.text);
-  return text ? text.slice(0, 28) : null;
+  return fragments.slice(0, DREAM_MAX_FRAGMENTS);
 }
 
 function normalizeDreamFragment(value: string): string {
@@ -390,18 +432,42 @@ function normalizeDreamFragment(value: string): string {
     .trim();
 }
 
-function renderDreamText(fragments: string[], seed: number): string {
+// 素材が少ない日が続いても、前の晩と同じ文面の夢にはしない
+function renderFreshDreamText(
+  fragments: string[],
+  seed: number,
+  previousText: string | null,
+): string {
+  for (let offset = 0; offset < DREAM_TEMPLATE_COUNT; offset += 1) {
+    const text = renderDreamText(fragments, (seed + offset) % DREAM_TEMPLATE_COUNT);
+    if (text !== previousText) {
+      return text;
+    }
+  }
+
+  return renderDreamText(fragments, seed % DREAM_TEMPLATE_COUNT);
+}
+
+const DREAM_TEMPLATE_COUNT = 6;
+
+function renderDreamText(fragments: string[], variant: number): string {
   const first = `「${fragments[0]}」`;
   const second = `「${fragments[1]}」`;
   const third = fragments[2] ? `「${fragments[2]}」` : null;
 
-  switch (seed % 3) {
+  switch (variant) {
     case 0:
       return `${first}のそばに${second}が置かれていて、${third ? `${third}だけが遠くで揺れていた。` : "そのあいだを細い光が通っていた。"}目を覚ましても、並び方だけがまだ残っている。`;
     case 1:
       return `${first}へ向かう途中で、${second}が違う場所からこちらを見ていた。${third ? `${third}を手に取ると、景色の向きが静かに変わった。` : "近づくほど、景色の向きが静かに変わった。"}`;
-    default:
+    case 2:
       return `${first}と${second}の位置が何度も入れ替わり、${third ? `${third}がその境目に立っていた。` : "境目だけがはっきりしていった。"}理由は思い出せないまま、手ざわりだけを持ち帰った。`;
+    case 3:
+      return `${first}を探していたはずが、気づくと${second}の前に立っていた。${third ? `${third}の名前を呼ぶと、` : ""}足もとの影だけが少し長くなった。`;
+    case 4:
+      return `${first}の上に${second}が静かに重なっていた。${third ? `${third}がその隙間からこちらを覗いていた。` : "ほどこうとすると、どちらも少し温かかった。"}`;
+    default:
+      return `${first}のことを誰かと話していた気がする。${second}${third ? `と${third}` : ""}がその声の向こうで揺れていて、言葉より先に目が覚めた。`;
   }
 }
 

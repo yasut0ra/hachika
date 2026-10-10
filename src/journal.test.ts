@@ -180,24 +180,28 @@ test("daily dream deterministically recombines fragments from before the local d
   assert.ok(["海", "設計", "灯り"].filter((fragment) => first.text.includes(fragment)).length >= 2);
 });
 
-test("daily dream is idempotent per local date and waits for enough older fragments", () => {
+test("daily dream is idempotent per local date and waits for a remembered topic", () => {
   const snapshot = createInitialSnapshot();
   snapshot.memories = [
-    memory("一つ目", "2026-07-16T09:00:00.000Z", ["一つ目"]),
+    memory("そうだよね", "2026-07-16T09:00:00.000Z", []),
   ];
   const options = {
     now: new Date("2026-07-17T15:30:00.000Z"),
     timeZone: "Asia/Tokyo",
   };
 
+  // 話題が一つもない日は夢を見ない
   assert.equal(buildDailyDreamEntry(snapshot, options), null);
 
   snapshot.memories.push(
-    memory("二つ目", "2026-07-16T10:00:00.000Z", ["二つ目"]),
+    memory("一つ目の話をした", "2026-07-16T10:00:00.000Z", ["一つ目"]),
   );
   assert.equal(DREAM_MIN_FRAGMENTS, 2);
   const first = buildDailyDreamEntry(snapshot, options);
   assert.ok(first);
+  // 足りない素材は、身のまわりの物で補う
+  assert.match(first.text, /「一つ目」/u);
+  assert.match(first.text, /「(?:灯り|机|棚)」/u);
   appendJournalEntry(snapshot, first);
 
   assert.equal(
@@ -213,6 +217,61 @@ test("daily dream is idempotent per local date and waits for enough older fragme
       timeZone: "Asia/Tokyo",
     }),
   );
+});
+
+test("dreams are made of remembered topics, never of raw utterances", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.memories = [
+    memory("なんやねん、その話はもう終わりだよ。意味わからないじゃん", "2026-07-16T09:00:00.000Z", []),
+    memory("あります。最近は、SFの本を開くと、知らない場所へ行く前の気分になる", "2026-07-16T10:00:00.000Z", []),
+    memory("海辺で拾った石の話をした", "2026-07-16T11:00:00.000Z", ["海辺"]),
+  ];
+
+  const dream = buildDailyDreamEntry(snapshot, {
+    now: new Date("2026-07-17T12:00:00.000Z"),
+    timeZone: "UTC",
+  });
+
+  assert.ok(dream);
+  assert.match(dream.text, /「海辺」/u);
+  assert.doesNotMatch(dream.text, /なんやねん|意味わ|知らない場所/u);
+});
+
+test("dreams leave out topics that were closed in conversation", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.memories = [
+    memory("更新の話はもういいよ", "2026-07-16T09:00:00.000Z", ["更新"]),
+    memory("海辺の話をした", "2026-07-16T10:00:00.000Z", ["海辺"]),
+    memory("古い地図を広げた", "2026-07-16T11:00:00.000Z", ["地図"]),
+  ];
+
+  const dream = buildDailyDreamEntry(snapshot, {
+    now: new Date("2026-07-17T12:00:00.000Z"),
+    timeZone: "UTC",
+  });
+
+  assert.ok(dream);
+  assert.doesNotMatch(dream.text, /更新/u);
+});
+
+test("consecutive dreams from the same material do not repeat the same wording", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.memories = [memory("海辺の話をした", "2026-07-10T09:00:00.000Z", ["海辺"])];
+  const texts: string[] = [];
+
+  for (let day = 11; day <= 17; day += 1) {
+    const dream = buildDailyDreamEntry(snapshot, {
+      now: new Date(`2026-07-${day}T12:00:00.000Z`),
+      timeZone: "UTC",
+    });
+    assert.ok(dream);
+    texts.push(dream.text);
+    appendJournalEntry(snapshot, dream);
+  }
+
+  for (let index = 1; index < texts.length; index += 1) {
+    assert.notEqual(texts[index], texts[index - 1]);
+  }
 });
 
 test("dream entries do not displace recurring identity focus", () => {
