@@ -1,4 +1,7 @@
-import { readFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { dirname, resolve as resolvePath } from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
 
 import { writeTextFileAtomic } from "./atomic-file.js";
 import { reconcileDiscourseCommitments } from "./discourse.js";
@@ -61,7 +64,9 @@ import type {
   IdentityState,
   IdleClock,
   InitiativeActivity,
+  InitiativeKind,
   InitiativeState,
+  InitiativeSuppression,
   Aspiration,
   AutonomyUrges,
   VoiceProfile,
@@ -106,11 +111,35 @@ export interface SnapshotCommitResult {
 }
 
 export async function loadSnapshot(filePath: string): Promise<HachikaSnapshot> {
+  let source: string;
+
   try {
-    const raw = await readFile(filePath, "utf8");
-    return sanitizeSnapshot(hydrateSnapshot(JSON.parse(raw)));
+    source = await readFile(filePath, "utf8");
+  } catch (error) {
+    // 「まだ生まれていない」のはファイルが存在しないときだけ。
+    // 読めない・壊れた snapshot を初期個体として扱うと、次の commit で上書きしてしまう
+    if (hasErrorCode(error, "ENOENT")) {
+      return createInitialSnapshot();
+    }
+
+    throw new Error(`snapshot_unreadable:${filePath}:${describeError(error)}`);
+  }
+
+  let raw: unknown;
+  try {
+    raw = JSON.parse(source) as unknown;
   } catch {
-    return createInitialSnapshot();
+    throw new Error(`snapshot_invalid_json:${filePath}`);
+  }
+
+  if (!isRecord(raw) || Array.isArray(raw)) {
+    throw new Error(`snapshot_invalid_shape:${filePath}`);
+  }
+
+  try {
+    return sanitizeSnapshot(hydrateSnapshot(raw));
+  } catch (error) {
+    throw new Error(`snapshot_hydrate_failed:${filePath}:${describeError(error)}`);
   }
 }
 
@@ -118,11 +147,13 @@ export async function saveSnapshot(
   filePath: string,
   snapshot: HachikaSnapshot,
 ): Promise<HachikaSnapshot> {
-  const current = await loadSnapshot(filePath);
-  const next = sanitizeSnapshot(structuredClone(snapshot));
-  next.revision = Math.max(current.revision, next.revision) + 1;
-  await writeTextFileAtomic(filePath, `${JSON.stringify(next, null, 2)}\n`);
-  return next;
+  return withSnapshotWriteLock(filePath, async () => {
+    const current = await loadSnapshot(filePath);
+    const next = sanitizeSnapshot(structuredClone(snapshot));
+    next.revision = Math.max(current.revision, next.revision) + 1;
+    await writeTextFileAtomic(filePath, `${JSON.stringify(next, null, 2)}\n`);
+    return next;
+  });
 }
 
 export async function commitSnapshot(
@@ -130,25 +161,124 @@ export async function commitSnapshot(
   snapshot: HachikaSnapshot,
   expectedRevision = snapshot.revision,
 ): Promise<SnapshotCommitResult> {
-  const current = await loadSnapshot(filePath);
+  return withSnapshotWriteLock(filePath, async () => {
+    const current = await loadSnapshot(filePath);
 
-  if (current.revision !== expectedRevision) {
+    if (current.revision !== expectedRevision) {
+      return {
+        ok: false,
+        conflict: true,
+        snapshot: current,
+      };
+    }
+
+    const next = sanitizeSnapshot(structuredClone(snapshot));
+    next.revision = expectedRevision + 1;
+    await writeTextFileAtomic(filePath, `${JSON.stringify(next, null, 2)}\n`);
+
     return {
-      ok: false,
-      conflict: true,
-      snapshot: current,
+      ok: true,
+      conflict: false,
+      snapshot: next,
     };
+  });
+}
+
+// revision の確認から書き込みまでを一つの区間として排他する。
+// 同一プロセス内 (UI と resident loop) は path ごとの queue で、
+// 別プロセス (CLI と UI など) は snapshot 横の lock file で直列化する
+const SNAPSHOT_LOCK_STALE_MS = 30_000;
+const SNAPSHOT_LOCK_TIMEOUT_MS = 10_000;
+const SNAPSHOT_LOCK_RETRY_MS = 15;
+const snapshotWriteQueues = new Map<string, Promise<void>>();
+
+async function withSnapshotWriteLock<T>(
+  filePath: string,
+  work: () => Promise<T>,
+): Promise<T> {
+  const key = resolvePath(filePath);
+  const previous = snapshotWriteQueues.get(key) ?? Promise.resolve();
+  const run = previous.then(() => withSnapshotFileLock(key, work));
+  const settled = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  snapshotWriteQueues.set(key, settled);
+
+  try {
+    return await run;
+  } finally {
+    if (snapshotWriteQueues.get(key) === settled) {
+      snapshotWriteQueues.delete(key);
+    }
   }
+}
 
-  const next = sanitizeSnapshot(structuredClone(snapshot));
-  next.revision = expectedRevision + 1;
-  await writeTextFileAtomic(filePath, `${JSON.stringify(next, null, 2)}\n`);
+async function withSnapshotFileLock<T>(
+  filePath: string,
+  work: () => Promise<T>,
+): Promise<T> {
+  const lockPath = `${filePath}.lock`;
+  const token = `${process.pid}:${randomUUID()}`;
+  await acquireSnapshotFileLock(lockPath, token);
 
-  return {
-    ok: true,
-    conflict: false,
-    snapshot: next,
-  };
+  try {
+    return await work();
+  } finally {
+    await releaseSnapshotFileLock(lockPath, token);
+  }
+}
+
+async function acquireSnapshotFileLock(lockPath: string, token: string): Promise<void> {
+  const deadline = Date.now() + SNAPSHOT_LOCK_TIMEOUT_MS;
+  await mkdir(dirname(lockPath), { recursive: true });
+
+  for (;;) {
+    try {
+      await writeFile(lockPath, `${token}\n`, { encoding: "utf8", flag: "wx" });
+      return;
+    } catch (error) {
+      if (!hasErrorCode(error, "EEXIST")) {
+        throw error;
+      }
+    }
+
+    await removeStaleSnapshotFileLock(lockPath);
+
+    if (Date.now() >= deadline) {
+      throw new Error(`snapshot_lock_timeout:${lockPath}`);
+    }
+
+    await sleep(SNAPSHOT_LOCK_RETRY_MS);
+  }
+}
+
+// 排他区間は数ミリ秒で終わるので、古い lock は書き込み中に落ちたプロセスの残骸とみなす
+async function removeStaleSnapshotFileLock(lockPath: string): Promise<void> {
+  try {
+    const lockStat = await stat(lockPath);
+
+    if (Date.now() - lockStat.mtimeMs > SNAPSHOT_LOCK_STALE_MS) {
+      await rm(lockPath, { force: true });
+    }
+  } catch (error) {
+    if (!hasErrorCode(error, "ENOENT")) {
+      throw error;
+    }
+  }
+}
+
+async function releaseSnapshotFileLock(lockPath: string, token: string): Promise<void> {
+  try {
+    // stale とみなされて他のプロセスへ移った lock は消さない
+    if ((await readFile(lockPath, "utf8")).trim() === token) {
+      await rm(lockPath, { force: true });
+    }
+  } catch (error) {
+    if (!hasErrorCode(error, "ENOENT")) {
+      throw error;
+    }
+  }
 }
 
 const LOW_SIGNAL_ARTIFACT_PATTERNS = [
@@ -164,7 +294,7 @@ function hydrateSnapshot(raw: unknown): HachikaSnapshot {
   }
 
   return {
-    version: 34,
+    version: 35,
     revision:
       typeof raw.revision === "number" && Number.isFinite(raw.revision)
         ? Math.max(0, Math.round(raw.revision))
@@ -202,6 +332,7 @@ function hydrateSnapshot(raw: unknown): HachikaSnapshot {
     generationHistory: hydrateGenerationHistory(raw.generationHistory),
     lastInteractionAt: typeof raw.lastInteractionAt === "string" ? raw.lastInteractionAt : null,
     idleClock: sanitizeIdleClock(raw.idleClock),
+    residentClockAt: hydrateTimestamp(raw.residentClockAt),
     conversationCount:
       typeof raw.conversationCount === "number" && Number.isFinite(raw.conversationCount)
         ? Math.max(0, Math.round(raw.conversationCount))
@@ -210,7 +341,7 @@ function hydrateSnapshot(raw: unknown): HachikaSnapshot {
 }
 
 export function sanitizeSnapshot(snapshot: HachikaSnapshot): HachikaSnapshot {
-  snapshot.version = 34;
+  snapshot.version = 35;
   snapshot.preferences = sanitizeNumberRecord(snapshot.preferences, clampSigned);
   snapshot.topicCounts = sanitizeNumberRecord(snapshot.topicCounts, (value) =>
     Math.max(0, Math.round(value)),
@@ -222,6 +353,7 @@ export function sanitizeSnapshot(snapshot: HachikaSnapshot): HachikaSnapshot {
   snapshot.urges = sanitizeUrges(snapshot.urges);
   snapshot.constitution = sanitizeConstitution(snapshot.constitution);
   snapshot.idleClock = sanitizeIdleClock(snapshot.idleClock);
+  snapshot.residentClockAt = hydrateTimestamp(snapshot.residentClockAt);
   snapshot.journal = sanitizeJournal(snapshot.journal);
   snapshot.aspirations = sanitizeAspirations(snapshot.aspirations);
   snapshot.voice = sanitizeVoice(snapshot.voice);
@@ -2167,6 +2299,7 @@ function hydrateInitiative(raw: unknown): InitiativeState {
     return {
       pending: null,
       lastProactiveAt: null,
+      lastSuppression: null,
       history: [],
     };
   }
@@ -2175,7 +2308,31 @@ function hydrateInitiative(raw: unknown): InitiativeState {
     pending: hydratePendingInitiative(raw.pending),
     lastProactiveAt:
       typeof raw.lastProactiveAt === "string" ? raw.lastProactiveAt : null,
+    lastSuppression: hydrateInitiativeSuppression(raw.lastSuppression),
     history: hydrateInitiativeHistory(raw.history),
+  };
+}
+
+function hydrateInitiativeSuppression(raw: unknown): InitiativeSuppression | null {
+  if (
+    !isRecord(raw) ||
+    !isInitiativeKind(raw.kind) ||
+    !isMotiveKind(raw.motive)
+  ) {
+    return null;
+  }
+
+  const at = hydrateTimestamp(raw.at);
+  if (!at) {
+    return null;
+  }
+
+  return {
+    at,
+    kind: raw.kind,
+    motive: raw.motive,
+    topic: typeof raw.topic === "string" ? raw.topic : null,
+    blocker: typeof raw.blocker === "string" ? raw.blocker : null,
   };
 }
 
@@ -2758,6 +2915,7 @@ function sanitizeInitiative(
             : null,
         }
       : null,
+    lastSuppression: hydrateInitiativeSuppression(initiative.lastSuppression),
     history: initiative.history
       .map((activity) => ({
         ...activity,
@@ -3286,8 +3444,28 @@ function hydrateCalendarDate(value: unknown): string | null {
     : null;
 }
 
+function hydrateTimestamp(value: unknown): string | null {
+  return typeof value === "string" && Number.isFinite(Date.parse(value)) ? value : null;
+}
+
+function hasErrorCode(error: unknown, code: string): boolean {
+  return isRecord(error) && error.code === code;
+}
+
+function describeError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+function isInitiativeKind(value: unknown): value is InitiativeKind {
+  return (
+    value === "resume_topic" ||
+    value === "neglect_ping" ||
+    value === "preserve_presence"
+  );
 }
 
 function isMotiveKind(value: unknown): value is MotiveKind {

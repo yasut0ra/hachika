@@ -255,6 +255,48 @@ export function emitInitiative(
   return materializePreparedInitiative(snapshot, prepared);
 }
 
+// proactive director の「今は話さない」は、話したあとと同じ 4h だけ保つ。
+// 毎 tick 問い直すと、一度でも emit が出た時点で話すことになり判断が効かない
+const PROACTIVE_SUPPRESSION_HOLD_HOURS = 4;
+
+// 同じ意図を抑制してから、会話も意図の変化もなく保持時間内なら、director に問い直さない
+export function isProactiveSuppressionHeld(
+  snapshot: HachikaSnapshot,
+  pending: PendingInitiative,
+  now: Date,
+): boolean {
+  const suppression = snapshot.initiative.lastSuppression;
+
+  if (
+    !suppression ||
+    suppression.kind !== pending.kind ||
+    suppression.motive !== pending.motive ||
+    suppression.topic !== pending.topic ||
+    suppression.blocker !== pending.blocker ||
+    isTimestampAfter(snapshot.lastInteractionAt, suppression.at)
+  ) {
+    return false;
+  }
+
+  // 時計が巻き戻った場合 (負の経過) は保持せずに問い直す
+  const hoursSinceSuppression = (now.getTime() - Date.parse(suppression.at)) / (60 * 60 * 1000);
+  return hoursSinceSuppression >= 0 && hoursSinceSuppression < PROACTIVE_SUPPRESSION_HOLD_HOURS;
+}
+
+export function recordProactiveSuppression(
+  snapshot: HachikaSnapshot,
+  pending: PendingInitiative,
+  at: string,
+): void {
+  snapshot.initiative.lastSuppression = {
+    at,
+    kind: pending.kind,
+    motive: pending.motive,
+    topic: pending.topic,
+    blocker: pending.blocker,
+  };
+}
+
 export function prepareInitiativeEmission(
   snapshot: HachikaSnapshot,
   options: { force?: boolean; now?: Date } = {},

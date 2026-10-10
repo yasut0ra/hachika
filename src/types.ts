@@ -558,9 +558,20 @@ export interface InitiativeActivity {
   summary: string;
 }
 
+// proactive director が「今は話さない」と判断した外向きの意図。
+// 同じ意図を毎 tick 問い直さず、判断を一定時間だけ保つための記録
+export interface InitiativeSuppression {
+  at: string;
+  kind: InitiativeKind;
+  motive: MotiveKind;
+  topic: string | null;
+  blocker: string | null;
+}
+
 export interface InitiativeState {
   pending: PendingInitiative | null;
   lastProactiveAt: string | null;
+  lastSuppression: InitiativeSuppression | null;
   history: InitiativeActivity[];
 }
 
@@ -683,6 +694,9 @@ export interface HachikaSnapshot {
   generationHistory: GenerationHistoryEntry[];
   lastInteractionAt: string | null;
   idleClock: IdleClock;
+  // wall-clock の resident loop が、生きた時間としてどこまで処理し終えたか。
+  // 再起動時はここから停止中の時間を遡って処理する。simulated tick では null
+  residentClockAt: string | null;
   conversationCount: number;
 }
 

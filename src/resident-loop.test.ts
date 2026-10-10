@@ -2,10 +2,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import type { AutonomyDirector } from "./autonomy-director.js";
+import { HachikaEngine } from "./engine.js";
 import type { ProactiveDirector } from "./proactive-director.js";
 import type { ReplyGenerator } from "./reply-generator.js";
 import { createInitialSnapshot } from "./state.js";
 import {
+  deriveResidentWallIdleHours,
   describeResidentLoopConfig,
   readResidentLoopConfigFromEnv,
   runResidentLoopTick,
@@ -742,4 +744,163 @@ test("wall-clock resident ticks continuously advance an existing presence", asyn
   assert.equal(result.snapshot.presence.dwellHours, 2.25);
   assert.equal(result.snapshot.presence.updatedAt, "2026-04-01T00:15:00.000Z");
   assert.equal(result.internalActivities.length, 0);
+});
+
+test("wall-clock ticks record how far lived time has been accounted", async () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.residentClockAt = "2026-04-01T00:00:00.000Z";
+
+  const wall = await runResidentLoopTick(snapshot, {
+    idleHours: 0.25,
+    clockMode: "wall",
+    now: new Date("2026-04-01T00:15:00.000Z"),
+  });
+  assert.equal(wall.snapshot.residentClockAt, "2026-04-01T00:15:00.000Z");
+
+  const simulated = await runResidentLoopTick(wall.snapshot, {
+    idleHours: 2,
+    clockMode: "simulated",
+    now: new Date("2026-04-01T00:15:15.000Z"),
+  });
+  assert.equal(simulated.snapshot.residentClockAt, null);
+});
+
+test("wall idle hours are measured from the recorded resident clock", () => {
+  const snapshot = createInitialSnapshot();
+  const now = new Date("2026-04-03T02:00:00.000Z");
+
+  assert.equal(deriveResidentWallIdleHours(snapshot, now), 0);
+
+  snapshot.residentClockAt = "2026-04-01T02:00:00.000Z";
+  assert.equal(deriveResidentWallIdleHours(snapshot, now), 48);
+
+  snapshot.residentClockAt = "2026-04-03T03:00:00.000Z";
+  assert.equal(deriveResidentWallIdleHours(snapshot, now), 0);
+});
+
+test("a suppressed proactive intent is not re-asked on every resident tick", async () => {
+  let snapshot = createInitialSnapshot();
+  snapshot.lastInteractionAt = "2026-03-20T10:00:00.000Z";
+  snapshot.initiative.pending = {
+    kind: "resume_topic",
+    reason: "expansion",
+    motive: "continue_shared_work",
+    topic: "仕様",
+    blocker: null,
+    concern: null,
+    createdAt: "2026-03-20T10:00:00.000Z",
+    readyAfterHours: 0,
+  };
+  let directorCalls = 0;
+  const proactiveDirector: ProactiveDirector = {
+    name: "test-director",
+    async directProactive() {
+      directorCalls += 1;
+      return {
+        directive: {
+          emit: false,
+          plan: null,
+          summary: "suppress/quiet",
+        },
+        provider: "test-director",
+        model: "stub",
+      };
+    },
+  };
+  const replyGenerator: ReplyGenerator = {
+    name: "test-reply",
+    async generateReply() {
+      return null;
+    },
+    async generateProactive() {
+      throw new Error("should not generate when suppressed");
+    },
+  };
+  const start = new Date("2026-04-01T02:00:00.000Z").getTime();
+  const tickAt = async (offsetMs: number) => {
+    const result = await runResidentLoopTick(snapshot, {
+      idleHours: 15 / 3600,
+      clockMode: "wall",
+      now: new Date(start + offsetMs),
+      proactiveDirector,
+      replyGenerator,
+    });
+    snapshot = result.snapshot;
+    return result;
+  };
+
+  // 15秒刻みで1時間 (240 tick)。抑制の判断は最初の1回だけ問う
+  for (let tick = 0; tick < 240; tick += 1) {
+    const result = await tickAt(tick * 15_000);
+    assert.equal(result.proactiveMessage, null);
+  }
+  assert.equal(directorCalls, 1);
+  assert.equal(snapshot.initiative.lastSuppression?.at, "2026-04-01T02:00:00.000Z");
+  assert.equal(snapshot.initiative.lastSuppression?.topic, "仕様");
+
+  // 保持時間 (4h) を過ぎたら問い直す
+  await tickAt(4 * 60 * 60 * 1000);
+  assert.equal(directorCalls, 2);
+  await tickAt(4 * 60 * 60 * 1000 + 15_000);
+  assert.equal(directorCalls, 2);
+
+  // 抑制のあとに会話があれば、保持時間内でも問い直す
+  snapshot.lastInteractionAt = new Date(start + 4 * 60 * 60 * 1000 + 30_000).toISOString();
+  await tickAt(4 * 60 * 60 * 1000 + 60_000);
+  assert.equal(directorCalls, 3);
+
+  // 別の意図は、直前の抑制に縛られない
+  snapshot.initiative.pending = {
+    ...snapshot.initiative.pending!,
+    topic: "設計",
+  };
+  await tickAt(4 * 60 * 60 * 1000 + 75_000);
+  assert.equal(directorCalls, 4);
+});
+
+test("a forced proactive emission still consults the director during a suppression hold", async () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.lastInteractionAt = "2026-03-20T10:00:00.000Z";
+  snapshot.initiative.pending = {
+    kind: "resume_topic",
+    reason: "expansion",
+    motive: "continue_shared_work",
+    topic: "仕様",
+    blocker: null,
+    concern: null,
+    createdAt: "2026-03-20T10:00:00.000Z",
+    readyAfterHours: 0,
+  };
+  snapshot.initiative.lastSuppression = {
+    at: "2026-04-01T02:00:00.000Z",
+    kind: "resume_topic",
+    motive: "continue_shared_work",
+    topic: "仕様",
+    blocker: null,
+  };
+  let directorCalls = 0;
+  const engine = new HachikaEngine(snapshot);
+
+  const message = await engine.emitInitiativeAsync({
+    force: true,
+    now: new Date("2026-04-01T02:30:00.000Z"),
+    proactiveDirector: {
+      name: "test-director",
+      async directProactive() {
+        directorCalls += 1;
+        return {
+          directive: {
+            emit: false,
+            plan: null,
+            summary: "suppress/quiet",
+          },
+          provider: "test-director",
+          model: "stub",
+        };
+      },
+    },
+  });
+
+  assert.equal(directorCalls, 1);
+  assert.ok(message);
 });

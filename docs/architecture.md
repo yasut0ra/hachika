@@ -25,7 +25,7 @@ flowchart LR
 
 ## Snapshot
 
-永続化単位は `HachikaSnapshot` です。現在の schema version は **34** です。
+永続化単位は `HachikaSnapshot` です。現在の schema version は **35** です。
 
 | 領域 | 主な値 | 役割 |
 | --- | --- | --- |
@@ -68,7 +68,7 @@ flowchart LR
 
 ## Idle and resident loop
 
-`npm run loop` または Web UI 内蔵の resident loop は、壁時計時間をもとに会話外の時間を進めます。
+`npm run loop` または Web UI 内蔵の resident loop は、壁時計時間をもとに会話外の時間を進めます。経過時間は snapshot の `residentClockAt`（wall-clock tick が処理し終えた時刻）から測るため、host の再起動や停止をまたいでも、止まっていた時間は次の tick で不在として遡って処理されます。起点がない誕生直後や、simulated tick の後は 0 から数え始めます。
 
 ```mermaid
 flowchart LR
@@ -84,7 +84,7 @@ flowchart LR
 
 internal action は `observe / hold / drift / recall` を中心に選ばれ、現在の `presence` として一定時間持続します。行動は urge、身体、記憶、world object に結果を返し、ユーザーが戻ると止まっても `residue` が残ります。
 
-outward action は internal action の一部だけです。発話しない tick も生存時間として状態を変えます。optional な autonomy / proactive director は候補を `keep / suppress / reshape` できますが、適用と永続化はローカル実装が行います。
+outward action は internal action の一部だけです。発話しない tick も生存時間として状態を変えます。optional な autonomy / proactive director は候補を `keep / suppress / reshape` できますが、適用と永続化はローカル実装が行います。proactive director の suppress は `initiative.lastSuppression` に残り、同じ意図（kind / motive / topic / blocker）は会話が挟まらない限り4時間問い直しません。
 
 詳しい設計意図は [autonomy-v2.md](autonomy-v2.md) と [living-presence.md](living-presence.md) にあります。
 
@@ -151,7 +151,8 @@ HTTP、JSON 抽出、エラー処理は `src/llm-client.ts` に集約してい�
 - daily metrics: `<data-root>/metrics-log.jsonl`
 - immutable daily archive: `<data-root>/archive-snapshots/YYYY-MM-DD.json`
 - 保存形式: temporary file + rename による atomic write
-- compatibility: 古い snapshot を load 時に version 34 へ hydrate / sanitize
+- compatibility: 古い snapshot を load 時に version 35 へ hydrate / sanitize
+- missing / corrupt: snapshot が存在しないときだけ初期個体を作る。読めない・JSON が壊れている・object でない snapshot は `snapshot_*` エラーで止まり、ファイルには触れない（archive から復元する）
 - conflict handling: `revision` を比較し、CLI / UI / loop 側が競合時に最新 snapshot から1回再試行
 
 ```bash
@@ -169,7 +170,7 @@ resident loopはsnapshotとartifactの正常commit後に、日次の縦断計測
 
 `npm run experiment:check`はsecretを含まない実験manifestをcanonical JSONとしてSHA-256 fingerprint化し、凍結tagが現在のHEADを指すこと、worktreeがcleanであること、Node.jsとwall-clock runtime構成、暦日、LLM構成、個体ID・名前・data root・seedの一意性を検査します。manifest例は`docs/experiment-config.example.json`、birth記録様式は`docs/lab-notes/birth-record-template.md`です。API keyをmanifestへ含めると検査に失敗します。
 
-`commitSnapshot` の revision check と write は単一プロセス内の逐次実行を前提にしています。複数プロセスが同時に check を通過する可能性を完全には排除していないため、厳密な inter-process CAS / file lock は今後の課題です。
+`commitSnapshot` / `saveSnapshot` は revision check から write までを一つの排他区間にしています。同一プロセス内（Web UI と内蔵 resident loop）は path ごとの queue で、別プロセス（CLI と UI など）は `<snapshot>.lock` の排他作成で直列化します。排他区間は数ミリ秒なので、30秒より古い lock は書き込み中に落ちたプロセスの残骸として回収し、10秒待っても取れなければ `snapshot_lock_timeout` で失敗します。
 
 migration fixture は `src/fixtures/snapshots/` に保存し、実際の旧 schema から現行 schema への読み込みを test しています。
 

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -119,6 +119,85 @@ test("resident runtime advances the substrate by actual wall-clock elapsed time"
     const snapshot = await loadSnapshot(paths.snapshotPath);
     assert.equal(snapshot.idleClock.absenceHours, 1);
     assert.equal(snapshot.lastInteractionAt, "2026-04-01T00:00:00.000Z");
+  } finally {
+    await runtime.stop("test");
+    await rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test("resident runtime lives through the time the host was stopped", async () => {
+  const rootDir = await mkdtemp(join(tmpdir(), "hachika-resident-runtime-downtime-"));
+  const paths = {
+    snapshotPath: join(rootDir, "hachika-state.json"),
+    artifactsDir: join(rootDir, "artifacts"),
+    lockPath: join(rootDir, "resident-lock.json"),
+    statusPath: join(rootDir, "resident-status.json"),
+    metricsLogPath: join(rootDir, "metrics-log.jsonl"),
+  };
+  let now = new Date("2026-08-10T00:00:00.000Z");
+  const initial = createInitialSnapshot();
+  initial.lastInteractionAt = now.toISOString();
+  const createWallRuntime = () =>
+    new ResidentLoopRuntime({
+      ...paths,
+      config: {
+        intervalMs: 3_600_000,
+        idleHoursPerTick: null,
+      },
+      replyDescription: "local",
+      now: () => now,
+      implementationRevision: "test-revision",
+      metricsTimeZone: "UTC",
+      individualId: "test-individual",
+    });
+  const before = createWallRuntime();
+  const after = createWallRuntime();
+
+  try {
+    await commitSnapshot(paths.snapshotPath, initial);
+    await before.start();
+    await before.tick();
+    now = new Date("2026-08-10T02:00:00.000Z");
+    await before.tick();
+    await before.stop("test");
+    assert.equal((await loadSnapshot(paths.snapshotPath)).idleClock.absenceHours, 2);
+
+    // host が48時間止まっていた
+    now = new Date("2026-08-12T02:00:00.000Z");
+    await after.start();
+    await after.tick();
+
+    const snapshot = await loadSnapshot(paths.snapshotPath);
+    assert.equal(snapshot.idleClock.absenceHours, 50);
+    assert.equal(snapshot.residentClockAt, "2026-08-12T02:00:00.000Z");
+  } finally {
+    await before.stop("cleanup");
+    await after.stop("cleanup");
+    await rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test("resident runtime leaves a corrupt snapshot untouched and reports the error", async () => {
+  const rootDir = await mkdtemp(join(tmpdir(), "hachika-resident-runtime-corrupt-"));
+  const paths = {
+    snapshotPath: join(rootDir, "hachika-state.json"),
+    artifactsDir: join(rootDir, "artifacts"),
+    lockPath: join(rootDir, "resident-lock.json"),
+    statusPath: join(rootDir, "resident-status.json"),
+    metricsLogPath: join(rootDir, "metrics-log.jsonl"),
+  };
+  const corrupt = '{"version":34,"revision":5000,"conversationCount":3';
+  const runtime = createRuntime(paths);
+
+  try {
+    await writeFile(paths.snapshotPath, corrupt, "utf8");
+    await runtime.start();
+    await runtime.tick();
+
+    const status = await loadResidentLoopStatus(paths.statusPath);
+    assert.match(status?.lastError ?? "", /^snapshot_invalid_json:/u);
+    assert.equal(await readFile(paths.snapshotPath, "utf8"), corrupt);
+    assert.equal(existsSync(paths.metricsLogPath), false);
   } finally {
     await runtime.stop("test");
     await rm(rootDir, { recursive: true, force: true });

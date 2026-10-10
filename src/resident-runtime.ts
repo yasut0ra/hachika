@@ -17,6 +17,7 @@ import {
   type ResidentLoopStatus,
 } from "./resident-monitor.js";
 import {
+  deriveResidentWallIdleHours,
   formatResidentActivity,
   runResidentLoopTick,
   type ResidentLoopConfig,
@@ -54,7 +55,6 @@ export class ResidentLoopRuntime {
   private tickPromise: Promise<void> | null = null;
   private owned = false;
   private stopping = false;
-  private lastWallAdvanceAtMs: number;
 
   constructor(options: ResidentLoopRuntimeOptions) {
     this.options = options;
@@ -62,9 +62,7 @@ export class ResidentLoopRuntime {
       options.implementationRevision?.trim() || resolveImplementationRevision();
     this.metricsTimeZone = resolveMetricsTimeZone(options.metricsTimeZone);
     this.individualId = options.individualId?.trim() || options.snapshotPath;
-    const startedAtDate = this.nowDate();
-    const startedAt = startedAtDate.toISOString();
-    this.lastWallAdvanceAtMs = startedAtDate.getTime();
+    const startedAt = this.isoNow();
     this.status = {
       active: false,
       pid: options.pid ?? process.pid,
@@ -174,10 +172,6 @@ export class ResidentLoopRuntime {
   private async executeTick(): Promise<void> {
     const tickStartedAt = this.nowDate();
     const fixedIdleHours = this.options.config.idleHoursPerTick;
-    const idleHours =
-      fixedIdleHours ??
-      Math.max(0, tickStartedAt.getTime() - this.lastWallAdvanceAtMs) /
-        (60 * 60 * 1000);
     const clockMode = fixedIdleHours === null ? "wall" : "simulated";
     this.status.heartbeatAt = tickStartedAt.toISOString();
 
@@ -186,6 +180,9 @@ export class ResidentLoopRuntime {
       const outcome = await runWithConflictRetry({
         operate: async () => {
           const snapshot = await loadSnapshot(this.options.snapshotPath);
+          // 経過時間は snapshot に残した起点から測るので、再起動をまたいでも途切れない
+          const idleHours =
+            fixedIdleHours ?? deriveResidentWallIdleHours(snapshot, tickStartedAt);
           return runResidentLoopTick(snapshot, {
             idleHours,
             clockMode,
@@ -221,7 +218,6 @@ export class ResidentLoopRuntime {
       }
 
       const result = outcome.result;
-      this.lastWallAdvanceAtMs = tickStartedAt.getTime();
       const metrics = await appendDailyLifeMetrics(
         this.options.metricsLogPath,
         committedSnapshot ?? result.snapshot,

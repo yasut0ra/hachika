@@ -157,7 +157,7 @@ export function blendVisibleValue(
 
 export function createInitialSnapshot(): HachikaSnapshot {
   return {
-    version: 34,
+    version: 35,
     revision: 0,
     state: { ...INITIAL_STATE },
     body: { ...INITIAL_BODY },
@@ -220,12 +220,14 @@ export function createInitialSnapshot(): HachikaSnapshot {
     initiative: {
       pending: null,
       lastProactiveAt: null,
+      lastSuppression: null,
       history: [],
     },
     autonomousFeed: [],
     generationHistory: [],
     lastInteractionAt: null,
     idleClock: createIdleClock(),
+    residentClockAt: null,
     conversationCount: 0,
   };
 }

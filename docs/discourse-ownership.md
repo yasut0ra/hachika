@@ -69,6 +69,6 @@ renegotiatedになった未完了項目は`paused`、後続traceが実際に進�
 
 ## Migration
 
-current snapshot versionは34（commitment progressのmigrationはv31）。旧questionにactor情報がない場合、旧runtimeでproactive再質問に使われていたopenな`user_name / user_profile / relation`を`hachika -> user`として移行し、それ以外は`user -> hachika`として扱う。旧requestは`user -> hachika`として移行する。
+current snapshot versionは35（commitment progressのmigrationはv31）。旧questionにactor情報がない場合、旧runtimeでproactive再質問に使われていたopenな`user_name / user_profile / relation`を`hachika -> user`として移行し、それ以外は`user -> hachika`として扱う。旧requestは`user -> hachika`として移行する。
 
 旧snapshotにcommitment ledgerがなくても、hydrate時にquestion/requestから再構成する。過去にtaskが返信だけでfulfilledになっていて証拠を持たない場合はacceptedへ戻す。v29以前の単一evidenceはhydrate時にeventsへも移し、v30以前のtaskには依頼文からroot work itemを補う。保存前の実データを書き換える必要はない。

@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { mkdtemp, readFile, rm, utimes, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import test from "node:test";
+import { setTimeout as sleep } from "node:timers/promises";
 
 import {
   commitSnapshot,
@@ -29,6 +31,177 @@ test("persistence preserves dream journal entries", async () => {
     await saveSnapshot(filePath, snapshot);
     const loaded = await loadSnapshot(filePath);
     assert.deepEqual(loaded.journal, snapshot.journal);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("loadSnapshot starts a newborn only when the snapshot file does not exist", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "hachika-missing-snapshot-"));
+
+  try {
+    const loaded = await loadSnapshot(join(dir, "hachika-state.json"));
+    assert.equal(loaded.revision, 0);
+    assert.equal(loaded.conversationCount, 0);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("a corrupt snapshot is refused instead of being overwritten by a newborn", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "hachika-corrupt-snapshot-"));
+  const filePath = join(dir, "hachika-state.json");
+  const living = JSON.stringify({ version: 34, revision: 5000, conversationCount: 321 });
+  const corrupt = living.slice(0, -5);
+
+  try {
+    await writeFile(filePath, corrupt, "utf8");
+
+    await assert.rejects(loadSnapshot(filePath), /^Error: snapshot_invalid_json:/u);
+    await assert.rejects(
+      commitSnapshot(filePath, createInitialSnapshot()),
+      /^Error: snapshot_invalid_json:/u,
+    );
+    await assert.rejects(
+      saveSnapshot(filePath, createInitialSnapshot()),
+      /^Error: snapshot_invalid_json:/u,
+    );
+    assert.equal(await readFile(filePath, "utf8"), corrupt);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("a snapshot that is valid JSON but not an object is refused", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "hachika-shapeless-snapshot-"));
+  const filePath = join(dir, "hachika-state.json");
+
+  try {
+    for (const source of ["null", "[]", "42"]) {
+      await writeFile(filePath, source, "utf8");
+      await assert.rejects(loadSnapshot(filePath), /^Error: snapshot_invalid_shape:/u);
+      assert.equal(await readFile(filePath, "utf8"), source);
+    }
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("concurrent commits from the same base revision cannot both succeed", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "hachika-commit-race-"));
+  const filePath = join(dir, "hachika-state.json");
+
+  try {
+    await saveSnapshot(filePath, createInitialSnapshot());
+
+    for (let round = 0; round < 20; round += 1) {
+      const base = await loadSnapshot(filePath);
+      const userTurn = structuredClone(base);
+      userTurn.conversationCount += 1;
+      const residentTick = structuredClone(base);
+      residentTick.attachment = round % 2 === 0 ? 0.2 : 0.8;
+
+      const [turnResult, tickResult] = await Promise.all([
+        commitSnapshot(filePath, userTurn),
+        commitSnapshot(filePath, residentTick),
+      ]);
+
+      assert.equal(
+        Number(turnResult.ok) + Number(tickResult.ok),
+        1,
+        `round ${round}: exactly one commit may win`,
+      );
+      const loser = turnResult.ok ? tickResult : turnResult;
+      assert.equal(loser.conflict, true);
+      assert.equal(loser.snapshot.revision, base.revision + 1);
+
+      const persisted = await loadSnapshot(filePath);
+      assert.equal(persisted.revision, base.revision + 1);
+      assert.equal(
+        persisted.conversationCount,
+        turnResult.ok ? base.conversationCount + 1 : base.conversationCount,
+      );
+    }
+
+    assert.equal(existsSync(`${filePath}.lock`), false);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("commitSnapshot waits for a lock held by another process", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "hachika-commit-lock-"));
+  const filePath = join(dir, "hachika-state.json");
+  const lockPath = `${filePath}.lock`;
+
+  try {
+    const saved = await saveSnapshot(filePath, createInitialSnapshot());
+    await writeFile(lockPath, "other-process\n", "utf8");
+
+    let settled = false;
+    const pending = commitSnapshot(filePath, saved).then((result) => {
+      settled = true;
+      return result;
+    });
+
+    await sleep(120);
+    assert.equal(settled, false);
+
+    await rm(lockPath, { force: true });
+    const result = await pending;
+    assert.equal(result.ok, true);
+    assert.equal(result.snapshot.revision, saved.revision + 1);
+    assert.equal(existsSync(lockPath), false);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("commitSnapshot reclaims a lock left behind by a crashed writer", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "hachika-commit-stale-lock-"));
+  const filePath = join(dir, "hachika-state.json");
+  const lockPath = `${filePath}.lock`;
+
+  try {
+    const saved = await saveSnapshot(filePath, createInitialSnapshot());
+    await writeFile(lockPath, "crashed-writer\n", "utf8");
+    const longAgo = new Date(Date.now() - 10 * 60 * 1000);
+    await utimes(lockPath, longAgo, longAgo);
+
+    const result = await commitSnapshot(filePath, saved);
+    assert.equal(result.ok, true);
+    assert.equal(existsSync(lockPath), false);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("persistence preserves the resident clock and proactive suppression", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "hachika-resident-clock-persistence-"));
+  const filePath = join(dir, "hachika-state.json");
+  const snapshot = createInitialSnapshot();
+  snapshot.residentClockAt = "2026-08-02T03:04:05.000Z";
+  snapshot.initiative.lastSuppression = {
+    at: "2026-08-02T03:00:00.000Z",
+    kind: "resume_topic",
+    motive: "continue_shared_work",
+    topic: "仕様",
+    blocker: null,
+  };
+
+  try {
+    await saveSnapshot(filePath, snapshot);
+    const loaded = await loadSnapshot(filePath);
+    assert.equal(loaded.residentClockAt, "2026-08-02T03:04:05.000Z");
+    assert.deepEqual(loaded.initiative.lastSuppression, snapshot.initiative.lastSuppression);
+
+    const raw = JSON.parse(await readFile(filePath, "utf8")) as Record<string, any>;
+    raw.residentClockAt = "not-a-time";
+    raw.initiative.lastSuppression = { at: "2026-08-02T03:00:00.000Z", kind: "shout" };
+    await writeFile(filePath, JSON.stringify(raw), "utf8");
+    const repaired = await loadSnapshot(filePath);
+    assert.equal(repaired.residentClockAt, null);
+    assert.equal(repaired.initiative.lastSuppression, null);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -821,7 +994,7 @@ test("loadSnapshot seeds latent dynamics from older visible-only snapshots", asy
 
     const loaded = await loadSnapshot(filePath);
 
-    assert.equal(loaded.version, 34);
+    assert.equal(loaded.version, 35);
     assert.equal(loaded.revision, 3);
     assert.equal(loaded.discourse.hachikaName?.value, "ハチカ");
     assert.ok(

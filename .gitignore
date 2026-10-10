@@ -3,6 +3,7 @@ dist
 data/artifacts/
 data/backups/
 data/hachika-state.json
+data/hachika-state.json.lock
 data/metrics-log.jsonl
 data/archive-snapshots/
 data/resident-lock.json

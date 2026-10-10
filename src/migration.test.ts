@@ -54,6 +54,9 @@ test("migration fixtures hydrate representative historical snapshots into the cu
     assert.equal(snapshot.presence.residue?.ageHours, 0);
     assert.equal(snapshot.memoryThreadEvents[0]?.phase, "parked");
     assert.deepEqual(snapshot.identity.anchors, ["手紙"]);
+    // v35: 旧 snapshot は停止時間の起点も抑制の記録も持たず、次の tick から数え始める
+    assert.equal(snapshot.residentClockAt, null);
+    assert.equal(snapshot.initiative.lastSuppression, null);
   });
 });
 

@@ -38,12 +38,14 @@ import type {
 import type { InitiativeDirector } from "./initiative-director.js";
 import { advanceTaskCommitments } from "./discourse.js";
 import {
+  isProactiveSuppressionHeld,
   materializePreparedInitiative,
   materializePreparedOutwardAction,
   materializeIdleAutonomyEvaluation,
   prepareDueIdleAutonomyEvaluation,
   prepareInitiativeEmission,
   prepareScheduledInitiative,
+  recordProactiveSuppression,
   rewindSnapshotBaseHours,
   rewindSnapshotHours,
   scheduleInitiative,
@@ -738,6 +740,14 @@ export class HachikaEngine {
     );
 
     if (proactiveDirector) {
+      if (
+        options.force !== true &&
+        !isUserAnswerInitiative(prepared.pending) &&
+        isProactiveSuppressionHeld(nextSnapshot, prepared.pending, options.now ?? new Date())
+      ) {
+        return null;
+      }
+
       try {
         const directed = await proactiveDirector.directProactive({
           previousSnapshot,
@@ -755,6 +765,14 @@ export class HachikaEngine {
             const keepSuppressedEmission =
               options.force === true || isUserAnswerInitiative(prepared.pending);
             if (!keepSuppressedEmission) {
+              // 判断そのものを snapshot に残し、同じ意図を次の tick で問い直さない
+              const suppressedSnapshot = structuredClone(this.#snapshot);
+              recordProactiveSuppression(
+                suppressedSnapshot,
+                prepared.pending,
+                prepared.emittedAt,
+              );
+              this.#snapshot = suppressedSnapshot;
               return null;
             }
 

@@ -97,6 +97,10 @@ export async function runResidentLoopTick(
         ...(options.timeZone ? { timeZone: options.timeZone } : {}),
       })
     : null;
+  // wall-clock の tick だけが「ここまで生きた」を記録する。simulated tick は
+  // 実時間と切り離された時間を生きたので、再起動時の遡及の起点を持たない
+  nextSnapshot.residentClockAt =
+    options.clockMode === "wall" ? (options.now ?? new Date()).toISOString() : null;
   const outwardActivities = diffInitiativeHistory(
     historyBeforeOutward,
     nextSnapshot.initiative.history ?? [],
@@ -114,6 +118,21 @@ export async function runResidentLoopTick(
     activities,
     worldEvent,
   };
+}
+
+// 前回の wall-clock tick から経った実時間。停止していた時間もここに含まれる。
+// 起点がない (誕生直後や simulated から切り替えた直後) ときは今から数え始める
+export function deriveResidentWallIdleHours(
+  snapshot: HachikaSnapshot,
+  now: Date,
+): number {
+  const clockMs = snapshot.residentClockAt ? Date.parse(snapshot.residentClockAt) : Number.NaN;
+
+  if (!Number.isFinite(clockMs)) {
+    return 0;
+  }
+
+  return Math.max(0, now.getTime() - clockMs) / (60 * 60 * 1000);
 }
 
 export function readResidentLoopConfigFromEnv(
