@@ -174,6 +174,8 @@ resident loopはsnapshotとartifactの正常commit後に、日次の縦断計測
 
 `npm run experiment:check`はsecretを含まない実験manifestをcanonical JSONとしてSHA-256 fingerprint化し、凍結tagが現在のHEADを指すこと、worktreeがcleanであること、Node.jsとwall-clock runtime構成、暦日、LLM構成、個体ID・名前・data root・seedの一意性を検査します。manifest例は`docs/experiment-config.example.json`、birth記録様式は`docs/lab-notes/birth-record-template.md`です。API keyをmanifestへ含めると検査に失敗します。
 
+`npm run demo` は `src/demo-life.ts` の台本 (30日分の会話と留守) を、実際の resident loop と同じ1時間刻みの wall-clock tick で生きさせた個体を `demo/hachika` に作り、Web UI を port 3044 で開きます。生成中だけ時計を差し替えて、暮らしの最後が起動した瞬間になるように並べるため、開くとすぐ前夜からの「おかえり」が出ます。同じ時刻からは同じ個体が生まれ、2回目以降は作り直さずに暮らしを続けます。`--fresh` はデモが作ったフォルダ (`.hachika-demo` の印があるもの) だけを作り直します。
+
 Web UI は手元の個体へ直接書き込むので、すべての要求で宛先と送信元を確かめます (`src/ui-request-guard.ts`)。ループバックで待ち受けるときは `Host` が `127.0.0.1` / `localhost` / `[::1]` 以外なら断り (DNS rebinding 対策)、`Origin` が宛先と違う要求や `Sec-Fetch-Site: cross-site` の要求、JSON 以外の POST も断ります。別のサイトからリセットや発言を送り込まれないためです。`HACHIKA_UI_HOST` で外へ公開するときは、`HACHIKA_UI_ALLOWED_HOSTS` (カンマ区切り) に受け付ける名前を書きます。
 
 `commitSnapshot` / `saveSnapshot` は revision check から write までを一つの排他区間にしています。同一プロセス内（Web UI と内蔵 resident loop）は path ごとの queue で、別プロセス（CLI と UI など）は `<snapshot>.lock` の排他作成で直列化します。排他区間は数ミリ秒なので、30秒より古い lock は書き込み中に落ちたプロセスの残骸として回収し、10秒待っても取れなければ `snapshot_lock_timeout` で失敗します。

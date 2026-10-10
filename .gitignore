@@ -9,6 +9,7 @@ data/archive-snapshots/
 data/resident-lock.json
 data/resident-status.json
 individuals/
+demo/
 .env
 .env.*
 !.env.example

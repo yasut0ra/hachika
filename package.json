@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "tsx src/index.ts",
     "ui": "tsx src/ui-server.ts",
+    "demo": "tsx src/demo-cli.ts",
     "loop": "tsx src/resident-daemon.ts",
     "maintain": "tsx src/daily-maintenance-cli.ts",
     "report": "tsx src/life-report-cli.ts",
