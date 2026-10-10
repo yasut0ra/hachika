@@ -1258,6 +1258,7 @@ export class HachikaEngine {
     const memoryTopics = excludeClosedTopics(
       uniqueTopics([...prepared.signals.topics, ...localMemoryTopics]),
       extractClosedTopics(input),
+      collectNameTerms(prepared.nextSnapshot, input),
     )
       .filter(isMeaningfulTopic)
       .slice(0, 6);
@@ -1771,7 +1772,11 @@ function prepareTurnFromSignals(
   const previousSnapshot = structuredClone(snapshot);
   const closedTopics = extractClosedTopics(input);
   const semanticSignals = applyBehaviorDirectiveToSignals(
-    withoutClosedTopics(deriveStateSignals(signals, traceExtraction), closedTopics),
+    withoutClosedTopics(
+      deriveStateSignals(signals, traceExtraction),
+      closedTopics,
+      collectNameTerms(snapshot, input),
+    ),
     behaviorDirective,
   );
   const stateSignals = deriveDurableStateSignals(
@@ -4152,6 +4157,7 @@ function analyzeInteraction(
   const topics = excludeClosedTopics(
     filterLocalTopicCandidates(extractLocalTopics(input)),
     closedTopics,
+    collectNameTerms(snapshot, input),
   );
   const closesActivePurpose = closedTopics.some((topic) =>
     topicsLooselyMatch(topic, snapshot.purpose.active?.topic),
@@ -4253,19 +4259,36 @@ function analyzeInteraction(
 function excludeClosedTopics(
   topics: readonly string[],
   closedTopics: readonly string[],
+  names: readonly string[] = [],
 ): string[] {
   return topics.filter(
-    (topic) => !closedTopics.some((closed) => topicsLooselyMatch(closed, topic)),
+    (topic) =>
+      !closedTopics.some((closed) => topicsLooselyMatch(closed, topic)) &&
+      !names.includes(topic.normalize("NFKC").trim().toLowerCase()),
   );
 }
 
 function withoutClosedTopics(
   signals: InteractionSignals,
   closedTopics: readonly string[],
+  names: readonly string[],
 ): InteractionSignals {
-  return closedTopics.length === 0
+  return closedTopics.length === 0 && names.length === 0
     ? signals
-    : { ...signals, topics: excludeClosedTopics(signals.topics, closedTopics) };
+    : { ...signals, topics: excludeClosedTopics(signals.topics, closedTopics, names) };
+}
+
+// 名前は関係の事実 (discourse) として持つので、話題としては数えない。
+// 「ミナ」が trace や purpose になると、相手の名前を作業のように扱ってしまう。
+// 「ミナの写真」のような複合語は話題として残すため、完全一致だけを外す
+function collectNameTerms(snapshot: HachikaSnapshot, input: string): string[] {
+  return [
+    extractDeclaredUserName(input),
+    snapshot.discourse.userName?.value ?? null,
+    snapshot.discourse.hachikaName?.value ?? null,
+  ]
+    .filter((name): name is string => Boolean(name))
+    .map((name) => name.normalize("NFKC").trim().toLowerCase());
 }
 
 function filterLocalTopicCandidates(topics: readonly string[]): string[] {

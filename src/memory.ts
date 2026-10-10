@@ -1,4 +1,5 @@
 import { clamp01, clampSigned } from "./state.js";
+import { tokenizeJapanese } from "./japanese-morphology.js";
 import { extractTopics, isMeaningfulTopic, isTopicStopword } from "./topic-extraction.js";
 import type {
   BoundaryImprint,
@@ -71,18 +72,31 @@ const USER_NAME_MEMORY_CUE_PATTERN =
 
 export function extractDeclaredUserName(text: string): string | null {
   const normalized = text.normalize("NFKC").trim();
+  // 「はじめまして。私はミナ。…」のように文の途中で名乗ることが多いので、文ごとに見る
+  const sentences = [
+    normalized,
+    ...normalized.split(/[。！？!?\n]+/u).map((sentence) => sentence.trim()),
+  ].filter(Boolean);
 
-  for (const pattern of USER_SELF_NAME_PATTERNS) {
-    const match = normalized.match(pattern);
-    const candidate = match?.[1]?.trim() ?? null;
+  for (const sentence of sentences) {
+    for (const [index, pattern] of USER_SELF_NAME_PATTERNS.entries()) {
+      const match = sentence.match(pattern);
+      const candidate = match?.[1]?.trim() ?? null;
 
-    if (!candidate) {
-      continue;
-    }
+      if (!candidate) {
+        continue;
+      }
 
-    const name = validatePersonalNameCandidate(candidate);
-    if (name) {
-      return name;
+      // 「私はX」は「私は学生です」とも読めるので、名前らしい語のときだけ名前とみなす。
+      // 「私の名前はX」は明示なので、そのまま受け取る
+      if (index === 0 && !looksLikePersonalName(candidate)) {
+        continue;
+      }
+
+      const name = validatePersonalNameCandidate(candidate);
+      if (name) {
+        return name;
+      }
     }
   }
 
@@ -93,6 +107,33 @@ export function extractDeclaredUserName(text: string): string | null {
   }
 
   return null;
+}
+
+// 固有名詞・辞書にない語 (ミナ、田中、Yasu) と、普通の語として一語に読めないかな (やすとら) を名前とみなす
+export function looksLikePersonalName(candidate: string): boolean {
+  const normalized = candidate.normalize("NFKC").trim();
+  const tokens = tokenizeJapanese(normalized);
+  if (tokens.length === 0) {
+    return false;
+  }
+
+  if (
+    tokens.every(
+      (token) =>
+        token.pos === "UNK" ||
+        (token.pos === "名詞" &&
+          (token.pos1 === "固有名詞" || (token.pos1 === "接尾" && token.pos2 === "人名"))),
+    )
+  ) {
+    return true;
+  }
+
+  if (/^[ぁ-ゖァ-ヺー]+$/u.test(normalized)) {
+    const only = tokens.length === 1 ? tokens[0] : null;
+    return !(only && only.pos === "名詞");
+  }
+
+  return false;
 }
 
 export function validatePersonalNameCandidate(candidate: string): string | null {

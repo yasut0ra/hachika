@@ -243,6 +243,7 @@ interface NounUnit {
 }
 
 const extractionMemo = new Map<string, readonly string[]>();
+const termsMemo = new Map<string, readonly string[]>();
 const meaningfulMemo = new Map<string, boolean>();
 
 export function extractTopics(text: string): string[] {
@@ -271,6 +272,11 @@ export function isMeaningfulTopic(topic: string): boolean {
 // 照合用: 話題に加えて、複合語を構成する内容語も返す。
 // 「インターン選考」と「インターン業務」が同じ流れだと分かるようにするためで、話題としては保存しない
 export function extractTopicTerms(text: string): string[] {
+  const memoized = termsMemo.get(text);
+  if (memoized) {
+    return [...memoized];
+  }
+
   const terms = extractTopics(text);
 
   for (const unit of readTextUnits(text).units) {
@@ -282,7 +288,8 @@ export function extractTopicTerms(text: string): string[] {
     }
   }
 
-  return terms;
+  remember(termsMemo, text, terms);
+  return [...terms];
 }
 
 // 会話の中でその話題を閉じる言い方。「ダイエットはやめよう」のような生活の話は含めず、
@@ -336,7 +343,13 @@ function extractTopicsUncached(text: string): string[] {
       continue;
     }
 
-    if (leftUnit.content || leftUnit.modifier) {
+    // 「海の近くの町」のように位置や時の語を挟む連なりは、ひとまとまりで残す
+    const anchor = leftUnit.modifier
+      ? links.find(([, previousRight]) => previousRight === left)?.[0]
+      : undefined;
+    if (anchor !== undefined && units[anchor]!.content) {
+      candidates.push(`${units[anchor]!.surface}の${leftUnit.surface}の${rightUnit.surface}`);
+    } else if (leftUnit.content || leftUnit.modifier) {
       candidates.push(`${leftUnit.surface}の${rightUnit.surface}`);
     }
 
@@ -485,8 +498,13 @@ function joinsNounUnit(
   }
 
   if (token.pos1 === "副詞可能") {
-    // 「朝ごはん」のように直後の名詞と一語になるときだけつなぐ
-    return inUnit || next?.pos === "名詞" || (next?.pos === "助詞" && next.pos1 === "連体化");
+    // 「朝ごはん」「夏休み」のような一字の時の語だけが、直後の名詞と一語になる。
+    // 「最近仕事が忙しい」の「最近」は文全体にかかるので、仕事とはつながない
+    return (
+      inUnit ||
+      (next?.pos === "名詞" && token.surface.length === 1) ||
+      (next?.pos === "助詞" && next.pos1 === "連体化")
+    );
   }
 
   if (token.pos1 === "形容動詞語幹" || token.pos1 === "ナイ形容詞語幹") {

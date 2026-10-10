@@ -95,3 +95,13 @@ test("closing a topic in conversation is told apart from talking about it", () =
     assert.deepEqual(extractClosedTopics(text), [], text);
   }
 });
+
+test("only one-character time words fuse with the noun that follows", () => {
+  assert.deepEqual(extractTopics("朝ごはんはパンだった"), ["朝ごはん", "パン"]);
+  assert.deepEqual(extractTopics("最近仕事が忙しくて、締め切りが近い。"), ["仕事", "締め切り"]);
+});
+
+test("a chain through a positional word stays one place", () => {
+  assert.ok(extractTopics("第二章は海の近くの町にしたい。").includes("海の近くの町"));
+  assert.equal(extractTopics("第二章は海の近くの町にしたい。").includes("近くの町"), false);
+});

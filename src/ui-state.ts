@@ -117,7 +117,8 @@ export function buildUiState(
     selfModel: engine.getSelfModel(),
     welcomeBack: buildWelcomeBackDigest(snapshot, now),
     growth: summarizeLiveGrowthMetrics(snapshot),
-    memories: snapshot.memories.slice(-18),
+    // 圧縮された記憶 (consolidated) は内部の整理で、実際に交わした言葉ではないので会話欄に出さない
+    memories: snapshot.memories.filter((memory) => memory.kind !== "consolidated").slice(-18),
     autonomousFeed: snapshot.autonomousFeed.slice(-12),
     commitments: snapshot.discourse.commitments
       .filter(

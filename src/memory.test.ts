@@ -70,6 +70,19 @@ test("extractDeclaredUserName reads simple japanese self introductions", () => {
   assert.equal(extractDeclaredUserName("私はそう思う"), null);
 });
 
+test("a name given in the middle of a greeting is recognized, and common words are not names", () => {
+  assert.equal(
+    extractDeclaredUserName("はじめまして。私はミナ。静かな場所と短いSFが好き。覚えていて。"),
+    "ミナ",
+  );
+  assert.equal(extractDeclaredUserName("私はミナです。"), "ミナ");
+  assert.equal(extractDeclaredUserName("僕はユウ。よろしく"), "ユウ");
+  assert.equal(extractDeclaredUserName("私は田中です。"), "田中");
+  assert.equal(extractDeclaredUserName("私は学生です。"), null);
+  assert.equal(extractDeclaredUserName("私はエンジニアです"), null);
+  assert.equal(extractDeclaredUserName("私はミナが好き"), null);
+});
+
 test("name questions are not mistaken for declarations", () => {
   assert.equal(extractDeclaredUserName("私の名前はちゃんと覚えていますか"), null);
   assert.equal(

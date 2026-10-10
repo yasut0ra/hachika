@@ -123,3 +123,34 @@ test("buildUiState includes resident loop status when a status file exists", () 
     "hold idle_consolidation/continuity 仕様を温め直した",
   ]);
 });
+
+test("the conversation view shows exchanged words, not compressed memories", () => {
+  const snapshot = createInitialSnapshot();
+  snapshot.memories = [
+    {
+      role: "hachika",
+      text: "「旅の記録」は前のやり取りからまとまった流れとして残っている。",
+      timestamp: "2026-10-01T00:00:00.000Z",
+      topics: ["旅の記録"],
+      sentiment: "neutral",
+      kind: "consolidated",
+      weight: 4,
+    },
+    {
+      role: "user",
+      text: "旅の記録の続きをしよう。",
+      timestamp: "2026-10-02T00:00:00.000Z",
+      topics: ["旅の記録"],
+      sentiment: "neutral",
+      kind: "turn",
+      weight: 1,
+    },
+  ];
+
+  const ui = buildUiState(new HachikaEngine(snapshot), mkdtempSync(join(tmpdir(), "hachika-ui-chat-")));
+
+  assert.deepEqual(
+    ui.memories.map((memory) => memory.text),
+    ["旅の記録の続きをしよう。"],
+  );
+});
