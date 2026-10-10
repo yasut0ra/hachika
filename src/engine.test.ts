@@ -2481,6 +2481,39 @@ test("topic shift question cools a current concrete work concern instead of carr
   assert.equal(/仕様の境界/.test(result.reply), false);
 });
 
+test("closing a topic in conversation does not grow it into a preference, anchor, or purpose", () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+
+  engine.respond("アプリの更新の手順を一緒に整理したい。");
+  const before = engine.getSnapshot();
+
+  for (const text of ["その「更新」についての話はもう終わりにしてほしい", "更新の話はもういいよ"]) {
+    const result = engine.respond(text);
+
+    assert.deepEqual(result.debug.signals.topics, [], text);
+    assert.equal(result.snapshot.topicCounts.更新, before.topicCounts.更新, text);
+    assert.equal(result.snapshot.preferences.更新, before.preferences.更新, text);
+    assert.equal(result.snapshot.identity.anchors.includes("更新"), false, text);
+    assert.notEqual(result.snapshot.purpose.active?.topic, "更新", text);
+    assert.equal(result.snapshot.memories.at(-2)?.topics.includes("更新"), false, text);
+  }
+});
+
+test("replies name the shared work, not fragments of the sentence", () => {
+  const engine = new HachikaEngine(createInitialSnapshot());
+
+  engine.respond("仕様の境界が未定で曖昧だ。どう整理する？");
+  const result = engine.respond("別の話をしよう。旅の記録の章立てを一緒に進めたい");
+
+  assert.equal(result.debug.reply.selection?.currentTopic, "旅の記録");
+  assert.equal(result.snapshot.purpose.lastResolved?.topic, "仕様の境界");
+  assert.doesNotMatch(result.reply, /「[。、]/u);
+  assert.equal(
+    Object.keys(result.snapshot.topicCounts).some((topic) => /^[。、]/u.test(topic)),
+    false,
+  );
+});
+
 test("explicit new work topics do not surface unrelated stale trace or boundary context", () => {
   const snapshot = createInitialSnapshot();
   snapshot.preferences["冷笑"] = 0.92;

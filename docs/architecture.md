@@ -90,6 +90,10 @@ outward action は internal action の一部だけです。発話しない tick 
 
 ## Memory, traces, and threads
 
+話題は形態素解析 (`lindera-wasm-ipadic`、IPADIC を埋め込んだ WASM) の品詞から名詞句だけを候補にします。助詞・活用語尾の切れ端は品詞で落ち、「話」「意味」「続き」のような会話そのものを指す語や時の名詞は単独では話題にしません。「旅の記録」のような「AのB」は複合語として残し、`memory threads` の照合では複合語を構成する語 (「インターン選考」の インターン) も使います。「〜の話はもう終わり」「〜はもういい」のように会話の中で閉じられた話題は、言及されていても数えず、preference・anchor・purpose・memory へ育てません。LLM が意味解釈したターンでは、その判断を正としてルール抽出を記憶へ足し戻しません。
+
+精度は合成した発話と正解の話題 (`src/fixtures/topic-eval.json`) で測ります。`npm run eval:topics` が precision / recall と誤りの一覧を出し、テストが基準値を下回る変更を止めます。導入前は precision 0.452 / recall 0.857、導入後は 0.980 / 1.000 です。解析器は token ごとに WASM メモリを解放しないと常駐中に膨らみ続けるため、`src/japanese-morphology.ts` で即座に解放し、テストで固定しています。`lindera-wasm-ipadic` 2.x は後継 (`lindera-wasm` v6) が辞書を実行時に取得する方式へ移ったため非推奨扱いですが、辞書を同梱してオフラインかつ決定的に動くので、版を固定して使っています。差し替えるときはこのモジュールだけを変えます。
+
 - 短期の `memories` は古い tail を圧縮し、反復 topic を consolidated memory にまとめる
 - 長期 imprint は `preference / boundary / relation` に分ける
 - `traces` は `memo / fragments / decisions / nextSteps` を持つ再利用可能な作業痕跡

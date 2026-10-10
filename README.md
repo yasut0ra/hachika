@@ -201,6 +201,7 @@ Hachika は完成した人格 AI ではなく、長期的な個体性をどう�
 ```bash
 npm run build
 npm test
+npm run eval:topics   # 話題抽出の precision / recall
 ```
 
 test suite には unit test、複数ターン scenario、substrate invariant、persistence、migration、resident loop の検証が含まれます。

@@ -11,6 +11,7 @@
     "report": "tsx src/life-report-cli.ts",
     "experiment:check": "tsx src/experiment-freeze-cli.ts",
     "experiment:birth": "tsx src/experiment-birth-cli.ts",
+    "eval:topics": "tsx src/topic-eval-cli.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
     "test": "tsx --test src/*.test.ts"
@@ -19,5 +20,8 @@
     "@types/node": "^24.6.0",
     "tsx": "^4.20.5",
     "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "lindera-wasm-ipadic": "2.1.0"
   }
 }

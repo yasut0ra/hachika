@@ -16,6 +16,7 @@ import {
   topPreferredTopics,
   topicsLooselyMatch,
 } from "./memory.js";
+import { extractClosedTopics } from "./topic-extraction.js";
 import {
   buildPendingInitiativeFromSemanticInitiativePlan,
   buildProactivePlanFromSemanticProactivePlan,
@@ -424,6 +425,10 @@ const ABANDONMENT_MARKERS = [
   "別のこと",
   "他のこと",
 ];
+
+// 「別の話をしよう」は、相手への問いかけと同じ文にあっても話題の打ち切りとして扱う
+const EXPLICIT_TOPIC_SHIFT_PATTERN =
+  /(?:別の話|違う話|他の話|話題を変|話を変|話変え|別件|別のこと|他のこと)/u;
 
 const REPAIR_META_TOPICS = new Set([
   "会話",
@@ -1240,12 +1245,20 @@ export class HachikaEngine {
     replyDebug: GeneratedTextDebug,
   ): TurnResult {
     const sentiment = classifySentiment(prepared.sentimentScore);
+    // LLM が意味を解釈したターンでは、その判断を正とする。ルール抽出を足し戻すと、
+    // LLM が落とした語 (世界の小物や言葉の切れ端) が記憶へ戻ってしまう
+    const interpretedByLlm =
+      (prepared.interpretationDebug.source === "llm" &&
+        !prepared.interpretationDebug.fallbackUsed) ||
+      (prepared.turnDebug?.source === "llm" && !prepared.turnDebug.fallbackUsed);
     const localMemoryTopics =
-      prepared.signals.workCue < 0.28 ? extractLocalTopics(input) : [];
-    const memoryTopics = uniqueTopics([
-      ...prepared.signals.topics,
-      ...localMemoryTopics,
-    ])
+      !interpretedByLlm && prepared.signals.workCue < 0.28
+        ? filterLocalTopicCandidates(extractLocalTopics(input))
+        : [];
+    const memoryTopics = excludeClosedTopics(
+      uniqueTopics([...prepared.signals.topics, ...localMemoryTopics]),
+      extractClosedTopics(input),
+    )
       .filter(isMeaningfulTopic)
       .slice(0, 6);
 
@@ -1598,7 +1611,7 @@ function prepareTurn(
   const localSignals = analyzeInteraction(input, snapshot);
   const directive = buildRuleTurnDirective(snapshot, input, localSignals);
   const resolvedDirective = resolveTurnDirective(directive);
-  const signals = mergeTurnDirectedSignals(snapshot, localSignals, directive);
+  const signals = mergeTurnDirectedSignals(snapshot, localSignals, directive, input);
   const turnDebug = buildRuleTurnDebug(directive);
   const prepared = prepareTurnFromSignals(
     snapshot,
@@ -1639,6 +1652,7 @@ async function prepareTurnAsync(
       snapshot,
       localSignals,
       directed.directive,
+      input,
     );
     const prepared = prepareTurnFromSignals(
       snapshot,
@@ -1755,8 +1769,9 @@ function prepareTurnFromSignals(
   deferInitiativeScheduling: boolean,
 ): PreparedTurn {
   const previousSnapshot = structuredClone(snapshot);
+  const closedTopics = extractClosedTopics(input);
   const semanticSignals = applyBehaviorDirectiveToSignals(
-    deriveStateSignals(signals, traceExtraction),
+    withoutClosedTopics(deriveStateSignals(signals, traceExtraction), closedTopics),
     behaviorDirective,
   );
   const stateSignals = deriveDurableStateSignals(
@@ -2717,6 +2732,7 @@ function mergeTurnDirectedSignals(
   snapshot: HachikaSnapshot,
   localSignals: InteractionSignals,
   directive: TurnDirective,
+  input: string,
 ): InteractionSignals {
   const resolvedDirective = resolveTurnDirective(directive);
 
@@ -2725,6 +2741,7 @@ function mergeTurnDirectedSignals(
       snapshot,
       localSignals,
       resolvedDirective,
+      EXPLICIT_TOPIC_SHIFT_PATTERN.test(input.normalize("NFKC")),
     );
   }
 
@@ -2746,6 +2763,7 @@ function buildAuthoritativeSemanticTurnSignals(
   snapshot: HachikaSnapshot,
   localSignals: InteractionSignals,
   directive: ReturnType<typeof resolveTurnDirective>,
+  explicitTopicShift: boolean,
 ): InteractionSignals {
   const directReferentTarget =
     directive.target === "hachika_name" ||
@@ -2810,7 +2828,7 @@ function buildAuthoritativeSemanticTurnSignals(
           : localSignals.completion,
     ),
     abandonment:
-      directReferentTarget || relationTurn || worldTurn
+      (directReferentTarget || relationTurn || worldTurn) && !explicitTopicShift
         ? clamp01(Math.min(localSignals.abandonment, 0.12))
         : localSignals.abandonment,
     preservationThreat: localSignals.preservationThreat,
@@ -4130,7 +4148,14 @@ function analyzeInteraction(
   snapshot: HachikaSnapshot,
 ): InteractionSignals {
   const normalized = input.normalize("NFKC").toLowerCase();
-  const topics = filterLocalTopicCandidates(extractLocalTopics(input));
+  const closedTopics = extractClosedTopics(input);
+  const topics = excludeClosedTopics(
+    filterLocalTopicCandidates(extractLocalTopics(input)),
+    closedTopics,
+  );
+  const closesActivePurpose = closedTopics.some((topic) =>
+    topicsLooselyMatch(topic, snapshot.purpose.active?.topic),
+  );
   const concreteTopics = topics.filter(
     (topic) => !requiresConcreteTopicSupport(topic) && !isRelationalTopic(topic),
   );
@@ -4206,7 +4231,10 @@ function analyzeInteraction(
     memoryCue: countMatchesWithDivisor(normalized, MEMORY_MARKERS, 3),
     expansionCue: countMatchesWithDivisor(normalized, EXPANSION_MARKERS, 3),
     completion: countMatchesWithDivisor(normalized, COMPLETION_MARKERS, 2.5),
-    abandonment: countMatches(normalized, ABANDONMENT_MARKERS),
+    abandonment: Math.max(
+      countMatches(normalized, ABANDONMENT_MARKERS),
+      closesActivePurpose ? 0.5 : 0,
+    ),
     preservationThreat: preservation.threat,
     preservationConcern: preservation.concern,
     neglect: calculateNeglect(snapshot.lastInteractionAt),
@@ -4219,6 +4247,25 @@ function analyzeInteraction(
     topics,
   });
   return baseSignals;
+}
+
+// 「〜の話はもう終わり」で閉じられた話題は、言及されていても数えず、目的や記憶へ育てない
+function excludeClosedTopics(
+  topics: readonly string[],
+  closedTopics: readonly string[],
+): string[] {
+  return topics.filter(
+    (topic) => !closedTopics.some((closed) => topicsLooselyMatch(closed, topic)),
+  );
+}
+
+function withoutClosedTopics(
+  signals: InteractionSignals,
+  closedTopics: readonly string[],
+): InteractionSignals {
+  return closedTopics.length === 0
+    ? signals
+    : { ...signals, topics: excludeClosedTopics(signals.topics, closedTopics) };
 }
 
 function filterLocalTopicCandidates(topics: readonly string[]): string[] {

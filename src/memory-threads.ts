@@ -1,4 +1,5 @@
 import { extractTopics, topicsLooselyMatch } from "./memory.js";
+import { extractTopicTerms } from "./topic-extraction.js";
 import { summarizeTaskCommitmentProgress } from "./discourse.js";
 import { pickPrimaryArtifactItem, readTraceLifecycle } from "./traces.js";
 import type {
@@ -462,7 +463,7 @@ function selectMemoryThreadForText(
       normalized.includes(thread.title.toLowerCase()) ||
       thread.traceTopics.some((topic) => normalized.includes(topic.toLowerCase())),
   );
-  return direct ?? selectMemoryThread(snapshot, extractTopics(text));
+  return direct ?? selectMemoryThread(snapshot, extractTopicTerms(text));
 }
 
 function resolveThreadLifecycleEvent(
@@ -573,7 +574,7 @@ function textMentionsThread(thread: MemoryThread, text: string): boolean {
   ) {
     return true;
   }
-  const terms = extractTopics(text);
+  const terms = extractTopicTerms(text);
   return terms.some(
     (term) =>
       topicsLooselyMatch(term, thread.title) ||
@@ -655,7 +656,7 @@ function buildTraceSignature(trace: TraceEntry): Set<string> {
   ];
   return new Set(
     fields
-      .flatMap((field) => extractTopics(field))
+      .flatMap((field) => extractTopicTerms(field))
       .map((term) => term.normalize("NFKC").trim().toLowerCase())
       .filter((term) => term.length >= 2),
   );

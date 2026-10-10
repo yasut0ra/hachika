@@ -14,6 +14,7 @@ import {
 } from "./semantic-director-schema.js";
 import {
   buildRuleBehaviorDirective,
+  isExplicitTopicShift,
   type BehaviorDirective,
 } from "./behavior-director.js";
 import {
@@ -1238,7 +1239,8 @@ function applyReferentToBehavior(
       initiativeAction: "suppress",
       boundaryAction: "suppress",
       worldAction: "suppress",
-      coolCurrentContext: false,
+      // 「別の話をしよう。最近何してる？」のように問いと一緒でも、切り替えの意思は残す
+      coolCurrentContext: isExplicitTopicShift(context.signals),
       directAnswer: context.answerMode === "direct",
       summary: allowRelationPurpose
         ? "turn/naming_assign_without_trace_hardening"

@@ -1,4 +1,5 @@
 import { clamp01, clampSigned } from "./state.js";
+import { extractTopics, isMeaningfulTopic, isTopicStopword } from "./topic-extraction.js";
 import type {
   BoundaryImprint,
   HachikaSnapshot,
@@ -8,158 +9,6 @@ import type {
   RelationImprint,
   RelationKind,
 } from "./types.js";
-
-const segmenter = new Intl.Segmenter("ja", { granularity: "word" });
-
-const STOPWORDS = new Set([
-  "the",
-  "and",
-  "for",
-  "with",
-  "this",
-  "that",
-  "you",
-  "your",
-  "are",
-  "was",
-  "were",
-  "from",
-  "have",
-  "has",
-  "into",
-  "about",
-  "just",
-  "hello",
-  "thanks",
-  "then",
-  "them",
-  "they",
-  "me",
-  "my",
-  "好き",
-  "嫌い",
-  "いい",
-  "面白い",
-  "助かる",
-  "嬉しい",
-  "つまらない",
-  "最悪",
-  "邪魔",
-  "うるさい",
-  "だし",
-  "納得",
-  "例えば",
-  "たとえば",
-  "なんでも",
-  "なんでも聞",
-  "なんでも聞いて",
-  "ありがとう",
-  "こんにちは",
-  "こんばんは",
-  "おはよう",
-  "はじめまして",
-  "よろしく",
-  "お願い",
-  "お願いします",
-  "前回",
-  "続き",
-  "覚えて",
-  "覚え",
-  "として",
-  "てい",
-  "あなた",
-  "君",
-  "きみ",
-  "私",
-  "わたし",
-  "私たち",
-  "する",
-  "して",
-  "した",
-  "いる",
-  "ある",
-  "こと",
-  "それ",
-  "これ",
-  "その",
-  "この",
-  "あの",
-  "そう",
-  "どんな",
-  "なんか",
-  "じゃあ",
-  "ひとつ",
-  "二つ",
-  "三つ",
-  "分け",
-  "会話",
-  "話",
-  "言い方",
-  "雰囲気",
-  "温度",
-  "感じ",
-  "ごめん",
-  "さっき",
-  "落ち",
-  "着い",
-  "て話",
-  "かな",
-  "って",
-  "まずは",
-  "いちばん",
-  "ちゃんと",
-  "ひとまず",
-  "ここから",
-  "始まり",
-  "へー",
-  "ふーん",
-  "うん",
-  "はい",
-  "いや",
-  "よかった",
-  "お疲れ",
-  "おつかれ",
-  "ここ",
-  "ため",
-  "よう",
-  "もの",
-  "ので",
-  "から",
-  "まで",
-  "です",
-  "ます",
-  "ない",
-  "しない",
-  "たい",
-  "もう",
-  "もっと",
-  "少し",
-  "もう少し",
-  "では",
-  "には",
-  "へ",
-  "を",
-  "に",
-  "が",
-  "は",
-  "と",
-  "も",
-  "で",
-  "の",
-]);
-
-const HIRAGANA_ONLY = /^[ぁ-ゖー]+$/u;
-const SINGLE_KANJI = /^[一-龠々]$/u;
-const HAS_HIRAGANA = /[ぁ-ゖー]/u;
-const HAS_KANJI = /[一-龠々]/u;
-const OVERBROAD_TOPIC_PARTS = new Set([
-  "会話",
-  "話",
-  "言い方",
-  "雰囲気",
-  "温度",
-  "感じ",
-]);
 
 const BROAD_ABSTRACT_TOPICS = new Set([
   "静けさ",
@@ -207,47 +56,9 @@ const RELATIONAL_TOPICS = new Set([
   "自己紹介",
 ]);
 
+export { extractTopics, isMeaningfulTopic };
+
 export const MEMORY_LIMIT = 96;
-
-export function extractTopics(text: string): string[] {
-  const topics: string[] = [];
-  const seen = new Set<string>();
-  const segments = [...segmenter.segment(text)];
-
-  for (const topic of extractCompoundTopics(segments)) {
-    if (seen.has(topic)) {
-      continue;
-    }
-
-    seen.add(topic);
-    topics.push(topic);
-
-    if (topics.length >= 6) {
-      return topics;
-    }
-  }
-
-  for (const segment of segments) {
-    if (!segment.isWordLike) {
-      continue;
-    }
-
-    const normalized = normalizeToken(segment.segment);
-
-    if (!normalized || seen.has(normalized)) {
-      continue;
-    }
-
-    seen.add(normalized);
-    topics.push(normalized);
-
-    if (topics.length >= 6) {
-      break;
-    }
-  }
-
-  return topics;
-}
 
 const USER_SELF_NAME_PATTERNS = [
   /^(?:私|わたし|僕|ぼく|俺|おれ)は[\s　]*([^\s。、！？?？]{1,24}?)(?:です|だよ|だ)?$/u,
@@ -290,7 +101,7 @@ export function validatePersonalNameCandidate(candidate: string): string | null 
   if (
     normalized.length <= 1 ||
     normalized.length > 24 ||
-    STOPWORDS.has(normalized) ||
+    isTopicStopword(normalized) ||
     /[\s。、！？!?？]/u.test(normalized) ||
     /^(?:あなた|君|きみ|私|わたし|僕|ぼく|俺|おれ|ハチカ)$/u.test(normalized) ||
     /(?:何|なに|なん|どなた|誰|だれ|ちゃんと|覚え|憶え|知っ|分か|わか)/u.test(normalized) ||
@@ -308,117 +119,6 @@ export function extractLocalTopics(text: string): string[] {
   return extractTopics(text)
     .filter((topic) => shouldKeepLocalTopicCandidate(topic))
     .slice(0, 4);
-}
-
-function extractCompoundTopics(
-  segments: Intl.SegmentData[],
-): string[] {
-  const topics: string[] = [];
-  const seen = new Set<string>();
-
-  for (let index = 0; index < segments.length; index += 1) {
-    const current = normalizeTopicPart(segments[index]?.segment ?? "");
-    if (!current) {
-      continue;
-    }
-
-    const mergedCurrent = readCompoundHead(segments, index);
-
-    if (!mergedCurrent) {
-      continue;
-    }
-
-    if (segments[index + 1]?.segment === "の") {
-      const right = readCompoundHead(segments, index + 2);
-
-      if (!right || !isMeaningfulTopic(right.topic)) {
-        continue;
-      }
-
-      const candidates = OVERBROAD_TOPIC_PARTS.has(current)
-        ? [right.topic]
-        : [`${mergedCurrent.topic}の${right.topic}`, right.topic];
-
-      for (const candidate of candidates) {
-        if (!isMeaningfulTopic(candidate) || seen.has(candidate)) {
-          continue;
-        }
-
-        seen.add(candidate);
-        topics.push(candidate);
-      }
-
-      continue;
-    }
-
-    if (mergedCurrent.consumed > 1 && isMeaningfulTopic(mergedCurrent.topic) && !seen.has(mergedCurrent.topic)) {
-      seen.add(mergedCurrent.topic);
-      topics.push(mergedCurrent.topic);
-    }
-  }
-
-  return topics;
-}
-
-function readCompoundHead(
-  segments: Intl.SegmentData[],
-  start: number,
-): { topic: string; consumed: number } | null {
-  const base = normalizeTopicPart(segments[start]?.segment ?? "");
-
-  if (!base) {
-    return null;
-  }
-
-  let topic = base;
-  let consumed = 1;
-  const canBridgeIntoKanjiWord = /^[a-z]+$/u.test(base) || SINGLE_KANJI.test(base);
-
-  if (HIRAGANA_ONLY.test(base)) {
-    return { topic, consumed };
-  }
-
-  for (let index = start + 1; index < segments.length; index += 1) {
-    const next = segments[index];
-
-    if (!next?.isWordLike) {
-      break;
-    }
-
-    const normalized = normalizeTopicPart(next.segment);
-
-    if (
-      !normalized ||
-      HAS_HIRAGANA.test(normalized) ||
-      (!SINGLE_KANJI.test(normalized) &&
-        !(canBridgeIntoKanjiWord && /^[一-龠々]{2,}$/u.test(normalized)))
-    ) {
-      break;
-    }
-
-    topic += normalized;
-    consumed += 1;
-  }
-
-  return { topic, consumed };
-}
-
-function normalizeTopicPart(token: string): string | null {
-  const normalized = token.normalize("NFKC").trim().toLowerCase();
-
-  if (!normalized) {
-    return null;
-  }
-
-  if (/^[0-9]+$/.test(normalized)) {
-    return null;
-  }
-
-  if (STOPWORDS.has(normalized) && !OVERBROAD_TOPIC_PARTS.has(normalized)) {
-    return null;
-  }
-
-  return normalized;
 }
 
 export function remember(
@@ -739,40 +439,6 @@ export function sortedRelationImprints(
     .slice(0, limit);
 }
 
-export function isMeaningfulTopic(topic: string): boolean {
-  const normalized = topic.normalize("NFKC").trim().toLowerCase();
-
-  if (!normalized) {
-    return false;
-  }
-
-  if (STOPWORDS.has(normalized)) {
-    return false;
-  }
-
-  if (/^[0-9]+$/.test(normalized)) {
-    return false;
-  }
-
-  if (normalized.length === 1 && !/[a-z]/.test(normalized)) {
-    return false;
-  }
-
-  if (HIRAGANA_ONLY.test(normalized) && normalized.length <= 2) {
-    return false;
-  }
-
-  if (
-    normalized.length <= 2 &&
-    HAS_HIRAGANA.test(normalized) &&
-    HAS_KANJI.test(normalized)
-  ) {
-    return false;
-  }
-
-  return true;
-}
-
 export function isBroadAbstractTopic(topic: string): boolean {
   const normalized = topic.normalize("NFKC").trim().toLowerCase();
   return normalized.length > 0 && BROAD_ABSTRACT_TOPICS.has(normalized);
@@ -854,24 +520,6 @@ export function topicsLooselyMatch(left: string, right: string | null | undefine
     normalizedLeft.includes(normalizedRight) ||
     normalizedRight.includes(normalizedLeft)
   );
-}
-
-function normalizeToken(token: string): string | null {
-  const normalized = token.normalize("NFKC").trim().toLowerCase();
-
-  if (!isMeaningfulTopic(normalized)) {
-    return null;
-  }
-
-  if (
-    /(?:思う|感じる|感じ|見える|見えてる|言う|答える|教える|進める|続ける|やる)$/u.test(
-      normalized,
-    )
-  ) {
-    return null;
-  }
-
-  return normalized;
 }
 
 function boundaryKey(kind: BoundaryImprint["kind"], topic: string | null): string {

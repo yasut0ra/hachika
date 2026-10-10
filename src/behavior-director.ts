@@ -375,6 +375,18 @@ function buildBehaviorActorCue(
   return `いまは${place}で、目の前のやりとりを崩さず受けたい。`;
 }
 
+// 敵意や拒絶ではなく、穏やかに話題を切り替える意思。いまの文脈を冷ましてよい
+export function isExplicitTopicShift(
+  signals: Pick<InteractionSignals, "abandonment" | "workCue" | "negative" | "dismissal">,
+): boolean {
+  return (
+    signals.abandonment >= 0.28 &&
+    signals.workCue < 0.35 &&
+    signals.negative < 0.18 &&
+    signals.dismissal < 0.18
+  );
+}
+
 export function buildRuleBehaviorDirective(
   snapshot: HachikaSnapshot,
   input: string,
@@ -410,11 +422,7 @@ export function buildRuleBehaviorDirective(
       signals.memoryCue > 0.16 ||
       signals.expansionCue > 0.16
     );
-  const explicitShift =
-    signals.abandonment >= 0.28 &&
-    signals.workCue < 0.35 &&
-    signals.negative < 0.18 &&
-    signals.dismissal < 0.18;
+  const explicitShift = isExplicitTopicShift(signals);
   const clarificationTurn = isClarificationTurnLike(input, signals);
   const activeRelationContext =
     snapshot.purpose.active?.kind === "deepen_relation" ||
