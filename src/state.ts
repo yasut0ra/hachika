@@ -12,6 +12,7 @@ import type {
   ReactivityState,
 } from "./types.js";
 import { createInitialWorldState } from "./world.js";
+import { createInitialWorkshop } from "./workshop.js";
 
 export const DRIVE_KEYS = [
   "continuity",
@@ -157,7 +158,7 @@ export function blendVisibleValue(
 
 export function createInitialSnapshot(): HachikaSnapshot {
   return {
-    version: 35,
+    version: 38,
     revision: 0,
     state: { ...INITIAL_STATE },
     body: { ...INITIAL_BODY },
@@ -175,6 +176,7 @@ export function createInitialSnapshot(): HachikaSnapshot {
     temperament: { ...INITIAL_TEMPERAMENT },
     attachment: INITIAL_ATTACHMENT,
     world: createInitialWorldState(),
+    workshop: createInitialWorkshop(),
     presence: createInitialPresenceState(),
     discourse: {
       userName: null,

@@ -4,6 +4,7 @@ import { appendDailyWorldEventIfDue } from "./world.js";
 import type { AutonomyDirector } from "./autonomy-director.js";
 import type { ProactiveDirector } from "./proactive-director.js";
 import type { ReplyGenerator } from "./reply-generator.js";
+import type { WorkshopDirector } from "./workshop-director.js";
 import type {
   AutonomousFeedEntry,
   HachikaSnapshot,
@@ -18,6 +19,7 @@ export interface ResidentLoopTickOptions {
   timeZone?: string;
   individualId?: string;
   autonomyDirector?: AutonomyDirector | null;
+  workshopDirector?: WorkshopDirector | null;
   replyGenerator?: ReplyGenerator | null;
   proactiveDirector?: ProactiveDirector | null;
 }
@@ -49,9 +51,10 @@ export async function runResidentLoopTick(
   let outwardMode: "none" | "touch" | "speak" = "speak";
 
   if (idleHours > 0) {
-    if (options.autonomyDirector) {
+    if (options.autonomyDirector || options.workshopDirector) {
       const autonomy = await engine.rewindIdleHoursAsync(idleHours, {
-        autonomyDirector: options.autonomyDirector,
+        autonomyDirector: options.autonomyDirector ?? null,
+        workshopDirector: options.workshopDirector ?? null,
         clockMode: options.clockMode ?? "simulated",
         ...(options.now ? { now: options.now } : {}),
       });

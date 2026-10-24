@@ -15,6 +15,7 @@ import {
   readResidentLoopConfigFromEnv,
 } from "./resident-loop.js";
 import { ResidentLoopRuntime } from "./resident-runtime.js";
+import { createWorkshopDirectorFromEnv } from "./workshop-director.js";
 
 loadDotEnv();
 const {
@@ -29,6 +30,7 @@ const {
 const config = readResidentLoopConfigFromEnv();
 const replyGenerator = createReplyGeneratorFromEnv();
 const autonomyDirector = createAutonomyDirectorFromEnv();
+const workshopDirector = createWorkshopDirectorFromEnv();
 const proactiveDirector = createProactiveDirectorFromEnv();
 const runtime = new ResidentLoopRuntime({
   snapshotPath,
@@ -40,6 +42,7 @@ const runtime = new ResidentLoopRuntime({
   replyDescription: describeReplyGenerator(replyGenerator),
   replyGenerator,
   autonomyDirector,
+  workshopDirector,
   proactiveDirector,
   individualId: process.env.HACHIKA_INDIVIDUAL_ID?.trim() || dataDir,
   log: console.log,

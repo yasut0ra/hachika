@@ -2,6 +2,7 @@ import { HachikaEngine } from "./engine.js";
 import { runResidentLoopTick } from "./resident-loop.js";
 import { createInitialSnapshot } from "./state.js";
 import type { HachikaSnapshot } from "./types.js";
+import type { WorkshopInteraction } from "./workshop.js";
 
 // デモ用に、30日分の暮らしを実際の常駐ループと同じ仕組みで生きさせた個体を作る。
 // 初めて触る人が、何日も待たずに夢・日誌・留守中の過ごし方・関係の履歴を見られるようにするため。
@@ -17,6 +18,7 @@ interface DemoSession {
   day: number;
   time: string;
   turns: readonly string[];
+  gestures?: readonly WorkshopInteraction[];
 }
 
 export const DEMO_LIFE_DAYS = 30;
@@ -36,6 +38,7 @@ export const DEMO_LIFE_SCRIPT: readonly DemoSession[] = [
   {
     day: 1,
     time: "22:00",
+    gestures: [{ kind: "offer", material: "ticket", place: "studio" }],
     turns: [
       "旅の記録を一緒に三章へ整理したい。今日は第一章の見出しまで。",
       "第一章は京都の雨の日にしよう。",
@@ -64,12 +67,14 @@ export const DEMO_LIFE_SCRIPT: readonly DemoSession[] = [
   {
     day: 8,
     time: "22:00",
+    gestures: [{ kind: "offer", material: "paper", place: "studio", text: "雨の日はコトと、図書館の写真を見返している。" }],
     turns: ["猫の名前、コトにした。", "雨の日はコトと図書館の写真を見返してる。"],
   },
   { day: 10, time: "21:00", turns: ["少し離れるね。旅行に行ってくる。戻ったら続きを聞かせて。"] },
   {
     day: 14,
     time: "20:30",
+    gestures: [{ kind: "offer", material: "thread", place: "studio" }],
     turns: [
       "ただいま。海の近くの町で写真をたくさん撮ってきた。",
       "旅の記録の第二章、これで進められそう。",
@@ -104,6 +109,7 @@ export async function liveDemoLife(options: DemoLifeOptions): Promise<HachikaSna
   const sessions = DEMO_LIFE_SCRIPT.map((session) => ({
     at: birthDay + session.day * DAY_MS + parseClockMs(session.time),
     turns: session.turns,
+    gestures: session.gestures ?? [],
   })).filter((session) => session.at < options.endAt.getTime());
 
   return withSimulatedClock(birthDay + parseClockMs(DEMO_LIFE_SCRIPT[0]!.time), async (clock) => {
@@ -132,6 +138,12 @@ export async function liveDemoLife(options: DemoLifeOptions): Promise<HachikaSna
         clock.set(session.at + index * 2 * MINUTE_MS);
         const engine = new HachikaEngine(snapshot);
         engine.respond(turn);
+        snapshot = engine.getSnapshot();
+      }
+
+      for (const [index, gesture] of session.gestures.entries()) {
+        const engine = new HachikaEngine(snapshot);
+        engine.interactWithWorkshop(gesture, `demo-${session.at}-${index}`, new Date(clock.now()));
         snapshot = engine.getSnapshot();
       }
 

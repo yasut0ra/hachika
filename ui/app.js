@@ -1,3 +1,5 @@
+import { createWorkshopView } from "./workshop.js";
+
 const messagesNode = document.getElementById("messages");
 const avatarStageNode = document.getElementById("avatar-stage");
 const avatarActionNode = document.getElementById("avatar-action");
@@ -61,6 +63,7 @@ let currentBlinkIntervalMs = null;
 let avatarMouthTimer = null;
 let activeAvatarSpeechId = null;
 let shownWelcomeDigest = null;
+const workshopView = createWorkshopView({ request, onUpdate: (ui) => render(ui), flash: setFlash });
 
 async function request(path, options = {}) {
   const response = await fetch(path, {
@@ -100,11 +103,12 @@ function render(ui, options = {}) {
   setConnectionState(true);
   conversationCountNode.textContent = `${ui.summary.conversationCount} turns`;
   renderAvatar(ui.embodiment);
+  workshopView.render(ui);
   renderMessages(ui.memories);
   renderState(ui.summary);
   renderWorld(ui.summary.world);
   renderIdentity(ui.summary, ui.selfModel);
-  renderDiagnostics(ui.diagnostics, ui.summary.residentLoop, ui.summary.residentLoopHealth);
+  renderDiagnostics(ui.diagnostics, ui.summary.residentLoop, ui.summary.residentLoopHealth, ui.workshop);
   renderGrowth(ui.growth);
   renderCommitments(ui.commitments ?? []);
   renderTraces(ui.traces);
@@ -602,10 +606,13 @@ function renderWorld(world) {
   );
 }
 
-function renderDiagnostics(diagnostics, residentLoop, residentLoopHealth) {
+function renderDiagnostics(diagnostics, residentLoop, residentLoopHealth, workshop) {
   diagnosticsNode.innerHTML = "";
   diagnosticsNode.append(
     stackCard("Resident Loop", formatResidentLoopDetail(residentLoop, residentLoopHealth)),
+    stackCard("LLM", `会話: ${diagnostics.llm?.reply ?? "unknown"}\n工房: ${diagnostics.llm?.workshop ?? "unknown"}`),
+    stackCard("Workshop", workshop?.lastGeneration ?
+      `source: ${workshop.lastGeneration.source}\nprovider: ${workshop.lastGeneration.provider}\nmodel: ${workshop.lastGeneration.model ?? "unknown"}\noutcome: ${workshop.lastGeneration.outcome}\nerror: ${workshop.lastGeneration.error ?? "none"}\n覚えた作り方: ${workshop.recipes.length}` : "まだ制作していない"),
     stackCard("Last Reply", formatGenerated(diagnostics.lastReply)),
     stackCard("Last Response", formatGenerated(diagnostics.lastResponse)),
     stackCard("Last Proactive", formatGenerated(diagnostics.lastProactive)),

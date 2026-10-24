@@ -67,6 +67,12 @@
             <h1>Hachika</h1>
             <span class="presence-state" id="avatar-action">rest</span>
           </div>
+          <nav class="room-nav" aria-label="部屋を眺める">
+            <button type="button" data-room="threshold">入口</button>
+            <button type="button" data-room="studio" aria-pressed="true">作業机</button>
+            <button type="button" data-room="archive">棚</button>
+            <span id="room-presence"></span>
+          </nav>
           <div
             class="avatar-stage"
             id="avatar-stage"
@@ -77,16 +83,22 @@
             data-gaze="lamp"
           >
             <div class="stage-haze"></div>
-            <div class="place-scene scene-threshold" aria-hidden="true">
+            <div class="place-scene scene-threshold">
               <div class="threshold-frame"></div>
-              <div class="world-object object-lamp"><span></span></div>
+              <button type="button" class="world-object object-lamp" aria-label="灯りを調整する" title="灯りを調整する"><span></span></button>
             </div>
-            <div class="place-scene scene-studio" aria-hidden="true">
+            <div class="place-scene scene-studio">
               <div class="studio-window"></div>
-              <div class="world-object object-desk"><span></span></div>
+              <button type="button" class="world-object object-desk" aria-label="机に紙片を置く" title="机に紙片を置く"><span></span></button>
             </div>
-            <div class="place-scene scene-archive" aria-hidden="true">
-              <div class="world-object object-shelf"><i></i><i></i><i></i></div>
+            <div class="place-scene scene-archive">
+              <button type="button" class="world-object object-shelf" aria-label="棚のノートを開く" title="棚のノートを開く"><i></i><i></i><i></i></button>
+            </div>
+            <div class="room-materials" id="room-materials" aria-label="部屋に置いたもの"></div>
+            <div class="desk-layout" id="desk-layout" aria-label="机に置く場所">
+              <section class="desk-zone" data-desk-zone="window" aria-label="窓辺の素材"><button type="button" data-desk-spot="window" aria-pressed="false">窓辺</button><div class="desk-zone-items" data-spot-items="window"></div></section>
+              <section class="desk-zone" data-desk-zone="center" aria-label="真ん中の素材"><button type="button" data-desk-spot="center" aria-pressed="true">真ん中</button><div class="desk-zone-items" data-spot-items="center"></div></section>
+              <section class="desk-zone" data-desk-zone="near" aria-label="手前の素材"><button type="button" data-desk-spot="near" aria-pressed="false">手前</button><div id="desk-gifts"></div><div class="desk-zone-items" data-spot-items="near"></div></section>
             </div>
             <div class="gaze-thread" aria-hidden="true"></div>
             <div class="avatar-distance">
@@ -142,6 +154,21 @@
               </div>
             </div>
           </div>
+          <section class="workshop-tools" aria-label="工房で過ごす">
+            <div class="workshop-tools-head">
+              <span>置いていくもの</span>
+              <button type="button" id="notebook-button" class="notebook-button">ノートを開く <span id="notebook-count">0</span></button>
+            </div>
+            <div class="workshop-room-caption"><p id="desk-placement-hint">真ん中に置く · 素材はドラッグでも動かせる</p><button type="button" id="keepsakes-button">受け取ったもの <span id="keepsakes-count">0</span></button></div>
+            <div class="material-tray" id="material-tray">
+              <button type="button" data-offer="ticket"><span aria-hidden="true">▥</span>雨の切符</button>
+              <button type="button" data-offer="leaf"><span aria-hidden="true">❧</span>落ち葉</button>
+              <button type="button" data-offer="thread"><span aria-hidden="true">⌁</span>青い糸</button>
+              <button type="button" id="paper-button"><span aria-hidden="true">▱</span>自分の紙片</button>
+            </div>
+            <p class="workshop-status" id="workshop-status" aria-live="polite"></p>
+            <ol class="workshop-events" id="workshop-events"></ol>
+          </section>
         </article>
 
         <article class="panel panel-chat" aria-label="Hachikaとの会話">
@@ -219,6 +246,58 @@
         </div>
       </section>
     </main>
+
+    <dialog class="workshop-dialog paper-dialog" id="paper-dialog" aria-labelledby="paper-title">
+      <form id="paper-form">
+        <span class="section-kicker">A small fragment</span>
+        <h2 id="paper-title">紙片に、ひとこと</h2>
+        <p>見た景色、好きなもの、まだ途中の考え。机に置いていく。</p>
+        <textarea id="paper-text" aria-label="紙片に書くこと" maxlength="160" rows="4" placeholder="雨の日の駅の、遠くで聞こえる足音。" required></textarea>
+        <div class="workshop-dialog-actions">
+          <button type="button" data-close-dialog="paper-dialog" class="quiet-button">やめる</button>
+          <button type="submit" class="send-button">机に置く</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog class="workshop-dialog material-dialog" id="material-dialog" aria-labelledby="material-title">
+      <span class="section-kicker">On the table</span>
+      <h2 id="material-title"></h2>
+      <p id="material-text"></p>
+      <p class="material-handling" id="material-handling"></p>
+      <fieldset class="material-position"><legend>机に置く場所</legend><button type="button" data-material-spot="window">窓辺へ置く</button><button type="button" data-material-spot="center">真ん中へ置く</button><button type="button" data-material-spot="near">手前へ置く</button></fieldset>
+      <div class="workshop-dialog-actions">
+        <button type="button" data-close-dialog="material-dialog" class="quiet-button">閉じる</button>
+        <button type="button" id="material-move" class="send-button">棚にしまう</button>
+      </div>
+    </dialog>
+
+    <dialog class="workshop-dialog notebook-dialog" id="notebook-dialog" aria-labelledby="notebook-title">
+      <header class="notebook-head">
+        <div><span class="section-kicker">Made by Hachika</span><h2 id="notebook-title">ハチカのノート</h2></div>
+        <button type="button" data-close-dialog="notebook-dialog" class="quiet-button" aria-label="ノートを閉じる">閉じる</button>
+      </header>
+      <article class="notebook-page" id="notebook-page"></article>
+      <footer class="notebook-footer">
+        <div class="notebook-pagination"><button type="button" id="notebook-prev" aria-label="前のページ">←</button><span id="notebook-pagination"></span><button type="button" id="notebook-next" aria-label="次のページ">→</button></div>
+        <button type="button" id="bookmark-button" class="quiet-button">しおりを挟む</button>
+        <a href="/api/workshop/notebook" download="hachika-notebook.md" id="notebook-download">持ち帰る</a>
+      </footer>
+    </dialog>
+
+    <dialog class="workshop-dialog gift-dialog" id="gift-dialog" aria-labelledby="gift-title">
+      <header class="notebook-head"><div><span class="section-kicker">From Hachika</span><h2 id="gift-title"></h2></div><button type="button" data-close-dialog="gift-dialog" class="quiet-button" aria-label="カードを閉じる">閉じる</button></header>
+      <article class="gift-paper"><div id="gift-fragments"></div><p id="gift-note"></p><span class="gift-signature">ハチカより</span></article>
+      <p class="gift-origin" id="gift-origin"></p>
+      <div class="workshop-dialog-actions"><a id="gift-download" hidden>カードを持ち帰る</a><button type="button" id="gift-receive" class="send-button">受け取る</button></div>
+    </dialog>
+
+    <dialog class="workshop-dialog keepsakes-dialog" id="keepsakes-dialog" aria-labelledby="keepsakes-title">
+      <header class="notebook-head"><div><span class="section-kicker">Kept with you</span><h2 id="keepsakes-title">受け取ったもの</h2></div><button type="button" data-close-dialog="keepsakes-dialog" class="quiet-button" aria-label="受け取ったものを閉じる">閉じる</button></header>
+      <p>ハチカが机の手前に残し、あなたの手元に渡ったカード。</p>
+      <div class="keepsakes-list" id="keepsakes-list"></div>
+      <footer class="workshop-dialog-actions"><a href="/api/workshop/keepsakes" download="hachika-keepsakes.md" id="keepsakes-download" hidden>まとめて持ち帰る</a></footer>
+    </dialog>
 
     <script type="module" src="/app.js"></script>
   </body>

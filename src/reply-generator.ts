@@ -30,6 +30,7 @@ import {
 import type { ProactivePlan, ResponsePlan } from "./response-planner.js";
 import { deriveTraceTendingMode, pickPrimaryArtifactItem, readTraceLifecycle, sortedTraces } from "./traces.js";
 import { describeWorldPlaceJa, summarizeWorldForPrompt } from "./world.js";
+import { summarizeWorkshop } from "./workshop.js";
 import type {
   DiscourseCorrectionKind,
   DiscourseRequestKind,
@@ -635,7 +636,7 @@ function buildCommonGenerationPayload(
       })),
     },
     world: {
-      summary: summarizeWorldForPrompt(snapshot.world),
+      summary: `${summarizeWorldForPrompt(snapshot.world)} ${summarizeWorkshop(snapshot.workshop)}`,
       phase: snapshot.world.phase,
       currentPlace: snapshot.world.currentPlace,
       currentPlaceWarmth: snapshot.world.places[snapshot.world.currentPlace].warmth,

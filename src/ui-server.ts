@@ -6,6 +6,7 @@ import { syncArtifacts } from "./artifacts.js";
 import { createAutonomyDirectorFromEnv } from "./autonomy-director.js";
 import { createBehaviorDirectorFromEnv } from "./behavior-director.js";
 import { runWithConflictRetry } from "./conflict-retry.js";
+import { runEngineOperation } from "./engine-operation.js";
 import { resolveHachikaDataPaths } from "./data-paths.js";
 import { HachikaEngine } from "./engine.js";
 import { loadDotEnv } from "./env.js";
@@ -25,6 +26,8 @@ import { createTurnDirectorFromEnv } from "./turn-director.js";
 import { createUiRequestGuard, parseAllowedUiHosts } from "./ui-request-guard.js";
 import { createInitialSnapshot } from "./state.js";
 import { buildUiState } from "./ui-state.js";
+import { parseWorkshopInteraction, renderReceivedGifts, renderWorkshopGift, renderWorkshopNotebook, WorkshopInteractionError } from "./workshop.js";
+import { createWorkshopDirectorFromEnv } from "./workshop-director.js";
 
 loadDotEnv();
 const {
@@ -47,6 +50,7 @@ const snapshot = await loadSnapshot(snapshotPath);
 const engine = new HachikaEngine(snapshot);
 const replyGenerator = createReplyGeneratorFromEnv();
 const autonomyDirector = createAutonomyDirectorFromEnv();
+const workshopDirector = createWorkshopDirectorFromEnv();
 const proactiveDirector = createProactiveDirectorFromEnv();
 const turnDirector = createTurnDirectorFromEnv();
 const inputInterpreter = createInputInterpreterFromEnv();
@@ -64,6 +68,7 @@ const residentLoop = new ResidentLoopRuntime({
   replyDescription: describeReplyGenerator(replyGenerator),
   replyGenerator,
   autonomyDirector,
+  workshopDirector,
   proactiveDirector,
   individualId: process.env.HACHIKA_INDIVIDUAL_ID?.trim() || dataDir,
   log: console.log,
@@ -73,6 +78,12 @@ let ownsResidentLoop = false;
 let shuttingDown = false;
 
 await persistState(engine);
+
+function buildServerState() {
+  const state = buildUiState(engine, artifactsDir, residentStatusPath);
+  state.diagnostics.llm = { reply: replyGenerator?.name ?? "rule", workshop: workshopDirector?.name ?? "rule" };
+  return state;
+}
 
 const server = createServer(async (request, response) => {
   try {
@@ -89,7 +100,49 @@ const server = createServer(async (request, response) => {
     }
 
     if (url.pathname === "/api/state" && request.method === "GET") {
-      return sendJson(response, 200, buildUiState(engine, artifactsDir, residentStatusPath));
+      return sendJson(response, 200, buildServerState());
+    }
+
+    if (url.pathname === "/api/workshop/notebook" && request.method === "GET") {
+      response.writeHead(200, {
+        "Content-Type": "text/markdown; charset=utf-8",
+        "Content-Disposition": 'attachment; filename="hachika-notebook.md"',
+      });
+      return response.end(renderWorkshopNotebook(engine.getSnapshot().workshop));
+    }
+
+    if (url.pathname === "/api/workshop/keepsakes" && request.method === "GET") {
+      response.writeHead(200, {
+        "Content-Type": "text/markdown; charset=utf-8",
+        "Content-Disposition": 'attachment; filename="hachika-keepsakes.md"',
+      });
+      return response.end(renderReceivedGifts(engine.getSnapshot().workshop));
+    }
+
+    const giftMatch = /^\/api\/workshop\/gifts\/([a-zA-Z0-9_-]{1,80})$/u.exec(url.pathname);
+    if (giftMatch && request.method === "GET") {
+      const workshop = engine.getSnapshot().workshop;
+      const gift = workshop.gifts.find((item) => item.id === giftMatch[1]);
+      if (!gift) return sendJson(response, 404, { error: "workshop_gift_missing" });
+      if (!gift.receivedAt) return sendJson(response, 409, { error: "workshop_gift_not_received" });
+      response.writeHead(200, {
+        "Content-Type": "text/markdown; charset=utf-8",
+        "Content-Disposition": `attachment; filename="hachika-card-${gift.id}.md"`,
+      });
+      return response.end(renderWorkshopGift(workshop, gift));
+    }
+
+    if (url.pathname === "/api/workshop/interact" && request.method === "POST") {
+      const body = await readJsonBody(request);
+      const action = parseWorkshopInteraction(body.action);
+      const interactionId = typeof body.interactionId === "string" ? body.interactionId : "";
+      const result = await runWithEngineConflictRetry(engine, {
+        operate: (working) => workshopDirector ? working.interactWithWorkshopAsync(action, interactionId, { workshopDirector })
+          : working.interactWithWorkshop(action, interactionId),
+        shouldPersist: (outcome) => outcome.changed,
+      });
+      if (!result.ok) return sendJson(response, 409, { error: "state_conflict" });
+      return sendJson(response, 200, { message: result.result?.message, ui: buildServerState() });
     }
 
     if (url.pathname === "/api/message" && request.method === "POST") {
@@ -101,14 +154,14 @@ const server = createServer(async (request, response) => {
       }
 
       const replyResult = await runWithEngineConflictRetry(engine, {
-        operate: () =>
+        operate: (working) =>
           replyGenerator ||
           inputInterpreter ||
           behaviorDirector ||
           initiativeDirector ||
           responsePlanner ||
           traceExtractor
-            ? engine.respondAsync(text, {
+            ? working.respondAsync(text, {
                 replyGenerator,
                 turnDirector,
                 inputInterpreter,
@@ -117,19 +170,19 @@ const server = createServer(async (request, response) => {
                 responsePlanner,
                 traceExtractor,
               })
-            : Promise.resolve(engine.respond(text)),
+            : Promise.resolve(working.respond(text)),
       });
 
       if (!replyResult.ok || !replyResult.result) {
         return sendJson(response, 409, {
           error: "state_conflict",
-          ui: buildUiState(engine, artifactsDir, residentStatusPath),
+          ui: buildServerState(),
         });
       }
 
       return sendJson(response, 200, {
         reply: replyResult.result.reply,
-        ui: buildUiState(engine, artifactsDir, residentStatusPath),
+        ui: buildServerState(),
       });
     }
 
@@ -138,23 +191,23 @@ const server = createServer(async (request, response) => {
       const force = body.force !== false;
 
       const proactiveResult = await runWithEngineConflictRetry<string | null>(engine, {
-        operate: () =>
+        operate: (working) =>
           replyGenerator
-            ? engine.emitInitiativeAsync({ force, replyGenerator, proactiveDirector })
-            : Promise.resolve(engine.emitInitiative({ force })),
+            ? working.emitInitiativeAsync({ force, replyGenerator, proactiveDirector })
+            : Promise.resolve(working.emitInitiative({ force })),
         shouldPersist: (message) => message !== null,
       });
 
       if (!proactiveResult.ok) {
         return sendJson(response, 409, {
           error: "state_conflict",
-          ui: buildUiState(engine, artifactsDir, residentStatusPath),
+          ui: buildServerState(),
         });
       }
 
       return sendJson(response, 200, {
         message: proactiveResult.result,
-        ui: buildUiState(engine, artifactsDir, residentStatusPath),
+        ui: buildServerState(),
       });
     }
 
@@ -167,32 +220,33 @@ const server = createServer(async (request, response) => {
       }
 
       const idleResult = await runWithEngineConflictRetry<string | null>(engine, {
-        operate: () => {
-          engine.rewindIdleHours(hours);
+        operate: async (working) => {
+          if (autonomyDirector || workshopDirector) await working.rewindIdleHoursAsync(hours, { autonomyDirector, workshopDirector });
+          else working.rewindIdleHours(hours);
           return replyGenerator
-            ? engine.emitInitiativeAsync({ replyGenerator, proactiveDirector })
-            : Promise.resolve(engine.emitInitiative());
+            ? working.emitInitiativeAsync({ replyGenerator, proactiveDirector })
+            : Promise.resolve(working.emitInitiative());
         },
       });
 
       if (!idleResult.ok) {
         return sendJson(response, 409, {
           error: "state_conflict",
-          ui: buildUiState(engine, artifactsDir, residentStatusPath),
+          ui: buildServerState(),
         });
       }
 
       return sendJson(response, 200, {
         hours,
         proactive: idleResult.result,
-        ui: buildUiState(engine, artifactsDir, residentStatusPath),
+        ui: buildServerState(),
       });
     }
 
     if (url.pathname === "/api/reset" && request.method === "POST") {
       const resetResult = await runWithEngineConflictRetry<boolean>(engine, {
-        operate: () => {
-          engine.reset(createInitialSnapshot());
+        operate: (working) => {
+          working.reset(createInitialSnapshot());
           return true;
         },
       });
@@ -200,12 +254,12 @@ const server = createServer(async (request, response) => {
       if (!resetResult.ok) {
         return sendJson(response, 409, {
           error: "state_conflict",
-          ui: buildUiState(engine, artifactsDir, residentStatusPath),
+          ui: buildServerState(),
         });
       }
       return sendJson(response, 200, {
         ok: true,
-        ui: buildUiState(engine, artifactsDir, residentStatusPath),
+        ui: buildServerState(),
       });
     }
 
@@ -215,7 +269,7 @@ const server = createServer(async (request, response) => {
 
     return sendJson(response, 405, { error: "method_not_allowed" });
   } catch (error) {
-    return sendJson(response, 500, {
+    return sendJson(response, error instanceof WorkshopInteractionError ? 400 : 500, {
       error: error instanceof Error ? error.message : "ui_server_error",
     });
   }
@@ -231,6 +285,7 @@ process.on("SIGTERM", () => {
 await listenServer(server, port, host);
 console.log(`Hachika UI listening on http://${host}:${port}`);
 console.log(`Hachika data: ${dataDir}`);
+console.log(`Hachika LLM: reply:${replyGenerator?.name ?? "rule"} workshop:${workshopDirector?.name ?? "rule"}`);
 
 try {
   await residentLoop.start();
@@ -324,26 +379,11 @@ async function refreshEngine(currentEngine: HachikaEngine): Promise<void> {
 async function runWithEngineConflictRetry<T>(
   currentEngine: HachikaEngine,
   options: {
-    operate: () => Promise<T> | T;
+    operate: (working: HachikaEngine) => Promise<T> | T;
     shouldPersist?: (result: T) => boolean;
   },
 ): Promise<Awaited<ReturnType<typeof runWithConflictRetry<T>>>> {
-  const result = await runWithConflictRetry<T>({
-    operate: async () => await options.operate(),
-    persist: async (result) => {
-      if (options.shouldPersist && !options.shouldPersist(result)) {
-        return true;
-      }
-
-      return persistState(currentEngine);
-    },
-  });
-
-  if (result.ok) {
-    currentEngine.annotateLastRetryAttempts(result.attempts);
-  }
-
-  return result;
+  return runEngineOperation(currentEngine, { ...options, refresh: refreshEngine, persist: persistState });
 }
 
 async function readJsonBody(request: IncomingMessage): Promise<Record<string, unknown>> {

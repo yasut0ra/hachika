@@ -25,7 +25,7 @@ flowchart LR
 
 ## Snapshot
 
-永続化単位は `HachikaSnapshot` です。現在の schema version は **35** です。
+永続化単位は `HachikaSnapshot` です。現在の schema version は **38** です。会話以外の操作・素材の配置・ノート・制作履歴・カードの受け渡し・LLM が作った検証済み手順・直近の制作診断を `workshop` に保持します。詳細は [工房の設計](workshop.md) を参照してください。
 
 | 領域 | 主な値 | 役割 |
 | --- | --- | --- |
@@ -155,7 +155,7 @@ HTTP、JSON 抽出、エラー処理は `src/llm-client.ts` に集約してい�
 - daily metrics: `<data-root>/metrics-log.jsonl`
 - immutable daily archive: `<data-root>/archive-snapshots/YYYY-MM-DD.json`
 - 保存形式: temporary file + rename による atomic write
-- compatibility: 古い snapshot を load 時に version 35 へ hydrate / sanitize
+- compatibility: 古い snapshot を load 時に version 37 へ hydrate / sanitize
 - missing / corrupt: snapshot が存在しないときだけ初期個体を作る。読めない・JSON が壊れている・object でない snapshot は `snapshot_*` エラーで止まり、ファイルには触れない（archive から復元する）
 - conflict handling: `revision` を比較し、CLI / UI / loop 側が競合時に最新 snapshot から1回再試行
 

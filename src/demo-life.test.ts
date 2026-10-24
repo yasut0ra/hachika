@@ -26,6 +26,8 @@ test("the demo individual has lived thirty days by the time it is opened", async
   assert.ok(snapshot.journal.some((entry) => entry.source === "idle"));
   assert.ok(snapshot.traces["旅の記録"]);
   assert.ok(snapshot.attachment > INITIAL_ATTACHMENT);
+  assert.ok(snapshot.workshop.pages.length > 0);
+  assert.ok(snapshot.workshop.skills.length > 0);
 
   const welcome = buildWelcomeBackDigest(snapshot, END_AT);
   assert.ok(welcome);

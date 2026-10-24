@@ -4,9 +4,9 @@
 
 Hachika は、永続する内部状態、身体的な揺らぎ、記憶、関係、目的、自発行動を持つ TypeScript 製の研究プロトタイプです。
 
-![Hachika Web UI](docs/assets/hachika-ui.jpg)
+![Hachika Web UI](docs/assets/hachika-workshop-layout.jpg)
 
-現在は CLI と Web UI で動きます。API key がなくても rule-based mode で試せます。LLM を使う場合も、状態と経験の更新はローカル実装が担い、言葉と structured な提案だけをモデルに委ねます。
+現在は CLI と Web UI で動きます。プロダクトの体験は LLM 有効を前提に進めます。状態と経験の更新はローカル実装が担い、会話と、工房で何をどう作るかの提案をモデルに委ねます。API key がなくても rule-based mode で基礎動作を試せます。
 
 ## 15分で試す
 
@@ -27,6 +27,8 @@ npm run ui
 ```
 
 [http://127.0.0.1:3042](http://127.0.0.1:3042) を開きます。Web UI と resident loop が同時に起動し、画面を閉じて会話していない時間にも Hachika の内側では時間が進みます。
+
+作業机に「雨の切符」や「落ち葉」、自分で書いた紙片を置いてみてください。窓辺・真ん中・手前への並べ方が、ハチカの注意と制作に影響します。時間をかけてノートにページを残し、共有したいときは小さなカードを机の手前に寄せます。カードを受け取ると、机から自分の手元へ移ります。灯りを変え、素材を棚へしまい、ページにしおりを挟むこともできます。すぐ試すなら画面上部で2時間進めてノートを開き、さらに時間を進めてカードを探します。操作は会話とは別の経験として保存されます。工房の設計と参考研究は [こちら](docs/workshop.md)。
 
 CLI で試す場合は `npm run dev`、UI なしで常在 loop だけ動かす場合は `npm run loop` です。
 
@@ -163,9 +165,9 @@ Hachika の成長は drive が最大値へ近づくことではありません�
 
 「名前」という topic を記憶するだけでは、誰の名前か、誰が答えるべきか、訂正が済んだかは分かりません。Hachika は question、request、commitment、claim、correction の ownership を保持します。
 
-## LLM は任意
+## LLM を有効にして使う
 
-API key なしでは rule-based mode で動きます。OpenAI API を使う場合:
+OpenAI API を使う場合:
 
 ```bash
 cp .env.example .env
@@ -180,7 +182,11 @@ HACHIKA_LOCAL_AI_BASE_URL=http://127.0.0.1:1234/v1
 HACHIKA_LOCAL_AI_MODEL=qwen2.5-7b-instruct
 ```
 
-turn interpretation、behavior、planning、autonomy、trace extraction、wording は役割別にモデルを選べます。詳細な環境変数と fallback 境界は [architecture.md](docs/architecture.md#llm-boundary) にあります。
+turn interpretation、behavior、planning、autonomy、trace extraction、wording、工房の制作は役割別にモデルを選べます。工房には `OPENAI_WORKSHOP_MODEL` / `HACHIKA_LOCAL_AI_WORKSHOP_MODEL` を指定できます。未指定なら共通モデルを使います。
+
+工房では LLM が素材を選び、切り取り・配置の手順と文章を提案します。アプリが手順を実行して検証し、成功した作り方を保存します。新しい素材へその手順を再利用し、しおりの反応も次の提案へ渡します。詳細は [工房の設計](docs/workshop.md) にあります。「内面」の Diagnostics で接続先と直近の制作結果を確認できます。
+
+API key なしでは基礎動作のための rule-based mode になります。LLM を設定した工房が通信や手順の検証に失敗した場合は、素材を残して次の期日に再試行します。詳細な環境変数と fallback 境界は [architecture.md](docs/architecture.md#llm-boundary) にあります。
 
 ## 現在地
 

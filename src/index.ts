@@ -15,6 +15,7 @@ import { runWithConflictRetry } from "./conflict-retry.js";
 import { resolveHachikaDataPaths } from "./data-paths.js";
 import { HachikaEngine } from "./engine.js";
 import { loadDotEnv } from "./env.js";
+import { createWorkshopDirectorFromEnv } from "./workshop-director.js";
 import { summarizeLiveGrowthMetrics } from "./growth-metrics.js";
 import { createInputInterpreterFromEnv, describeInputInterpreter } from "./input-interpreter.js";
 import {
@@ -167,6 +168,7 @@ function buildPrompt(): string {
 const snapshot = await loadSnapshot(snapshotPath);
 const engine = new HachikaEngine(snapshot);
 const replyGenerator = createReplyGeneratorFromEnv();
+const workshopDirector = createWorkshopDirectorFromEnv();
 const proactiveDirector = createProactiveDirectorFromEnv();
 const turnDirector = createTurnDirectorFromEnv();
 const inputInterpreter = createInputInterpreterFromEnv();
@@ -1104,8 +1106,9 @@ async function handleIdleCommand(
   }
 
   const idleResult = await runWithEngineConflictRetry<string | null>(currentEngine, {
-    operate: () => {
-      currentEngine.rewindIdleHours(hours);
+    operate: async () => {
+      if (workshopDirector) await currentEngine.rewindIdleHoursAsync(hours, { workshopDirector });
+      else currentEngine.rewindIdleHours(hours);
       return replyGenerator
         ? currentEngine.emitInitiativeAsync({ replyGenerator, proactiveDirector })
         : Promise.resolve(currentEngine.emitInitiative());

@@ -31,6 +31,7 @@ import {
 } from "./state.js";
 import { isInformativeTraceClause } from "./traces.js";
 import { syncWorldObjectTraceLinks, WORLD_PLACE_IDS } from "./world.js";
+import { hydrateWorkshop } from "./workshop.js";
 import type {
   ActivePurpose,
   AttentionRationale,
@@ -294,7 +295,7 @@ function hydrateSnapshot(raw: unknown): HachikaSnapshot {
   }
 
   return {
-    version: 35,
+    version: 38,
     revision:
       typeof raw.revision === "number" && Number.isFinite(raw.revision)
         ? Math.max(0, Math.round(raw.revision))
@@ -312,6 +313,7 @@ function hydrateSnapshot(raw: unknown): HachikaSnapshot {
     attachment:
       typeof raw.attachment === "number" ? clamp01(raw.attachment) : initial.attachment,
     world: hydrateWorld(raw.world),
+    workshop: hydrateWorkshop(raw.workshop),
     presence: hydratePresence(raw.presence),
     discourse: hydrateDiscourse(raw.discourse),
     preferences: hydrateNumberRecord(raw.preferences, clampSigned),
@@ -341,7 +343,7 @@ function hydrateSnapshot(raw: unknown): HachikaSnapshot {
 }
 
 export function sanitizeSnapshot(snapshot: HachikaSnapshot): HachikaSnapshot {
-  snapshot.version = 35;
+  snapshot.version = 38;
   snapshot.preferences = sanitizeNumberRecord(snapshot.preferences, clampSigned);
   snapshot.topicCounts = sanitizeNumberRecord(snapshot.topicCounts, (value) =>
     Math.max(0, Math.round(value)),
@@ -358,6 +360,7 @@ export function sanitizeSnapshot(snapshot: HachikaSnapshot): HachikaSnapshot {
   snapshot.aspirations = sanitizeAspirations(snapshot.aspirations);
   snapshot.voice = sanitizeVoice(snapshot.voice);
   snapshot.world = sanitizeWorld(snapshot.world);
+  snapshot.workshop = hydrateWorkshop(snapshot.workshop);
   snapshot.presence = sanitizePresence(snapshot.presence);
   snapshot.discourse = sanitizeDiscourse(snapshot.discourse);
   snapshot.memories = snapshot.memories

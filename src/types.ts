@@ -1,3 +1,5 @@
+import type { WorkshopState } from "./workshop.js";
+
 export type DriveName =
   | "continuity"
   | "pleasure"
@@ -676,6 +678,7 @@ export interface HachikaSnapshot {
   temperament: LearnedTemperament;
   attachment: number;
   world: WorldState;
+  workshop: WorkshopState;
   presence: PresenceState;
   discourse: DiscourseState;
   preferences: Record<string, number>;

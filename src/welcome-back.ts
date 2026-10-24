@@ -100,6 +100,12 @@ export function formatAwayDuration(hours: number): string {
 function collectMoments(snapshot: HachikaSnapshot): WelcomeBackMoment[] {
   const moments: WelcomeBackMoment[] = [];
 
+  for (const event of snapshot.workshop.events) {
+    if (event.actor === "hachika") {
+      moments.push({ at: event.at, kind: "activity", text: event.text, place: "studio" });
+    }
+  }
+
   for (const entry of snapshot.autonomousFeed) {
     moments.push({
       at: entry.timestamp,

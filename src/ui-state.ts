@@ -17,6 +17,7 @@ import {
 import type { ResidentLoopHealth, ResidentLoopStatus } from "./resident-monitor.js";
 import { sortedTraces } from "./traces.js";
 import { buildWelcomeBackDigest, type WelcomeBackDigest } from "./welcome-back.js";
+import { DESK_SPOTS, MATERIALS, type WorkshopState } from "./workshop.js";
 import type {
   AutonomousFeedEntry,
   GeneratedTextDebug,
@@ -27,6 +28,7 @@ import type {
 } from "./types.js";
 
 export interface UiStatePayload {
+  workshop: WorkshopState & { materialCatalog: typeof MATERIALS; deskSpots: typeof DESK_SPOTS };
   embodiment: EmbodimentState;
   summary: {
     state: ReturnType<HachikaEngine["getSnapshot"]>["state"];
@@ -72,6 +74,7 @@ export interface UiStatePayload {
   }>;
   artifacts: ArtifactFile[];
   diagnostics: {
+    llm: { reply: string; workshop: string };
     lastReply: GeneratedTextDebug | null;
     lastResponse: GeneratedTextDebug | null;
     lastProactive: GeneratedTextDebug | null;
@@ -98,6 +101,7 @@ export function buildUiState(
     new Date().toISOString();
 
   return {
+    workshop: { ...snapshot.workshop, materialCatalog: MATERIALS, deskSpots: DESK_SPOTS },
     embodiment: deriveEmbodimentState(snapshot, now),
     summary: {
       state: snapshot.state,
@@ -162,6 +166,7 @@ export function buildUiState(
     })),
     artifacts,
     diagnostics: {
+      llm: { reply: residentLoop?.reply ?? "rule", workshop: snapshot.workshop.lastGeneration?.provider ?? "rule" },
       lastReply: engine.getLastReplyDebug(),
       lastResponse: engine.getLastResponseDebug(),
       lastProactive: engine.getLastProactiveDebug(),

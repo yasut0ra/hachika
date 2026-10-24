@@ -9,6 +9,7 @@ import {
 import { commitSnapshot, loadSnapshot } from "./persistence.js";
 import type { ProactiveDirector } from "./proactive-director.js";
 import type { ReplyGenerator } from "./reply-generator.js";
+import type { WorkshopDirector } from "./workshop-director.js";
 import {
   acquireResidentLoopLock,
   releaseResidentLoopLock,
@@ -34,6 +35,7 @@ export interface ResidentLoopRuntimeOptions {
   replyDescription: string;
   replyGenerator?: ReplyGenerator | null;
   autonomyDirector?: AutonomyDirector | null;
+  workshopDirector?: WorkshopDirector | null;
   proactiveDirector?: ProactiveDirector | null;
   pid?: number;
   now?: () => Date;
@@ -190,6 +192,7 @@ export class ResidentLoopRuntime {
             timeZone: this.metricsTimeZone,
             individualId: this.individualId,
             autonomyDirector: this.options.autonomyDirector ?? null,
+            workshopDirector: this.options.workshopDirector ?? null,
             replyGenerator: this.options.replyGenerator ?? null,
             proactiveDirector: this.options.proactiveDirector ?? null,
           });

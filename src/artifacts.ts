@@ -1,7 +1,8 @@
-import { mkdir, readdir, unlink } from "node:fs/promises";
+import { mkdir, readFile, readdir, rm, unlink } from "node:fs/promises";
 import { dirname, join, relative, resolve } from "node:path";
 
 import { writeTextFileAtomic } from "./atomic-file.js";
+import { renderReceivedGifts, renderWorkshopNotebook } from "./workshop.js";
 import {
   deriveEffectiveTraceStaleAt,
   deriveTraceTendingMode,
@@ -101,6 +102,11 @@ export async function syncArtifacts(
   const currentRelativePaths = new Set(files.map((file) => file.relativePath));
 
   await mkdir(root, { recursive: true });
+
+  await syncWorkshopArtifact(join(root, "notebook.md"), snapshot.workshop.pages.length
+    ? renderWorkshopNotebook(snapshot.workshop) : null);
+  await syncWorkshopArtifact(join(root, "received-gifts.md"), snapshot.workshop.gifts.some((gift) => gift.receivedAt)
+    ? renderReceivedGifts(snapshot.workshop) : null);
 
   for (const file of files) {
     const trace = snapshot.traces[file.topic];
@@ -405,6 +411,15 @@ function appendArtifactSection(
   }
 
   lines.push("");
+}
+
+async function syncWorkshopArtifact(path: string, text: string | null): Promise<void> {
+  if (text === null) { await rm(path, { force: true }); return; }
+  const existing = await readFile(path, "utf8").catch((error: unknown) => {
+    if (typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT") return null;
+    throw error;
+  });
+  if (existing !== text) await writeTextFileAtomic(path, text);
 }
 
 function buildTraceFileName(trace: TraceEntry): string {

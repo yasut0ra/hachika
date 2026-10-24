@@ -18,6 +18,15 @@ import {
 } from "./memory.js";
 import { extractClosedTopics } from "./topic-extraction.js";
 import {
+  advanceWorkshopHours,
+  advanceWorkshopHoursAsync,
+  applyWorkshopInteraction,
+  shiftWorkshopTimestamps,
+  type WorkshopInteraction,
+  workshopReply,
+} from "./workshop.js";
+import type { WorkshopDirector } from "./workshop-director.js";
+import {
   buildPendingInitiativeFromSemanticInitiativePlan,
   buildProactivePlanFromSemanticProactivePlan,
   buildResponsePlanFromSemanticReplyPlan,
@@ -555,11 +564,26 @@ export class HachikaEngine {
     return structuredClone(this.#snapshot);
   }
 
-  syncSnapshot(snapshot: HachikaSnapshot): void {
+  createWorkingCopy(): HachikaEngine {
+    const working = new HachikaEngine(this.#snapshot);
+    working.syncSnapshot(this.#snapshot, this);
+    return working;
+  }
+
+  syncSnapshot(snapshot: HachikaSnapshot, diagnosticsFrom?: HachikaEngine): void {
     if (snapshot.revision < this.#snapshot.revision) {
       return;
     }
     this.#snapshot = structuredClone(snapshot);
+    if (diagnosticsFrom) {
+      this.#lastGeneratedDebug = structuredClone(diagnosticsFrom.#lastGeneratedDebug);
+      this.#lastResponseDebug = structuredClone(diagnosticsFrom.#lastResponseDebug);
+      this.#lastProactiveDebug = structuredClone(diagnosticsFrom.#lastProactiveDebug);
+      this.#lastInterpretationDebug = structuredClone(diagnosticsFrom.#lastInterpretationDebug);
+      this.#lastBehaviorDebug = structuredClone(diagnosticsFrom.#lastBehaviorDebug);
+      this.#lastTraceExtractionDebug = structuredClone(diagnosticsFrom.#lastTraceExtractionDebug);
+      this.#lastTurnDebug = structuredClone(diagnosticsFrom.#lastTurnDebug);
+    }
   }
 
   reset(snapshot: HachikaSnapshot = createInitialSnapshot()): void {
@@ -1001,11 +1025,15 @@ export class HachikaEngine {
     options: { clockMode?: "simulated" | "wall"; now?: Date } = {},
   ): void {
     const nextSnapshot = structuredClone(this.#snapshot);
+    if (Number.isFinite(hours) && hours > 0 && options.clockMode !== "wall") {
+      shiftWorkshopTimestamps(nextSnapshot.workshop, hours);
+    }
     rewindSnapshotHours(nextSnapshot, hours, {
       shiftTimestamps: options.clockMode !== "wall",
       now: options.now ?? new Date(),
     });
     advanceWorldByIdle(nextSnapshot, hours);
+    advanceWorkshopHours(nextSnapshot, hours, options.now ?? new Date());
     updateIdentity(nextSnapshot, new Date().toISOString());
     this.#snapshot = nextSnapshot;
   }
@@ -1014,11 +1042,15 @@ export class HachikaEngine {
     hours: number,
     options: {
       autonomyDirector?: AutonomyDirector | null;
+      workshopDirector?: WorkshopDirector | null;
       clockMode?: "simulated" | "wall";
       now?: Date;
     } = {},
   ): Promise<{ outwardMode: AutonomyOutwardMode }> {
     const nextSnapshot = structuredClone(this.#snapshot);
+    if (Number.isFinite(hours) && hours > 0 && options.clockMode !== "wall") {
+      shiftWorkshopTimestamps(nextSnapshot.workshop, hours);
+    }
     rewindSnapshotBaseHours(nextSnapshot, hours, {
       shiftTimestamps: options.clockMode !== "wall",
       now: options.now ?? new Date(),
@@ -1062,9 +1094,61 @@ export class HachikaEngine {
     }
 
     advanceWorldByIdle(nextSnapshot, hours);
+    if (options.workshopDirector) await advanceWorkshopHoursAsync(nextSnapshot, hours, options.now ?? new Date(), options.workshopDirector);
+    else advanceWorkshopHours(nextSnapshot, hours, options.now ?? new Date());
     updateIdentity(nextSnapshot, new Date().toISOString());
     this.#snapshot = nextSnapshot;
     return { outwardMode };
+  }
+
+  interactWithWorkshop(
+    action: WorkshopInteraction,
+    interactionId: string,
+    now: Date = new Date(),
+  ): { message: string; changed: boolean } {
+    const previous = this.#snapshot.workshop.processedInteractions.find((item) => item.id === interactionId);
+    if (previous) return { message: previous.message, changed: false };
+    // 帰還前の時間を先に生きる。非言語の接触も不在を終わらせるが、会話数は増やさない。
+    const working = new HachikaEngine(this.#snapshot);
+    const clock = this.#snapshot.residentClockAt;
+    const elapsed = clock ? Math.max(0, now.getTime() - Date.parse(clock)) / 3_600_000 : 0;
+    if (elapsed > 0) working.rewindIdleHours(elapsed, { clockMode: "wall", now });
+    const nextSnapshot = working.getSnapshot();
+    const result = applyWorkshopInteraction(nextSnapshot, action, interactionId, now);
+    if (result.changed) {
+      nextSnapshot.lastInteractionAt = now.toISOString();
+      nextSnapshot.idleClock = createIdleClock();
+      if (clock) nextSnapshot.residentClockAt = now.toISOString();
+      interruptPresenceForUserTurn(nextSnapshot, now.toISOString());
+      updateIdentity(nextSnapshot, now.toISOString());
+      this.#snapshot = nextSnapshot;
+    }
+    return result;
+  }
+
+  async interactWithWorkshopAsync(
+    action: WorkshopInteraction,
+    interactionId: string,
+    options: { workshopDirector: WorkshopDirector; now?: Date },
+  ): Promise<{ message: string; changed: boolean }> {
+    const now = options.now ?? new Date();
+    const previous = this.#snapshot.workshop.processedInteractions.find((item) => item.id === interactionId);
+    if (previous) return { message: previous.message, changed: false };
+    const working = new HachikaEngine(this.#snapshot);
+    const clock = this.#snapshot.residentClockAt;
+    const elapsed = clock ? Math.max(0, now.getTime() - Date.parse(clock)) / 3_600_000 : 0;
+    if (elapsed > 0) await working.rewindIdleHoursAsync(elapsed, { clockMode: "wall", now, workshopDirector: options.workshopDirector });
+    const nextSnapshot = working.getSnapshot();
+    const result = applyWorkshopInteraction(nextSnapshot, action, interactionId, now);
+    if (result.changed) {
+      nextSnapshot.lastInteractionAt = now.toISOString();
+      nextSnapshot.idleClock = createIdleClock();
+      if (clock) nextSnapshot.residentClockAt = now.toISOString();
+      interruptPresenceForUserTurn(nextSnapshot, now.toISOString());
+      updateIdentity(nextSnapshot, now.toISOString());
+      this.#snapshot = nextSnapshot;
+    }
+    return result;
   }
 
   respond(input: string): TurnResult {
@@ -5005,6 +5089,12 @@ function composeReply(
     discourseTarget === "user_profile" ||
     discourseTarget === "hachika_profile";
   const relationObligationTurn = turnDebug?.target === "relation";
+  if (!directReferentTurn && !relationObligationTurn && signals.preservationThreat < 0.18 &&
+    signals.negative <= 0.1 && responsePlan.act !== "repair" &&
+    nextSnapshot.discourse.lastCorrection?.updatedAt !== nextSnapshot.lastInteractionAt) {
+    const fromWorkshop = workshopReply(input, nextSnapshot.workshop);
+    if (fromWorkshop) return fromWorkshop;
+  }
   const currentTopic = replySelection.currentTopic;
   const relevantMemory = findRelevantMemory(previousSnapshot, signals.topics);
   const relevantTrace = replySelection.relevantTrace;
