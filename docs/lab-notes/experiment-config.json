@@ -10,7 +10,7 @@
     "timeZone": "Asia/Tokyo"
   },
   "runtime": {
-    "host": "yasudatakumanoMac-mini.local / macOS 26.3",
+    "host": "Mac mini / macOS 26.3",
     "nodeVersion": "v22.20.0",
     "loopIntervalMs": 15000,
     "fixedIdleHoursPerTick": null,

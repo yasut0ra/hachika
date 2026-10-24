@@ -1,5 +1,7 @@
 # Hachika life experiment notes
 
+> **開発を終了しました。** この実験のbirth記録と週次観察記録はありません。
+
 90日長期生存実験のbirth記録と週次観察記録を置く。
 
 ## 凍結手順
